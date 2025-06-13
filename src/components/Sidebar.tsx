@@ -195,7 +195,7 @@ const Sidebar = () => {
           </div>
           <div>
             <div className="font-medium text-gray-800">Owner</div>
-            <div className="text-sm text-gray-500">Admin</div>
+            <div className="text-sm text-gray-500">Admin</div> {/* Lighter text for role */}
           </div>
         </div>
       </div>
