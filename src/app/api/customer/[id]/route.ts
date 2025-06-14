@@ -3,7 +3,7 @@ import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
 import Appointment from '@/models/appointment';
 import Service from '@/models/service';
-import Stylist from '@/models/stylist';
+import Stylist from '@/models/Stylist';
 import CustomerMembership from '@/models/customerMembership';
 import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';

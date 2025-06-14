@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import BookAppointmentForm, { NewBookingData } from './BookAppointmentForm';
+import BookAppointmentForm, { NewBookingData } from '../appointment/BookAppointmentForm';
 import BillingModal from '../appointment/billingmodal';
 import { CalendarIcon, ClockIcon, UserGroupIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { toast } from 'react-toastify';

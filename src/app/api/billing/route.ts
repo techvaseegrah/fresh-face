@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Invoice from '@/models/invoice';
 import Appointment from '@/models/appointment';
-import Stylist from '@/models/stylist';
+import Stylist from '@/models/Stylist';
 import Customer from '@/models/customermodel';
 import CustomerMembership from '@/models/customerMembership';
 import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
-import Product from '@/models/product';
+import Product from '@/models/Product';
 import mongoose from 'mongoose';
 
 // ===================================================================================

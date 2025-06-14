@@ -2,7 +2,7 @@
 import mongoose, { Schema, model, models } from 'mongoose';
 
 // Ensure Mongoose knows about the other models it needs to reference.
-import './stylist'; 
+import './Stylist'; 
 import './service';
 import './customermodel';
 

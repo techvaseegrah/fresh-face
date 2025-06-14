@@ -1,7 +1,7 @@
 // app/api/stylists/route.ts
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import Stylist from '@/models/stylist';
+import Stylist from '@/models/Stylist';
 
 export async function GET(req: Request) {
   try {
