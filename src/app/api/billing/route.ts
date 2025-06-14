@@ -8,10 +8,11 @@ import CustomerMembership from '@/models/customerMembership';
 import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import Product from '@/models/product';
+import Staff from '@/models/staff'; // <-- IMPORTANT: Import the Staff model
 import mongoose from 'mongoose';
 
 // ===================================================================================
-//  INTERFACES
+//  INTERFACES (keep as is)
 // ===================================================================================
 interface BillItemPayload {
   itemType: 'service' | 'product' | 'membership';
@@ -33,7 +34,7 @@ interface BillingRequestBody {
 }
 
 // ===================================================================================
-//  API ENDPOINT: POST /api/billing
+//  API ENDPOINT: POST /api/billing (CORRECTED)
 // ===================================================================================
 export async function POST(req: Request) {
   const session = await mongoose.startSession();
@@ -52,9 +53,26 @@ export async function POST(req: Request) {
     }
     
     await connectToDatabase();
+
+    // ============================ THE FIX: PART 1 of 3 ============================
+    // Find the stylist AND populate the linked staffInfo to get the name
+    const stylistWithStaffInfo = await Stylist.findById(stylistId)
+      .populate({
+        path: 'staffInfo',
+        model: 'Staff',
+        select: 'name' // We only need the name
+      })
+      .session(session);
     
-    const stylist = await Stylist.findById(stylistId).session(session);
-    if (!stylist) throw new Error("Stylist not found for billing.");
+    // Add validation to ensure the population worked
+    if (!stylistWithStaffInfo || !stylistWithStaffInfo.staffInfo || !stylistWithStaffInfo.staffInfo.name) {
+      throw new Error(`Could not find a valid name for stylist ID: ${stylistId}. The linked staff record may be missing.`);
+    }
+
+    // ============================ THE FIX: PART 2 of 3 ============================
+    // Extract the name string from the populated data
+    const stylistName = stylistWithStaffInfo.staffInfo.name;
+    // ===============================================================================
 
     // --- 2. Calculate subtotals ---
     const serviceTotal = items.filter((i: BillItemPayload) => i.itemType === 'service').reduce((sum: number, i: BillItemPayload) => sum + i.finalPrice, 0);
@@ -62,10 +80,20 @@ export async function POST(req: Request) {
     
     // --- 3. Create the Invoice ---
     const [newInvoice] = await Invoice.create([{
-      customerId, appointmentId, stylistId, stylistName: stylist.name,
-      lineItems: items, // Using the field name from your provided code
-      subTotal: grandTotal, serviceTotal, productTotal, grandTotal,
-      paymentMethod, paymentStatus: 'Paid', notes,
+      customerId,
+      appointmentId,
+      stylistId,
+      // ============================ THE FIX: PART 3 of 3 ============================
+      stylistName: stylistName, // Use the fetched name string here
+      // ===============================================================================
+      lineItems: items,
+      subTotal: grandTotal,
+      serviceTotal,
+      productTotal,
+      grandTotal,
+      paymentMethod,
+      paymentStatus: 'Paid',
+      notes,
     }], { session });
 
     // --- 4. Create New Membership if Purchased ---
@@ -94,16 +122,17 @@ export async function POST(req: Request) {
     
     // --- 7. Award and Log Loyalty Points ---
     const serviceCount = items.filter((i: BillItemPayload) => i.itemType === 'service').length;
-    const pointsToAward = serviceCount; // Your simplified rule: 1 point per service
+    const pointsToAward = serviceCount;
     if (pointsToAward > 0) {
       await LoyaltyTransaction.create([{
-        customerId: customerId, points: pointsToAward, type: 'Credit',
+        customerId: customerId,
+        points: pointsToAward,
+        type: 'Credit',
         reason: `Earned from ${pointsToAward} service(s) on Invoice`,
         relatedAppointmentId: appointmentId
       }], { session });
     }
 
-    // If all operations were successful, commit the transaction.
     await session.commitTransaction();
 
     return NextResponse.json({
@@ -114,12 +143,10 @@ export async function POST(req: Request) {
     }, { status: 201 });
 
   } catch (error: any) {
-    // If any error occurs, abort the entire transaction.
     await session.abortTransaction();
     console.error("Billing API Error:", error);
     return NextResponse.json({ success: false, message: error.message || "An unexpected error occurred." }, { status: 500 });
   } finally {
-    // Always end the session, regardless of success or failure.
     await session.endSession();
   }
 }

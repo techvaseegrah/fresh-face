@@ -1,9 +1,12 @@
+// /api/appointment/route.ts
+
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/appointment';
 import Customer from '@/models/customermodel';
 import Stylist from '@/models/stylist';
 import Service from '@/models/service';
+import Staff from '@/models/staff'; // Import the Staff model
 import mongoose from 'mongoose';
 
 // ===================================================================================
@@ -23,31 +26,24 @@ export async function GET(req: Request) {
     // --- Build the Aggregation Pipeline ---
     const pipeline: mongoose.PipelineStage[] = [];
 
-    // Stage 1: Lookup (Join) with the Customers collection
-    pipeline.push({
-      $lookup: {
-        from: 'customers', // The actual name of the collection in MongoDB
-        localField: 'customerId',
-        foreignField: '_id',
-        as: 'customerInfo'
-      }
-    });
-
-    // Stage 2: Lookup (Join) with the Stylists collection
-    pipeline.push({
-      $lookup: {
-        from: 'stylists', // The actual name of the collection
-        localField: 'stylistId',
-        foreignField: '_id',
-        as: 'stylistInfo'
-      }
-    });
-    
-    // Deconstruct the joined arrays to make them top-level fields for easier searching
+    // Stage 1 & 2: Lookup Customers and Stylists
+    pipeline.push({ $lookup: { from: 'customers', localField: 'customerId', foreignField: '_id', as: 'customerInfo' } });
+    pipeline.push({ $lookup: { from: 'stylists', localField: 'stylistId', foreignField: '_id', as: 'stylistInfo' } });
     pipeline.push({ $unwind: { path: "$customerInfo", preserveNullAndEmptyArrays: true } });
     pipeline.push({ $unwind: { path: "$stylistInfo", preserveNullAndEmptyArrays: true } });
 
-    // --- Build the $match stage for filtering and searching ---
+    // Stage 3: Nested Lookup to get Staff details from the Stylist info
+    pipeline.push({
+      $lookup: {
+        from: 'staffs', // IMPORTANT: Verify this is your exact collection name (e.g., 'staff')
+        localField: 'stylistInfo.staffInfo',
+        foreignField: '_id',
+        as: 'stylistStaffInfo'
+      }
+    });
+    pipeline.push({ $unwind: { path: "$stylistStaffInfo", preserveNullAndEmptyArrays: true } });
+
+    // Build the $match stage for filtering and searching
     const matchStage: any = {};
     if (statusFilter && statusFilter !== 'All') {
       matchStage.status = statusFilter;
@@ -56,46 +52,38 @@ export async function GET(req: Request) {
       const searchRegex = new RegExp(searchQuery, 'i');
       matchStage.$or = [
         { 'customerInfo.name': searchRegex },
-        { 'stylistInfo.name': searchRegex },
+        { 'stylistStaffInfo.name': searchRegex }, // Search by the correct nested name
         { 'customerInfo.phoneNumber': searchRegex }
       ];
     }
-    
-    // Only add the $match stage if there are any conditions to apply
     if (Object.keys(matchStage).length > 0) {
       pipeline.push({ $match: matchStage });
     }
 
-    // --- Perform two queries: one for paginated data, one for total count ---
-    const [results, totalAppointmentsResult] = await Promise.all([
-      // Query 1: Get the appointments for the current page
-      Appointment.aggregate(pipeline)
-        .sort({ date: 1, time: 1 })
-        .skip(skip)
-        .limit(limit),
-      
-      // Query 2: Get the total count of documents matching the entire pipeline
+    // Perform queries for paginated data and total count
+    const [results, totalCountResult] = await Promise.all([
+      Appointment.aggregate(pipeline).sort({ date: -1, time: -1 }).skip(skip).limit(limit),
       Appointment.aggregate([...pipeline, { $count: 'total' }])
     ]);
     
-    const totalAppointments = totalAppointmentsResult.length > 0 ? totalAppointmentsResult[0].total : 0;
+    const totalAppointments = totalCountResult.length > 0 ? totalCountResult[0].total : 0;
     const totalPages = Math.ceil(totalAppointments / limit);
     
-    // The main data is already joined by the aggregation.
-    // We just need to populate the serviceIds array separately.
-    const appointments = await Appointment.populate(results, {
-        path: 'serviceIds',
-        model: Service,
-        select: 'name price'
-    });
+    const appointmentsWithServices = await Service.populate(results, { path: 'serviceIds', select: 'name price' });
 
-    // Remap fields to match the frontend's expected interface
-    const formattedAppointments = appointments.map(apt => ({
-      ...apt,
-      id: apt._id.toString(),
-      customerId: apt.customerInfo, // Use the data from the lookup
-      stylistId: apt.stylistInfo,   // Use the data from the lookup
-    }));
+    // Final Formatting to match the frontend's expected interface
+    const formattedAppointments = appointmentsWithServices.map(apt => {
+      return {
+        ...apt,
+        id: apt._id.toString(),
+        customerId: apt.customerInfo || null,
+        // Manually build the exact nested object the frontend expects
+        stylistId: {
+          _id: apt.stylistInfo?._id,
+          staffInfo: apt.stylistStaffInfo || null 
+        },
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -109,7 +97,6 @@ export async function GET(req: Request) {
   }
 }
 
-
 // ===================================================================================
 //  POST: Handler for creating a new appointment
 // ===================================================================================
@@ -117,7 +104,6 @@ export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json();
-
     const { phoneNumber, customerName, email, serviceIds, stylistId, date, time, notes } = body;
 
     if (!phoneNumber || !customerName || !serviceIds || serviceIds.length === 0 || !stylistId || !date || !time) {
@@ -130,9 +116,24 @@ export async function POST(req: Request) {
       customerDoc = await Customer.create({ name: customerName, phoneNumber: phoneNumber.trim(), email });
     }
 
+    // ===> CRITICAL FIX: Fetch stylist's name before creating appointment <===
+    const stylistWithInfo = await Stylist.findById(stylistId).populate({
+      path: 'staffInfo',
+      model: 'Staff',
+      select: 'name'
+    });
+
+    if (!stylistWithInfo || !stylistWithInfo.staffInfo?.name) {
+      throw new Error(`Could not find a valid name for stylist with ID: ${stylistId}`);
+    }
+    const stylistNameForDb = stylistWithInfo.staffInfo.name;
+    // ===> END OF FIX <===
+
+    // Create the new appointment with the required stylistName field
     const newAppointment = await Appointment.create({
       customerId: customerDoc._id,
       stylistId: stylistId,
+      stylistName: stylistNameForDb, // <-- Provide the fetched name
       serviceIds: serviceIds,
       date: new Date(date),
       time: time,
@@ -140,15 +141,26 @@ export async function POST(req: Request) {
       status: 'Scheduled',
     });
 
-    // Populate the response to send back full details immediately
+    // Populate the response to send back full details to the frontend
     const populatedAppointment = await Appointment.findById(newAppointment._id)
         .populate({ path: 'customerId', select: 'name phoneNumber' })
-        .populate({ path: 'stylistId', select: 'name' })
+        .populate({
+            path: 'stylistId',
+            populate: {
+                path: 'staffInfo',
+                model: 'Staff',
+                select: 'name'
+            }
+        })
         .populate({ path: 'serviceIds', select: 'name price' });
 
     return NextResponse.json({ success: true, appointment: populatedAppointment }, { status: 201 });
 
   } catch (err: any) {
+    // Add specific error handling for Mongoose validation errors
+    if (err.name === 'ValidationError') {
+      return NextResponse.json({ success: false, message: err.message, errors: err.errors }, { status: 400 });
+    }
     console.error("API Error creating appointment:", err);
     return NextResponse.json({ success: false, message: err.message || "Failed to create appointment." }, { status: 500 });
   }

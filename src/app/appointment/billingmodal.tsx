@@ -18,7 +18,13 @@ interface SearchableItem { id: string; name: string; price: number; type: 'servi
 export interface MembershipPlanFE { _id: string; id: string; name: string; price: number; durationDays: number; }
 interface AppointmentForModal { id: string; serviceIds?: Array<{ _id: string, name: string, price: number }>; }
 interface CustomerForModal { id: string; name: string; }
-interface StylistForModal { id: string; name: string; }
+// The NEW, CORRECT interface in billingmodal.tsx
+interface StylistForModal {
+  _id: string;
+  staffInfo: {
+    name: string;
+  };
+}
 
 interface BillingModalProps {
   isOpen: boolean;
@@ -140,7 +146,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
         paymentMethod,
         notes,
         purchasedMembershipPlanId: selectedPlanId || undefined,
-        stylistId: stylist.id, // <-- This is the crucial line
+        stylistId: stylist._id, // <-- This is the crucial line
       };
       await onFinalizeAndPay(appointment.id, grandTotal, billDetails);
     } catch (err: any) { setError(err.message); }
@@ -155,7 +161,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
         <div className="flex justify-between items-center mb-4 pb-3 border-b">
           <div>
             <h2 className="text-xl font-semibold">Bill for: <span className="text-indigo-600">{customer?.name}</span></h2>
-            <p className="text-sm text-gray-500 mt-1">Service by: <span className="font-medium">{stylist?.name || 'N/A'}</span></p>
+            <p className="text-sm text-gray-500 mt-1">Service by: <span className="font-medium">{stylist?.staffInfo?.name || 'N/A'}</span></p>
           </div>
           <button onClick={onClose} className="p-1 text-gray-500 text-2xl hover:text-gray-700">×</button>
         </div>

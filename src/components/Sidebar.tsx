@@ -72,7 +72,7 @@ const Sidebar = () => {
   const navItems: NavItemConfig[] = useMemo(() => [
     { href: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { href: '/appointment', label: 'Appointments', icon: <AppointmentsIcon /> },
-    { href: '/crm', label: 'CRM', icon: <CrmIcon /> },
+    { href: '/crm', label: 'Customers', icon: <CrmIcon /> },
     {
       href: '/staffmanagement',
       label: 'StaffManagement',

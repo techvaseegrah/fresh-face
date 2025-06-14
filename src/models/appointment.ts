@@ -28,6 +28,11 @@ const appointmentSchema = new Schema({
     index: true
   },
   
+  stylistName: {
+    type: String,
+    required: [true, 'Stylist name must be saved at the time of booking.']
+  },
+  
   date: { 
     type: Date, 
     required: true 

@@ -27,7 +27,7 @@ interface AddCustomerFormData { name: string; email: string; phoneNumber: string
 // ===================================================================================
 
 // --- CRM Customer Detail Panel (Read-Only) ---
-const CrmCustomerDetailPanel: React.FC<{customer: CrmCustomer | null, isOpen: boolean, onClose: () => void, onAddMembership: (customerId: string) => void}> = ({ customer, isOpen, onClose, onAddMembership }) => {
+const CrmCustomerDetailPanel: React.FC<{ customer: CrmCustomer | null, isOpen: boolean, onClose: () => void, onAddMembership: (customerId: string) => void }> = ({ customer, isOpen, onClose, onAddMembership }) => {
   const formatDate = (dateString?: string) => { if (!dateString) return 'N/A'; return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }); };
   const panelClasses = `fixed top-0 right-0 h-full bg-white shadow-2xl transition-transform duration-300 ease-in-out z-40 w-full md:w-[400px] lg:w-[450px] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`;
   if (!isOpen && !customer) return <aside className={panelClasses}></aside>;
@@ -150,6 +150,8 @@ export default function CrmPage() {
     } catch (e: any) { setAddMembershipError("Error: " + e.message); }
     finally { setIsMembershipPlansLoading(false); }
   };
+
+
   const handleCloseAddMembershipModal = () => { setIsAddMembershipModalOpen(false); setCustomerToAddMembershipTo(null); setSelectedPlanIdForNewMembership(''); setAddMembershipError(null); };
   const handleConfirmAndSubmitMembership = async () => {
     if (!customerToAddMembershipTo || !selectedPlanIdForNewMembership) return;

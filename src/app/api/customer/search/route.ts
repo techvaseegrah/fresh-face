@@ -4,6 +4,7 @@ import Customer from '@/models/customermodel';
 import Appointment from '@/models/appointment';
 import Service from '@/models/service';
 import Stylist from '@/models/stylist';
+import Staff from '@/models/staff'; // IMPORTANT: Import the Staff model
 import CustomerMembership from '@/models/customerMembership';
 import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
@@ -43,53 +44,37 @@ export async function GET(req: Request) {
 
       // --- Fetch all related customer data in parallel for performance ---
       const [activeMembership, appointmentHistory, loyaltyData] = await Promise.all([
-        // Query 1: Find the customer's active membership plan
-        CustomerMembership.findOne({
-          customerId: customer._id,
-          status: 'Active',
-          endDate: { $gte: new Date() } // Ensure membership is not expired
-        }).populate({
-            path: 'membershipPlanId',
-            model: MembershipPlan,
-            select: 'name status'
-        }),
+        CustomerMembership.findOne({ customerId: customer._id, status: 'Active', endDate: { $gte: new Date() } }).populate({ path: 'membershipPlanId', model: MembershipPlan, select: 'name status' }),
 
-        // Query 2: Find the 10 most recent paid appointments
+        // ============================ THIS IS THE CRITICAL FIX ============================
         Appointment.find({ customerId: customer._id, status: 'Paid' })
           .sort({ date: -1 })
           .limit(10)
-          .populate({ path: 'stylistId', model: Stylist, select: 'name' })
+          .populate({
+              path: 'stylistId', // 1. Populate the stylistId field...
+              populate: {
+                  path: 'staffInfo', // 2. ...then, within that, populate the staffInfo field
+                  model: Staff,      // 3. USE THE IMPORTED MODEL DIRECTLY for reliability
+                  select: 'name'     // 4. Select the name from the Staff model
+              }
+          })
           .populate({ path: 'serviceIds', model: Service, select: 'name' })
           .lean(),
+        // ==================================================================================
           
-        // Query 3: Calculate the total loyalty points from the transaction log
         LoyaltyTransaction.aggregate([
           { $match: { customerId: customer._id } },
-          {
-            $group: {
-              _id: null, // Group all transactions for the customer into one result
-              totalPoints: {
-                $sum: {
-                  // Add points for 'Credit', subtract points for 'Debit'
-                  $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }]
-                }
-              }
-            }
-          }
+          { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
         ])
       ]);
 
-      // Extract the calculated points from the aggregation result
       const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
 
       // --- Construct the final, detailed customer object for the frontend ---
       const customerDetails = {
         ...customer,
         isMember: !!activeMembership,
-        membershipDetails: activeMembership ? { 
-          planName: (activeMembership.membershipPlanId as any)?.name || 'Unknown Plan',
-          status: (activeMembership as any).status 
-        } : null,
+        membershipDetails: activeMembership ? { planName: (activeMembership.membershipPlanId as any)?.name || 'Unknown Plan', status: (activeMembership as any).status } : null,
         loyaltyPoints: calculatedLoyaltyPoints,
         lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).date : null,
         appointmentHistory: appointmentHistory.map(apt => ({
@@ -97,7 +82,8 @@ export async function GET(req: Request) {
           date: (apt as any).date,
           services: ((apt as any).serviceIds || []).map((s: any) => s.name),
           totalAmount: (apt as any).amount || 0,
-          stylistName: (apt as any).stylistId?.name || 'N/A',
+          // This fallback logic handles both old and new appointments correctly
+          stylistName: (apt as any).stylistName || (apt as any).stylistId?.staffInfo?.name || 'N/A',
         }))
       };
 

@@ -10,7 +10,15 @@ import { toast } from 'react-toastify';
 //  INTERFACES
 // ===================================================================================
 interface CustomerFromAPI { _id: string; id: string; name: string; phoneNumber?: string; }
-interface StylistFromAPI { _id: string; id: string; name: string; }
+interface StylistFromAPI { 
+    _id: string; 
+    id: string; 
+    // This is the new, nested structure
+    staffInfo: {
+        name: string;
+        image?: string;
+    };
+}
 interface AppointmentWithCustomer {
   _id: string; id: string;
   customerId: CustomerFromAPI;
@@ -59,6 +67,7 @@ export default function AppointmentPage() {
       });
       const res = await fetch(`/api/appointment?${params.toString()}`);
       const data = await res.json();
+      console.log("RAW DATA FROM API:", data.appointments); 
       if (!res.ok || !data.success) throw new Error(data.message || 'Failed to fetch appointments');
       
       setAllAppointments(data.appointments);
@@ -170,7 +179,7 @@ export default function AppointmentPage() {
                 {allAppointments.map((appointment) => {
                   const customerName = appointment.customerId?.name || 'N/A';
                   const customerPhone = appointment.customerId?.phoneNumber || 'N/A';
-                  const stylistName = appointment.stylistId?.name || 'N/A';
+                  const stylistName = appointment.stylistId?.staffInfo?.name || 'N/A';
                   const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map(s => s.name).join(', ') : (appointment.style || 'N/A');
                   return (
                     <tr key={appointment.id} className="bg-white border-b hover:bg-gray-50">
