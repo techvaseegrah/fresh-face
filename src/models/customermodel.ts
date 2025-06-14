@@ -12,6 +12,11 @@ const customerSchema = new mongoose.Schema({
     default: 0,
     min: 0 // Ensures points cannot go below zero at the database level
   },
+   isActive: {
+    type: Boolean,
+    default: true,
+    index: true // Add an index for performance when filtering for active customers
+  },
 
 }, { timestamps: true });
 

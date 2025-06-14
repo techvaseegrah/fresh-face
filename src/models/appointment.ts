@@ -1,44 +1,70 @@
-// salon-app/models/Appointment.ts
-import mongoose, { Schema, Document, Model } from "mongoose";
+// models/appointment.ts
+import mongoose, { Schema, model, models } from 'mongoose';
 
-export interface IAppointment extends Document {
-  customerName: string;
-  phoneNumber: string;
-  email: string;
-  style: string;
-  stylist: string;
-  date: Date;
-  time: string;
-  paymentMethod: string;
-  products: number[];
-  totalPrice: number;
-  status: "requested" | "confirmed" | "completed" | "cancelled";
-}
+// Ensure Mongoose knows about the other models it needs to reference.
+import './stylist'; 
+import './service';
+import './customermodel';
 
-const AppointmentSchema: Schema = new mongoose.Schema({
-  customerName: { type: String, required: true },
-  phoneNumber: { type: String, required: true },
-  email: { type: String, required: true },
-  style: { type: String, required: true },
-  stylist: { type: String, required: true },
-  date: { type: Date, required: true },
-  time: { type: String, required: true },
-  paymentMethod: { type: String, required: true },
-  products: [{ type: Number }],
-  totalPrice: { type: Number, default: 0 },
+const appointmentSchema = new Schema({
+  customerId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Customer', 
+    required: true 
+  },
+  
+  // This is the field that was missing or incorrect.
+  // It MUST be named 'serviceIds' and be an array of references.
+  serviceIds: [{ 
+    type: Schema.Types.ObjectId,
+    ref: 'Service',
+    required: [true, 'At least one service is required.']
+  }],
+  
+  stylistId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Stylist',
+    required: true,
+    index: true
+  },
+  
+  date: { 
+    type: Date, 
+    required: true 
+  },
+  time: { 
+    type: String, 
+    required: true 
+  },
+  notes: { 
+    type: String 
+  },
   status: {
     type: String,
-    enum: ["requested", "confirmed", "completed", "cancelled"],
-    default: "requested",
+    enum: [
+      'Scheduled',
+      'Checked-In',
+      'Billed',
+      'Paid',
+      'Cancelled',
+      'No-Show'
+    ],
+    default: 'Scheduled'
   },
+  amount: {
+    type: Number 
+  },
+  invoiceId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Invoice', // This name must exactly match your Invoice model name
+    index: true, // Good for performance
+  },
+  
 }, { timestamps: true });
 
-// This prevents model recompilation errors in Next.js hot reload
-const Appointment: Model<IAppointment> =
-  mongoose.models.Appointment ||
-  mongoose.model<IAppointment>("Appointment", AppointmentSchema);
+// Indexes to speed up common database queries
+appointmentSchema.index({ stylistId: 1, date: 1 });
+appointmentSchema.index({ customerId: 1, date: -1 });
 
+const Appointment = models.Appointment || model('Appointment', appointmentSchema);
 export default Appointment;
-
-
-

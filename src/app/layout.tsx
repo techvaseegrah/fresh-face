@@ -1,11 +1,13 @@
-// app/layout.tsx
-import './globals.css';
-import { Providers } from './providers';
+'use client';
 
-export const metadata = {
-  title: 'Fresh Face Salon',
-  description: 'Salon Management System',
-};
+import { Inter } from "next/font/google";
+import "./globals.css";
+import Sidebar from "@/components/Sidebar";
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { SessionProvider } from "next-auth/react";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export default function RootLayout({
   children,
@@ -14,10 +16,25 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <Providers>
-          {children}
-        </Providers>
+      <body className={`${inter.className} bg-gray-50`}>
+        <SessionProvider>
+          <Sidebar />
+          <main className="ml-0 p-8">
+            {children}
+          </main>
+          <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop={false}
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="light"
+          />
+        </SessionProvider>
       </body>
     </html>
   );

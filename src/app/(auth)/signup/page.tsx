@@ -4,7 +4,7 @@ import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/user';
 import Role from '@/models/role';
 
-export async function POST(request: Request) {
+export default async function POST(request: Request) {
   try {
     await connectToDatabase();
     

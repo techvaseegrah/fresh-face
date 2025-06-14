@@ -1,157 +1,148 @@
-// app/api/customer/route.ts
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
-import Appointment from '@/models/appointment'; // For deriving activity status
+import Appointment from '@/models/appointment';
 import mongoose from 'mongoose';
 
+// ===================================================================================
+//  TYPE DEFINITIONS
+// ===================================================================================
+
+// Defines the shape of the customer document for type safety with .lean()
 interface LeanCustomer {
   _id: mongoose.Types.ObjectId;
-  createdAt: Date; // Make sure this exists from timestamps: true
+  createdAt?: Date;
   name: string;
-  // Add other fields you select or derive
-  [key: string]: any;
+  email?: string;
+  phoneNumber: string;
+  isActive?: boolean;
 }
 
-interface LeanAppointment {
-  date?: Date;
-  [key: string]: any;
+// Defines the shape of the result from our aggregation query for status calculation
+interface AggregatedAppointment {
+  _id: mongoose.Types.ObjectId; // This will be the customerId
+  lastAppointmentDate: Date;
 }
 
-// GET ALL CUSTOMERS with Pagination and Search
+// ===================================================================================
+//  GET: Handler for fetching customers with search & pagination & active filter
+// ===================================================================================
 export async function GET(req: Request) {
   try {
     await connectToDatabase();
+    
+    // --- 1. Read Parameters from URL ---
     const { searchParams } = new URL(req.url);
-
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '10', 10);
-    const searchTerm = searchParams.get('search') || '';
-
+    const searchQuery = searchParams.get('search');
     const skip = (page - 1) * limit;
 
-    // Build query for search (case-insensitive)
-    const queryOptions: any = {};
-    if (searchTerm) {
-      queryOptions.name = { $regex: searchTerm, $options: 'i' };
+    // --- 2. Build the Search Query object ---
+    // The base query ALWAYS filters for active customers.
+    let query: any = { isActive: true };
+
+    // If a search query is provided, add the search logic on top of the base query.
+    if (searchQuery) {
+      const searchRegex = new RegExp(searchQuery, 'i'); // Case-insensitive
+      query.$or = [
+        { name: searchRegex },
+        //{ email: searchRegex },
+        { phoneNumber: searchRegex }
+      ];
     }
 
-    // Get total count of matching documents for pagination metadata
-    const totalCustomers = await Customer.countDocuments(queryOptions);
+    // --- 3. Perform Database Queries in Parallel for Efficiency ---
+    const [customersFromDb, totalCustomers] = await Promise.all([
+      // Query 1: Get the customers for the *current page* that are active and match search
+      Customer.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean<LeanCustomer[]>(),
+      
+      // Query 2: Get the *total count* of customers that are active and match search
+      Customer.countDocuments(query)
+    ]);
+    
+    // --- 4. Calculate 'Active/Inactive/New' Status for Each Customer ---
+    const customerIds = customersFromDb.map(c => c._id);
+    const latestAppointments = await Appointment.aggregate<AggregatedAppointment>([
+      { $match: { customerId: { $in: customerIds } } },
+      { $sort: { date: -1 } },
+      { $group: { _id: '$customerId', lastAppointmentDate: { $first: '$date' } } }
+    ]);
+    
+    const appointmentMap = new Map(latestAppointments.map(a => [a._id.toString(), a.lastAppointmentDate]));
+    const twoMonthsAgo = new Date();
+    twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+
+    const customersWithStatus = customersFromDb.map(customer => {
+      let status: 'Active' | 'Inactive' | 'New' = 'New';
+      const lastAppointmentDate = appointmentMap.get(customer._id.toString());
+      
+      if (lastAppointmentDate) {
+        status = new Date(lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
+      } else if (customer.createdAt) {
+        status = new Date(customer.createdAt) < twoMonthsAgo ? 'Inactive' : 'New';
+      }
+      
+      return {
+        ...customer,
+        id: customer._id.toString(),
+        status: status,
+      };
+    });
+
+    // --- 5. Calculate Total Pages ---
     const totalPages = Math.ceil(totalCustomers / limit);
 
-    const customersFromDb = await Customer.find(queryOptions)
-      .sort({ name: 1 }) // Or createdAt: -1 for newest first
-      .skip(skip)
-      .limit(limit)
-      .lean<LeanCustomer[]>();
-
-    // Derive activity status for the current page of customers
-    const customersWithDerivedStatus = await Promise.all(
-      customersFromDb.map(async (cust) => {
-        const lastAppointment = await Appointment.findOne({ customerId: cust._id })
-          .sort({ date: -1 })
-          .select('date')
-          .lean<{ date?: Date } | null>();
-
-        let derivedStatus: 'Active' | 'Inactive' | 'New' = 'New';
-        const twoMonthsAgo = new Date();
-        twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
-
-        if (lastAppointment && lastAppointment.date) {
-          const lastAppointmentDate = new Date(lastAppointment.date);
-          if (lastAppointmentDate >= twoMonthsAgo) {
-            derivedStatus = 'Active';
-          } else {
-            derivedStatus = 'Inactive';
-          }
-        } else if (cust.createdAt) { // Ensure cust.createdAt exists
-          const customerCreationDate = new Date(cust.createdAt);
-          if (customerCreationDate < twoMonthsAgo) {
-            derivedStatus = 'Inactive';
-          } else {
-            derivedStatus = 'New';
-          }
-        } else {
-            derivedStatus = 'Inactive'; // Fallback if no createdAt
-        }
-
-
-        return {
-          ...cust,
-          id: cust._id.toString(),
-          _id: cust._id.toString(),
-          status: derivedStatus,
-          createdAt: cust.createdAt ? new Date(cust.createdAt).toISOString() : undefined,
-          updatedAt: cust.updatedAt ? new Date(cust.updatedAt).toISOString() : undefined,
-        };
-      })
-    );
-
+    // --- 6. Return the Final Response ---
     return NextResponse.json({
       success: true,
-      customers: customersWithDerivedStatus,
+      customers: customersWithStatus,
       pagination: {
-        currentPage: page,
-        totalPages,
         totalCustomers,
+        totalPages,
+        currentPage: page,
         limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    }, { status: 200 });
+      }
+    });
 
-  } catch (err: any) {
-    console.error('API Error in GET /api/customer (all with pagination):', err);
-    return NextResponse.json(
-      { success: false, message: err.message || 'Failed to fetch customer data', error: String(err) },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error("API Error fetching customers:", error);
+    return NextResponse.json({ success: false, message: "Failed to fetch customers" }, { status: 500 });
   }
 }
 
-// POST (Create a new customer) - Remains largely the same
+// ===================================================================================
+//  POST: Handler for creating a new customer
+// ===================================================================================
 export async function POST(req: Request) {
-    // ... (Your existing POST logic for creating a customer) ...
-    // Ensure it returns the created customer object with an 'id' field.
-    try {
-        await connectToDatabase();
-        const body = await req.json();
-        const { name, email, phoneNumber, ...otherData } = body;
-
-        const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
-        const normalizedPhoneNumber = phoneNumber ? String(phoneNumber).replace(/\D/g, '') : null;
-
-        if (!name || !normalizedEmail || !normalizedPhoneNumber) {
-        return NextResponse.json({ success: false, message: "Name, email, and phone number are required." }, { status: 400 });
-        }
-
-        let existingCustomerDoc = await Customer.findOne({
-        $or: [ { email: normalizedEmail }, { phoneNumber: normalizedPhoneNumber }]
-        });
-
-        if (existingCustomerDoc) {
-        const existingCustomerObject = existingCustomerDoc.toObject();
-        return NextResponse.json({
-            success: false, message: "Customer with this email or phone number already exists.",
-            customer: { ...existingCustomerObject, id: existingCustomerObject._id.toString() }, exists: true
-        }, { status: 409 });
-        }
-
-        const newCustomerDoc = await Customer.create({
-        name: name.trim(), email: normalizedEmail, phoneNumber: normalizedPhoneNumber, ...otherData
-        });
-
-        const newCustomerObject = newCustomerDoc.toObject();
-        return NextResponse.json({
-        success: true, customer: { ...newCustomerObject, id: newCustomerObject._id.toString() }
-        }, { status: 201 });
-
-    } catch (err: any) {
-        console.error('API Error in POST /api/customer:', err);
-        if (err.code === 11000) {
-            return NextResponse.json({ success: false, message: "A customer with this email or phone number already exists (DB constraint).", exists: true }, { status: 409 });
-        }
-        return NextResponse.json({ success: false, message: err.message || 'Failed to create customer' }, { status: 500 });
+  try {
+    await connectToDatabase();
+    const body = await req.json();
+    
+    if (!body.name || !body.phoneNumber) {
+        return NextResponse.json({ success: false, message: 'Name and Phone Number are required.' }, { status: 400 });
     }
+
+    const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
+
+    const existingCustomer = await Customer.findOne({ phoneNumber: normalizedPhoneNumber });
+    if (existingCustomer) {
+        return NextResponse.json({ success: false, message: 'A customer with this phone number already exists.', exists: true, customer: existingCustomer }, { status: 409 });
+    }
+
+    // New customers are active by default because of the schema setting `isActive: true`
+    const newCustomer = await Customer.create({
+        ...body,
+        phoneNumber: normalizedPhoneNumber,
+    });
+
+    return NextResponse.json({ success: true, customer: newCustomer }, { status: 201 });
+  } catch (error: any) {
+    console.error("API Error creating customer:", error);
+    return NextResponse.json({ success: false, message: "Failed to create customer" }, { status: 500 });
+  }
 }

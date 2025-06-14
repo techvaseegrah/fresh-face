@@ -1,153 +1,125 @@
-// app/api/billing/route.ts
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import Customer from '@/models/customermodel';
-import MembershipPlan from '@/models/membershipPlan';
-import CustomerMembership from '@/models/customerMembership';
 import Invoice from '@/models/invoice';
 import Appointment from '@/models/appointment';
+import Stylist from '@/models/stylist';
+import Customer from '@/models/customermodel';
+import CustomerMembership from '@/models/customerMembership';
+import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
+import Product from '@/models/product';
 import mongoose from 'mongoose';
 
-// Interface for the items received in the request body for the bill
+// ===================================================================================
+//  INTERFACES
+// ===================================================================================
 interface BillItemPayload {
-    itemType: 'service' | 'product' | 'membership';
-    itemId?: string;
-    name: string;
-    unitPrice: number;
-    quantity?: number;
+  itemType: 'service' | 'product' | 'membership';
+  itemId: string;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  finalPrice: number;
 }
-
 interface BillingRequestBody {
-    customerId: string;
-    appointmentId?: string;
-    items: BillItemPayload[];
-    paymentMethod: string;
-    notes?: string;
+  customerId: string;
+  appointmentId: string;
+  items: BillItemPayload[];
+  paymentMethod: string;
+  notes?: string;
+  grandTotal: number;
+  purchasedMembershipPlanId?: string;
+  stylistId: string;
 }
 
+// ===================================================================================
+//  API ENDPOINT: POST /api/billing
+// ===================================================================================
 export async function POST(req: Request) {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    await connectToDatabase();
     const body = await req.json() as BillingRequestBody;
+    const {
+      customerId, appointmentId, items, grandTotal,
+      paymentMethod, notes, purchasedMembershipPlanId, stylistId
+    } = body;
 
-    const { customerId, appointmentId, items, paymentMethod, notes } = body;
-
-    if (!customerId || !items || items.length === 0 || !paymentMethod) {
-      await session.abortTransaction(); session.endSession();
-      return NextResponse.json({ success: false, message: "Customer ID, items, and payment method are required." }, { status: 400 });
+    // --- 1. Validate Input ---
+    if (!customerId || !stylistId || !appointmentId || !items) {
+      throw new Error("Missing required billing fields.");
     }
-    const customer = await Customer.findById(customerId).session(session);
-    if (!customer) {
-      await session.abortTransaction(); session.endSession();
-      return NextResponse.json({ success: false, message: "Customer not found." }, { status: 404 });
-    }
+    
+    await connectToDatabase();
+    
+    const stylist = await Stylist.findById(stylistId).session(session);
+    if (!stylist) throw new Error("Stylist not found for billing.");
 
-    const invoiceLineItems: any[] = [];
-    let calculatedSubTotal = 0;
-    let newCustomerMembershipId: mongoose.Types.ObjectId | null = null;
-    let totalPointsToAward = 0; // Initialize points counter
+    // --- 2. Calculate subtotals ---
+    const serviceTotal = items.filter((i: BillItemPayload) => i.itemType === 'service').reduce((sum: number, i: BillItemPayload) => sum + i.finalPrice, 0);
+    const productTotal = items.filter((i: BillItemPayload) => i.itemType === 'product').reduce((sum: number, i: BillItemPayload) => sum + i.finalPrice, 0);
+    
+    // --- 3. Create the Invoice ---
+    const [newInvoice] = await Invoice.create([{
+      customerId, appointmentId, stylistId, stylistName: stylist.name,
+      lineItems: items, // Using the field name from your provided code
+      subTotal: grandTotal, serviceTotal, productTotal, grandTotal,
+      paymentMethod, paymentStatus: 'Paid', notes,
+    }], { session });
 
-    // --- Process each item in the bill ---
-    for (const item of items) {
-      const quantity = item.quantity || 1;
-      const finalPriceForItem = item.unitPrice * quantity;
-
-      invoiceLineItems.push({
-        itemType: item.itemType,
-        itemId: item.itemId ? new mongoose.Types.ObjectId(item.itemId) : undefined,
-        name: item.name,
-        quantity: quantity,
-        unitPrice: item.unitPrice,
-        discountApplied: 0,
-        finalPrice: finalPriceForItem,
-      });
-      calculatedSubTotal += finalPriceForItem;
-
-      // ===> THIS IS THE CORRECTED LOGIC <===
-      // If the item is a service, award 1 point.
-      if (item.itemType === 'service') {
-        totalPointsToAward += 1; // Add 1 point for this service.
-      }
-      
-      // --- Process new membership purchase ---
-      if (item.itemType === 'membership' && item.itemId) {
-        const plan = await MembershipPlan.findById(item.itemId).session(session);
-        if (!plan) { throw new Error(`Membership plan with ID ${item.itemId} not found.`); }
-        const startDate = new Date();
-        const endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + plan.durationDays);
-        const newMembership = new CustomerMembership({
-          customerId: customer._id, membershipPlanId: plan._id, startDate, endDate, status: 'Active', pricePaid: item.unitPrice,
-        });
-        await newMembership.save({ session });
-        newCustomerMembershipId = newMembership._id;
+    // --- 4. Create New Membership if Purchased ---
+    if (purchasedMembershipPlanId) {
+      const planItem = items.find((i: BillItemPayload) => i.itemType === 'membership');
+      const purchasedPlanDoc = await MembershipPlan.findById(purchasedMembershipPlanId).session(session);
+      if (planItem && purchasedPlanDoc) {
+        const [newMembership] = await CustomerMembership.create([{
+          customerId: customerId,
+          membershipPlanId: purchasedPlanDoc._id,
+          startDate: new Date(),
+          endDate: new Date(new Date().setDate(new Date().getDate() + purchasedPlanDoc.durationDays)),
+          status: 'Active',
+          pricePaid: purchasedPlanDoc.price,
+          originalInvoiceId: newInvoice._id,
+        }], { session });
+        await Invoice.updateOne({ _id: newInvoice._id }, { purchasedMembershipId: newMembership._id }, { session });
       }
     }
+    
+    // --- 5. Update Appointment Status ---
+    await Appointment.updateOne({ _id: appointmentId }, { status: 'Paid', invoiceId: newInvoice._id, amount: grandTotal }, { session });
 
-    const grandTotal = calculatedSubTotal;
-
-    // --- Create the Invoice ---
-    const newInvoice = new Invoice({
-      customerId: customer._id,
-      appointmentId: appointmentId ? new mongoose.Types.ObjectId(appointmentId) : undefined,
-      lineItems: invoiceLineItems,
-      subTotal: calculatedSubTotal,
-      grandTotal,
-      paymentMethod,
-      paymentStatus: 'Paid',
-      notes,
-      purchasedMembershipId: newCustomerMembershipId,
-    });
-    await newInvoice.save({ session });
-
-    // --- Update Appointment ---
-    if (appointmentId) {
-      await Appointment.findByIdAndUpdate(appointmentId, {
-        status: 'Paid',
-        invoiceId: newInvoice._id,
-        amount: grandTotal,
-      }, { session });
-    }
-
-    // --- Award the Points (if any were earned) ---
-    if (totalPointsToAward > 0) {
-      await Customer.updateOne(
-        { _id: customer._id },
-        { $inc: { loyaltyPoints: totalPointsToAward } },
-        { session }
-      );
+    // --- 6. Release the Stylist ---
+    await Stylist.updateOne({ _id: stylistId }, { availabilityStatus: 'Available', currentAppointmentId: null }, { session });
+    
+    // --- 7. Award and Log Loyalty Points ---
+    const serviceCount = items.filter((i: BillItemPayload) => i.itemType === 'service').length;
+    const pointsToAward = serviceCount; // Your simplified rule: 1 point per service
+    if (pointsToAward > 0) {
       await LoyaltyTransaction.create([{
-        customerId: customer._id,
-        points: totalPointsToAward,
-        type: 'Credit',
-        reason: `Points earned from services on Invoice`,
-        relatedAppointmentId: appointmentId ? new mongoose.Types.ObjectId(appointmentId) : undefined,
+        customerId: customerId, points: pointsToAward, type: 'Credit',
+        reason: `Earned from ${pointsToAward} service(s) on Invoice`,
+        relatedAppointmentId: appointmentId
       }], { session });
     }
 
+    // If all operations were successful, commit the transaction.
     await session.commitTransaction();
-    session.endSession();
 
     return NextResponse.json({
       success: true,
-      message: "Billing completed successfully and invoice created.",
+      message: "Billing complete, invoice created, and points awarded!",
       invoiceId: newInvoice._id.toString(),
-      customerMembershipId: newCustomerMembershipId ? newCustomerMembershipId.toString() : null,
-      pointsAwarded: totalPointsToAward,
+      pointsToAward: pointsToAward,
     }, { status: 201 });
 
   } catch (error: any) {
+    // If any error occurs, abort the entire transaction.
     await session.abortTransaction();
-    session.endSession();
     console.error("Billing API Error:", error);
-    if (error.name === 'ValidationError') {
-        const messages = Object.values(error.errors).map((err: any) => err.message);
-        return NextResponse.json({ success: false, message: "Validation failed.", errors: messages }, { status: 400 });
-    }
-    return NextResponse.json({ success: false, message: error.message || "An unexpected error occurred during billing." }, { status: 500 });
+    return NextResponse.json({ success: false, message: error.message || "An unexpected error occurred." }, { status: 500 });
+  } finally {
+    // Always end the session, regardless of success or failure.
+    await session.endSession();
   }
 }
