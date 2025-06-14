@@ -1,7 +1,9 @@
 // src/app/api/staff/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '../../../lib/mongodb';       // VERIFY THIS PATH
-import Staff, { IStaff } from '../../../models/staff'; // VERIFY THIS PATH & CASING
+import dbConnect from '../../../lib/mongodb';
+import Staff, { IStaff } from '../../../models/staff';
+import Stylist from '../../../models/stylist'; // <-- IMPORT THE STYLIST MODEL
 import mongoose, { Types } from 'mongoose';
 
 // Helper function to validate MongoDB ObjectId string
@@ -13,18 +15,25 @@ type LeanStaffDocument = Omit<IStaff, keyof mongoose.Document<Types.ObjectId>> &
 
 
 export async function GET(request: NextRequest) {
-  // Removed authError = await validateToken(request);
-
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const action = searchParams.get('action');
   const staffId = searchParams.get('id');
+  const position = searchParams.get('position');
 
   try {
     if (action === 'list') {
-      const staffList = await Staff.find({ status: 'active' })
+      const filter: { status: 'active'; position?: string } = { status: 'active' };
+
+      // If a position is provided in the URL, add it to the filter
+      if (position) {
+        filter.position = position; 
+      }
+      
+      const staffList = await Staff.find(filter)
         .sort({ name: 'asc' })
         .lean<LeanStaffDocument[]>();
+
       return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
     }
 
@@ -47,8 +56,6 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // Removed authError = await validateToken(request);
-
   await dbConnect();
   try {
     const body = await request.json();
@@ -58,17 +65,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Name, email, and position are required' }, { status: 400 });
     }
 
-    const existingStaff = await Staff.findOne({ email }).lean<LeanStaffDocument>();
+    const existingStaff = await Staff.findOne({ email }).lean();
     if (existingStaff) {
       return NextResponse.json({ success: false, error: 'Email already exists' }, { status: 400 });
     }
 
+    // Create the new staff member
     const newStaffDoc = new Staff({
       name, email, position, phone, salary, address,
       image: image || null,
       status: 'active',
     });
     const savedStaff = await newStaffDoc.save();
+
+    // ======================================================================
+    //  AUTOMATION LOGIC: Check position and create a linked stylist record
+    // ======================================================================
+    if (savedStaff.position.toLowerCase().trim() === 'stylist') {
+      // Check if a stylist record for this staff member already exists to prevent duplicates
+      const existingStylist = await Stylist.findOne({ staffInfo: savedStaff._id });
+      if (!existingStylist) {
+        console.log(`Staff member ${savedStaff.name} is a stylist. Creating linked stylist record...`);
+        const newStylist = new Stylist({
+          staffInfo: savedStaff._id, // This creates the link to the Staff document
+          availabilityStatus: 'Available', // Set the initial status
+        });
+        await newStylist.save();
+        console.log(`Stylist record created for ${savedStaff.name}.`);
+      }
+    }
+    // ======================================================================
+
     const staffObject = savedStaff.toObject();
     return NextResponse.json({ success: true, data: {...staffObject, id: savedStaff._id.toString()} }, { status: 201 });
   } catch (error: any) {
@@ -84,8 +111,6 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  // Removed authError = await validateToken(request);
-
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const staffId = searchParams.get('id');
@@ -108,7 +133,6 @@ export async function PUT(request: NextRequest) {
     if (image !== undefined) updateData.image = image;
     if (status !== undefined && ['active', 'inactive'].includes(status)) updateData.status = status as 'active' | 'inactive';
 
-
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 });
     }
@@ -127,6 +151,9 @@ export async function PUT(request: NextRequest) {
     if (!updatedStaff) {
       return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
     }
+
+    // Future Enhancement: If position changes from/to 'stylist', you could add/remove the Stylist record here.
+
     return NextResponse.json({ success: true, data: {...updatedStaff, id: updatedStaff._id.toString()} });
   } catch (error: any) {
     console.error('Error updating staff:', error);
@@ -141,8 +168,6 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  // Removed authError = await validateToken(request);
-
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const staffId = searchParams.get('id');
@@ -152,15 +177,8 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const staffToDeactivate = await Staff.findById(staffId);
-    if (!staffToDeactivate) {
-        return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
-    }
-    if (staffToDeactivate.status === 'inactive') {
-        const staffObject = staffToDeactivate.toObject();
-        return NextResponse.json({ success: true, message: 'Staff member already inactive', data: {...staffObject, id: staffToDeactivate._id.toString()} });
-    }
-
+    // This is a "soft delete" that just deactivates the staff member.
+    // This is good practice because it preserves historical data.
     const deactivatedStaff = await Staff.findByIdAndUpdate(
       staffId,
       { status: 'inactive' },
@@ -168,7 +186,7 @@ export async function DELETE(request: NextRequest) {
     ).lean<LeanStaffDocument>();
 
     if (!deactivatedStaff) {
-        return NextResponse.json({ success: false, error: 'Staff member not found during deactivation attempt' }, { status: 404 });
+        return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
     }
     return NextResponse.json({ success: true, message: 'Staff member deactivated successfully', data: {...deactivatedStaff, id: deactivatedStaff._id.toString()} });
   } catch (error: any) {
