@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/appointment';
-import Stylist from '@/models/stylist';
+import Stylist from '@/models/Stylist';
 import mongoose from 'mongoose';
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {

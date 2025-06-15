@@ -1,14 +1,12 @@
+// app/api/appointment/route.ts - FIX THE POPULATION
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/appointment';
 import Customer from '@/models/customermodel';
-import Stylist from '@/models/stylist';
-import Service from '@/models/service';
+import Stylist from '@/models/Stylist';
+import ServiceItem from '@/models/ServiceItem'; // Changed from Service
 import mongoose from 'mongoose';
 
-// ===================================================================================
-//  GET: Handler with Full Search, Filtering, and Pagination
-// ===================================================================================
 export async function GET(req: Request) {
   try {
     await connectToDatabase();
@@ -18,40 +16,44 @@ export async function GET(req: Request) {
     const limit = parseInt(searchParams.get('limit') || '10', 10);
     const statusFilter = searchParams.get('status');
     const searchQuery = searchParams.get('search');
+    const appointmentType = searchParams.get('type');
     const skip = (page - 1) * limit;
 
-    // --- Build the Aggregation Pipeline ---
     const pipeline: mongoose.PipelineStage[] = [];
 
-    // Stage 1: Lookup (Join) with the Customers collection
-    pipeline.push({
-      $lookup: {
-        from: 'customers', // The actual name of the collection in MongoDB
-        localField: 'customerId',
-        foreignField: '_id',
-        as: 'customerInfo'
-      }
-    });
+    // Lookup customers and stylists
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'customers',
+          localField: 'customerId',
+          foreignField: '_id',
+          as: 'customerInfo'
+        }
+      },
+      {
+        $lookup: {
+          from: 'stylists',
+          localField: 'stylistId',
+          foreignField: '_id',
+          as: 'stylistInfo'
+        }
+      },
+      { $unwind: { path: "$customerInfo", preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: "$stylistInfo", preserveNullAndEmptyArrays: true } }
+    );
 
-    // Stage 2: Lookup (Join) with the Stylists collection
-    pipeline.push({
-      $lookup: {
-        from: 'stylists', // The actual name of the collection
-        localField: 'stylistId',
-        foreignField: '_id',
-        as: 'stylistInfo'
-      }
-    });
-    
-    // Deconstruct the joined arrays to make them top-level fields for easier searching
-    pipeline.push({ $unwind: { path: "$customerInfo", preserveNullAndEmptyArrays: true } });
-    pipeline.push({ $unwind: { path: "$stylistInfo", preserveNullAndEmptyArrays: true } });
-
-    // --- Build the $match stage for filtering and searching ---
+    // Build match conditions
     const matchStage: any = {};
+    
     if (statusFilter && statusFilter !== 'All') {
       matchStage.status = statusFilter;
     }
+    
+    if (appointmentType && appointmentType !== 'All') {
+      matchStage.appointmentType = appointmentType;
+    }
+    
     if (searchQuery) {
       const searchRegex = new RegExp(searchQuery, 'i');
       matchStage.$or = [
@@ -61,40 +63,33 @@ export async function GET(req: Request) {
       ];
     }
     
-    // Only add the $match stage if there are any conditions to apply
     if (Object.keys(matchStage).length > 0) {
       pipeline.push({ $match: matchStage });
     }
 
-    // --- Perform two queries: one for paginated data, one for total count ---
     const [results, totalAppointmentsResult] = await Promise.all([
-      // Query 1: Get the appointments for the current page
       Appointment.aggregate(pipeline)
         .sort({ date: 1, time: 1 })
         .skip(skip)
         .limit(limit),
-      
-      // Query 2: Get the total count of documents matching the entire pipeline
       Appointment.aggregate([...pipeline, { $count: 'total' }])
     ]);
     
     const totalAppointments = totalAppointmentsResult.length > 0 ? totalAppointmentsResult[0].total : 0;
     const totalPages = Math.ceil(totalAppointments / limit);
     
-    // The main data is already joined by the aggregation.
-    // We just need to populate the serviceIds array separately.
+    // === FIX: Populate ServiceItem instead of Service ===
     const appointments = await Appointment.populate(results, {
-        path: 'serviceIds',
-        model: Service,
-        select: 'name price'
+      path: 'serviceIds',
+      model: ServiceItem,
+      select: 'name price duration' // Use 'duration' instead of 'durationMinutes'
     });
 
-    // Remap fields to match the frontend's expected interface
     const formattedAppointments = appointments.map(apt => ({
       ...apt,
       id: apt._id.toString(),
-      customerId: apt.customerInfo, // Use the data from the lookup
-      stylistId: apt.stylistInfo,   // Use the data from the lookup
+      customerId: apt.customerInfo,
+      stylistId: apt.stylistInfo,
     }));
 
     return NextResponse.json({
@@ -105,51 +100,100 @@ export async function GET(req: Request) {
 
   } catch (error: any) {
     console.error("API Error fetching appointments:", error);
-    return NextResponse.json({ success: false, message: "Failed to fetch appointments." }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: "Failed to fetch appointments." 
+    }, { status: 500 });
   }
 }
 
-
-// ===================================================================================
-//  POST: Handler for creating a new appointment
-// ===================================================================================
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json();
 
-    const { phoneNumber, customerName, email, serviceIds, stylistId, date, time, notes } = body;
+    const { 
+      phoneNumber, 
+      customerName, 
+      email, 
+      serviceIds, 
+      stylistId, 
+      date, 
+      time, 
+      notes, 
+      status,
+      appointmentType = 'Online'
+    } = body;
 
-    if (!phoneNumber || !customerName || !serviceIds || serviceIds.length === 0 || !stylistId || !date || !time) {
-      return NextResponse.json({ success: false, message: "Missing required fields." }, { status: 400 });
+    if (!phoneNumber || !customerName || !serviceIds || serviceIds.length === 0 || !stylistId || !date || !time || !status) {
+      return NextResponse.json({ 
+        success: false, 
+        message: "Missing required fields." 
+      }, { status: 400 });
     }
 
-    // Find or create the customer
+    // === FIX: Calculate duration using ServiceItem ===
+    const services = await ServiceItem.find({ 
+      _id: { $in: serviceIds } 
+    }).select('duration'); // Use 'duration' field
+
+    const estimatedDuration = services.reduce((total, service) => total + service.duration, 0);
+
+    // Find or create customer
     let customerDoc = await Customer.findOne({ phoneNumber: phoneNumber.trim() });
     if (!customerDoc) {
-      customerDoc = await Customer.create({ name: customerName, phoneNumber: phoneNumber.trim(), email });
+      customerDoc = await Customer.create({ 
+        name: customerName, 
+        phoneNumber: phoneNumber.trim(), 
+        email 
+      });
     }
 
-    const newAppointment = await Appointment.create({
+    // Create appointment
+    const appointmentData: any = {
       customerId: customerDoc._id,
       stylistId: stylistId,
       serviceIds: serviceIds,
       date: new Date(date),
       time: time,
       notes: notes,
-      status: 'Scheduled',
-    });
+      status: status,
+      appointmentType: appointmentType,
+      appointmentTime: new Date(`${date}T${time}`),
+      estimatedDuration: estimatedDuration
+    };
 
-    // Populate the response to send back full details immediately
+    // Set timestamps based on status
+    if (status === 'Checked-In') {
+      appointmentData.checkInTime = new Date();
+    }
+
+    const newAppointment = await Appointment.create(appointmentData);
+
+    // Lock stylist if checked-in
+    if (status === 'Checked-In') {
+      const stylist = await Stylist.findById(stylistId);
+      if (stylist && stylist.lockStylist) {
+        await stylist.lockStylist(newAppointment._id);
+      }
+    }
+
+    // === FIX: Populate with ServiceItem ===
     const populatedAppointment = await Appointment.findById(newAppointment._id)
-        .populate({ path: 'customerId', select: 'name phoneNumber' })
-        .populate({ path: 'stylistId', select: 'name' })
-        .populate({ path: 'serviceIds', select: 'name price' });
+      .populate({ path: 'customerId', select: 'name phoneNumber' })
+      .populate({ path: 'stylistId', select: 'name' })
+      .populate({ path: 'serviceIds', select: 'name price duration' });
 
-    return NextResponse.json({ success: true, appointment: populatedAppointment }, { status: 201 });
+    return NextResponse.json({ 
+      success: true, 
+      appointment: populatedAppointment 
+    }, { status: 201 });
 
   } catch (err: any) {
     console.error("API Error creating appointment:", err);
-    return NextResponse.json({ success: false, message: err.message || "Failed to create appointment." }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: err.message || "Failed to create appointment." 
+    }, { status: 500 });
   }
 }

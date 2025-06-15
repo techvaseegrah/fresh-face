@@ -5,7 +5,6 @@ import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/appointment';
 import Customer from '@/models/customermodel';
-import CustomerMembership from '@/models/customerMembership';
 import Invoice from '@/models/invoice';
 
 export async function GET() {
@@ -32,7 +31,6 @@ export async function GET() {
       activeMembers,
       pendingAppointments,
       completedToday,
-      newCustomersThisMonth
     ] = await Promise.all([
       // Today's appointments
       Appointment.countDocuments({
@@ -59,11 +57,7 @@ export async function GET() {
         }
       ]),
       
-      // Active memberships
-      CustomerMembership.countDocuments({
-        status: 'Active',
-        endDate: { $gte: today }
-      }),
+  
       
       // Pending appointments
       Appointment.countDocuments({
@@ -95,7 +89,6 @@ export async function GET() {
       activeMembers,
       pendingAppointments,
       completedToday,
-      newCustomersThisMonth,
       avgSessionValue
     };
 

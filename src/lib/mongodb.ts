@@ -4,11 +4,8 @@ import mongoose from 'mongoose';
 // === VITAL: EXPLICITLY IMPORT ALL YOUR MONGOOSE MODELS HERE ===
 import '@/models/customermodel';    // Ensures 'Customer' model is registered
 import '@/models/appointment';      // Ensures 'Appointment' model is registered
-import '@/models/membershipPlan';   // Ensures 'MembershipPlan' model is registered
-import '@/models/customerMembership';// Ensures 'CustomerMembership' model is registered
 import '@/models/invoice';   
-import '@/models/product'
-import '@/models/service'        // Ensures 'Invoice' model is registered
+import '@/models/Product'
 // Add any other Mongoose models you have in your project
 
 const MONGODB_URI = process.env.MONGODB_URI;

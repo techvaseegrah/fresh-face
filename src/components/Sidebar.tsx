@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
@@ -14,7 +14,8 @@ import {
   PowerIcon,
   LightBulbIcon,
   DocumentTextIcon,
-  ShoppingCartIcon
+  ShoppingCartIcon,
+  BuildingStorefrontIcon // Added from the second file
 } from '@heroicons/react/24/outline';
 
 const Sidebar = () => {
@@ -25,72 +26,40 @@ const Sidebar = () => {
     signOut({ callbackUrl: '/login' });
   };
 
-  // Check permissions for navigation items
-  const canAccessDashboard = session && hasPermission(session.user.role.permissions, PERMISSIONS.DASHBOARD_READ);
-  const canAccessCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ);
-  const canAccessAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_READ);
-  const canAccessBilling = session && hasPermission(session.user.role.permissions, PERMISSIONS.BILLING_READ);
-  const canAccessUsers = session && hasPermission(session.user.role.permissions, PERMISSIONS.USERS_READ);
-  const canAccessRoles = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_READ);
-  const canAccessEBUpload = session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_UPLOAD);
-  const canAccessEBViewCalculate = session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE);
-  const canAccessProcurement = session && hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_READ);
+  // --- MERGED PERMISSION CHECKS ---
+  const userPermissions = session?.user?.role?.permissions || [];
+  
+  const canAccessDashboard = hasPermission(userPermissions, PERMISSIONS.DASHBOARD_READ);
+  const canAccessAppointments = hasPermission(userPermissions, PERMISSIONS.APPOINTMENTS_READ);
+  const canAccessCustomers = hasPermission(userPermissions, PERMISSIONS.CUSTOMERS_READ);
+  const canAccessBilling = hasPermission(userPermissions, PERMISSIONS.BILLING_READ);
+  const canAccessUsers = hasPermission(userPermissions, PERMISSIONS.USERS_READ);
+  const canAccessRoles = hasPermission(userPermissions, PERMISSIONS.ROLES_READ);
+  const canAccessEBUpload = hasPermission(userPermissions, PERMISSIONS.EB_UPLOAD);
+  const canAccessEBViewCalculate = hasPermission(userPermissions, PERMISSIONS.EB_VIEW_CALCULATE);
+  const canAccessProcurement = hasPermission(userPermissions, PERMISSIONS.PROCUREMENT_READ);
+  const canAccessStore = hasPermission(userPermissions, PERMISSIONS.STORE_READ);
 
+
+  // --- MERGED NAVIGATION ITEMS ---
   const navItems = [
-    {
-      href: '/dashboard',
-      label: 'Dashboard',
-      icon: HomeIcon,
-      show: canAccessDashboard
-    },
-    {
-      href: '/appointment',
-      label: 'Bookings',
-      icon: CalendarDaysIcon,
-      show: canAccessAppointments
-    },
-    {
-      href: '/crm',
-      label: 'Customers',
-      icon: UserGroupIcon,
-      show: canAccessCustomers
-    },
-    {
-      href: '/eb-upload',
-      label: 'EB Upload',
-      icon: LightBulbIcon,
-      show: canAccessEBUpload
-    },
-    {
-      href: '/eb-view',
-      label: 'EB View & Calculate',
-      icon: DocumentTextIcon,
-      show: canAccessEBViewCalculate
-    },
-    {
-      href: '/procurement',
-      label: 'Procurements', // Changed from 'name' to 'label'
-      icon: ShoppingCartIcon,
-      show: canAccessProcurement // Changed from 'permission' to 'show'
-    },
+    { href: '/dashboard', label: 'Dashboard', icon: HomeIcon, show: canAccessDashboard },
+    { href: '/appointment', label: 'Appointments', icon: CalendarDaysIcon, show: canAccessAppointments },
+    { href: '/crm', label: 'Customers', icon: UserGroupIcon, show: canAccessCustomers },
+    { href: '/billing', label: 'Billing', icon: CreditCardIcon, show: canAccessBilling },
+    // This was '/shop' in one file and not present in the other. I've used '/store' as that's the common name.
+    { href: '/shop', label: 'Shop', icon: BuildingStorefrontIcon, show: canAccessStore },
+    { href: '/eb-upload', label: 'EB Upload', icon: LightBulbIcon, show: canAccessEBUpload },
+    { href: '/eb-view', label: 'EB View & Calculate', icon: DocumentTextIcon, show: canAccessEBViewCalculate },
+    { href: '/procurement', label: 'Procurements', icon: ShoppingCartIcon, show: canAccessProcurement },
   ];
 
   const adminItems = [
-    {
-      href: '/admin/users',
-      label: 'Users',
-      icon: UsersIcon,
-      show: canAccessUsers
-    },
-    {
-      href: '/admin/roles',
-      label: 'Roles',
-      icon: CogIcon,
-      show: canAccessRoles
-    }
+    { href: '/admin/users', label: 'Users', icon: UsersIcon, show: canAccessUsers },
+    { href: '/admin/roles', label: 'Roles', icon: CogIcon, show: canAccessRoles }
   ];
 
-  // Filter items based on permissions
+  // Filter items based on the 'show' property
   const visibleNavItems = navItems.filter(item => item.show);
   const visibleAdminItems = adminItems.filter(item => item.show);
 
@@ -104,7 +73,8 @@ const Sidebar = () => {
           </div>
           <div>
             <h1 className="text-xl font-semibold text-gray-800">Fresh Face</h1>
-            <p className="text-xs text-gray-500">Food Management</p>
+            {/* The subtitle was different in each file, I've chosen one. You can adjust this. */}
+            <p className="text-xs text-gray-500">Salon Management</p>
           </div>
         </div>
       </div>
@@ -117,13 +87,10 @@ const Sidebar = () => {
             const isActive = pathname === item.href || pathname.startsWith(item.href);
 
             return (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive
-                    ? 'bg-gray-100 text-black font-medium'
-                    : 'hover:bg-gray-50 hover:text-black'
-                  }`}
+              <Link key={item.label} href={item.href}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${
+                  isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'
+                }`}
               >
                 <Icon className="h-5 w-5" />
                 <span>{item.label}</span>
@@ -141,16 +108,13 @@ const Sidebar = () => {
               </div>
               {visibleAdminItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.href || pathname.startsWith(item.href);
+                const isActive = pathname.startsWith(item.href);
 
                 return (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive
-                        ? 'bg-gray-100 text-black font-medium'
-                        : 'hover:bg-gray-50 hover:text-black'
-                      }`}
+                  <Link key={item.label} href={item.href}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${
+                      isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'
+                    }`}
                   >
                     <Icon className="h-5 w-5" />
                     <span>{item.label}</span>
@@ -181,8 +145,7 @@ const Sidebar = () => {
                 </div>
               </div>
             </div>
-            <button
-              onClick={handleSignOut}
+            <button onClick={handleSignOut}
               className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
             >
               <PowerIcon className="h-4 w-4" />

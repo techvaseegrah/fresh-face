@@ -1,21 +1,37 @@
-import mongoose,  {Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema, Model } from 'mongoose';
 
-interface Stylist extends Document {
-    name: string;
-    experience : string;
-    specialization :string;
-    contactNumber: string;
-    
+// Interface for TypeScript type safety
+export interface IStylist extends Document {
+  name: string;
+  experience: number; // in years
+  specialization: string;
+  phone: string;
 }
 
-const stylistSchema = new Schema <Stylist> ({
-    name: {type: String, required: true},
-    experience: {type: String, required: true},
-    specialization: {type: String, required: true},
-    contactNumber: {type:String, required: true},
+// Mongoose Schema definition
+const StylistSchema: Schema<IStylist> = new Schema({
+  name: {
+    type: String,
+    required: [true, 'Stylist name is required.'],
+    trim: true,
+  },
+  experience: {
+    type: Number,
+    required: [true, 'Experience in years is required.'],
+    min: 0,
+  },
+  specialization: {
+    type: String,
+    required: [true, 'Specialization is required.'],
+    trim: true,
+  },
+  phone: {
+    type: String,
+    required: [true, 'Phone number is required.'],
+    trim: true,
+  },
+}, { timestamps: true }); // Adds createdAt and updatedAt timestamps
 
-});
+const StylistModel: Model<IStylist> = mongoose.models.Stylist || mongoose.model<IStylist>('Stylist', StylistSchema);
 
-const Stylist = mongoose.models.Stylist || mongoose.model<Stylist>('Stylist', stylistSchema);
-
-export default Stylist;
+export default StylistModel;

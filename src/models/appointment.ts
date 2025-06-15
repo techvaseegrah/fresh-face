@@ -1,9 +1,7 @@
-// models/appointment.ts
+// models/appointment.ts - ADD AMOUNT CALCULATION
 import mongoose, { Schema, model, models } from 'mongoose';
-
-// Ensure Mongoose knows about the other models it needs to reference.
-import './stylist'; 
-import './service';
+import './Stylist'; 
+import './ServiceItem';
 import './customermodel';
 
 const appointmentSchema = new Schema({
@@ -13,11 +11,9 @@ const appointmentSchema = new Schema({
     required: true 
   },
   
-  // This is the field that was missing or incorrect.
-  // It MUST be named 'serviceIds' and be an array of references.
   serviceIds: [{ 
     type: Schema.Types.ObjectId,
-    ref: 'Service',
+    ref: 'ServiceItem',
     required: [true, 'At least one service is required.']
   }],
   
@@ -28,43 +24,103 @@ const appointmentSchema = new Schema({
     index: true
   },
   
-  date: { 
-    type: Date, 
-    required: true 
+  appointmentType: {
+    type: String,
+    enum: ['Online', 'Offline'],
+    required: true,
+    default: 'Online'
   },
-  time: { 
-    type: String, 
-    required: true 
-  },
-  notes: { 
-    type: String 
-  },
+  
   status: {
     type: String,
     enum: [
-      'Scheduled',
+      'Appointment',
       'Checked-In',
-      'Billed',
+      'Checked-Out',
       'Paid',
       'Cancelled',
       'No-Show'
     ],
-    default: 'Scheduled'
+    default: 'Appointment'
   },
+  
+  // Timestamps
+  appointmentTime: { type: Date, required: true },
+  checkInTime: { type: Date, sparse: true },
+  checkOutTime: { type: Date, sparse: true },
+  
+  date: { type: Date, required: true },
+  time: { type: String, required: true },
+  notes: { type: String },
+  
+  // === BILLING INFORMATION ===
   amount: {
-    type: Number 
+    type: Number,
+    default: 0,
+    min: 0
   },
+  
+  membershipDiscount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
+  finalAmount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
   invoiceId: { 
     type: Schema.Types.ObjectId, 
-    ref: 'Invoice', // This name must exactly match your Invoice model name
-    index: true, // Good for performance
+    ref: 'Invoice',
+    sparse: true
   },
+  
+  // Duration tracking
+  estimatedDuration: { type: Number, required: true },
+  actualDuration: { type: Number, sparse: true }
   
 }, { timestamps: true });
 
-// Indexes to speed up common database queries
+// Method to calculate appointment total
+appointmentSchema.methods.calculateTotal = async function(includeAdditionalItems = []) {
+  await this.populate('serviceIds customerId');
+  
+  let serviceTotal = 0;
+  let membershipSavings = 0;
+  
+  // Calculate service costs
+  for (const service of this.serviceIds) {
+    const isCustomerMember = this.customerId?.isMembership || false;
+    const hasDiscount = isCustomerMember && service.membershipRate;
+    
+    const price = hasDiscount ? service.membershipRate : service.price;
+    serviceTotal += price;
+    
+    if (hasDiscount) {
+      membershipSavings += (service.price - service.membershipRate);
+    }
+  }
+  
+  // Add any additional items (products, etc.)
+  const additionalTotal = includeAdditionalItems.reduce((sum, item) => sum + item.finalPrice, 0);
+  
+  const total = serviceTotal + additionalTotal;
+  
+  return {
+    serviceTotal,
+    additionalTotal,
+    membershipSavings,
+    grandTotal: total,
+    originalTotal: serviceTotal + membershipSavings + additionalTotal
+  };
+};
+
 appointmentSchema.index({ stylistId: 1, date: 1 });
 appointmentSchema.index({ customerId: 1, date: -1 });
+appointmentSchema.index({ status: 1, appointmentType: 1 });
 
 const Appointment = models.Appointment || model('Appointment', appointmentSchema);
 export default Appointment;

@@ -30,7 +30,6 @@ interface DashboardStats {
   activeMembers: number;
   pendingAppointments: number;
   completedToday: number;
-  newCustomersThisMonth: number;
   avgSessionValue: number;
 }
 
@@ -157,7 +156,6 @@ export default function DashboardPage() {
     activeMembers: 0,
     pendingAppointments: 0,
     completedToday: 0,
-    newCustomersThisMonth: 0,
     avgSessionValue: 0
   });
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
@@ -424,7 +422,6 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">New Customers</span>
-                <span className="font-semibold text-blue-600">{stats.newCustomersThisMonth}</span>
               </div>
               <div className="flex items-center justify-between border-t pt-4">
                 <span className="text-gray-600">Avg. Session Value</span>

@@ -1,27 +1,22 @@
+// app/api/customer/search/route.ts - UPDATED TO INCLUDE ALL APPOINTMENT STATUSES
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
 import Appointment from '@/models/appointment';
-import Service from '@/models/service';
-import Stylist from '@/models/stylist';
-import CustomerMembership from '@/models/customerMembership';
-import MembershipPlan from '@/models/membershipPlan';
+import ServiceItem from '@/models/ServiceItem';
+import Stylist from '@/models/Stylist';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
 
-// ===================================================================================
-//  TYPE DEFINITIONS
-// ===================================================================================
 interface LeanCustomer {
   _id: mongoose.Types.ObjectId;
   name: string;
   email?: string;
   phoneNumber: string;
+  isMembership?: boolean;
+  loyaltyPoints?: number;
 }
 
-// ===================================================================================
-//  API ENDPOINT
-// ===================================================================================
 export async function GET(req: Request) {
   try {
     await connectToDatabase();
@@ -34,43 +29,29 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'A search query is required.' }, { status: 400 });
     }
 
-    // --- BRANCH 1: Fetch Full Details for the Side Panel ---
+    // --- FETCH FULL DETAILS FOR SIDE PANEL ---
     if (fetchDetails) {
       const customer = await Customer.findOne({ phoneNumber: query.trim() }).lean<LeanCustomer>();
       if (!customer) {
         return NextResponse.json({ success: true, customer: null });
       }
 
-      // --- Fetch all related customer data in parallel for performance ---
-      const [activeMembership, appointmentHistory, loyaltyData] = await Promise.all([
-        // Query 1: Find the customer's active membership plan
-        CustomerMembership.findOne({
-          customerId: customer._id,
-          status: 'Active',
-          endDate: { $gte: new Date() } // Ensure membership is not expired
-        }).populate({
-            path: 'membershipPlanId',
-            model: MembershipPlan,
-            select: 'name status'
-        }),
-
-        // Query 2: Find the 10 most recent paid appointments
-        Appointment.find({ customerId: customer._id, status: 'Paid' })
+      const [appointmentHistory, loyaltyData] = await Promise.all([
+        // === CHANGED: Get ALL appointments, not just 'Paid' ones ===
+        Appointment.find({ customerId: customer._id })
           .sort({ date: -1 })
-          .limit(10)
+          .limit(20) // Get more history
           .populate({ path: 'stylistId', model: Stylist, select: 'name' })
-          .populate({ path: 'serviceIds', model: Service, select: 'name' })
+          .populate({ path: 'serviceIds', model: ServiceItem, select: 'name' })
           .lean(),
-          
-        // Query 3: Calculate the total loyalty points from the transaction log
+
         LoyaltyTransaction.aggregate([
           { $match: { customerId: customer._id } },
           {
             $group: {
-              _id: null, // Group all transactions for the customer into one result
+              _id: null,
               totalPoints: {
                 $sum: {
-                  // Add points for 'Credit', subtract points for 'Debit'
                   $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }]
                 }
               }
@@ -79,16 +60,15 @@ export async function GET(req: Request) {
         ])
       ]);
 
-      // Extract the calculated points from the aggregation result
       const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
 
-      // --- Construct the final, detailed customer object for the frontend ---
       const customerDetails = {
         ...customer,
-        isMember: !!activeMembership,
-        membershipDetails: activeMembership ? { 
-          planName: (activeMembership.membershipPlanId as any)?.name || 'Unknown Plan',
-          status: (activeMembership as any).status 
+        _id: customer._id.toString(),
+        isMember: customer.isMembership || false,
+        membershipDetails: customer.isMembership ? {
+          planName: 'Member',
+          status: 'Active'
         } : null,
         loyaltyPoints: calculatedLoyaltyPoints,
         lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).date : null,
@@ -96,24 +76,25 @@ export async function GET(req: Request) {
           _id: (apt as any)._id.toString(),
           date: (apt as any).date,
           services: ((apt as any).serviceIds || []).map((s: any) => s.name),
-          totalAmount: (apt as any).amount || 0,
+          totalAmount: (apt as any).finalAmount || (apt as any).amount || 0, // Use finalAmount if available
           stylistName: (apt as any).stylistId?.name || 'N/A',
+          status: (apt as any).status || 'Unknown' // === ADDED: Include status ===
         }))
       };
 
       return NextResponse.json({ success: true, customer: customerDetails });
-
-    } 
-    // --- BRANCH 2: General Live Search for the Dropdown ---
+    }
+    // --- GENERAL SEARCH FOR DROPDOWN ---
     else {
       if (query.trim().length < 2) {
         return NextResponse.json({ success: true, customers: [] });
       }
       const searchRegex = new RegExp(query, 'i');
       const customers = await Customer.find({
-        $or: [{ name: { $regex: searchRegex } }, { phoneNumber: { $regex: searchRegex } }]
-      }).select('name phoneNumber email').limit(10).lean();
-      
+        $or: [{ name: { $regex: searchRegex } }, { phoneNumber: { $regex: searchRegex } }],
+        isActive: true
+      }).select('name phoneNumber email isMembership').limit(10).lean();
+
       return NextResponse.json({ success: true, customers });
     }
   } catch (error: any) {
