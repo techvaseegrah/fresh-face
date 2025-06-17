@@ -1,3 +1,5 @@
+// /src/app/api/billing/route.ts
+
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Invoice from '@/models/invoice';
@@ -8,8 +10,11 @@ import CustomerMembership from '@/models/customerMembership';
 import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import Product from '@/models/product';
-import Staff from '@/models/staff'; // <-- IMPORTANT: Import the Staff model
+import Staff from '@/models/staff'; 
 import mongoose from 'mongoose';
+// ======================= NEW CODE: IMPORT TARGET MODEL =======================
+import TargetData from '@/models/TargetSheet'; 
+// ===========================================================================
 
 // ===================================================================================
 //  INTERFACES (keep as is)
@@ -34,7 +39,7 @@ interface BillingRequestBody {
 }
 
 // ===================================================================================
-//  API ENDPOINT: POST /api/billing (CORRECTED)
+//  API ENDPOINT: POST /api/billing (CORRECTED AND INTEGRATED)
 // ===================================================================================
 export async function POST(req: Request) {
   const session = await mongoose.startSession();
@@ -54,25 +59,20 @@ export async function POST(req: Request) {
     
     await connectToDatabase();
 
-    // ============================ THE FIX: PART 1 of 3 ============================
     // Find the stylist AND populate the linked staffInfo to get the name
     const stylistWithStaffInfo = await Stylist.findById(stylistId)
       .populate({
         path: 'staffInfo',
         model: 'Staff',
-        select: 'name' // We only need the name
+        select: 'name' 
       })
       .session(session);
     
-    // Add validation to ensure the population worked
     if (!stylistWithStaffInfo || !stylistWithStaffInfo.staffInfo || !stylistWithStaffInfo.staffInfo.name) {
       throw new Error(`Could not find a valid name for stylist ID: ${stylistId}. The linked staff record may be missing.`);
     }
 
-    // ============================ THE FIX: PART 2 of 3 ============================
-    // Extract the name string from the populated data
     const stylistName = stylistWithStaffInfo.staffInfo.name;
-    // ===============================================================================
 
     // --- 2. Calculate subtotals ---
     const serviceTotal = items.filter((i: BillItemPayload) => i.itemType === 'service').reduce((sum: number, i: BillItemPayload) => sum + i.finalPrice, 0);
@@ -83,9 +83,7 @@ export async function POST(req: Request) {
       customerId,
       appointmentId,
       stylistId,
-      // ============================ THE FIX: PART 3 of 3 ============================
-      stylistName: stylistName, // Use the fetched name string here
-      // ===============================================================================
+      stylistName: stylistName,
       lineItems: items,
       subTotal: grandTotal,
       serviceTotal,
@@ -133,11 +131,43 @@ export async function POST(req: Request) {
       }], { session });
     }
 
+    // ======================= NEW LOGIC: UPDATE PERFORMANCE TRACKER =======================
+    // --- 8. Find and update the latest target sheet ---
+    const latestTargetSheet = await TargetData.findOne().sort({ createdAt: -1 }).session(session);
+
+    if (latestTargetSheet) {
+      const currentAchieved = latestTargetSheet.summary.achieved;
+      const newAchievedService = (currentAchieved.service || 0) + serviceTotal;
+      const newAchievedRetail = (currentAchieved.retail || 0) + productTotal;
+      const newAchievedNetSales = (currentAchieved.netSales || 0) + grandTotal;
+      const newAchievedBills = (currentAchieved.bills || 0) + 1;
+      const newAchievedAbv = newAchievedBills > 0 ? (newAchievedNetSales / newAchievedBills) : 0;
+      
+      const updatedAchievedMetrics = {
+        ...currentAchieved,
+        service: newAchievedService,
+        retail: newAchievedRetail,
+        netSales: newAchievedNetSales,
+        bills: newAchievedBills,
+        abv: newAchievedAbv,
+      };
+      
+      await TargetData.updateOne(
+        { _id: latestTargetSheet._id },
+        { $set: { "summary.achieved": updatedAchievedMetrics } },
+        { session }
+      );
+      console.log('Performance tracker updated with new bill data.');
+    } else {
+      console.warn('Billing completed, but no active target sheet was found to update.');
+    }
+    // =====================================================================================
+
     await session.commitTransaction();
 
     return NextResponse.json({
       success: true,
-      message: "Billing complete, invoice created, and points awarded!",
+      message: "Billing complete, tracker updated, and points awarded!",
       invoiceId: newInvoice._id.toString(),
       pointsToAward: pointsToAward,
     }, { status: 201 });

@@ -1,3 +1,5 @@
+// /src/app/api/target/route.ts
+
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 // FIX: Import the model AND the new plain data interface

@@ -1,4 +1,4 @@
-// /api/appointment/route.ts
+// /src/app/api/appointment/route.ts
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -6,11 +6,15 @@ import Appointment from '@/models/appointment';
 import Customer from '@/models/customermodel';
 import Stylist from '@/models/stylist';
 import Service from '@/models/service';
-import Staff from '@/models/staff'; // Import the Staff model
+import Staff from '@/models/staff';
 import mongoose from 'mongoose';
+// ======================= NEW CODE: IMPORT TARGET MODEL =======================
+import TargetData from '@/models/TargetSheet';
+// ===========================================================================
+
 
 // ===================================================================================
-//  GET: Handler with Full Search, Filtering, and Pagination
+//  GET: Handler with Full Search, Filtering, and Pagination (Original code)
 // ===================================================================================
 export async function GET(req: Request) {
   try {
@@ -35,7 +39,7 @@ export async function GET(req: Request) {
     // Stage 3: Nested Lookup to get Staff details from the Stylist info
     pipeline.push({
       $lookup: {
-        from: 'staffs', // IMPORTANT: Verify this is your exact collection name (e.g., 'staff')
+        from: 'staffs', 
         localField: 'stylistInfo.staffInfo',
         foreignField: '_id',
         as: 'stylistStaffInfo'
@@ -52,7 +56,7 @@ export async function GET(req: Request) {
       const searchRegex = new RegExp(searchQuery, 'i');
       matchStage.$or = [
         { 'customerInfo.name': searchRegex },
-        { 'stylistStaffInfo.name': searchRegex }, // Search by the correct nested name
+        { 'stylistStaffInfo.name': searchRegex }, 
         { 'customerInfo.phoneNumber': searchRegex }
       ];
     }
@@ -98,9 +102,13 @@ export async function GET(req: Request) {
 }
 
 // ===================================================================================
-//  POST: Handler for creating a new appointment
+//  POST: Handler for creating a new appointment (WITH TRANSACTION & TRACKER UPDATE)
 // ===================================================================================
 export async function POST(req: Request) {
+  // === NEW: Start transaction session ===
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -110,38 +118,51 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields." }, { status: 400 });
     }
 
-    // Find or create the customer
-    let customerDoc = await Customer.findOne({ phoneNumber: phoneNumber.trim() });
+    // Find or create the customer (within transaction)
+    let customerDoc = await Customer.findOne({ phoneNumber: phoneNumber.trim() }).session(session);
     if (!customerDoc) {
-      customerDoc = await Customer.create({ name: customerName, phoneNumber: phoneNumber.trim(), email });
+      [customerDoc] = await Customer.create([{ name: customerName, phoneNumber: phoneNumber.trim(), email }], { session });
     }
 
-    // ===> CRITICAL FIX: Fetch stylist's name before creating appointment <===
+    // Fetch stylist's name before creating appointment (within transaction)
     const stylistWithInfo = await Stylist.findById(stylistId).populate({
       path: 'staffInfo',
       model: 'Staff',
       select: 'name'
-    });
+    }).session(session);
 
     if (!stylistWithInfo || !stylistWithInfo.staffInfo?.name) {
       throw new Error(`Could not find a valid name for stylist with ID: ${stylistId}`);
     }
     const stylistNameForDb = stylistWithInfo.staffInfo.name;
-    // ===> END OF FIX <===
 
-    // Create the new appointment with the required stylistName field
-    const newAppointment = await Appointment.create({
+    // Create the new appointment with the required stylistName field (within transaction)
+    const [newAppointment] = await Appointment.create([{
       customerId: customerDoc._id,
       stylistId: stylistId,
-      stylistName: stylistNameForDb, // <-- Provide the fetched name
+      stylistName: stylistNameForDb,
       serviceIds: serviceIds,
       date: new Date(date),
       time: time,
       notes: notes,
       status: 'Scheduled',
-    });
+    }], { session });
+
+    // === NEW LOGIC: UPDATE PERFORMANCE TRACKER (within transaction) ===
+    // Use $inc for an atomic increment operation on the latest document.
+    await TargetData.updateOne(
+      {}, // An empty filter matches the first document found by sorting
+      { $inc: { "summary.achieved.appointmentsFromCallbacks": 1 } },
+      { session, sort: { createdAt: -1 } } 
+    );
+    console.log("Performance tracker 'appointments' metric incremented.");
+    // ================================================================
+
+    // === NEW: Commit the transaction if all operations succeed ===
+    await session.commitTransaction();
 
     // Populate the response to send back full details to the frontend
+    // This can be done AFTER the transaction is committed successfully.
     const populatedAppointment = await Appointment.findById(newAppointment._id)
         .populate({ path: 'customerId', select: 'name phoneNumber' })
         .populate({
@@ -154,14 +175,20 @@ export async function POST(req: Request) {
         })
         .populate({ path: 'serviceIds', select: 'name price' });
 
-    return NextResponse.json({ success: true, appointment: populatedAppointment }, { status: 201 });
+    return NextResponse.json({ success: true, appointment: populatedAppointment, message: "Appointment created and tracker updated." }, { status: 201 });
 
   } catch (err: any) {
-    // Add specific error handling for Mongoose validation errors
+    // === NEW: Abort the transaction on any error ===
+    await session.abortTransaction();
+    
     if (err.name === 'ValidationError') {
       return NextResponse.json({ success: false, message: err.message, errors: err.errors }, { status: 400 });
     }
     console.error("API Error creating appointment:", err);
     return NextResponse.json({ success: false, message: err.message || "Failed to create appointment." }, { status: 500 });
+  
+  } finally {
+    // === NEW: Always end the session ===
+    await session.endSession();
   }
 }
