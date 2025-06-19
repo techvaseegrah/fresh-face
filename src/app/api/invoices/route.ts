@@ -1,62 +1,53 @@
-// src/app/api/invoices/route.ts - FINAL CORRECTED VERSION
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/dbConnect';
+import dbConnect from '@/lib/dbConnect'; // Assuming you have a dbConnect file
 import Invoice from '@/models/invoice';
 import Appointment from '@/models/Appointment';
-import ShopSetting from '@/models/ShopSetting';
+import ShopSetting from '@/models/ShopSetting'; // Use the correct settings model
 import Customer from '@/models/customermodel';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
-import Stylist from '@/models/Stylist'; // Added for updating stylist status
+import Stylist from '@/models/Stylist'; // Added Stylist model
 
 export async function POST(request: Request) {
-  await dbConnect();
-
   try {
+    await dbConnect();
+
     const body = await request.json();
-    // 1. Destructure all necessary fields, including serviceTotal and stylistId
     const { 
-        appointmentId, 
-        customerId, 
-        stylistId, 
-        serviceTotal, // <-- Key field for loyalty points
-        grandTotal, 
-        lineItems 
+      appointmentId, 
+      customerId,
+      stylistId, // Make sure to send this from the frontend
+      grandTotal, 
+      lineItems 
     } = body;
 
-    // Updated validation to check for all required fields
-    if (!appointmentId || !customerId || !stylistId || serviceTotal === undefined || grandTotal === undefined || !lineItems) {
+    // Validate essential data
+    if (!appointmentId || !customerId || !stylistId || grandTotal === undefined || !lineItems) {
       return NextResponse.json(
-        { success: false, message: "Missing required fields." },
+        { success: false, message: "Missing required fields (appointmentId, customerId, stylistId, grandTotal, lineItems)." },
         { status: 400 }
       );
     }
     
-    // ==================== START OF MODIFIED LOGIC ====================
-
-    // --- LOYALTY LOGIC (Based on Service Total) ---
+    // --- CORRECT LOYALTY POINTS LOGIC ---
     const settings = await ShopSetting.findOne({ key: 'defaultSettings' }).lean();
     let pointsEarned = 0;
-    
-    // Use serviceTotal for the calculation
-    const eligibleAmountForPoints = Number(serviceTotal);
+    const grandTotalValue = Number(grandTotal);
 
     // Default rule as a fallback
     const loyaltyRule = settings 
       ? { price: settings.loyaltyPointPerPrice, points: settings.loyaltyPointsAwarded }
       : { price: 100, points: 1 }; // Default: 1 point per 100
 
-    if (loyaltyRule.price > 0 && eligibleAmountForPoints > 0) {
-        // Use Math.floor to correctly calculate spending blocks from the service total
-        // Example: Math.floor(560 / 100) = 5
-        const spendingBlocks = Math.floor(eligibleAmountForPoints / loyaltyRule.price);
+    if (loyaltyRule.price > 0 && !isNaN(grandTotalValue) && grandTotalValue > 0) {
+        // This is the key calculation. It correctly drops the remainder.
+        // Example: Math.floor(560 / 100) = Math.floor(5.6) = 5
+        const spendingBlocks = Math.floor(grandTotalValue / loyaltyRule.price);
         
-        // Example: 5 blocks * 4 points/block = 20 points
+        // Example: 5 * 4 points = 20 points
         pointsEarned = spendingBlocks * loyaltyRule.points;
     }
 
-    // ===================== END OF MODIFIED LOGIC =====================
-
-    // Create the new invoice
+    // --- Create Invoice and Update Records ---
     const newInvoice = new Invoice({
       ...body, 
       paymentStatus: 'Paid'
@@ -64,53 +55,38 @@ export async function POST(request: Request) {
     
     const savedInvoice = await newInvoice.save();
 
-    // Use Promise.all to run database updates concurrently for better performance
+    // Perform all database updates concurrently for better performance
     await Promise.all([
-        // Update the Appointment
-        Appointment.findByIdAndUpdate(appointmentId, {
-            $set: { status: 'Paid', finalAmount: grandTotal, invoiceId: savedInvoice._id }
-        }),
-        // Make the Stylist available again
-        Stylist.findByIdAndUpdate(stylistId, {
-            isAvailable: true,
-            currentAppointmentId: null
-        }),
-        // Award loyalty points to the customer (if any were earned)
-        pointsEarned > 0 
-            ? Customer.findByIdAndUpdate(customerId, { $inc: { loyaltyPoints: pointsEarned } }) 
-            : Promise.resolve(),
-        // Create a transaction record for auditing purposes (if points were earned)
-        pointsEarned > 0 
-            ? LoyaltyTransaction.create({
-                customerId,
-                points: pointsEarned,
-                type: 'Credit',
-                reason: 'Completed Appointment Service',
-                relatedInvoiceId: savedInvoice._id,
-                relatedAppointmentId: appointmentId
-            }) 
-            : Promise.resolve()
+      // 1. Update Appointment Status
+      Appointment.findByIdAndUpdate(appointmentId, {
+          $set: { status: 'Paid', finalAmount: grandTotal, invoiceId: savedInvoice._id }
+      }),
+      // 2. Make Stylist Available Again
+      Stylist.findByIdAndUpdate(stylistId, {
+          isAvailable: true,
+          currentAppointmentId: null
+      }),
+      // 3. Award Loyalty Points (if any)
+      pointsEarned > 0 ? Customer.findByIdAndUpdate(customerId, { $inc: { loyaltyPoints: pointsEarned } }) : Promise.resolve(),
+      // 4. Create a Loyalty Transaction for Auditing
+      pointsEarned > 0 ? LoyaltyTransaction.create({
+          customerId,
+          points: pointsEarned,
+          type: 'Credit',
+          reason: `Purchase from Invoice #${savedInvoice.invoiceNumber}`,
+          relatedInvoiceId: savedInvoice._id
+      }) : Promise.resolve()
     ]);
 
-    // Return a successful response
-    return NextResponse.json(
-        { 
-            success: true,
-            message: `Invoice created successfully. ${pointsEarned} points awarded based on service total.`,
-            data: savedInvoice
-        }, 
-        { status: 201 }
-    );
+    return NextResponse.json({ 
+        success: true,
+        message: `Invoice created successfully. ${pointsEarned} loyalty points awarded.`,
+        data: savedInvoice
+    }, { status: 201 });
 
   } catch (error) {
     console.error("API Error POST /api/invoices:", error);
-    let errorMessage = "Internal Server Error";
-    if (error instanceof Error) {
-        errorMessage = error.message;
-        if (error.name === 'ValidationError') {
-            return NextResponse.json({ success: false, message: "Database Validation Failed", error: errorMessage }, { status: 400 });
-        }
-    }
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
     return NextResponse.json({ success: false, message: "Error creating invoice", error: errorMessage }, { status: 500 });
   }
 }
