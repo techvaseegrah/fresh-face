@@ -1,16 +1,15 @@
+// models/Invoice.ts - ENHANCED INVOICE MODEL
 import mongoose, { Schema, model, models } from 'mongoose';
 
-// ===================================================================================
-//  SUBDOCUMENT SCHEMA: LineItem
-// ===================================================================================
 const lineItemSchema = new Schema({
   itemType: {
     type: String,
-    enum: ['service', 'product', 'membership'],
+    enum: ['service', 'product'],
     required: true
   },
   itemId: { 
     type: Schema.Types.ObjectId,
+    required: true
   },
   name: {
     type: String,
@@ -25,91 +24,116 @@ const lineItemSchema = new Schema({
     type: Number,
     required: true
   },
+  membershipRate: {
+    type: Number,
+    sparse: true
+  },
   finalPrice: {
     type: Number,
     required: true
   },
+  membershipDiscount: {
+    type: Number,
+    default: 0
+  }
 }, { _id: false });
 
-
-// ===================================================================================
-//  MAIN INVOICE SCHEMA
-// ===================================================================================
 const invoiceSchema = new Schema({
   invoiceNumber: { 
     type: String,
     unique: true,
     sparse: true,
   },
+  
+  appointmentId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Appointment',
+    required: true,
+    index: true
+  },
+  
   customerId: {
     type: Schema.Types.ObjectId,
     ref: 'Customer',
     required: true,
     index: true
   },
-  appointmentId: {
-    type: Schema.Types.ObjectId,
-    ref: 'Appointment',
-    index: true,
-    sparse: true
-  },
-  // ===> ADDED STYLIST INFORMATION <===
+  
   stylistId: {
     type: Schema.Types.ObjectId,
     ref: 'Stylist',
     required: true
   },
-  stylistName: {
-    type: String,
-    required: true
+  
+  // Items
+  lineItems: [lineItemSchema],
+  
+  // Totals
+  serviceTotal: {
+    type: Number,
+    required: true,
+    default: 0
   },
   
-  lineItems: [lineItemSchema],
-
-  // --- Financials ---
-  subTotal: {
+  productTotal: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  
+  subtotal: {
     type: Number,
     required: true
   },
-  serviceTotal: {
-      type: Number,
-      required: true,
-      default: 0
+  
+  membershipDiscount: {
+    type: Number,
+    default: 0
   },
-  productTotal: {
-      type: Number,
-      required: true,
-      default: 0
-  },
+  
   grandTotal: {
     type: Number,
     required: true
   },
-
-  // --- Payment ---
+  
+  // Payment info
   paymentMethod: {
     type: String,
+    required: true
   },
+  
   paymentStatus: {
     type: String,
     enum: ['Paid', 'Pending', 'Refunded'],
     default: 'Paid'
   },
+  
   notes: {
     type: String,
     trim: true
   },
   
-  // --- Related Documents ---
-  purchasedMembershipId: {
-    type: Schema.Types.ObjectId,
-    ref: 'CustomerMembership',
-    sparse: true
+  // Membership info
+  customerWasMember: {
+    type: Boolean,
+    default: false
   },
-}, { 
-  timestamps: true 
+  
+  membershipGrantedDuringBilling: {
+    type: Boolean,
+    default: false
+  }
+  
+}, { timestamps: true });
+
+// Pre-save middleware to generate invoice number
+invoiceSchema.pre('save', async function(next) {
+  if (this.isNew && !this.invoiceNumber) {
+    const count = await mongoose.model('Invoice').countDocuments();
+    this.invoiceNumber = `INV-${String(count + 1).padStart(6, '0')}`;
+  }
+  next();
 });
 
 const Invoice = models.Invoice || model('Invoice', invoiceSchema);
-
 export default Invoice;

@@ -1,74 +1,110 @@
-// /src/app/api/target/route.ts
+// src/app/api/target/route.ts - KEEP THIS VERSION
 
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-// FIX: Import the model AND the new plain data interface
-import TargetData, { TargetSheetData } from '@/models/TargetSheet'; 
-import type { SummaryMetrics } from '@/app/api/types/target'; 
+import dbConnect from '@/lib/dbConnect';
+import TargetSheet from '@/models/TargetSheet';
+import Invoice from '@/models/invoice';
+import Appointment from '@/models/Appointment';
 
-// GET Handler: Fetches the latest data from MongoDB
-export async function GET(request: Request) {
-  try {
+export const dynamic = 'force-dynamic'; // This is important
+
+export async function GET(request: Request) { // Added request to access URL
+    // Log the incoming request to see the cache-buster
+    console.log("GET /api/target called with URL:", request.url);
+    // ... rest of your GET handler is correct ...
     await dbConnect();
-
-    const targetData = await TargetData.findOne().sort({ createdAt: -1 }).lean();
-
-    if (targetData) {
-      return NextResponse.json(targetData);
+    try {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        let targetSheet = await TargetSheet.findOne({ month: monthIdentifier });
+        if (!targetSheet) {
+            targetSheet = new TargetSheet({ month: monthIdentifier, target: {} });
+        }
+        const targets = {
+            service: targetSheet.target?.service || 0,
+            retail: targetSheet.target?.retail || 0,
+            bills: targetSheet.target?.bills || 0,
+            abv: targetSheet.target?.abv || 0,
+            callbacks: targetSheet.target?.callbacks || 0,
+            appointments: targetSheet.target?.appointments || 0,
+            netSales: (targetSheet.target?.service || 0) + (targetSheet.target?.retail || 0),
+        };
+        const invoiceAggregation = await Invoice.aggregate([
+            { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth }, paymentStatus: 'Paid' } },
+            { $group: { _id: null, totalService: { $sum: '$serviceTotal' }, totalRetail: { $sum: '$productTotal' }, totalBills: { $sum: 1 }, totalGrandAmount: { $sum: '$grandTotal' } } }
+        ]);
+        const achievedAppointmentsCount = await Appointment.countDocuments({
+            createdAt: { $gte: startOfMonth, $lte: endOfMonth },
+            status: { $nin: ['Cancelled', 'No-Show'] }
+        });
+        const achievedResult = invoiceAggregation[0] || {};
+        const achievedNetSales = (achievedResult.totalService || 0) + (achievedResult.totalRetail || 0);
+        const achieved = {
+            service: achievedResult.totalService || 0,
+            retail: achievedResult.totalRetail || 0,
+            bills: achievedResult.totalBills || 0,
+            netSales: achievedNetSales,
+            abv: (achievedResult.totalBills > 0) ? ((achievedResult.totalGrandAmount || 0) / achievedResult.totalBills) : 0,
+            callbacks: 0,
+            appointments: achievedAppointmentsCount,
+        };
+        const daysInMonth = endOfMonth.getDate();
+        const dayOfMonth = now.getDate();
+        const projectionFactor = dayOfMonth > 0 ? daysInMonth / dayOfMonth : 0;
+        const headingTo = {
+            service: (achieved.service ?? 0) * projectionFactor,
+            retail: (achieved.retail ?? 0) * projectionFactor,
+            bills: (achieved.bills ?? 0) * projectionFactor,
+            netSales: (achieved.netSales ?? 0) * projectionFactor,
+            abv: achieved.abv ?? 0,
+            callbacks: (achieved.callbacks ?? 0) * projectionFactor,
+            appointments: (achieved.appointments ?? 0) * projectionFactor,
+        };
+        const responseData = {
+            _id: targetSheet._id ? targetSheet._id.toString() : 'new',
+            month: targetSheet.month,
+            summary: { target: targets, achieved: achieved, headingTo: headingTo }
+        };
+        return NextResponse.json(responseData);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Internal Server Error";
+        console.error("API Error GET /api/target:", error);
+        return NextResponse.json({ message: "Error fetching data", error: errorMessage }, { status: 500 });
     }
-
-    // FIX: Use the imported 'TargetSheetData' type for our default object.
-    // This type perfectly matches the object's shape and has no Mongoose methods.
-    const defaultData: TargetSheetData = {
-      summary: {
-        target: { service: 400000, retail: 20000, netSales: 420000, bills: 500, abv: 840, callbacks: 180, appointmentsFromCallbacks: 20 },
-        achieved: { service: 0, retail: 0, netSales: 0, bills: 0, abv: 0, callbacks: 0, appointmentsFromCallbacks: 0 },
-        headingTo: { service: 0, retail: 0, netSales: 0, bills: 0, abv: 0, callbacks: 0, appointmentsFromCallbacks: 0, serviceInPercentage: 0, retailInPercentage: 0, netSalesInPercentage: 0, billsInPercentage: 0, abvInPercentage: 0, callbacksInPercentage: 0, appointmentsInPercentage: 0 }
-      },
-      dailyRecords: []
-    };
-    
-    // Mongoose's .create() method is happy to accept a plain object that matches the schema.
-    const newDocument = await TargetData.create(defaultData);
-    
-    // Return the newly created document as a plain object for the client.
-    return NextResponse.json(newDocument.toObject());
-    
-  } catch (error) {
-    console.error("GET Error:", error);
-    return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
-  }
 }
 
-// PUT Handler: Updates the 'target' data in MongoDB
 export async function PUT(request: Request) {
-  try {
     await dbConnect();
-    const newMonthlyTargets: Partial<SummaryMetrics> = await request.json();
-    
-    const currentData = await TargetData.findOne().sort({ createdAt: -1 }).lean();
-
-    if (!currentData) {
-        return NextResponse.json({ message: "No data found to update." }, { status: 404 });
+    try {
+        const body = await request.json();
+        console.log("SERVER RECEIVED IN PUT /api/target:", body);
+        const now = new Date();
+        const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        let targetSheet = await TargetSheet.findOne({ month: monthIdentifier });
+        if (!targetSheet) {
+            targetSheet = new TargetSheet({ month: monthIdentifier, target: {} });
+        }
+        targetSheet.target.service = Number(body.service) || 0;
+        targetSheet.target.retail = Number(body.retail) || 0;
+        targetSheet.target.bills = Number(body.bills) || 0;
+        targetSheet.target.abv = Number(body.abv) || 0;
+        targetSheet.target.callbacks = Number(body.callbacks) || 0;
+        targetSheet.target.appointments = Number(body.appointments) || 0;
+        const savedSheet = await targetSheet.save();
+        return NextResponse.json(savedSheet);
+    } catch (error) {
+        console.error("API Error PUT /api/target: [CRITICAL]", error);
+        let detailedErrorMessage = "An unknown server error occurred.";
+        if (error instanceof Error) {
+            if (error.name === 'ValidationError') {
+                const validationErrors = Object.values((error as any).errors).map((err: any) => err.message);
+                detailedErrorMessage = `Database Validation Failed: ${validationErrors.join(', ')}`;
+            } else {
+                detailedErrorMessage = error.message;
+            }
+        }
+        return NextResponse.json({ message: detailedErrorMessage, error: "Error updating targets" }, { status: 500 });
     }
-
-    const updatedTarget = {
-        ...currentData.summary.target,
-        ...newMonthlyTargets,
-    };
-    
-    updatedTarget.netSales = (updatedTarget.service || 0) + (updatedTarget.retail || 0);
-
-    await TargetData.updateOne(
-        { _id: currentData._id }, 
-        { $set: { "summary.target": updatedTarget } }
-    );
-
-    console.log("Updated monthly targets in DB:", updatedTarget);
-
-    return NextResponse.json({ message: "Monthly targets updated successfully" }, { status: 200 });
-  } catch (error) {
-    console.error("PUT Error:", error);
-    return NextResponse.json({ message: "Failed to update monthly targets" }, { status: 400 });
-  }
 }

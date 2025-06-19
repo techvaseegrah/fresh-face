@@ -1,15 +1,26 @@
 // lib/mongodb.ts
 import mongoose from 'mongoose';
 
-// === VITAL: EXPLICITLY IMPORT ALL YOUR MONGOOSE MODELS HERE ===
-import '@/models/customermodel';    // Ensures 'Customer' model is registered
-import '@/models/appointment';      // Ensures 'Appointment' model is registered
-import '@/models/membershipPlan';   // Ensures 'MembershipPlan' model is registered
-import '@/models/customerMembership';// Ensures 'CustomerMembership' model is registered
-import '@/models/invoice';   
-import '@/models/product'
-import '@/models/service'        // Ensures 'Invoice' model is registered
-// Add any other Mongoose models you have in your project
+// Import all models
+import '@/models/Appointment';
+import '@/models/customermodel';
+import '@/models/ebReadings';
+import '@/models/invoice';
+import '@/models/loyaltyTransaction';
+import '@/models/membershipPlan';
+import '@/models/permission';
+import '@/models/Procurement';
+import '@/models/Product';
+import '@/models/ProductBrand';
+import '@/models/ProductSubCategory';
+import '@/models/role';
+import '@/models/ServiceCategory';
+import '@/models/ServiceItem';
+import '@/models/ServiceSubCategory';
+import '@/models/Stylist';
+import '@/models/user';
+
+
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

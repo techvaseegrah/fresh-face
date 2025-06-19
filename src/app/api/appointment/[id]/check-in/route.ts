@@ -1,9 +1,8 @@
-// app/api/appointments/[id]/check-in/route.ts
-
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import Appointment from '@/models/appointment';
-import Stylist from '@/models/stylist';
+import Appointment from '@/models/Appointment';
+// Make sure you are importing your updated Stylist model
+import Stylist from '@/models/Stylist'; 
 import mongoose from 'mongoose';
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -25,12 +24,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     const stylist = await Stylist.findById(appointment.stylistId).session(session);
     if (!stylist) throw new Error('Assigned stylist not found.');
-    if (stylist.availabilityStatus !== 'Available') throw new Error(`Stylist ${stylist.name} is currently ${stylist.availabilityStatus}.`);
 
-    // --- Perform Updates ---
+    // --- CORRECTION 1: Check `isAvailable` instead of `availabilityStatus` ---
+    // The error message is also updated for clarity.
+    if (!stylist.isAvailable) {
+      throw new Error(`Stylist ${stylist.name} is currently not available.`);
+    }
+
+    // --- CORRECTION 2: Perform updates using the properties from your Stylist model ---
     appointment.status = 'Checked-In';
-    stylist.availabilityStatus = 'Busy';
+    stylist.isAvailable = false; // Set the boolean to false
     stylist.currentAppointmentId = appointment._id;
+    stylist.lastAvailabilityChange = new Date(); // Update the change timestamp
 
     await appointment.save({ session });
     await stylist.save({ session });

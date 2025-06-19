@@ -1,22 +1,27 @@
-// In /api/customer/[id]/route.ts
-
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
-import Appointment from '@/models/appointment';
-import Service from '@/models/service';
-import Stylist from '@/models/stylist';
-import Staff from '@/models/staff'; // IMPORTANT: Make sure the Staff model is imported
+import Appointment from '@/models/Appointment';
+import ServiceItem from '@/models/ServiceItem';
+import Stylist from '@/models/Stylist';
 import CustomerMembership from '@/models/customerMembership';
 import MembershipPlan from '@/models/membershipPlan';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
 
 // --- TYPE DEFINITIONS ---
-interface LeanCustomer { _id: mongoose.Types.ObjectId; createdAt?: Date; name: string; email?: string; phoneNumber: string; }
+interface LeanCustomer { 
+  _id: mongoose.Types.ObjectId; 
+  createdAt?: Date; 
+  name: string; 
+  email?: string; 
+  phoneNumber: string; 
+  membershipStatus?: string;
+  currentMembershipId?: mongoose.Types.ObjectId;
+}
 
 // ===================================================================================
-//  GET: Handler for fetching full customer details (FINAL CORRECTED VERSION)
+//  GET: Handler for fetching full customer details for the side panel
 // ===================================================================================
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
@@ -26,36 +31,52 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   try {
     await connectToDatabase();
+    
     const customer = await Customer.findById(customerId).lean<LeanCustomer>();
     if (!customer) {
       return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
     }
 
-    // --- Fetch all related data in parallel for efficiency ---
+    // Fetch all related customer data in parallel for performance
     const [activeMembership, allRecentAppointments, loyaltyData] = await Promise.all([
-      CustomerMembership.findOne({ customerId: customer._id, status: 'Active', endDate: { $gte: new Date() } }).populate({ path: 'membershipPlanId', model: MembershipPlan, select: 'name' }),
-      
-      // Fetch appointments ONCE with all necessary data populated
+      // Query 1: Find the customer's active membership
+      CustomerMembership.findOne({ 
+        customerId: customer._id, 
+        status: 'Active', 
+        endDate: { $gte: new Date() } 
+      }).populate({ 
+        path: 'membershipPlanId', 
+        model: MembershipPlan, 
+        select: 'name discountPercentageServices' 
+      }),
+
+      // Query 2: Find recent appointments
       Appointment.find({ customerId: customer._id })
         .sort({ date: -1 })
-        .limit(20) // Limit history for performance
-        .populate('serviceIds', 'name') // Populate service names
-        .populate({
-            path: 'stylistId', // 1. Populate the stylistId field...
-            populate: {
-                path: 'staffInfo', // 2. ...then, within that, populate the staffInfo field
-                model: Staff,      // 3. USE THE IMPORTED MODEL DIRECTLY - This is the safest way
-                select: 'name'     // 4. Select the name from the Staff model
-            }
-        })
+        .limit(20)
         .lean(),
 
-      LoyaltyTransaction.aggregate([ { $match: { customerId: customer._id } }, { $group: { _id: null, totalPoints: { $sum: '$points' } } } ])
+      // Query 3: Calculate loyalty points
+      LoyaltyTransaction.aggregate([
+        { $match: { customerId: customer._id } },
+        {
+          $group: {
+            _id: null,
+            totalPoints: {
+              $sum: {
+                $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }]
+              }
+            }
+          }
+        }
+      ])
     ]);
 
-    // --- Determine Activity Status ---
+    // Determine activity status
     let activityStatus: 'Active' | 'Inactive' | 'New' = 'New';
-    const twoMonthsAgo = new Date(); twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+    const twoMonthsAgo = new Date();
+    twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+
     if (allRecentAppointments.length > 0) {
       const lastAppointmentDate = new Date(allRecentAppointments[0].date);
       activityStatus = lastAppointmentDate >= twoMonthsAgo ? 'Active' : 'Inactive';
@@ -63,28 +84,70 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       const customerCreationDate = new Date(customer.createdAt);
       activityStatus = customerCreationDate < twoMonthsAgo ? 'Inactive' : 'New';
     }
-    
-    // --- Final Data Formatting ---
+
     const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
-    
+
+    // Get only paid appointments for history
+    const paidAppointmentIds = allRecentAppointments
+      .filter(apt => apt.status === 'Paid')
+      .slice(0, 10)
+      .map(apt => apt._id);
+
+    // Populate the appointment history with ServiceItem references
+    const populatedHistory = await Appointment.find({ 
+      _id: { $in: paidAppointmentIds } 
+    })
+      .sort({ date: -1 })
+      .populate({ 
+        path: 'stylistId', 
+        model: Stylist, 
+        select: 'name' 
+      })
+      .populate({ 
+        path: 'serviceIds', 
+        model: ServiceItem,
+        select: 'name price' 
+      })
+      .lean();
+
+    // Construct the customer details object
     const customerDetails = {
-      ...customer,
+      _id: customer._id.toString(),
       id: customer._id.toString(),
+      name: customer.name,
+      email: customer.email,
+      phoneNumber: customer.phoneNumber,
       status: activityStatus,
       loyaltyPoints: calculatedLoyaltyPoints,
-      currentMembership: activeMembership ? { planName: (activeMembership.membershipPlanId as any)?.name || 'N/A', status: activeMembership.status, endDate: (activeMembership as any).endDate.toISOString() } : null,
       
-      // Map over the correctly populated appointment history
-      appointmentHistory: allRecentAppointments
-        .filter(apt => apt.status === 'Paid' || apt.status === 'Billed') // Show paid or billed history
-        .slice(0, 10)
-        .map(apt => ({
-          id: (apt as any)._id.toString(),
-          date: (apt as any).date.toISOString(),
-          totalAmount: (apt as any).amount || 0,
-          // This fallback logic handles both old and new appointments
-          stylistName: (apt as any).stylistName || (apt as any).stylistId?.staffInfo?.name || 'N/A',
-          services: Array.isArray((apt as any).serviceIds) ? (apt as any).serviceIds.map((s: any) => s.name) : [],
+      // Membership information
+      isMember: !!activeMembership,
+      membershipStatus: customer.membershipStatus || 'None',
+      membershipDetails: activeMembership ? {
+        planName: (activeMembership.membershipPlanId as any)?.name || 'N/A',
+        status: activeMembership.status,
+        endDate: (activeMembership as any).endDate?.toISOString(),
+        discountPercent: (activeMembership.membershipPlanId as any)?.discountPercentageServices || 0
+      } : null,
+
+      // Last visit information
+      lastVisit: allRecentAppointments.length > 0 ? 
+        (allRecentAppointments[0] as any).date.toISOString() : null,
+
+      // Appointment history
+      appointmentHistory: populatedHistory.map(apt => ({
+        _id: (apt as any)._id.toString(),
+        id: (apt as any)._id.toString(),
+        date: (apt as any).date.toISOString(),
+        
+        // ============================ THE FIX ============================ //
+        // Use `finalAmount` which is the actual paid total, instead of `amount`.
+        totalAmount: (apt as any).finalAmount || 0,
+        // ================================================================= //
+
+        stylistName: (apt as any).stylistId?.name || 'N/A',
+        services: Array.isArray((apt as any).serviceIds) ? 
+          (apt as any).serviceIds.map((s: any) => s.name) : [],
       }))
     };
 
@@ -92,7 +155,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   } catch (error: any) {
     console.error(`API Error fetching details for customer ${params.id}:`, error);
-    return NextResponse.json({ success: false, message: error.message || 'An internal server error occurred.' }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: error.message || 'An internal server error occurred.' 
+    }, { status: 500 });
   }
 }
 
@@ -109,12 +175,20 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     await connectToDatabase();
     const body = await req.json();
 
+    // Validate required fields
+    if (!body.name || !body.phoneNumber) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Name and phone number are required.' 
+      }, { status: 400 });
+    }
+
     const updatedCustomer = await Customer.findByIdAndUpdate(
       customerId,
       {
-        name: body.name,
-        email: body.email,
-        phoneNumber: body.phoneNumber,
+        name: body.name.trim(),
+        email: body.email?.trim(),
+        phoneNumber: body.phoneNumber.trim(),
       },
       { new: true, runValidators: true }
     );
@@ -124,12 +198,19 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     }
 
     return NextResponse.json({ success: true, customer: updatedCustomer });
+
   } catch (error: any) {
     if (error.code === 11000) {
-        return NextResponse.json({ success: false, message: 'Another customer with this phone number or email already exists.' }, { status: 409 });
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Another customer with this phone number or email already exists.' 
+      }, { status: 409 });
     }
     console.error(`API Error updating customer ${customerId}:`, error);
-    return NextResponse.json({ success: false, message: error.message || 'Failed to update customer.' }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: error.message || 'Failed to update customer.' 
+    }, { status: 500 });
   }
 }
 
@@ -145,7 +226,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   try {
     await connectToDatabase();
     
-    // Instead of deleting, we find the customer and set their isActive flag to false.
+    // Soft delete: set isActive to false instead of deleting
     const deactivatedCustomer = await Customer.findByIdAndUpdate(
       customerId,
       { isActive: false },
@@ -156,10 +237,16 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, message: 'Customer has been deactivated successfully.' });
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Customer has been deactivated successfully.' 
+    });
 
   } catch (error: any) {
     console.error(`API Error deactivating customer ${customerId}:`, error);
-    return NextResponse.json({ success: false, message: error.message || 'Failed to deactivate customer.' }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: error.message || 'Failed to deactivate customer.' 
+    }, { status: 500 });
   }
 }

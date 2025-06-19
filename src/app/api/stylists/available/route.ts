@@ -1,78 +1,104 @@
-// app/api/stylists/available/route.ts
+export const dynamic = 'force-dynamic';
 
-import { NextRequest, NextResponse } from 'next/server';
+// app/api/stylists/available/route.ts
+import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import Stylist from '@/models/stylist';
-import Staff from '@/models/staff'; // IMPORTANT: Import the Staff model
-import Appointment from '@/models/appointment';
-import Service from '@/models/service';
+import Stylist from '@/models/Stylist';
+import Appointment from '@/models/Appointment';
+import ServiceItem from '@/models/ServiceItem'; // Changed from Service to ServiceItem
 import { addMinutes, areIntervalsOverlapping } from 'date-fns';
 
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   try {
     await connectToDatabase();
 
-    // --- 1. Extract and Validate Query Parameters ---
-    const { searchParams } = req.nextUrl;
+    const { searchParams } = new URL(req.url);
     const date = searchParams.get('date');
     const time = searchParams.get('time');
     const serviceIds = searchParams.getAll('serviceIds');
 
     if (!date || !time || serviceIds.length === 0) {
-      return NextResponse.json({ success: false, message: 'Date, time, and at least one service are required.' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: 'Date, time, and at least one service are required.' },
+        { status: 400 }
+      );
     }
 
-    // --- 2. Calculate Total Duration ---
-    const servicesForDuration = await Service.find({ _id: { $in: serviceIds } }).select('durationMinutes').lean();
+    // === FIX: Use ServiceItem instead of Service ===
+    const servicesForDuration = await ServiceItem.find({ 
+      _id: { $in: serviceIds } 
+    }).select('duration').lean(); // Use 'duration' field from ServiceItem
+
     if (servicesForDuration.length !== serviceIds.length) {
       throw new Error("One or more selected services could not be found.");
     }
-    const totalDuration = servicesForDuration.reduce((sum, service) => sum + service.durationMinutes, 0);
+
+    // Calculate total duration using 'duration' field (not 'durationMinutes')
+    const totalDuration = servicesForDuration.reduce((sum, service) => sum + service.duration, 0);
+
     const newAppointmentStart = new Date(`${date}T${time}`);
     const newAppointmentEnd = addMinutes(newAppointmentStart, totalDuration);
 
-    // --- 3. Find Conflicting Appointments ---
-    const startOfDay = new Date(date); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date); endOfDay.setHours(23, 59, 59, 999);
+    // Find conflicting appointments
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
 
     const existingAppointments = await Appointment.find({
       date: { $gte: startOfDay, $lte: endOfDay },
-      status: { $in: ['Scheduled', 'Checked-In', 'Billed'] }
-    }).populate('serviceIds', 'durationMinutes').select('stylistId serviceIds date time').lean();
+      status: { $in: ['Appointment', 'Checked-In', 'Billed'] }
+    }).populate('serviceIds', 'duration').select('stylistId serviceIds date time').lean();
 
-    // --- 4. Identify Busy Stylists ---
+    // Check for busy stylists
     const busyStylistIds = new Set<string>();
+
     for (const existingApt of existingAppointments) {
-      if (!existingApt.stylistId) continue;
-      const existingAptDuration = (existingApt.serviceIds as any[]).reduce((sum, service) => sum + service.durationMinutes, 0) || 60;
-      const existingAptStart = new Date(new Date(existingApt.date).toISOString().split('T')[0] + `T${existingApt.time}`);
+      const existingAptDuration = (existingApt.serviceIds as any[]).reduce(
+        (sum, service) => sum + (service.duration || 60), 0
+      );
+      
+      const existingAptStart = new Date(
+        new Date(existingApt.date).toISOString().split('T')[0] + `T${existingApt.time}`
+      );
       const existingAptEnd = addMinutes(existingAptStart, existingAptDuration);
-      if (areIntervalsOverlapping({ start: newAppointmentStart, end: newAppointmentEnd }, { start: existingAptStart, end: existingAptEnd })) {
+      
+      const isOverlapping = areIntervalsOverlapping(
+        { start: newAppointmentStart, end: newAppointmentEnd },
+        { start: existingAptStart, end: existingAptEnd },
+        { inclusive: false }
+      );
+
+      if (isOverlapping && existingApt.stylistId) {
         busyStylistIds.add(existingApt.stylistId.toString());
       }
     }
     
-    // ======================================================================
-    // --- 5. Find All Stylists Who Are NOT Busy and POPULATE their name ---
-    // ======================================================================
-    const availableStylistDocs = await Stylist.find({
-      _id: { $nin: Array.from(busyStylistIds) } // Find stylists NOT in the busy list
-    })
-    .populate({
-        path: 'staffInfo',           // The field in the Stylist model we want to populate
-        model: Staff,                // Use the imported Staff model
-        select: 'name',              // We only need the name
-        match: { status: 'active' }  // Make sure their staff profile is active
-    })
-    .lean();
+    // === ALSO CHECK STYLIST AVAILABILITY STATUS ===
+    const availableStylists = await Stylist.find({
+      _id: { $nin: Array.from(busyStylistIds) },
+      isAvailable: true // Only get available stylists
+    }).select('name experience specialization').lean();
 
-    // Filter out any whose staff profile was inactive
-    const activeAndAvailableStylists = availableStylistDocs.filter(stylist => stylist.staffInfo);
+    // Format for frontend
+    const formattedStylists = availableStylists.map(stylist => ({
+      _id: stylist._id,
+      id: stylist._id.toString(),
+      name: stylist.name,
+      experience: stylist.experience,
+      specialization: stylist.specialization
+    }));
 
-    return NextResponse.json({ success: true, stylists: activeAndAvailableStylists });
+    return NextResponse.json({ 
+      success: true, 
+      stylists: formattedStylists 
+    });
 
   } catch (error: any) {
     console.error("API Error fetching available stylists:", error);
-    return NextResponse.json({ success: false, message: error.message || "An unknown server error occurred." }, { status: 500 });
+    return NextResponse.json({ 
+      success: false, 
+      message: error.message 
+    }, { status: 500 });
   }
 }

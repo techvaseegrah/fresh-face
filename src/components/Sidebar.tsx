@@ -1,15 +1,43 @@
-// src/components/Sidebar.tsx
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
 import { useState, useEffect, useMemo } from 'react';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'; // Assuming this file is updated with new permissions
 
-// --- Interfaces ---
+// --- ICONS ---
+// Using HeroIcons as the primary set for consistency
+import {
+  HomeIcon,
+  CalendarDaysIcon,
+  UserGroupIcon,
+  UsersIcon,
+  Cog6ToothIcon, // Using the more detailed Cog icon for Settings/Admin
+  PowerIcon,
+  LightBulbIcon,
+  DocumentTextIcon,
+  ShoppingCartIcon,
+  BuildingStorefrontIcon,
+  ChevronDownIcon,
+} from '@heroicons/react/24/outline';
+
+// Custom Icons from the first file for Staff Management sub-items
+const AttendanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg> );
+const AdvanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01M12 18v-2m0-8a6 6 0 100 12 6 6 0 000-12z"></path></svg> );
+const PerformanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg> );
+const SalaryIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> );
+const StaffListIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> );
+const TargetIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 21a9 9 0 100-18 9 9 0 000 18z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 100-6 3 3 0 000 6z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v2m0 16v2m-8-9H2m18 0h-2"></path></svg> );
+const IncentivesIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg> );
+
+
+// --- INTERFACES for navigation items ---
 interface NavSubItem {
   href: string;
   label: string;
-  icon: JSX.Element; // Icon for the sub-item
+  icon: JSX.Element;
+  show: boolean; // Permission check
   basePathForActive?: string;
 }
 
@@ -17,165 +45,138 @@ interface NavItemConfig {
   href: string;
   label: string;
   icon: JSX.Element;
+  show: boolean; // Permission check for top-level item
   subItems?: NavSubItem[];
 }
 
-// --- Main Item Icons ---
-const DashboardIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-  </svg>
-);
-const AppointmentsIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-  </svg>
-);
-const CrmIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283-.356-1.857m0 0a3.004 3.004 0 01-2.732 0M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 0c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-  </svg>
-);
-const StaffManagementIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"></path>
-    <circle cx="9" cy="7" r="4"></circle>
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M23 21v-2a4 4 0 00-3-3.87"></path>
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 3.13a4 4 0 010 7.75"></path>
-  </svg>
-);
-// --- NEW SETTINGS ICON ADDED ---
-const SettingsIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-  </svg>
-);
-
-
-// --- Sub-Item Icons ---
-const AttendanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg> );
-const AdvanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01M12 18v-2m0-8a6 6 0 100 12 6 6 0 000-12z"></path></svg> );
-const PerformanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg> );
-const SalaryIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> );
-const StaffIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> );
-const TargetIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 21a9 9 0 100-18 9 9 0 000 18z"></path>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 100-6 3 3 0 000 6z"></path>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v2m0 16v2m-8-9H2m18 0h-2"></path>
-    </svg>
-);
-const IncentivesIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path>
-    </svg>
-);
-
 const Sidebar = () => {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [openItemKey, setOpenItemKey] = useState<string | null>(null);
 
-  const navItems: NavItemConfig[] = useMemo(() => [
-    { href: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
-    { href: '/appointment', label: 'Appointments', icon: <AppointmentsIcon /> },
-    { href: '/crm', label: 'Customers', icon: <CrmIcon /> },
-    {
-      href: '/staffmanagement',
-      label: 'StaffManagement',
-      icon: <StaffManagementIcon />,
-      subItems: [
-        { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon /> },
-        { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon /> },
-        { href: '/staffmanagement/performance', label: 'Performance', icon: <PerformanceIcon /> },
-        { href: '/staffmanagement/target', label: 'Target', icon: <TargetIcon /> },
-        { href: '/staffmanagement/incentives', label: 'Incentives', icon: <IncentivesIcon /> },
-        { href: '/staffmanagement/salary', label: 'Salary', icon: <SalaryIcon /> },
-        {
-          href: '/staffmanagement/staff/stafflist',
-          label: 'Staff',
-          icon: <StaffIcon />,
-          basePathForActive: '/staffmanagement/staff',
-        },
-      ],
-    },
-    // --- NEW SETTINGS MODULE ADDED TO NAVIGATION ---
-    { href: '/settings', label: 'Settings', icon: <SettingsIcon /> },
-  ], []);
+  const userPermissions = session?.user?.role?.permissions || [];
 
-  // Effect to automatically open the parent item of the active sub-item on page load
+  // --- MERGED & UNIFIED NAVIGATION CONFIGURATION ---
+  const navItems = useMemo((): NavItemConfig[] => {
+    // Define all sub-items first to check their permissions
+    const staffSubItems: NavSubItem[] = [
+      { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_ATTENDANCE_READ) },
+      { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_ADVANCE_READ) },
+      { href: '/staffmanagement/performance', label: 'Performance', icon: <PerformanceIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_PERFORMANCE_READ) },
+      { href: '/staffmanagement/target', label: 'Target', icon: <TargetIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_TARGET_READ) },
+      { href: '/staffmanagement/incentives', label: 'Incentives', icon: <IncentivesIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_INCENTIVES_READ) },
+      { href: '/staffmanagement/salary', label: 'Salary', icon: <SalaryIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_SALARY_READ) },
+      { href: '/staffmanagement/staff/stafflist', label: 'Staff List', icon: <StaffListIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_READ), basePathForActive: '/staffmanagement/staff' },
+    ];
+
+    const adminSubItems: NavSubItem[] = [
+        { href: '/admin/users', label: 'Users', icon: <UsersIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.USERS_READ) },
+        { href: '/admin/roles', label: 'Roles', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.ROLES_READ) }
+    ];
+
+    // Parent item is shown if any child item is shown
+    const canSeeStaffManagement = staffSubItems.some(item => item.show);
+    const canSeeAdministration = adminSubItems.some(item => item.show);
+
+    return [
+      { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.DASHBOARD_READ) },
+      { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.APPOINTMENTS_READ) },
+      { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.CUSTOMERS_READ) },
+       {
+        href: '/staffmanagement',
+        label: 'StaffManagement',
+        icon: <UsersIcon className="h-5 w-5" />, // Using a HeroIcon for consistency
+        show: canSeeStaffManagement,
+        subItems: staffSubItems.filter(item => item.show), // Only pass visible sub-items
+      },
+      { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.STORE_READ) },
+      { href: '/eb-upload', label: 'EB Upload', icon: <LightBulbIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.EB_UPLOAD) },
+      { href: '/eb-view', label: 'EB View & Calculate', icon: <DocumentTextIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.EB_VIEW_CALCULATE) },
+      { href: '/procurement', label: 'Procurements', icon: <ShoppingCartIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.PROCUREMENT_READ) },
+    
+      { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.SETTINGS_READ) },
+      {
+        href: '/admin',
+        label: 'Administration',
+        icon: <Cog6ToothIcon className="h-5 w-5" />,
+        show: canSeeAdministration,
+        subItems: adminSubItems.filter(item => item.show),
+      },
+    ];
+  }, [userPermissions]);
+
+  // --- HOOKS & HANDLERS for collapsible menu ---
+  // Effect to automatically open the parent of the active sub-item on page load
   useEffect(() => {
-    let parentToOpenKey: string | null = null;
-    for (const item of navItems) {
-      if (item.subItems && item.subItems.length > 0) {
-        const isParentOfActiveSubItem = item.subItems.some(subItem => {
-          const activeCheckPath = subItem.basePathForActive || subItem.href;
-          return pathname === subItem.href || (activeCheckPath !== '/' && pathname.startsWith(activeCheckPath) && (pathname.length === activeCheckPath.length || pathname[activeCheckPath.length] === '/'));
-        });
-        if (isParentOfActiveSubItem) {
-          parentToOpenKey = item.href;
-          break;
-        }
-      }
-    }
-    if (!parentToOpenKey) {
-        for (const item of navItems) {
-            if (item.subItems && item.subItems.length > 0) {
-                if (item.href !== '/' && pathname.startsWith(item.href) && (pathname.length === item.href.length || pathname[item.href.length] === '/')) {
-                    parentToOpenKey = item.href;
-                    break;
-                }
-            }
-        }
-    }
-    setOpenItemKey(parentToOpenKey);
+    const activeParent = navItems.find(item =>
+      item.subItems?.some(subItem => {
+        const activeCheckPath = subItem.basePathForActive || subItem.href;
+        return pathname.startsWith(activeCheckPath);
+      })
+    );
+    setOpenItemKey(activeParent?.href || null);
   }, [pathname, navItems]);
 
   const handleItemClick = (itemKey: string) => {
     setOpenItemKey(openItemKey === itemKey ? null : itemKey);
   };
 
+  const handleSignOut = () => {
+    signOut({ callbackUrl: '/login' });
+  };
+  
+  // Helper function to check for active state (parent or child)
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
-    if (currentPath === item.href) return true;
-    if (item.href !== '/' && currentPath.startsWith(item.href + '/')) {
+    // Check if the parent link itself is active (for non-sub-menu items)
+    if (item.href !== '/' && currentPath.startsWith(item.href) && !item.subItems) {
       return true;
     }
+    // Check if any sub-item is active
     if (item.subItems) {
       return item.subItems.some(subItem => {
         const activeCheckPath = subItem.basePathForActive || subItem.href;
-        return currentPath === subItem.href || (activeCheckPath !== '/' && currentPath.startsWith(activeCheckPath) && (currentPath.length === activeCheckPath.length || currentPath[activeCheckPath.length] === '/'));
+        return currentPath.startsWith(activeCheckPath);
       });
     }
     return false;
   };
 
   return (
-    <div className="w-64 h-screen bg-white text-black fixed left-0 top-0 shadow-lg overflow-y-auto">
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
+    <div className="w-64 h-screen bg-white text-black fixed left-0 top-0 shadow-lg flex flex-col">
+      {/* Header */}
+      <div className="p-6 border-b border-gray-200">
+        <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">FF</div>
-          <h1 className="text-xl font-semibold text-gray-800">FF Project</h1>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-800">Fresh Face</h1>
+            <p className="text-xs text-gray-500">Salon Management</p>
+          </div>
         </div>
-        <nav className="space-y-1">
-          {navItems.map((item) => {
+      </div>
+
+      {/* Navigation */}
+      <div className="flex-1 overflow-y-auto">
+        <nav className="p-4 space-y-1">
+          {navItems.filter(item => item.show).map((item) => {
             const isActive = isItemOrSubitemActive(item, pathname);
             const isOpen = openItemKey === item.href;
+
             return (
-              <div key={item.label}>
-                {item.subItems ? (
+              <div key={item.href}>
+                {item.subItems && item.subItems.length > 0 ? (
                   <>
                     <button onClick={() => handleItemClick(item.href)} aria-expanded={isOpen} className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
                       <span className="flex items-center gap-3">{item.icon}<span>{item.label}</span></span>
-                      <svg className={`w-4 h-4 transform transition-transform duration-200 ${isOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      <ChevronDownIcon className={`w-4 h-4 transform transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                     </button>
                     <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'max-h-screen' : 'max-h-0'}`}>
                       {isOpen && (
                         <div className="mt-1 space-y-0.5 py-1">
                           {item.subItems.map((subItem) => {
                             const activeSubCheckPath = subItem.basePathForActive || subItem.href;
-                            const isSubActive = pathname === subItem.href || (activeSubCheckPath !== '/' && pathname.startsWith(activeSubCheckPath) && (pathname.length === activeSubCheckPath.length || pathname[activeSubCheckPath.length] === '/'));
+                            const isSubActive = pathname.startsWith(activeSubCheckPath);
                             return (
-                              <Link key={subItem.label} href={subItem.href} className={`flex items-center gap-3 pl-8 pr-4 py-2 rounded-lg transition-colors text-sm text-gray-600 ${ isSubActive ? 'bg-gray-200 text-black font-medium' : 'hover:bg-gray-100 hover:text-black' }`}>
+                              <Link key={subItem.href} href={subItem.href} className={`flex items-center gap-3 pl-8 pr-4 py-2 rounded-lg transition-colors text-sm text-gray-600 ${ isSubActive ? 'bg-gray-200 text-black font-medium' : 'hover:bg-gray-100 hover:text-black' }`}>
                                 {subItem.icon}
                                 <span>{subItem.label}</span>
                               </Link>
@@ -196,16 +197,32 @@ const Sidebar = () => {
           })}
         </nav>
       </div>
-      <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-gray-200">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-600">
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"></path></svg>
+
+      {/* User Profile & Logout */}
+      <div className="p-4 border-t border-gray-200">
+        {session && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 px-4 py-2">
+              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+                <span className="text-sm font-medium text-gray-600">
+                  {session.user.name?.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-900 truncate">
+                  {session.user.name}
+                </div>
+                <div className="text-xs text-gray-500 truncate">
+                  {session.user.role.displayName || session.user.role.name}
+                </div>
+              </div>
+            </div>
+            <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
+              <PowerIcon className="h-4 w-4" />
+              <span>Sign Out</span>
+            </button>
           </div>
-          <div>
-            <div className="font-medium text-gray-800">Owner</div>
-            <div className="text-sm text-gray-500">Admin</div> {/* Lighter text for role */}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

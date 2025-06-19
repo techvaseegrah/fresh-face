@@ -2,11 +2,15 @@
 
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
+// --- UPDATED INTERFACE ---
 export interface IShopSetting extends Document {
   key: string; // A unique key to ensure we only have one settings document
   defaultDailyHours: number;
   defaultOtRate: number;
   defaultExtraDayRate: number;
+  // --- NEW FIELDS ---
+  loyaltyPointPerPrice: number;
+  loyaltyPointsAwarded: number;
 }
 
 const ShopSettingSchema: Schema<IShopSetting> = new Schema({
@@ -31,6 +35,15 @@ const ShopSettingSchema: Schema<IShopSetting> = new Schema({
     type: Number,
     required: [true, 'Default extra day rate is required.'],
     default: 100,
+  },
+  // --- NEW SCHEMA DEFINITIONS ---
+  loyaltyPointPerPrice: {
+    type: Number,
+    default: 100, // e.g., for every ₹100 spent
+  },
+  loyaltyPointsAwarded: {
+    type: Number,
+    default: 1,   // e.g., the customer gets 1 point
   },
 }, { timestamps: true });
 

@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import Appointment from '@/models/appointment';
+import Appointment from '@/models/Appointment';
 import mongoose from 'mongoose';
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {

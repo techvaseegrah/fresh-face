@@ -1,43 +1,64 @@
-// src/models/TargetSheet.ts
-import mongoose, { Schema, Document, models, Model } from 'mongoose';
+// src/models/TargetSheet.ts - THE ONLY CORRECT VERSION
+import { Schema, model, models, Document } from 'mongoose';
 
-// --- Define your plain data interfaces ---
-// (These might already exist in your file)
-interface SummaryMetrics {
-  service: number; retail: number; netSales: number; bills: number; abv: number; callbacks: number; appointmentsFromCallbacks: number;
-}
-interface HeadingToMetrics extends SummaryMetrics {
-  serviceInPercentage: number; retailInPercentage: number; netSalesInPercentage: number; billsInPercentage: number; abvInPercentage: number; callbacksInPercentage: number; appointmentsInPercentage: number;
-}
-interface SummaryData {
-  target: SummaryMetrics; achieved: SummaryMetrics; headingTo: HeadingToMetrics;
-}
-interface DailyRecord {
-  date: string; day: string; netSalesAchieved: number; achievePercentage: number; bills: number; abvAchieved: number; callbacksDone: number; appointmentsFromCallbacks: number;
+export interface SummaryMetrics {
+    service: number;
+    retail: number;
+    netSales: number;
+    bills: number;
+    abv: number;
+    callbacks: number;
+    appointments: number;
 }
 
-// FIX: Make sure this interface is EXPORTED.
-// This represents the PURE DATA without any Mongoose methods.
 export interface TargetSheetData {
-  summary: SummaryData;
-  dailyRecords: DailyRecord[];
+    _id: string;
+    month: string;
+    summary: {
+        target: Partial<SummaryMetrics>;
+        achieved: Partial<SummaryMetrics>;
+        headingTo: Partial<SummaryMetrics>;
+    };
 }
 
-// This is the Mongoose Document interface. It combines the pure data with Document properties.
-export interface ITargetData extends TargetSheetData, Document {}
+interface ITargetSheet extends Document {
+    month: string;
+    target: {
+        service: number;
+        retail: number;
+        bills: number;
+        abv: number;
+        callbacks: number;
+        appointments: number; // <-- THE IMPORTANT FIELD
+    };
+}
 
-// Your schema uses the plain data structure
-const TargetDataSchema: Schema = new Schema<TargetSheetData>({
-  summary: {
-    target: { service: Number, retail: Number, netSales: Number, bills: Number, abv: Number, callbacks: Number, appointmentsFromCallbacks: Number },
-    achieved: { service: Number, retail: Number, netSales: Number, bills: Number, abv: Number, callbacks: Number, appointmentsFromCallbacks: Number },
-    headingTo: { service: Number, retail: Number, netSales: Number, bills: Number, abv: Number, callbacks: Number, appointmentsFromCallbacks: Number, serviceInPercentage: Number, retailInPercentage: Number, netSalesInPercentage: Number, billsInPercentage: Number, abvInPercentage: Number, callbacksInPercentage: Number, appointmentsInPercentage: Number }
-  },
-  dailyRecords: [
-      { date: String, day: String, netSalesAchieved: Number, achievePercentage: Number, bills: Number, abvAchieved: Number, callbacksDone: Number, appointmentsFromCallbacks: Number }
-  ]
-}, { timestamps: true });
+const TargetMetricsSchema = new Schema({
+    service: { type: Number, default: 0 },
+    retail: { type: Number, default: 0 },
+    bills: { type: Number, default: 0 },
+    abv: { type: Number, default: 0 },
+    callbacks: { type: Number, default: 0 },
+    // This line tells Mongoose to save the 'appointments' number.
+    // Without it, Mongoose will ignore the field.
+    appointments: { type: Number, default: 0 }, 
+}, { _id: false });
 
-const TargetData: Model<ITargetData> = models.TargetSheet || mongoose.model<ITargetData>('TargetSheet', TargetDataSchema);
+const TargetSheetSchema = new Schema<ITargetSheet>({
+    month: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+    },
+    target: {
+        type: TargetMetricsSchema,
+        default: () => ({}),
+    },
+}, {
+    timestamps: true,
+});
 
-export default TargetData;
+const TargetSheet = models.TargetSheet || model<ITargetSheet>('TargetSheet', TargetSheetSchema);
+
+export default TargetSheet;
