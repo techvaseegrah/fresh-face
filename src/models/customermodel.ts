@@ -1,21 +1,7 @@
+// models/customermodel.ts - SIMPLIFIED VERSION WITH BOOLEAN MEMBERSHIP
 import mongoose from 'mongoose';
 
-// Define an interface for the Customer document for better type safety
-// Although not required to fix this specific error, it's a best practice.
-export interface ICustomer extends mongoose.Document {
-  name: string;
-  phoneNumber: string;
-  email: string;
-  loyaltyPoints: number;
-  isMembership: boolean;
-  membershipPurchaseDate?: Date;
-  isActive: boolean;
-  // Method signatures
-  getServicePricing(serviceIds: mongoose.Types.ObjectId[]): Promise<any[]>;
-  toggleMembership(status?: boolean): Promise<this>;
-}
-
-const customerSchema = new mongoose.Schema<ICustomer>({
+const customerSchema = new mongoose.Schema({
   name: { type: String, required: true },
   phoneNumber: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true, index: true },
@@ -26,12 +12,14 @@ const customerSchema = new mongoose.Schema<ICustomer>({
     min: 0
   },
   
+  // === SIMPLE MEMBERSHIP FIELD ===
   isMembership: {
     type: Boolean,
     default: false,
     index: true
   },
   
+  // Optional: Track when membership was purchased
   membershipPurchaseDate: {
     type: Date,
     sparse: true
@@ -46,9 +34,7 @@ const customerSchema = new mongoose.Schema<ICustomer>({
 }, { timestamps: true });
 
 // Method to get pricing for services based on membership status
-//                                                       V-- FIX: Add the type annotation here --V
-customerSchema.methods.getServicePricing = async function(serviceIds: mongoose.Types.ObjectId[]) {
-  // It's safer to get the model from the connection in case it's not registered yet
+customerSchema.methods.getServicePricing = async function(serviceIds) {
   const ServiceItem = mongoose.model('ServiceItem');
   const services = await ServiceItem.find({ _id: { $in: serviceIds } });
   
@@ -73,4 +59,4 @@ customerSchema.methods.toggleMembership = function(status = true) {
   return this.save();
 };
 
-export default mongoose.models.Customer || mongoose.model<ICustomer>('Customer', customerSchema);
+export default mongoose.models.Customer || mongoose.model('Customer', customerSchema);

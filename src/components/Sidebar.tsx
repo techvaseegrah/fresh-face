@@ -4,25 +4,25 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useState, useEffect, useMemo } from 'react';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions'; // Assuming this file is updated with new permissions
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'; // Assuming this file is updated with all permissions
 
-// --- ICONS ---
-// Using HeroIcons as the primary set for consistency
+// --- ICONS (MERGED & STANDARDIZED) ---
 import {
   HomeIcon,
   CalendarDaysIcon,
   UserGroupIcon,
   UsersIcon,
-  Cog6ToothIcon, // Using the more detailed Cog icon for Settings/Admin
+  Cog6ToothIcon, // Using the more detailed Cog icon
   PowerIcon,
   LightBulbIcon,
   DocumentTextIcon,
   ShoppingCartIcon,
   BuildingStorefrontIcon,
-  ChevronDownIcon,
+  BanknotesIcon,
+  ChevronDownIcon, // For dropdowns
 } from '@heroicons/react/24/outline';
 
-// Custom Icons from the first file for Staff Management sub-items
+// Custom Icons for Staff Management (from the second file)
 const AttendanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg> );
 const AdvanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01M12 18v-2m0-8a6 6 0 100 12 6 6 0 000-12z"></path></svg> );
 const PerformanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg> );
@@ -31,13 +31,12 @@ const StaffListIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="curre
 const TargetIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 21a9 9 0 100-18 9 9 0 000 18z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 100-6 3 3 0 000 6z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v2m0 16v2m-8-9H2m18 0h-2"></path></svg> );
 const IncentivesIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg> );
 
-
 // --- INTERFACES for navigation items ---
 interface NavSubItem {
   href: string;
   label: string;
   icon: JSX.Element;
-  show: boolean; // Permission check
+  show: boolean;
   basePathForActive?: string;
 }
 
@@ -45,9 +44,10 @@ interface NavItemConfig {
   href: string;
   label: string;
   icon: JSX.Element;
-  show: boolean; // Permission check for top-level item
+  show: boolean;
   subItems?: NavSubItem[];
 }
+
 
 const Sidebar = () => {
   const pathname = usePathname();
@@ -56,9 +56,9 @@ const Sidebar = () => {
 
   const userPermissions = session?.user?.role?.permissions || [];
 
-  // --- MERGED & UNIFIED NAVIGATION CONFIGURATION ---
+  // --- UNIFIED NAVIGATION CONFIGURATION ---
   const navItems = useMemo((): NavItemConfig[] => {
-    // Define all sub-items first to check their permissions
+    // Sub-items for Staff Management
     const staffSubItems: NavSubItem[] = [
       { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_ATTENDANCE_READ) },
       { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_ADVANCE_READ) },
@@ -69,31 +69,33 @@ const Sidebar = () => {
       { href: '/staffmanagement/staff/stafflist', label: 'Staff List', icon: <StaffListIcon />, show: hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_READ), basePathForActive: '/staffmanagement/staff' },
     ];
 
+    // Sub-items for Administration
     const adminSubItems: NavSubItem[] = [
-        { href: '/admin/users', label: 'Users', icon: <UsersIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.USERS_READ) },
-        { href: '/admin/roles', label: 'Roles', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.ROLES_READ) }
+      { href: '/admin/users', label: 'Users', icon: <UsersIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.USERS_READ) },
+      { href: '/admin/roles', label: 'Roles', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.ROLES_READ) }
     ];
 
-    // Parent item is shown if any child item is shown
+    // Determine if parent items should be shown
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
 
+    // --- FINAL MERGED LIST OF ALL NAVIGATION ITEMS ---
     return [
       { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.DASHBOARD_READ) },
       { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.APPOINTMENTS_READ) },
       { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.CUSTOMERS_READ) },
-       {
+      {
         href: '/staffmanagement',
-        label: 'StaffManagement',
-        icon: <UsersIcon className="h-5 w-5" />, // Using a HeroIcon for consistency
+        label: 'Staff Management',
+        icon: <UsersIcon className="h-5 w-5" />,
         show: canSeeStaffManagement,
-        subItems: staffSubItems.filter(item => item.show), // Only pass visible sub-items
+        subItems: staffSubItems.filter(item => item.show),
       },
-      { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.STORE_READ) },
+      { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.INVENTORY_READ) },
       { href: '/eb-upload', label: 'EB Upload', icon: <LightBulbIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.EB_UPLOAD) },
       { href: '/eb-view', label: 'EB View & Calculate', icon: <DocumentTextIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.EB_VIEW_CALCULATE) },
       { href: '/procurement', label: 'Procurements', icon: <ShoppingCartIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.PROCUREMENT_READ) },
-    
+      { href:'/DayendClosing', label:'Day-end Closing', icon:<BanknotesIcon className="h-5 w-5"/>, show: hasPermission(userPermissions, PERMISSIONS.REPORTS_MANAGE) },
       { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasPermission(userPermissions, PERMISSIONS.SETTINGS_READ) },
       {
         href: '/admin',
@@ -105,8 +107,7 @@ const Sidebar = () => {
     ];
   }, [userPermissions]);
 
-  // --- HOOKS & HANDLERS for collapsible menu ---
-  // Effect to automatically open the parent of the active sub-item on page load
+  // Effect to automatically open the parent of the active sub-item
   useEffect(() => {
     const activeParent = navItems.find(item =>
       item.subItems?.some(subItem => {
@@ -125,20 +126,15 @@ const Sidebar = () => {
     signOut({ callbackUrl: '/login' });
   };
   
-  // Helper function to check for active state (parent or child)
+  // Helper to check for active state (parent or child)
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
-    // Check if the parent link itself is active (for non-sub-menu items)
-    if (item.href !== '/' && currentPath.startsWith(item.href) && !item.subItems) {
-      return true;
+    if (!item.subItems) {
+      return currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href));
     }
-    // Check if any sub-item is active
-    if (item.subItems) {
-      return item.subItems.some(subItem => {
-        const activeCheckPath = subItem.basePathForActive || subItem.href;
-        return currentPath.startsWith(activeCheckPath);
-      });
-    }
-    return false;
+    return item.subItems.some(subItem => {
+      const activeCheckPath = subItem.basePathForActive || subItem.href;
+      return currentPath.startsWith(activeCheckPath);
+    });
   };
 
   return (
@@ -165,7 +161,7 @@ const Sidebar = () => {
               <div key={item.href}>
                 {item.subItems && item.subItems.length > 0 ? (
                   <>
-                    <button onClick={() => handleItemClick(item.href)} aria-expanded={isOpen} className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
+                    <button onClick={() => handleItemClick(item.href)} aria-expanded={isOpen} className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
                       <span className="flex items-center gap-3">{item.icon}<span>{item.label}</span></span>
                       <ChevronDownIcon className={`w-4 h-4 transform transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                     </button>
@@ -187,7 +183,7 @@ const Sidebar = () => {
                     </div>
                   </>
                 ) : (
-                  <Link href={item.href} className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
+                  <Link href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
                     {item.icon}
                     <span>{item.label}</span>
                   </Link>

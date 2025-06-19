@@ -12,6 +12,7 @@ declare module 'next-auth' {
 
   interface Session {
     user: {
+      permissions(permissions: any, SETTINGS_READ: string): unknown;
       id: string;
       email: string;
       name: string;
