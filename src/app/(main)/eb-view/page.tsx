@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react'; // <-- Import useMemo
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { DocumentTextIcon, CurrencyRupeeIcon, XMarkIcon, ClockIcon } from '@heroicons/react/24/outline';
@@ -32,38 +32,149 @@ interface EBReading {
 
 const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; }) => { useEffect(() => { const handleKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') { onClose(); } }; window.addEventListener('keydown', handleKeyDown); return () => { window.removeEventListener('keydown', handleKeyDown); }; }, [onClose]); return ( <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex justify-center items-center p-4 transition-opacity duration-300" onClick={onClose}> <button className="absolute top-4 right-4 text-white hover:text-gray-300 z-50 p-2" onClick={onClose} aria-label="Close image zoom view"> <XMarkIcon className="h-8 w-8" /> </button> <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()} > <img src={src} alt="Zoomed meter reading" className="object-contain w-full h-full rounded-lg" /> </div> </div> ); };
 const CostModal = ({ isOpen, onClose, onSave, cost, setCost, isLoading }: { isOpen: boolean; onClose: () => void; onSave: (cost: number) => void; cost: number; setCost: (cost: number) => void; isLoading: boolean; }) => { if (!isOpen) return null; const handleSave = () => { if (cost < 0) { alert('Cost must be a positive number.'); return; } onSave(cost); }; return ( <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center"> <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md"> <h2 className="text-xl font-semibold text-gray-900">Set Cost Per Unit</h2> <p className="text-sm text-gray-600 mt-1">This cost will be applied to all currently displayed readings.</p> <div className="mt-4"> <label htmlFor="cost" className="block text-sm font-medium text-gray-700">Cost (INR)</label> <div className="relative mt-1 rounded-md shadow-sm"> <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"> <CurrencyRupeeIcon className="h-5 w-5 text-gray-400" aria-hidden="true" /> </div> <input type="number" name="cost" id="cost" className="block w-full rounded-md border-gray-300 pl-10 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2" placeholder="0.00" step="0.01" value={cost} onChange={(e) => setCost(parseFloat(e.target.value) || 0)} disabled={isLoading} /> </div> </div> <div className="mt-6 flex justify-end space-x-3"> <button type="button" className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none" onClick={onClose} disabled={isLoading}>Cancel</button> <button type="button" className={`inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleSave} disabled={isLoading}> {isLoading ? 'Saving...' : 'Save and Recalculate'} </button> </div> </div> </div> ); };
-const HistoryModal = ({ isOpen, onClose, history }: { isOpen: boolean; onClose: () => void; history: UpdateHistory[] }) => { if (!isOpen) return null; return ( <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}> <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}> <div className="flex justify-between items-center p-4 border-b"> <h2 className="text-xl font-semibold text-gray-900">Update History</h2> <button onClick={onClose} className="p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800"><XMarkIcon className="h-6 w-6"/></button> </div> <div className="p-6 overflow-y-auto space-y-4"> {history.length === 0 ? ( <p className="text-center text-gray-500 py-8">No update history found for this entry.</p> ) : ( history.slice().reverse().map((entry, index) => ( <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200"> <div className="flex justify-between items-start mb-2"> <p className="text-sm font-medium text-gray-800">Changed by: <span className="font-bold">{entry.user.name || 'N/A'}</span></p> <p className="text-xs text-gray-500 whitespace-nowrap pl-4">{new Date(entry.timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</p> </div> <ul className="list-disc list-inside space-y-1.5 text-sm text-gray-700"> {entry.changes.map((change, cIndex) => ( <li key={cIndex}>Updated <strong className="text-gray-900">{change.field}</strong> from <code className="text-xs bg-red-100 text-red-800 font-semibold px-1.5 py-0.5 rounded-md">{change.oldValue ?? 'Not Set'}</code> to <code className="text-xs bg-green-100 text-green-800 font-semibold px-1.5 py-0.5 rounded-md">{change.newValue ?? 'Not Set'}</code></li> ))} </ul> </div> )) )} </div> <div className="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end"> <button type="button" className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={onClose}>Close</button> </div> </div> </div> ); };
 
 /**
- * [UPDATED] A modal to display a summary list of all EB readings and calculations, with filtering.
+ * [UPDATED] A modal to display update history with filtering options by user and date.
  */
+const HistoryModal = ({ isOpen, onClose, history }: { isOpen: boolean; onClose: () => void; history: UpdateHistory[] }) => {
+    // State for filters
+    const [selectedUser, setSelectedUser] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
+    // Memoize the list of unique users for the dropdown filter
+    const uniqueUsers = useMemo(() => {
+        if (!history || history.length === 0) return [];
+        const usersMap = new Map<string, { id: string; name: string }>();
+        history.forEach(entry => {
+            if (entry.user && entry.user.id && !usersMap.has(entry.user.id)) {
+                usersMap.set(entry.user.id, entry.user);
+            }
+        });
+        return Array.from(usersMap.values());
+    }, [history]);
+
+    // Memoize the filtered history list based on active filters
+    const filteredHistory = useMemo(() => {
+        return history
+            .filter(entry => {
+                // Filter by user
+                if (selectedUser && entry.user.id !== selectedUser) {
+                    return false;
+                }
+                
+                // Filter by date range (normalizing dates to avoid time issues)
+                const entryDate = new Date(new Date(entry.timestamp).setHours(0, 0, 0, 0));
+                
+                if (startDate) {
+                    const start = new Date(startDate);
+                    if (entryDate < start) return false;
+                }
+                
+                if (endDate) {
+                    const end = new Date(endDate);
+                    if (entryDate > end) return false;
+                }
+                
+                return true;
+            })
+            .slice() // Create a shallow copy to avoid mutating the original prop
+            .reverse(); // Display newest changes first
+    }, [history, selectedUser, startDate, endDate]);
+
+    const handleResetFilters = () => {
+        setSelectedUser('');
+        setStartDate('');
+        setEndDate('');
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center p-4 border-b">
+                    <h2 className="text-xl font-semibold text-gray-900">Update History</h2>
+                    <button onClick={onClose} className="p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800">
+                        <XMarkIcon className="h-6 w-6"/>
+                    </button>
+                </div>
+
+                {/* --- FILTER CONTROLS --- */}
+                {history.length > 0 && (
+                     <div className="p-4 border-b bg-gray-50 flex flex-wrap items-end gap-4">
+                        <div>
+                            <label htmlFor="user-filter" className="block text-sm font-medium text-gray-700">User</label>
+                            <select id="user-filter" value={selectedUser} onChange={e => setSelectedUser(e.target.value)} className="mt-1 block w-full min-w-[150px] rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                                <option value="">All Users</option>
+                                {uniqueUsers.map(user => (
+                                    <option key={user.id} value={user.id}>{user.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="start-date-filter" className="block text-sm font-medium text-gray-700">From Date</label>
+                            <input type="date" id="start-date-filter" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2"/>
+                        </div>
+                        <div>
+                            <label htmlFor="end-date-filter" className="block text-sm font-medium text-gray-700">To Date</label>
+                            <input type="date" id="end-date-filter" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2"/>
+                        </div>
+                        <div>
+                            <button onClick={handleResetFilters} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-100">Reset</button>
+                        </div>
+                    </div>
+                )}
+               
+                <div className="p-6 overflow-y-auto space-y-4">
+                    {history.length === 0 ? (
+                        <p className="text-center text-gray-500 py-8">No update history found for this entry.</p>
+                    ) : filteredHistory.length === 0 ? (
+                        <p className="text-center text-gray-500 py-8">No history entries match the current filters.</p>
+                    ) : (
+                        filteredHistory.map((entry, index) => (
+                            <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <div className="flex justify-between items-start mb-2">
+                                    <p className="text-sm font-medium text-gray-800">Changed by: <span className="font-bold">{entry.user.name || 'N/A'}</span></p>
+                                    <p className="text-xs text-gray-500 whitespace-nowrap pl-4">{new Date(entry.timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                </div>
+                                <ul className="list-disc list-inside space-y-1.5 text-sm text-gray-700">
+                                    {entry.changes.map((change, cIndex) => (
+                                        <li key={cIndex}>
+                                            Updated <strong className="text-gray-900">{change.field}</strong> from <code className="text-xs bg-red-100 text-red-800 font-semibold px-1.5 py-0.5 rounded-md">{change.oldValue ?? 'Not Set'}</code> to <code className="text-xs bg-green-100 text-green-800 font-semibold px-1.5 py-0.5 rounded-md">{change.newValue ?? 'Not Set'}</code>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
+                    <button type="button" className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={onClose}>Close</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const ReadingsSummaryModal = ({ isOpen, onClose, readings }: { isOpen: boolean; onClose: () => void; readings: EBReading[] }) => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
 
-    // Memoize the filtered readings to prevent recalculation on every render
     const filteredReadings = useMemo(() => {
-        if (!startDate && !endDate) {
-            return readings;
-        }
+        if (!startDate && !endDate) return readings;
         return readings.filter(reading => {
-            // The reading date, with time set to 00:00:00 for accurate comparison
             const readingDate = new Date(new Date(reading.date).setHours(0, 0, 0, 0));
-            
             const start = startDate ? new Date(startDate) : null;
             const end = endDate ? new Date(endDate) : null;
-
-            if (start && readingDate < start) {
-                return false;
-            }
-            if (end && readingDate > end) {
-                return false;
-            }
+            if (start && readingDate < start) return false;
+            if (end && readingDate > end) return false;
             return true;
         });
     }, [readings, startDate, endDate]);
 
-    // Calculate totals based on the *filtered* readings
     const totals = useMemo(() => {
         return filteredReadings.reduce((acc, reading) => {
             acc.unitsConsumed += reading.unitsConsumed || 0;
@@ -84,87 +195,29 @@ const ReadingsSummaryModal = ({ isOpen, onClose, readings }: { isOpen: boolean; 
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center p-4 border-b">
                     <h2 className="text-xl font-semibold text-gray-900">Readings Summary</h2>
-                    <button onClick={onClose} className="p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800">
-                        <XMarkIcon className="h-6 w-6"/>
-                    </button>
+                    <button onClick={onClose} className="p-1 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800"><XMarkIcon className="h-6 w-6"/></button>
                 </div>
-
-                {/* --- FILTER CONTROLS --- */}
                 <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center gap-4">
                     <div>
-                        <label htmlFor="start-date" className="block text-sm font-medium text-gray-700">Start Date</label>
-                        <input type="date" id="start-date" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" />
+                        <label htmlFor="start-date-summary" className="block text-sm font-medium text-gray-700">Start Date</label>
+                        <input type="date" id="start-date-summary" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" />
                     </div>
                     <div>
-                        <label htmlFor="end-date" className="block text-sm font-medium text-gray-700">End Date</label>
-                        <input type="date" id="end-date" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" />
+                        <label htmlFor="end-date-summary" className="block text-sm font-medium text-gray-700">End Date</label>
+                        <input type="date" id="end-date-summary" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" />
                     </div>
                     <div className="pt-6">
                         <button onClick={handleResetFilters} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-100">Reset</button>
                     </div>
                 </div>
-
-                <div className="p-6 overflow-y-auto">
-                    <div className="flow-root">
-                        <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                            <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-                                <table className="min-w-full divide-y divide-gray-300">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">Date</th>
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Start Units</th>
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">End Units</th>
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Consumed</th>
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Cost/Unit</th>
-                                            <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0 text-left text-sm font-semibold text-gray-900">Total Cost</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200 bg-white">
-                                        {filteredReadings.map((reading) => (
-                                            <tr key={reading._id}>
-                                                <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">{new Date(reading.date).toLocaleDateString('en-CA')}</td>
-                                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.startUnits?.toFixed(2) ?? 'N/A'}</td>
-                                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.endUnits?.toFixed(2) ?? 'N/A'}</td>
-                                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.unitsConsumed?.toFixed(2) ?? 'N/A'}</td>
-                                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.costPerUnit !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.costPerUnit) : 'N/A'}</td>
-                                                <td className="whitespace-nowrap py-4 pl-3 pr-4 text-sm font-medium text-gray-900 sm:pr-0">{reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot>
-                                        <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
-                                            <th scope="row" colSpan={3} className="pl-4 pr-3 py-3 text-left text-sm text-gray-900 sm:pl-0">Filtered Total</th>
-                                            <td className="pl-3 pr-3 py-3 text-sm text-gray-900">{totals.unitsConsumed.toFixed(2)} units</td>
-                                            <td className="pl-3 pr-3 py-3 text-sm text-gray-500"></td>
-                                            <td className="pl-3 pr-4 py-3 text-sm text-gray-900 sm:pr-0">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totals.totalCost)}</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div className="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
-                    <button type="button" className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={onClose}>Close</button>
-                </div>
+                <div className="p-6 overflow-y-auto"><div className="flow-root"><div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8"><div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8"><table className="min-w-full divide-y divide-gray-300"><thead><tr><th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0">Date</th><th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Start Units</th><th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">End Units</th><th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Consumed</th><th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Cost/Unit</th><th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0 text-left text-sm font-semibold text-gray-900">Total Cost</th></tr></thead><tbody className="divide-y divide-gray-200 bg-white">{filteredReadings.map((reading) => (<tr key={reading._id}><td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">{new Date(reading.date).toLocaleDateString('en-CA')}</td><td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.startUnits?.toFixed(2) ?? 'N/A'}</td><td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.endUnits?.toFixed(2) ?? 'N/A'}</td><td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.unitsConsumed?.toFixed(2) ?? 'N/A'}</td><td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{reading.costPerUnit !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.costPerUnit) : 'N/A'}</td><td className="whitespace-nowrap py-4 pl-3 pr-4 text-sm font-medium text-gray-900 sm:pr-0">{reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}</td></tr>))}</tbody><tfoot><tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold"><th scope="row" colSpan={3} className="pl-4 pr-3 py-3 text-left text-sm text-gray-900 sm:pl-0">Filtered Total</th><td className="pl-3 pr-3 py-3 text-sm text-gray-900">{totals.unitsConsumed.toFixed(2)} units</td><td className="pl-3 pr-3 py-3 text-sm text-gray-500"></td><td className="pl-3 pr-4 py-3 text-sm text-gray-900 sm:pr-0">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totals.totalCost)}</td></tr></tfoot></table></div></div></div></div>
+                <div className="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end"><button type="button" className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50" onClick={onClose}>Close</button></div>
             </div>
         </div>
     );
 };
 
-
-/**
- * A card component that displays the details for a single day's EB reading.
- */
-const EBReadingCard = ({ 
-  reading, 
-  onUpdate,
-  onImageZoom
-}: { 
-  reading: EBReading;
-  onUpdate: (id: string, startUnits: number, endUnits: number) => void; 
-  onImageZoom: (url: string) => void;
-}) => {
+const EBReadingCard = ({ reading, onUpdate, onImageZoom }: { reading: EBReading; onUpdate: (id: string, startUnits: number, endUnits: number) => void; onImageZoom: (url: string) => void; }) => {
   const { data: session } = useSession();
   const [isEditing, setIsEditing] = useState(false);
   const [startUnits, setStartUnits] = useState(reading.startUnits || 0);
@@ -250,7 +303,9 @@ export default function EBViewPage() {
   const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
-  const canViewCalculateEB = session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE);
+  const canViewCalculateEB = useMemo(() => 
+    session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE),
+  [session]);
 
   useEffect(() => {
     if(canViewCalculateEB) {
@@ -327,14 +382,14 @@ export default function EBViewPage() {
       {zoomedImageUrl && <ImageZoomModal src={zoomedImageUrl} onClose={() => setZoomedImageUrl(null)} />}
 
       <div className="p-6 bg-gray-50 min-h-screen space-y-8">
-        <div className="flex justify-between items-center">
-          <div><h1 className="text-3xl font-bold text-gray-900">EB Readings View & Calculate</h1><p className="text-gray-600 mt-1">View meter images and calculate electricity costs</p></div>
-          <div className="text-sm text-gray-500">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+        <div className="flex flex-wrap justify-between items-center gap-4">
+          <div><h1 className="text-3xl font-bold text-gray-900">EB Readings View & Calculate</h1><p className="text-gray-600 mt-1"></p></div>
+          <div className="text-sm text-gray-500 flex-shrink-0">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-900"></h2>
+          <div className="p-6 border-b border-gray-200 flex flex-wrap justify-between items-center gap-4">
+            <h2 className="text-xl font-semibold text-gray-900">All Readings</h2>
             <div className="flex items-center space-x-2">
               <button onClick={() => setIsCostModalOpen(true)} className="text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 font-medium flex items-center px-3 py-1.5 rounded-md">
                 <CurrencyRupeeIcon className="h-4 w-4 mr-2" />
