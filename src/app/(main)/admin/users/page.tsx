@@ -113,7 +113,6 @@ export default function UsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser)
       });
-
       const data = await response.json();
       if (data.success) {
         setShowCreateModal(false);
@@ -130,14 +129,12 @@ export default function UsersPage() {
 
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     if (!canUpdate) return;
-
     try {
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !currentStatus })
       });
-
       if (response.ok) {
         fetchUsers();
       }

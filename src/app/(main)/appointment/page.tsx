@@ -5,6 +5,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import BookAppointmentForm, { NewBookingData } from './BookAppointmentForm';
 import BillingModal from './billingmodal';
 import {
+  CalendarIcon,
+  ClockIcon,
+  UserGroupIcon,
   PlusIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -12,8 +15,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { toast } from 'react-toastify';
 import EditAppointmentForm from '@/components/EditAppointmentForm';
-import { useSession } from 'next-auth/react';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // ===================================================================================
 //  INTERFACES
@@ -104,10 +105,6 @@ const getStatusColor = (status: string) => {
 //  MAIN PAGE COMPONENT
 // ===================================================================================
 export default function AppointmentPage() {
-
-  const { data: session } = useSession();
-
-
   const [allAppointments, setAllAppointments] = useState<AppointmentWithCustomer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -224,37 +221,45 @@ export default function AppointmentPage() {
     }
   };
 
-  const handleFinalizeBill = async (appointmentId: string, finalTotal: number, billDetails: any) => {
-    try {
-      const response = await fetch(`/api/billing`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appointmentId,
-          customerId: selectedAppointmentForBilling?.customerId._id,
-          stylistId: selectedAppointmentForBilling?.stylistId._id,
-          items: billDetails.items,
-          grandTotal: finalTotal,
-          paymentDetails: billDetails.paymentDetails,
-          notes: billDetails.notes,
-          membershipPurchase: billDetails.membershipPurchase,
-          billingStaffId: billDetails.billingStaffId,
-          serviceTotal: billDetails.serviceTotal,
-          productTotal: billDetails.productTotal,
-          subtotal: billDetails.subtotal
-        })
-      });
+ // Find this function in your app/appointment/page.tsx file and replace it with this corrected version.
 
-      const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || 'Failed to create invoice.');
+const handleFinalizeBill = async (billDetails: any) => {
+  // First, we check that our state has the appointment data we need.
+  if (!selectedAppointmentForBilling) {
+    toast.error("Error: No appointment selected for billing. Please try again.");
+    return;
+  }
 
-      toast.success('Payment completed successfully!');
-      handleCloseBillingModal();
-    } catch (err: any) {
-      toast.error(err.message);
-      throw err;
+  try {
+    // Here, we combine the IDs from our reliable state with the details from the modal.
+    const finalPayload = {
+      appointmentId: selectedAppointmentForBilling._id,
+      customerId: selectedAppointmentForBilling.customerId._id,
+      stylistId: selectedAppointmentForBilling.stylistId._id,
+      ...billDetails // This includes items, totals, notes, etc.
+    };
+    
+    console.log("FINAL PAYLOAD BEING SENT TO /api/billing:", finalPayload);
+
+    // Send the complete and correct payload to the backend.
+    const response = await fetch(`/api/billing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(finalPayload)
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to create invoice.');
     }
-  };
+
+    toast.success('Payment completed successfully!');
+    handleCloseBillingModal();
+
+  } catch (err: any) {
+    toast.error(err.message);
+  }
+};
 
   const handleCloseBillingModal = () => {
     setIsBillingModalOpen(false);
@@ -267,28 +272,22 @@ export default function AppointmentPage() {
     setStatusFilter(newStatus);
   };
 
-   const canCreateAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE);
-  const canUpdateAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE);
-
-
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) setCurrentPage(page);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/30 p-4 md:p-0">
+    <div className="bg-gray-50/30 p-4 md:p-8">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Appointments</h1>
-        {canCreateAppointments && (
-            <button
-            onClick={() => setIsBookAppointmentModalOpen(true)}
-            className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"
-            >
-            <PlusIcon className="h-5 w-5" />
-            <span>Book Appointment</span>
-            </button>
-        )}
+        <button
+          onClick={() => setIsBookAppointmentModalOpen(true)}
+          className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"
+        >
+          <PlusIcon className="h-5 w-5" />
+          <span>Book Appointment</span>
+        </button>
       </div>
 
       {/* Search and Filters */}
@@ -429,15 +428,13 @@ export default function AppointmentPage() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
-                          {canUpdateAppointments && (
-                <button
-                    onClick={() => handleEditAppointment(appointment)}
-                    className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"
-                >
-                    <PencilIcon className="w-3 h-3" />
-                    Edit
-                </button>
-            )}
+                          <button
+                            onClick={() => handleEditAppointment(appointment)}
+                            className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"
+                          >
+                            <PencilIcon className="w-3 h-3" />
+                            Edit
+                          </button>
                         </div>
                       </td>
                     </tr>

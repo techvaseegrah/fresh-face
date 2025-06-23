@@ -86,7 +86,7 @@ export async function GET(req: Request) {
 
     const [results, totalAppointmentsResult] = await Promise.all([
       Appointment.aggregate(pipeline)
-        .sort({ date: 1, time: 1 })
+        .sort({ date: -1, time: -1 })
         .skip(skip)
         .limit(limit),
       Appointment.aggregate([...pipeline, { $count: 'total' }])
@@ -161,7 +161,6 @@ export async function POST(req: Request) {
     }
 
 
-
     // Find or create customer
     let customerDoc = await Customer.findOne({ phoneNumber: phoneNumber.trim() });
     if (!customerDoc) {
@@ -172,7 +171,7 @@ export async function POST(req: Request) {
         gender: gender || 'other'
       });
 
-
+      
     }
 
     // Calculate duration and totals

@@ -15,8 +15,11 @@ import {
   LightBulbIcon,
   DocumentTextIcon,
   ShoppingCartIcon,
-  BuildingStorefrontIcon,
-  BanknotesIcon
+   // Added from the second file
+  BanknotesIcon,
+  Cog6ToothIcon,
+   // Added from the second file
+  BuildingStorefrontIcon
 } from '@heroicons/react/24/outline';
 
 const Sidebar = () => {
@@ -61,7 +64,8 @@ const Sidebar = () => {
     { href: '/eb-upload', label: 'EB Upload', icon: LightBulbIcon, show: canAccessEBUpload },
     { href: '/eb-view', label: 'EB View & Calculate', icon: DocumentTextIcon, show: canAccessEBViewCalculate },
     { href: '/procurement', label: 'Procurements', icon: ShoppingCartIcon, show: canAccessProcurement },
-    { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd }
+    { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd },
+    {href:'/settings',label:'Settings',icon:Cog6ToothIcon,show:canAccessAdmin}
   ];
 
   const adminItems = [

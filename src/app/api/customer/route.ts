@@ -81,7 +81,6 @@ export async function GET(req: Request) {
       { $sort: { date: -1 } },
       { $group: { _id: '$customerId', lastAppointmentDate: { $first: '$date' } } }
     ]);
-
     const appointmentMap = new Map(latestAppointments.map(a => [a._id.toString(), a.lastAppointmentDate]));
     const twoMonthsAgo = new Date();
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
@@ -89,13 +88,11 @@ export async function GET(req: Request) {
     const customersWithStatus = customersFromDb.map(customer => {
       let status: 'Active' | 'Inactive' | 'New' = 'New';
       const lastAppointmentDate = appointmentMap.get(customer._id.toString());
-
       if (lastAppointmentDate) {
         status = new Date(lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
       } else if (customer.createdAt) {
         status = new Date(customer.createdAt) < twoMonthsAgo ? 'Inactive' : 'New';
       }
-
       return {
         ...customer,
         id: customer._id.toString(),

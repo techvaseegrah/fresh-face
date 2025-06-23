@@ -1,4 +1,3 @@
-// components/billingmodal.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -53,11 +52,7 @@ interface BillingModalProps {
   appointment: AppointmentForModal;
   customer: CustomerForModal;
   stylist: StylistForModal;
-  onFinalizeAndPay: (
-    appointmentId: string,
-    finalTotal: number,
-    billDetails: any
-  ) => Promise<void>;
+  onFinalizeAndPay: (billDetails: any) => Promise<void>;
 }
 
 // === CUSTOMER HISTORY MODAL FOR BILLING ===
@@ -73,6 +68,7 @@ const CustomerHistoryModal: React.FC<{
     if (isOpen && customer?.phoneNumber) {
       fetchCustomerHistory();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, customer]);
 
   const fetchCustomerHistory = async () => {
@@ -126,7 +122,6 @@ const CustomerHistoryModal: React.FC<{
                 <div className="text-2xl font-bold text-blue-600">{customerDetails.appointmentHistory.length}</div>
                 <div className="text-sm text-gray-600">Total Visits</div>
               </div>
-
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
                   ₹{customerDetails.appointmentHistory
@@ -147,7 +142,6 @@ const CustomerHistoryModal: React.FC<{
                 <div className="text-sm text-gray-600">Member</div>
               </div>
             </div>
-
             {/* History Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -163,9 +157,7 @@ const CustomerHistoryModal: React.FC<{
                 <tbody>
                   {customerDetails.appointmentHistory.map((apt: any) => (
                     <tr key={apt._id} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        {new Date(apt.date).toLocaleDateString()}
-                      </td>
+                      <td className="px-4 py-3">{new Date(apt.date).toLocaleDateString()}</td>
                       <td className="px-4 py-3">{apt.services.join(', ') || 'N/A'}</td>
                       <td className="px-4 py-3">{apt.stylistName}</td>
                       <td className="px-4 py-3 text-center">
@@ -201,39 +193,29 @@ const BillingModal: React.FC<BillingModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-const [inventoryImpact, setInventoryImpact] = useState<any>(null);
-const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+  const [inventoryImpact, setInventoryImpact] = useState<any>(null);
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<SearchableItem[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Membership and history states
   const [customerIsMember, setCustomerIsMember] = useState<boolean>(false);
   const [showMembershipGrant, setShowMembershipGrant] = useState<boolean>(false);
   const [membershipGranted, setMembershipGranted] = useState<boolean>(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState<boolean>(false);
 
-  // STAFF SELECTION
   const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [isLoadingStaff, setIsLoadingStaff] = useState<boolean>(false);
 
-  // SPLIT PAYMENT STATES
-  const [paymentDetails, setPaymentDetails] = useState({
-    cash: 0,
-    card: 0,
-    upi: 0,
-    other: 0
-  });
+  const [paymentDetails, setPaymentDetails] = useState({ cash: 0, card: 0, upi: 0, other: 0 });
 
-  // ADD BARCODE STATES FOR MEMBERSHIP GRANT
   const [membershipBarcode, setMembershipBarcode] = useState<string>('');
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean>(true);
   const [isCheckingBarcode, setIsCheckingBarcode] = useState<boolean>(false);
 
-  // Load staff members when modal opens
   useEffect(() => {
     if (isOpen) {
       fetchStaffMembers();
@@ -241,35 +223,31 @@ const [isLoadingInventory, setIsLoadingInventory] = useState(false);
   }, [isOpen]);
 
   useEffect(() => {
-  if (billItems.length > 0 && appointment.serviceIds) {
-    fetchInventoryImpact();
-  }
-}, [billItems, appointment.serviceIds, customer._id]);
-
-const fetchInventoryImpact = async () => {
-  setIsLoadingInventory(true);
-  try {
-    const serviceIds = appointment.serviceIds?.map(s => s._id) || [];
-    const response = await fetch('/api/billing/inventory-preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        serviceIds,
-        customerId: customer._id
-      })
-    });
-
-    const data = await response.json();
-    if (data.success) {
-      setInventoryImpact(data.data);
+    if (billItems.length > 0 && appointment.serviceIds) {
+      fetchInventoryImpact();
     }
-  } catch (error) {
-    console.error('Failed to fetch inventory impact:', error);
-  } finally {
-    setIsLoadingInventory(false);
-  }
-};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billItems, appointment.serviceIds, customer.id]);
 
+  const fetchInventoryImpact = async () => {
+    setIsLoadingInventory(true);
+    try {
+      const serviceIds = appointment.serviceIds?.map(s => s._id) || [];
+      const response = await fetch('/api/billing/inventory-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serviceIds, customerId: customer.id })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setInventoryImpact(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch inventory impact:', error);
+    } finally {
+      setIsLoadingInventory(false);
+    }
+  };
 
   const fetchStaffMembers = async () => {
     setIsLoadingStaff(true);
@@ -286,12 +264,8 @@ const fetchInventoryImpact = async () => {
     }
   };
 
-  // === INITIALIZE BILL ITEMS PROPERLY ===
   useEffect(() => {
     if (isOpen && appointment) {
-      console.log('🔥 Initializing billing modal with appointment:', appointment);
-
-      // Reset all states
       setError(null);
       setNotes('');
       setSearchQuery('');
@@ -300,19 +274,14 @@ const fetchInventoryImpact = async () => {
       setSelectedStaffId('');
       setPaymentDetails({ cash: 0, card: 0, upi: 0, other: 0 });
 
-      // Set customer membership status
       const isMember = customer?.isMembership || false;
       setCustomerIsMember(isMember);
       setShowMembershipGrant(!isMember);
 
-      // === CRITICAL FIX: PROPERLY INITIALIZE BILL ITEMS ===
       if (appointment.serviceIds && appointment.serviceIds.length > 0) {
         const initialItems = appointment.serviceIds.map(service => {
-          console.log('🔥 Processing service for bill:', service);
-
           const hasDiscount = isMember && service.membershipRate;
           const finalPrice = hasDiscount ? service.membershipRate : service.price;
-
           return {
             itemType: 'service' as const,
             itemId: service._id,
@@ -323,20 +292,15 @@ const fetchInventoryImpact = async () => {
             finalPrice: finalPrice
           };
         });
-
-        console.log('🔥 Setting initial bill items:', initialItems);
         setBillItems(initialItems);
       } else {
-        console.log('🔥 No services found in appointment');
         setBillItems([]);
       }
     } else {
-      // Reset when modal is closed
       setBillItems([]);
     }
   }, [isOpen, appointment, customer?.isMembership]);
 
-  // Recalculate prices when membership status changes
   useEffect(() => {
     setBillItems(prevItems =>
       prevItems.map(item => {
@@ -348,13 +312,11 @@ const fetchInventoryImpact = async () => {
     );
   }, [customerIsMember]);
 
-  // Search for additional items
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
       setSearchResults([]);
       return;
     }
-
     const handler = setTimeout(async () => {
       setIsSearching(true);
       try {
@@ -367,17 +329,14 @@ const fetchInventoryImpact = async () => {
         setIsSearching(false);
       }
     }, 400);
-
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Validate barcode as user types
   useEffect(() => {
     if (!membershipBarcode.trim()) {
       setIsBarcodeValid(true);
       return;
     }
-
     const handler = setTimeout(async () => {
       setIsCheckingBarcode(true);
       try {
@@ -391,17 +350,14 @@ const fetchInventoryImpact = async () => {
         setIsCheckingBarcode(false);
       }
     }, 500);
-
     return () => clearTimeout(handler);
   }, [membershipBarcode]);
 
   const handleAddItemToBill = (item: SearchableItem) => {
     if (billItems.some(bi => bi.itemId === item.id)) return;
-
     const isService = item.type === 'service';
     const hasDiscount = customerIsMember && isService && item.membershipRate;
     const finalPrice = hasDiscount ? item.membershipRate! : item.price;
-
     const newItem: BillLineItem = {
       itemType: item.type,
       itemId: item.id,
@@ -411,7 +367,6 @@ const fetchInventoryImpact = async () => {
       quantity: 1,
       finalPrice: finalPrice
     };
-
     setBillItems(prev => [...prev, newItem]);
     setSearchQuery('');
     setSearchResults([]);
@@ -424,13 +379,11 @@ const fetchInventoryImpact = async () => {
 
   const handleQuantityChange = (index: number, newQuantity: number) => {
     if (newQuantity < 1) return;
-
     setBillItems(prev => prev.map((item, idx) => {
       if (idx === index) {
         const isService = item.itemType === 'service';
         const hasDiscount = customerIsMember && isService && item.membershipRate;
         const unitPrice = hasDiscount ? item.membershipRate! : item.unitPrice;
-
         return {
           ...item,
           quantity: newQuantity,
@@ -446,14 +399,12 @@ const fetchInventoryImpact = async () => {
       setError('Please enter a barcode for the membership.');
       return;
     }
-
     if (!isBarcodeValid) {
       setError('This barcode is already in use. Please enter a different one.');
       return;
     }
-
     try {
-      const response = await fetch(`/api/customer/${customer._id}/toggle-membership`, {
+      const response = await fetch(`/api/customer/${customer.id}/toggle-membership`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -461,7 +412,6 @@ const fetchInventoryImpact = async () => {
           membershipBarcode: membershipBarcode.trim()
         })
       });
-
       const result = await response.json();
       if (result.success) {
         setCustomerIsMember(true);
@@ -478,8 +428,6 @@ const fetchInventoryImpact = async () => {
     }
   };
 
-
-  // Handle payment amount changes
   const handlePaymentChange = (method: keyof typeof paymentDetails, amount: number) => {
     setPaymentDetails(prev => ({
       ...prev,
@@ -487,21 +435,16 @@ const fetchInventoryImpact = async () => {
     }));
   };
 
-
-
   const calculateTotals = useCallback(() => {
     let serviceTotal = 0;
     let productTotal = 0;
     let originalTotal = 0;
     let membershipSavings = 0;
-
     billItems.forEach(item => {
       const isService = item.itemType === 'service';
-
       if (isService) {
         serviceTotal += item.finalPrice;
         originalTotal += item.unitPrice * item.quantity;
-
         if (customerIsMember && item.membershipRate) {
           membershipSavings += (item.unitPrice - item.membershipRate) * item.quantity;
         }
@@ -510,11 +453,9 @@ const fetchInventoryImpact = async () => {
         originalTotal += item.unitPrice * item.quantity;
       }
     });
-
     const grandTotal = serviceTotal + productTotal;
     const totalPaid = Object.values(paymentDetails).reduce((sum, amount) => sum + amount, 0);
     const balance = grandTotal - totalPaid;
-
     return {
       serviceTotal,
       productTotal,
@@ -529,67 +470,64 @@ const fetchInventoryImpact = async () => {
   const { serviceTotal, productTotal, originalTotal, grandTotal, membershipSavings, totalPaid, balance } = calculateTotals();
 
   const handleFinalizeClick = async () => {
-    if (billItems.length === 0) {
-      setError('Cannot finalize an empty bill.');
-      return;
-    }
+  // All your validation logic is good, keep it.
+  if (billItems.length === 0) {
+    setError('Cannot finalize an empty bill.');
+    return;
+  }
+  if (grandTotal <= 0) {
+    setError('Bill total must be greater than zero.');
+    return;
+  }
+  if (!selectedStaffId) {
+    setError('Please select a billing staff member.');
+    return;
+  }
+  if (Math.abs(balance) > 0.01) {
+    setError(`Payment amount (₹${totalPaid.toFixed(2)}) does not match bill total (₹${grandTotal.toFixed(2)}).`);
+    return;
+  }
 
-    if (grandTotal <= 0) {
-      setError('Bill total must be greater than zero.');
-      return;
-    }
+  setIsLoading(true);
+  setError(null);
 
-    if (!selectedStaffId) {
-      setError('Please select a billing staff member.');
-      return;
-    }
+  try {
+    // 1. Construct the billDetails object.
+    const billDetails = {
+      items: billItems.map(item => ({
+        itemType: item.itemType,
+        itemId: item.itemId,
+        name: item.name,
+        unitPrice: item.unitPrice,
+        membershipRate: item.membershipRate,
+        quantity: item.quantity,
+        finalPrice: item.finalPrice,
+        membershipDiscount: item.membershipRate && customerIsMember ?
+          (item.unitPrice - item.membershipRate) * item.quantity : 0
+      })),
+      serviceTotal,
+      productTotal,
+      subtotal: originalTotal,
+      membershipDiscount: membershipSavings,
+      grandTotal,
+      paymentDetails,
+      notes,
+      billingStaffId: selectedStaffId,
+      customerWasMember: customer?.isMembership || false,
+      membershipGrantedDuringBilling: membershipGranted
+    };
 
-    if (Math.abs(balance) > 0.01) { // Allow for small floating point differences
-      setError(`Payment amount (₹${totalPaid.toFixed(2)}) does not match bill total (₹${grandTotal.toFixed(2)}). Balance: ₹${balance.toFixed(2)}`);
-      return;
-    }
+    // 2. Pass ONLY this single object back to the parent component.
+    await onFinalizeAndPay(billDetails);
 
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const billDetails = {
-        items: billItems.map(item => ({
-          itemType: item.itemType,
-          itemId: item.itemId,
-          name: item.name,
-          unitPrice: item.unitPrice,
-          membershipRate: item.membershipRate,
-          quantity: item.quantity,
-          finalPrice: item.finalPrice,
-          membershipDiscount: item.membershipRate && customerIsMember ?
-            (item.unitPrice - item.membershipRate) * item.quantity : 0
-        })),
-        serviceTotal,
-        productTotal,
-        subtotal: originalTotal,
-        membershipDiscount: membershipSavings,
-        grandTotal,
-        paymentDetails,
-        notes,
-        stylistId: stylist.id,
-        billingStaffId: selectedStaffId,
-        customerWasMember: customer?.isMembership || false,
-        membershipGrantedDuringBilling: membershipGranted
-      };
-
-      console.log('🔥 Finalizing bill with details:', billDetails);
-      await onFinalizeAndPay(appointment._id, grandTotal, billDetails);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  } catch (err: any) {
+    setError(err.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   if (!isOpen) return null;
-
-  console.log('🔥 Rendering billing modal with bill items:', billItems);
 
   return (
     <>
@@ -627,7 +565,7 @@ const fetchInventoryImpact = async () => {
               </p>
             </div>
             <button onClick={onClose} className="text-gray-500 text-2xl hover:text-gray-700">
-              &times;
+              ×
             </button>
           </div>
 
@@ -692,7 +630,7 @@ const fetchInventoryImpact = async () => {
 
           {/* Body */}
           <div className="flex-grow overflow-y-auto pr-2 space-y-4">
-            {/* === CURRENT BILL ITEMS SECTION === */}
+            {/* CURRENT BILL ITEMS SECTION */}
             <div>
               <h3 className="text-lg font-medium text-gray-700 mb-3">
                 Current Bill Items ({billItems.length})
@@ -773,51 +711,48 @@ const fetchInventoryImpact = async () => {
               )}
             </div>
 
-{inventoryImpact && inventoryImpact.inventoryImpact.length > 0 && (
-  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-    <h4 className="text-sm font-medium text-blue-800 mb-3 flex items-center gap-2">
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-      </svg>
-      Inventory Impact ({inventoryImpact.customerGender === 'other' ? 'Default' : inventoryImpact.customerGender.charAt(0).toUpperCase() + inventoryImpact.customerGender.slice(1)} quantities)
-    </h4>
-    
-    <div className="space-y-2">
-      {inventoryImpact.inventoryImpact.map((impact: any, index: number) => (
-        <div key={index} className={`p-3 rounded-md border ${
-          impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' :
-          impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' :
-          impact.alertLevel === 'low' ? 'bg-yellow-50 border-yellow-200' :
-          'bg-green-50 border-green-200'
-        }`}>
-          <div className="flex justify-between items-center">
-            <div>
-              <span className="font-medium text-sm">{impact.productName}</span>
-              <div className="text-xs text-gray-600">
-                Current: {impact.currentQuantity.toFixed(1)}{impact.unit} → 
-                After service: {impact.remainingAfterUsage.toFixed(1)}{impact.unit}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm font-medium">-{impact.usageQuantity.toFixed(1)}{impact.unit}</div>
-              {impact.alertLevel !== 'ok' && (
-                <div className={`text-xs font-medium ${
-                  impact.alertLevel === 'insufficient' ? 'text-red-600' :
-                  impact.alertLevel === 'critical' ? 'text-orange-600' :
-                  'text-yellow-600'
-                }`}>
-                  {impact.alertLevel === 'insufficient' ? 'Insufficient Stock!' :
-                   impact.alertLevel === 'critical' ? 'Critical Level' :
-                   'Low Stock'}
+            {inventoryImpact && inventoryImpact.inventoryImpact.length > 0 && (
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 className="text-sm font-medium text-blue-800 mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  Inventory Impact ({inventoryImpact.customerGender === 'other' ? 'Default' : inventoryImpact.customerGender.charAt(0).toUpperCase() + inventoryImpact.customerGender.slice(1)} quantities)
+                </h4>
+                <div className="space-y-2">
+                  {inventoryImpact.inventoryImpact.map((impact: any, index: number) => (
+                    <div key={index} className={`p-3 rounded-md border ${impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' :
+                      impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' :
+                        impact.alertLevel === 'low' ? 'bg-yellow-50 border-yellow-200' :
+                          'bg-green-50 border-green-200'
+                      }`}>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <span className="font-medium text-sm">{impact.productName}</span>
+                          <div className="text-xs text-gray-600">
+                            Current: {(impact.currentQuantity ?? 0).toFixed(1)}{impact.unit} →
+                            After service: {(impact.remainingAfterUsage ?? 0).toFixed(1)}{impact.unit}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium">-{(impact.usageQuantity ?? 0).toFixed(1)}{impact.unit}</div>
+                          {impact.alertLevel !== 'ok' && (
+                            <div className={`text-xs font-medium ${impact.alertLevel === 'insufficient' ? 'text-red-600' :
+                              impact.alertLevel === 'critical' ? 'text-orange-600' :
+                                'text-yellow-600'
+                              }`}>
+                              {impact.alertLevel === 'insufficient' ? 'Insufficient Stock!' :
+                                impact.alertLevel === 'critical' ? 'Critical Level' :
+                                  'Low Stock'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+              </div>
+            )}
 
             {/* Search for Additional Items */}
             <div className="border-t pt-4">
@@ -850,8 +785,8 @@ const fetchInventoryImpact = async () => {
                           <div>
                             <span>{item.name}</span>
                             <span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-green-100 text-green-800'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-green-100 text-green-800'
                               }`}>
                               {item.type}
                             </span>
@@ -951,8 +886,6 @@ const fetchInventoryImpact = async () => {
                   />
                 </div>
               </div>
-
-              {/* Payment Summary */}
               <div className="mt-3 p-3 bg-gray-50 rounded-lg">
                 <div className="flex justify-between text-sm">
                   <span>Total Paid:</span>
@@ -988,7 +921,6 @@ const fetchInventoryImpact = async () => {
           {/* Footer with Totals */}
           <div className="mt-auto pt-4 border-t">
             <div className="grid grid-cols-2 gap-8">
-              {/* Totals Breakdown */}
               <div className="space-y-2 text-sm">
                 {serviceTotal > 0 && (
                   <div className="flex justify-between">
@@ -1015,8 +947,6 @@ const fetchInventoryImpact = async () => {
                   </>
                 )}
               </div>
-
-              {/* Grand Total */}
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-900">
                   <div>Grand Total:</div>
@@ -1024,7 +954,6 @@ const fetchInventoryImpact = async () => {
                 </div>
               </div>
             </div>
-
             <div className="mt-6 flex justify-end space-x-3">
               <button
                 onClick={onClose}
@@ -1052,7 +981,6 @@ const fetchInventoryImpact = async () => {
         </div>
       </div>
 
-      {/* Customer History Modal */}
       <CustomerHistoryModal
         isOpen={showCustomerHistory}
         onClose={() => setShowCustomerHistory(false)}

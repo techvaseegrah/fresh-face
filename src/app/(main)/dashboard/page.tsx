@@ -7,7 +7,7 @@ import {
   CalendarDaysIcon,
   UserGroupIcon,
   CreditCardIcon,
-  TrendingUpIcon,
+  //TrendingUpIcon,
   ClockIcon,
   EyeIcon,
   PlusIcon,

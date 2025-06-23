@@ -1,31 +1,84 @@
-// FILE: /app/crm/components/CrmCustomerDetailPanel.tsx - (FINAL, SIMPLIFIED VERSION)
+// FILE: /app/crm/components/CrmCustomerDetailPanel.tsx - (FINAL, WITH INTERACTIVE MEMBERSHIP GRANT)
 
 'use client';
 
-import React from 'react'; // useState is no longer needed here
+// FIX: Import useState and useEffect for local UI state management.
+import React, { useState, useEffect } from 'react';
 import { CrmCustomer } from '../types';
-import { XMarkIcon, SparklesIcon, TagIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, SparklesIcon, TagIcon, QrCodeIcon } from '@heroicons/react/24/outline';
 
 interface CrmCustomerDetailPanelProps {
   customer: CrmCustomer | null;
   isOpen: boolean;
-  isUpdating: boolean; // NEW: Receives the loading state as a prop from the parent hook.
+  isUpdating: boolean;
   onClose: () => void;
   /**
-   * RENAMED & SIMPLIFIED: This prop now just signals the user's intent to grant membership.
-   * The parent hook will handle the API call and all subsequent state updates.
+   * FIX: The signature is updated to accept the custom barcode string.
+   * The parent hook will now receive this value to use in its API call.
    */
-  onGrantMembership: (customerId: string) => void;
+  onGrantMembership: (customerId: string, barcode: string) => void;
 }
 
 const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
   customer,
   isOpen,
-  isUpdating, // Use the prop for the button's loading state.
+  isUpdating,
   onClose,
   onGrantMembership,
 }) => {
-  // REMOVED: All internal logic like `handleGrantMembership` function and `isUpdating` state has been moved to the useCrm hook.
+  // --- NEW: Local state for the membership grant UI ---
+  const [showBarcodeInput, setShowBarcodeInput] = useState(false);
+  const [membershipBarcode, setMembershipBarcode] = useState('');
+  const [isCheckingBarcode, setIsCheckingBarcode] = useState(false);
+  const [barcodeError, setBarcodeError] = useState('');
+
+  // Reset local state when the customer changes or the panel closes.
+  useEffect(() => {
+    if (!isOpen || !customer) {
+      setShowBarcodeInput(false);
+      setMembershipBarcode('');
+      setBarcodeError('');
+      setIsCheckingBarcode(false);
+    }
+  }, [customer, isOpen]);
+
+  // NEW: Effect for real-time barcode validation.
+  useEffect(() => {
+    // Don't validate if the input is empty or not shown
+    if (!showBarcodeInput || !membershipBarcode.trim()) {
+      setBarcodeError('');
+      return;
+    }
+
+    const handler = setTimeout(async () => {
+      setIsCheckingBarcode(true);
+      setBarcodeError('');
+      try {
+        const res = await fetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`);
+        const data = await res.json();
+        if (data.exists) {
+          setBarcodeError('This barcode is already in use.');
+        }
+      } catch (error) {
+        setBarcodeError('Could not validate barcode.');
+      } finally {
+        setIsCheckingBarcode(false);
+      }
+    }, 500); // Debounce for 500ms
+
+    return () => clearTimeout(handler);
+  }, [membershipBarcode, showBarcodeInput]);
+
+
+  // NEW: Handler for the final grant action.
+  const handleConfirmGrant = () => {
+    if (!customer || !membershipBarcode.trim() || !!barcodeError || isCheckingBarcode) {
+      return; // Prevent submission if invalid
+    }
+    // Call the parent hook's function with the required info.
+    onGrantMembership(customer.id, membershipBarcode.trim());
+  };
+
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -91,17 +144,56 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
             </div>
         </div>
 
-        {/* Add Membership Action */}
+        {/* --- FIX: UPDATED MEMBERSHIP ACTION SECTION --- */}
         {!customer!.currentMembership && (
           <div className="pt-4 border-t">
-            <button
-              // The button now calls the prop directly with the customer's ID.
-              onClick={() => onGrantMembership(customer!.id)}
-              disabled={isUpdating || !customer}
-              className="w-full text-center py-2.5 px-4 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:bg-indigo-400 disabled:cursor-not-allowed"
-            >
-              {isUpdating ? 'Adding...' : '+ Add Membership'}
-            </button>
+            {/* If the barcode input is NOT shown, show the initial button */}
+            {!showBarcodeInput ? (
+               <button
+                onClick={() => setShowBarcodeInput(true)} // This just reveals the input form
+                className="w-full text-center py-2.5 px-4 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                + Grant Membership
+              </button>
+            ) : (
+              // If the barcode input IS shown, show the detailed form
+              <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
+                <p className="text-sm font-semibold text-gray-800">Assign Membership Barcode</p>
+                <div>
+                  <label htmlFor="membershipBarcode" className="block text-xs font-medium text-gray-600 mb-1">
+                    Enter a unique barcode
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="membershipBarcode"
+                      type="text"
+                      value={membershipBarcode}
+                      onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())}
+                      placeholder="e.g., MEMBER123"
+                      className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 ${!!barcodeError ? 'border-red-400 focus:ring-red-500' : 'border-gray-300 focus:ring-indigo-500'}`}
+                    />
+                    <QrCodeIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  </div>
+                  {isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}
+                  {barcodeError && <p className="text-xs text-red-600 mt-1">{barcodeError}</p>}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleConfirmGrant}
+                    disabled={isUpdating || isCheckingBarcode || !membershipBarcode.trim() || !!barcodeError}
+                    className="flex-1 py-2 px-3 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:bg-indigo-400"
+                  >
+                    {isUpdating ? 'Granting...' : 'Confirm Grant'}
+                  </button>
+                  <button
+                    onClick={() => setShowBarcodeInput(false)}
+                    className="py-2 px-3 text-sm bg-white border rounded-md hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -134,9 +226,6 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
 
   return (
     <aside className={panelClasses} aria-hidden={!isOpen}>
-      <button onClick={onClose} className="absolute top-6 right-6 p-1 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100">
-        <XMarkIcon className="w-6 h-6" />
-      </button>
       {customer ? renderCustomerDetails() : renderLoadingState()}
     </aside>
   );

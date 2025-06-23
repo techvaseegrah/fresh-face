@@ -1,17 +1,13 @@
-// app/DayendClosing/history/page.tsx - Add permission checks
-
+// FILE: /app/DayendClosing/history/page.tsx
 'use client';
 
 import Link from 'next/link';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
-import { useSession } from 'next-auth/react';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { useReportHistory } from './hooks/useReportHistory';
 import { FilterBar } from './components/FilterBar';
 import { ReportList } from './components/ReportList';
 
 export default function DayEndHistoryPage() {
-  const { data: session } = useSession();
   const {
     reports,
     isLoading,
@@ -20,17 +16,6 @@ export default function DayEndHistoryPage() {
     handleFilterChange,
     handleApplyFilters,
   } = useReportHistory();
-
-  // Permission check
-  const canReadDayEnd = session && hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ);
-
-  if (!canReadDayEnd) {
-    return (
-      <div className="p-6 bg-gray-50 min-h-screen">
-        <p className="text-red-500">You do not have permission to view day-end history.</p>
-      </div>
-    );
-  }
 
   const renderContent = () => {
     if (isLoading) {
@@ -42,8 +27,8 @@ export default function DayEndHistoryPage() {
     if (reports.length === 0) {
       return (
         <div className="p-8 text-center text-gray-500">
-          <h3 className="font-semibold text-lg">No Reports Found</h3>
-          <p>No closing reports match the selected criteria.</p>
+            <h3 className="font-semibold text-lg">No Reports Found</h3>
+            <p>No closing reports match the selected criteria.</p>
         </div>
       );
     }

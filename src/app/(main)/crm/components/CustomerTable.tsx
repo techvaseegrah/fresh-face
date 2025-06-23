@@ -11,7 +11,6 @@ interface CustomerTableProps {
   onEdit: (customer: CrmCustomer) => void;
   onDelete: (customerId: string, customerName: string) => void;
   onGoToPage: (page: number) => void;
-
 }
 
 const getStatusClasses = (status?: string) => {
@@ -70,16 +69,12 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end items-center space-x-4">
-                 {onEdit && (
-        <button onClick={() => onEdit(customer)} className="font-medium text-indigo-600 hover:text-indigo-900 flex items-center gap-1">
-          <PencilSquareIcon className="w-4 h-4" />Edit
-        </button>
-      )}
-               {onDelete && (
-        <button onClick={() => onDelete(customer.id, customer.name)} className="font-medium text-red-600 hover:text-red-900 flex items-center gap-1">
-          <TrashIcon className="w-4 h-4" />Delete
-        </button>
-      )}
+                    <button onClick={() => onEdit(customer)} className="font-medium text-indigo-600 hover:text-indigo-900 flex items-center gap-1">
+                      <PencilSquareIcon className="w-4 h-4" />Edit
+                    </button>
+                    <button onClick={() => onDelete(customer.id, customer.name)} className="font-medium text-red-600 hover:text-red-900 flex items-center gap-1">
+                      <TrashIcon className="w-4 h-4" />Delete
+                    </button>
                   </div>
                 </td>
               </tr>

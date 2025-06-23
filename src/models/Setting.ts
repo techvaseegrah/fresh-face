@@ -1,29 +1,32 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Document, Schema, Model } from 'mongoose';
 
-// Interface for strong typing
-export interface ISetting extends Document {
-  key: string;      // A unique key like "loyalty_points_rule"
-  value: any;       // Can be a string, number, or a nested object
-  description?: string;
-  category?: string; // Optional: for grouping settings in the UI
+// Interface for our setting's value object for type safety
+export interface ILoyaltySettings {
+  rupeesForPoints: number; // e.g., 100
+  pointsAwarded: number;   // e.g., 6
 }
 
-// Mongoose Schema
-const SettingSchema: Schema = new Schema({
-  key: { 
-    type: String, 
-    required: true, 
-    unique: true, // Ensures no duplicate setting keys
-    index: true   // Improves lookup performance
-  },
-  value: { 
-    type: Schema.Types.Mixed, // Allows for flexible value types
-    required: true 
-  },
-  description: { type: String },
-  category: { type: String, default: 'General' }
-}, { timestamps: true });
+// Interface for the whole document
+export interface ISetting extends Document {
+  key: string; // This will be 'loyalty'
+  value: ILoyaltySettings;
+}
 
-// Create and export the model
-const Setting: Model<ISetting> = mongoose.models.Setting || mongoose.model<ISetting>('Setting', SettingSchema);
+const settingSchema: Schema = new Schema({
+  key: {
+    type: String,
+    required: true,
+    unique: true, // Ensures we only have one 'loyalty' setting document
+    index: true,
+  },
+  value: {
+    type: Object,
+    required: true,
+  },
+}, {
+  timestamps: true // Keep timestamps to see when it was last changed
+});
+
+const Setting: Model<ISetting> = mongoose.models.Setting || mongoose.model<ISetting>('Setting', settingSchema);
+
 export default Setting;

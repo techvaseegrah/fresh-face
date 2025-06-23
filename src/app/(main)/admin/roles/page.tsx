@@ -99,7 +99,6 @@ export default function RolesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRole)
       });
-
       const data = await response.json();
       if (data.success) {
         setShowCreateModal(false);
@@ -277,7 +276,6 @@ export default function RolesPage() {
         </div>
       </div>
 
-
       {/* Create Role Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -309,7 +307,6 @@ export default function RolesPage() {
                     />
                   </div>
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Description</label>
                   <textarea

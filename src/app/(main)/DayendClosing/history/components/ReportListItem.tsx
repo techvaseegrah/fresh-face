@@ -16,10 +16,10 @@ const NetDiscrepancyBadge = ({ value }: { value: number }) => {
       </div>
     );
   }
-
+  
   const isShort = value < 0;
-  const colorClasses = isShort
-    ? 'bg-red-100 text-red-800'
+  const colorClasses = isShort 
+    ? 'bg-red-100 text-red-800' 
     : 'bg-yellow-100 text-yellow-800';
   const sign = isShort ? '−' : '+'; // Using a proper minus sign for style
   const term = isShort ? 'Shortage' : 'Overage';
@@ -39,7 +39,7 @@ export const ReportListItem = ({ report }: { report: DayEndReportHistoryItem }) 
 
   return (
     <li className="bg-white">
-      <div
+      <div 
         className="flex items-center justify-between p-4 md:p-6 cursor-pointer hover:bg-gray-50"
         onClick={() => setIsExpanded(!isExpanded)}
         aria-expanded={isExpanded}
@@ -47,7 +47,7 @@ export const ReportListItem = ({ report }: { report: DayEndReportHistoryItem }) 
         {/* Left side: Date and User */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <CalendarDaysIcon className="h-6 w-6 text-gray-400 flex-shrink-0" />
+            <CalendarDaysIcon className="h-6 w-6 text-gray-400 flex-shrink-0"/>
             <span className="font-semibold text-lg text-gray-800 truncate">{formatDate(report.closingDate)}</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 ml-9">
@@ -58,9 +58,9 @@ export const ReportListItem = ({ report }: { report: DayEndReportHistoryItem }) 
 
         {/* Right side: Discrepancy Badge and Chevron */}
         <div className="flex items-center gap-4 sm:gap-6 ml-4">
-          {/* [THE FIX] We are now calling the new NetDiscrepancyBadge component here. */}
-          <NetDiscrepancyBadge value={report.discrepancy.total} />
-          <ChevronDownIcon className={`h-6 w-6 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+            {/* [THE FIX] We are now calling the new NetDiscrepancyBadge component here. */}
+            <NetDiscrepancyBadge value={report.discrepancy.total}/>
+            <ChevronDownIcon className={`h-6 w-6 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
         </div>
       </div>
 

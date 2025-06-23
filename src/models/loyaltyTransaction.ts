@@ -19,7 +19,7 @@ const LoyaltyTransactionSchema = new Schema({
   },
   reason: {
     type: String,
-    required: true // e.g., "Completed Appointment", "Manual Adjustment", "Redeemed for discount"
+    //required: true // e.g., "Completed Appointment", "Manual Adjustment", "Redeemed for discount"
   },
   // Optional: Link to a specific event that triggered the points
   relatedAppointmentId: {
