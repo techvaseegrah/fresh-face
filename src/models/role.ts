@@ -34,7 +34,11 @@ const roleSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
+  },
+   updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
 }, { timestamps: true });
 
 // Index for faster permission checks

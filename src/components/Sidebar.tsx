@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { hasAnyPermission, PERMISSIONS } from '@/lib/permissions'; // Use hasAnyPermission
 import {
   HomeIcon,
   CalendarDaysIcon,
@@ -15,52 +15,57 @@ import {
   LightBulbIcon,
   DocumentTextIcon,
   ShoppingCartIcon,
-  BuildingStorefrontIcon, // Added from the second file
-  BanknotesIcon,
-  Cog6ToothIcon
    // Added from the second file
+  BanknotesIcon,
+  Cog6ToothIcon,
+   // Added from the second file
+  BuildingStorefrontIcon
 } from '@heroicons/react/24/outline';
 
 const Sidebar = () => {
   const pathname = usePathname();
-  if (pathname === '/login' || pathname === '/signup') {
-    return null; 
-  }
   const { data: session } = useSession();
+
+  if (pathname === '/login' || pathname === '/signup') {
+    return null;
+  }
 
   const handleSignOut = () => {
     signOut({ callbackUrl: '/login' });
   };
 
-  // --- MERGED PERMISSION CHECKS ---
   const userPermissions = session?.user?.role?.permissions || [];
+
+  // --- CORRECTED PERMISSION CHECKS ---
+  // A user can see the module if they have ANY permission related to it.
+  const canAccessDashboard = hasAnyPermission(userPermissions, [PERMISSIONS.DASHBOARD_READ, PERMISSIONS.DASHBOARD_MANAGE]);
+  const canAccessAppointments = hasAnyPermission(userPermissions, [PERMISSIONS.APPOINTMENTS_READ, PERMISSIONS.APPOINTMENTS_CREATE, PERMISSIONS.APPOINTMENTS_UPDATE, PERMISSIONS.APPOINTMENTS_DELETE]);
+  const canAccessCustomers = hasAnyPermission(userPermissions, [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_CREATE, PERMISSIONS.CUSTOMERS_UPDATE, PERMISSIONS.CUSTOMERS_DELETE]);
   
-  const canAccessDashboard = hasPermission(userPermissions, PERMISSIONS.DASHBOARD_READ);
-  const canAccessAppointments = hasPermission(userPermissions, PERMISSIONS.APPOINTMENTS_READ);
-  const canAccessCustomers = hasPermission(userPermissions, PERMISSIONS.CUSTOMERS_READ);
-  const canAccessBilling = hasPermission(userPermissions, PERMISSIONS.BILLING_READ);
-  const canAccessUsers = hasPermission(userPermissions, PERMISSIONS.USERS_READ);
-  const canAccessRoles = hasPermission(userPermissions, PERMISSIONS.ROLES_READ);
-  const canAccessEBUpload = hasPermission(userPermissions, PERMISSIONS.EB_UPLOAD);
-  const canAccessEBViewCalculate = hasPermission(userPermissions, PERMISSIONS.EB_VIEW_CALCULATE);
-  const canAccessProcurement = hasPermission(userPermissions, PERMISSIONS.PROCUREMENT_READ);
-  const canAccessStore = hasPermission(userPermissions, PERMISSIONS.INVENTORY_READ);
-  const canAccessDayEndClosing = hasPermission(userPermissions, PERMISSIONS.REPORTS_MANAGE);
+  // The Shop module is visible if the user can read ANY of its sub-modules.
+  const canAccessShop = hasAnyPermission(userPermissions, [PERMISSIONS.PRODUCTS_READ, PERMISSIONS.SERVICES_READ, PERMISSIONS.STYLISTS_READ]);
+  
+  const canAccessEBUpload = hasAnyPermission(userPermissions, [PERMISSIONS.EB_UPLOAD]);
+  const canAccessEBViewCalculate = hasAnyPermission(userPermissions, [PERMISSIONS.EB_VIEW_CALCULATE]);
+  const canAccessProcurement = hasAnyPermission(userPermissions, [PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_CREATE, PERMISSIONS.PROCUREMENT_UPDATE, PERMISSIONS.PROCUREMENT_DELETE]);
+  const canAccessDayEnd = hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]);
 
 
-  // --- MERGED NAVIGATION ITEMS ---
+  // Admin section visibility
+  const canAccessAdmin = hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ, PERMISSIONS.ROLES_READ]);
+  const canAccessUsers = hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ]);
+  const canAccessRoles = hasAnyPermission(userPermissions, [PERMISSIONS.ROLES_READ]);
+  
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: HomeIcon, show: canAccessDashboard },
     { href: '/appointment', label: 'Appointments', icon: CalendarDaysIcon, show: canAccessAppointments },
     { href: '/crm', label: 'Customers', icon: UserGroupIcon, show: canAccessCustomers },
-    // { href: '/billing', label: 'Billing', icon: CreditCardIcon, show: canAccessBilling },
-    // This was '/shop' in one file and not present in the other. I've used '/store' as that's the common name.
-    { href: '/shop', label: 'Shop', icon: BuildingStorefrontIcon, show: canAccessStore },
+    { href: '/shop', label: 'Shop', icon: BuildingStorefrontIcon, show: canAccessShop },
     { href: '/eb-upload', label: 'EB Upload', icon: LightBulbIcon, show: canAccessEBUpload },
     { href: '/eb-view', label: 'EB View & Calculate', icon: DocumentTextIcon, show: canAccessEBViewCalculate },
     { href: '/procurement', label: 'Procurements', icon: ShoppingCartIcon, show: canAccessProcurement },
-    {href:'/DayendClosing', label:'Day-end Closing',icon: BanknotesIcon,show:canAccessDayEndClosing},
-     { href:'/settings', label:'Settings', icon:Cog6ToothIcon, show: canAccessDayEndClosing }
+    { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd },
+    {href:'/settings',label:'Settings',icon:Cog6ToothIcon,show:canAccessAdmin}
   ];
 
   const adminItems = [
@@ -68,7 +73,6 @@ const Sidebar = () => {
     { href: '/admin/roles', label: 'Roles', icon: CogIcon, show: canAccessRoles }
   ];
 
-  // Filter items based on the 'show' property
   const visibleNavItems = navItems.filter(item => item.show);
   const visibleAdminItems = adminItems.filter(item => item.show);
 
@@ -82,7 +86,6 @@ const Sidebar = () => {
           </div>
           <div>
             <h1 className="text-xl font-semibold text-gray-800">Fresh Face</h1>
-            {/* The subtitle was different in each file, I've chosen one. You can adjust this. */}
             <p className="text-xs text-gray-500">Salon Management</p>
           </div>
         </div>
@@ -93,7 +96,7 @@ const Sidebar = () => {
         <nav className="p-4 space-y-1">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || pathname.startsWith(item.href);
+            const isActive = pathname.startsWith(item.href);
 
             return (
               <Link key={item.label} href={item.href}
@@ -108,7 +111,7 @@ const Sidebar = () => {
           })}
 
           {/* Admin Section */}
-          {visibleAdminItems.length > 0 && (
+          {canAccessAdmin && (
             <>
               <div className="pt-6 pb-2">
                 <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">

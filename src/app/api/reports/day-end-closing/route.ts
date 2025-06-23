@@ -7,6 +7,7 @@ import dbConnect from '@/lib/dbConnect';
 import Invoice from '@/models/invoice';
 import DayEndReport from '@/models/DayEndReport';
 import { sendClosingReportEmail } from '@/lib/mail'; // <-- 1. IMPORT our email service
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // A helper function to re-calculate expected totals to prevent tampering
 async function getExpectedTotalsForDate(date: string) {
@@ -38,9 +39,14 @@ async function getExpectedTotalsForDate(date: string) {
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
-      return NextResponse.json({ success: false, message: "Not authenticated" }, { status: 401 });
-    }
+  
+  
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)) {
+    return NextResponse.json(
+      { success: false, message: 'Unauthorized' },
+      { status: 403 }
+    );
+  }
 
     const body = await request.json();
     const { closingDate, actualTotals, cashDenominations, notes } = body;

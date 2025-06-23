@@ -7,6 +7,8 @@ import { PlusIcon, PencilIcon, TrashIcon, ClockIcon } from '@heroicons/react/24/
 import { useEffect, useState } from 'react';
 import StylistFormModal from './StylistFormModal';
 import StylistHistoryModal from '../StylistHistoryModal';
+import { useSession } from 'next-auth/react';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // Define the history item interface here or import it
 interface IStylistHistoryItem {
@@ -20,6 +22,8 @@ interface IStylistHistoryItem {
 }
 
 export default function StylistManager() {
+    const { data: session } = useSession();
+
   const [stylists, setStylists] = useState<IStylist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -30,6 +34,12 @@ export default function StylistManager() {
   const [selectedStylist, setSelectedStylist] = useState<IStylist | null>(null);
   const [historyData, setHistoryData] = useState<IStylistHistoryItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.STYLISTS_CREATE);
+  const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.STYLISTS_UPDATE);
+  const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.STYLISTS_DELETE);
+
+
 
   const fetchStylists = async () => {
     setIsLoading(true);
@@ -155,13 +165,15 @@ export default function StylistManager() {
             <h2 className="text-xl font-semibold text-gray-800">Manage Stylists</h2>
             <p className="text-sm text-gray-500">View, add, edit, or delete stylists.</p>
           </div>
-          <button
-            onClick={() => handleOpenFormModal()}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
-          >
-            <PlusIcon className="h-5 w-5" />
-            Add New Stylist
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => handleOpenFormModal()}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black"
+            >
+              <PlusIcon className="h-5 w-5" />
+              Add New Stylist
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -173,7 +185,9 @@ export default function StylistManager() {
                 <th scope="col" className="px-6 py-3">Experience</th>
                 <th scope="col" className="px-6 py-3">Specialization</th>
                 <th scope="col" className="px-6 py-3">Phone</th>
-                <th scope="col" className="px-6 py-3 text-right">Actions</th>
+               {(canUpdate || canDelete) && (
+                  <th scope="col" className="px-6 py-3 text-right">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -186,17 +200,23 @@ export default function StylistManager() {
                   <td className="px-6 py-4">{stylist.experience} years</td>
                   <td className="px-6 py-4">{stylist.specialization}</td>
                   <td className="px-6 py-4">{stylist.phone}</td>
-                  <td className="px-6 py-4 flex justify-end gap-1">
-                    <button onClick={() => handleViewHistory(stylist)} className="p-2 text-gray-500 hover:text-black rounded-md hover:bg-gray-100" title="View History">
-                      <ClockIcon className="h-5 w-5" />
-                    </button>
-                    <button onClick={() => handleOpenFormModal(stylist)} className="p-2 text-gray-500 hover:text-black rounded-md hover:bg-gray-100" title="Edit Stylist">
-                      <PencilIcon className="h-5 w-5" />
-                    </button>
-                    <button onClick={() => handleDelete(stylist._id)} className="p-2 text-red-500 hover:text-red-700 rounded-md hover:bg-red-50" title="Delete Stylist">
-                      <TrashIcon className="h-5 w-5" />
-                    </button>
-                  </td>
+                 {(canUpdate || canDelete) && (
+                    <td className="px-6 py-4 flex justify-end gap-1">
+                      <button onClick={() => handleViewHistory(stylist)} className="p-2 text-gray-500 hover:text-black rounded-md hover:bg-gray-100" title="View History">
+                        <ClockIcon className="h-5 w-5" />
+                      </button>
+                      {canUpdate && (
+                        <button onClick={() => handleOpenFormModal(stylist)} className="p-2 text-gray-500 hover:text-black rounded-md hover:bg-gray-100" title="Edit Stylist">
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => handleDelete(stylist._id)} className="p-2 text-red-500 hover:text-red-700 rounded-md hover:bg-red-50" title="Delete Stylist">
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

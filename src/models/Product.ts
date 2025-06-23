@@ -93,12 +93,16 @@ const ProductSchema: Schema<IProduct> = new Schema({
   }
 }, { timestamps: true });
 
-// Calculate total quantity before saving
+// In Product.ts, update the pre-save hook to only calculate on new products
 ProductSchema.pre('save', function(next) {
-  this.totalQuantity = this.numberOfItems * this.quantityPerItem;
+  // Only calculate totalQuantity if it's a new product or if numberOfItems changed
+  if (this.isNew || this.isModified('numberOfItems') || this.isModified('quantityPerItem')) {
+    if (!this.isModified('totalQuantity')) {
+      this.totalQuantity = this.numberOfItems * this.quantityPerItem;
+    }
+  }
   next();
 });
-
 const ProductModel: Model<IProduct> = models.Product || mongoose.model<IProduct>('Product', ProductSchema);
 
 export default ProductModel;

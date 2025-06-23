@@ -102,17 +102,20 @@ export function useCrm() {
   const handleCloseAddEditModal = () => { setIsAddEditModalOpen(false); setEditingCustomer(null); };
 
   /**
-   * THE FINAL, SIMPLIFIED LOGIC
-   * This function performs the update and uses the fresh, complete data
-   * returned directly from the POST request, eliminating the race condition.
+   * --- FIX: THE LOGIC IS UPDATED TO HANDLE THE BARCODE ---
+   * 1. The function now accepts `barcode` as its second argument.
+   * 2. The `barcode` is included in the API request body.
    */
-  const handleGrantMembership = async (customerId: string) => {
+  const handleGrantMembership = async (customerId: string, barcode: string) => {
     setIsMembershipUpdating(true);
     try {
       const response = await fetch(`/api/customer/${customerId}/toggle-membership`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isMembership: true }),
+        body: JSON.stringify({ 
+          isMembership: true,
+          membershipBarcode: barcode, // Pass the barcode to the API
+        }),
       });
 
       const result = await response.json();
@@ -120,11 +123,8 @@ export function useCrm() {
         throw new Error(result.message || 'Failed to grant membership.');
       }
       
-      toast.success('Membership granted successfully!');
+      toast.success(`Membership granted successfully with barcode: ${result.customer.membershipBarcode}`);
       
-      // --- THE FIX ---
-      // No more `fetchCustomerDetails` call. We use the fresh customer
-      // object that our improved POST API just returned to us.
       const freshCustomerData = result.customer;
 
       // Update the panel with the new complete data.

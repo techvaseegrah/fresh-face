@@ -277,7 +277,7 @@ const handleFinalizeBill = async (billDetails: any) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/30 p-4 md:p-0">
+    <div className="bg-gray-50/30 p-4 md:p-8">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Appointments</h1>

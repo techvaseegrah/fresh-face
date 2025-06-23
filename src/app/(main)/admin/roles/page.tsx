@@ -4,6 +4,8 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS, ALL_PERMISSIONS, PERMISSION_CATEGORIES } from '@/lib/permissions';
+import EditRoleModal from '@/components/EditRoleModal';
+import { PencilIcon, TrashIcon } from 'lucide-react';
 
 interface Role {
   _id: string;
@@ -21,6 +23,9 @@ export default function RolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [newRole, setNewRole] = useState({
     name: '',
     displayName: '',
@@ -31,6 +36,32 @@ export default function RolesPage() {
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_CREATE);
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE);
+
+  const handleEditRole = (role: Role) => {
+    setEditingRole(role);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateRole = async (roleId: string, updateData: any) => {
+    try {
+      const response = await fetch(`/api/admin/roles/${roleId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        fetchRoles();
+        setShowEditModal(false);
+        alert('Role updated successfully!');
+      } else {
+        alert(data.message || 'Error updating role');
+      }
+    } catch (error) {
+      alert('Error updating role');
+    }
+  };
 
   useEffect(() => {
     fetchRoles();
@@ -51,13 +82,13 @@ export default function RolesPage() {
   };
 
   const togglePermission = (permission: string) => {
-  setNewRole(prev => ({
-    ...prev,
-    permissions: prev.permissions.includes(permission)
-      ? prev.permissions.filter(p => p !== permission)  // Remove permission
-      : [...prev.permissions, permission]               // Add permission
-  }));
-};
+    setNewRole(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(permission)
+        ? prev.permissions.filter(p => p !== permission)  // Remove permission
+        : [...prev.permissions, permission]               // Add permission
+    }));
+  };
 
 
   const handleCreateRole = async (e: React.FormEvent) => {
@@ -68,7 +99,6 @@ export default function RolesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRole)
       });
-      
       const data = await response.json();
       if (data.success) {
         setShowCreateModal(false);
@@ -162,7 +192,7 @@ export default function RolesPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Created
                     </th>
-                    {canDelete && (
+                    {(canUpdate || canDelete) && (
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
@@ -180,6 +210,11 @@ export default function RolesPage() {
                           <div className="text-sm text-gray-500">
                             {role.description}
                           </div>
+                          {role.isSystemRole && (
+                            <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 mt-1">
+                              System Role
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -196,25 +231,40 @@ export default function RolesPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          role.isActive 
-                            ? 'bg-green-100 text-green-800' 
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${role.isActive
+                            ? 'bg-green-100 text-green-800'
                             : 'bg-red-100 text-red-800'
-                        }`}>
+                          }`}>
                           {role.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(role.createdAt).toLocaleDateString()}
                       </td>
-                      {canDelete && (
+                      {(canUpdate || canDelete) && (
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <button
-                            onClick={() => handleDeleteRole(role._id)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            Delete
-                          </button>
+                          <div className="flex gap-2">
+                            {canUpdate && (
+                              <button
+                                onClick={() => handleEditRole(role)}
+                                className="text-indigo-600 hover:text-indigo-900"
+                                title="Edit role"
+                                disabled={role.isSystemRole}
+                              >
+                                <PencilIcon className="h-5 w-5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteRole(role._id)}
+                                className="text-red-600 hover:text-red-900"
+                                title="Delete role"
+                                disabled={role.isSystemRole}
+                              >
+                                <TrashIcon className="h-5 w-5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -240,7 +290,7 @@ export default function RolesPage() {
                       type="text"
                       required
                       value={newRole.name}
-                      onChange={(e) => setNewRole({...newRole, name: e.target.value.toUpperCase()})}
+                      onChange={(e) => setNewRole({ ...newRole, name: e.target.value.toUpperCase() })}
                       placeholder="e.g., MANAGER"
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                     />
@@ -251,18 +301,17 @@ export default function RolesPage() {
                       type="text"
                       required
                       value={newRole.displayName}
-                      onChange={(e) => setNewRole({...newRole, displayName: e.target.value})}
+                      onChange={(e) => setNewRole({ ...newRole, displayName: e.target.value })}
                       placeholder="e.g., Manager"
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Description</label>
                   <textarea
                     value={newRole.description}
-                    onChange={(e) => setNewRole({...newRole, description: e.target.value})}
+                    onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
                     rows={2}
                     className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   />
@@ -313,6 +362,19 @@ export default function RolesPage() {
             </div>
           </div>
         </div>
+      )}
+
+       {/* Edit Role Modal */}
+      {showEditModal && editingRole && (
+        <EditRoleModal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingRole(null);
+          }}
+          role={editingRole}
+          onUpdate={handleUpdateRole}
+        />
       )}
     </div>
   );

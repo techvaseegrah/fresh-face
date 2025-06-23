@@ -1,7 +1,7 @@
 // FILE: /app/DayendClosing/history/components/ReportList.tsx
 'use client';
 import { DayEndReportHistoryItem } from '../hooks/useReportHistory';
-import { ReportListItem } from '../components/reportListItem'
+import { ReportListItem } from './ReportListItem';
 
 export const ReportList = ({ reports }: { reports: DayEndReportHistoryItem[] }) => {
   return (

@@ -1,3 +1,4 @@
+// src/components/admin/CategoryColumn.tsx
 'use client';
 
 import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
@@ -12,9 +13,9 @@ interface Props {
   items: Item[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onEdit: (item: Item) => void;
-  onDelete: (id: string) => void;
-  onAddNew: () => void;
+  onEdit?: (item: Item) => void; // Optional
+  onDelete?: (id: string) => void; // Optional
+  onAddNew?: () => void; // Optional
   isLoading: boolean;
   disabled?: boolean;
 }
@@ -33,17 +34,19 @@ export default function CategoryColumn({ title, items, selectedId, onSelect, onE
           >
             <span className="px-4 py-3 block truncate">{item.name}</span>
             <div className={`flex items-center shrink-0 gap-1 ${selectedId === item._id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
-              <button onClick={(e) => { e.stopPropagation(); onEdit(item); }} className={`p-1.5 rounded ${selectedId === item._id ? 'hover:bg-blue-600' : 'hover:bg-gray-200'}`}><PencilIcon className="h-4 w-4" /></button>
-              <button onClick={(e) => { e.stopPropagation(); onDelete(item._id); }} className={`p-1.5 rounded ${selectedId === item._id ? 'hover:bg-blue-600 text-white' : 'hover:bg-red-100 text-red-600'}`}><TrashIcon className="h-4 w-4" /></button>
+              {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(item); }} className={`p-1.5 rounded ${selectedId === item._id ? 'hover:bg-blue-600' : 'hover:bg-gray-200'}`}><PencilIcon className="h-4 w-4" /></button>}
+              {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(item._id); }} className={`p-1.5 rounded ${selectedId === item._id ? 'hover:bg-blue-600 text-white' : 'hover:bg-red-100 text-red-600'}`}><TrashIcon className="h-4 w-4" /></button>}
             </div>
           </div>
         ))}
         {!isLoading && items.length === 0 && <div className="p-4 text-sm text-gray-400">No {title.toLowerCase()} found.</div>}
       </div>
       <div className="p-2 border-t border-gray-200">
-        <button onClick={onAddNew} disabled={disabled} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed">
-          <PlusIcon className="h-5 w-5" /> Add New {title.endsWith('s') ? title.slice(0, -1) : title}
-        </button>
+        {onAddNew && (
+            <button onClick={onAddNew} disabled={disabled} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed">
+            <PlusIcon className="h-5 w-5" /> Add New {title.endsWith('s') ? title.slice(0, -1) : title}
+            </button>
+        )}
       </div>
     </div>
   );

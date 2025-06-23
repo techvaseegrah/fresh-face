@@ -1,17 +1,24 @@
+// src/components/admin/ProductManager.tsx
 'use client';
 
 import { IProduct } from '@/models/Product';
 import { IProductBrand } from '@/models/ProductBrand';
 import { IProductSubCategory } from '@/models/ProductSubCategory';
 import { useEffect, useState, useCallback } from 'react';
-import { PencilIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { useSession } from 'next-auth/react';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import CategoryColumn from './CategoryColumn';
-import EntityFormModal from './EntityFormModal'; // This is the single, flexible modal used.
+import EntityFormModal from './EntityFormModal';
+import { log } from 'node:console';
 
 type ProductType = 'Retail' | 'In-House';
 type EntityType = 'brand' | 'subcategory' | 'product';
 
 export default function ProductManager() {
+  const { data: session } = useSession();
+  
+  // ... (all existing state declarations remain the same)
   const [productType, setProductType] = useState<ProductType>('Retail');
   const [brands, setBrands] = useState<IProductBrand[]>([]);
   const [subCategories, setSubCategories] = useState<IProductSubCategory[]>([]);
@@ -28,6 +35,20 @@ export default function ProductManager() {
   const [modalEntityType, setModalEntityType] = useState<EntityType | null>(null);
   const [entityToEdit, setEntityToEdit] = useState<any | null>(null);
 
+  // ** RBAC Permission Checks **
+  const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_CREATE);
+  const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_UPDATE);
+  const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_DELETE);
+
+  console.log('ProductManager permissions:', {
+    canCreate,
+    canUpdate,
+    canDelete,
+    session: session ? { user: session.user.email, role: session.user.role.name } : 'No session',
+  });
+  
+  
+  // ... (all handler functions like fetchBrands, handleSave, handleDelete remain the same)
   const resetSelections = () => {
     setSelectedBrand(null);
     setSelectedSubCategoryId(null);
@@ -200,67 +221,78 @@ export default function ProductManager() {
         </div>
       </div>
       <div className="flex flex-col md:flex-row h-[calc(100vh-250px)] bg-gray-50 overflow-hidden">
-        <CategoryColumn title="Brands" items={brands} selectedId={selectedBrand?._id || null}
+        <CategoryColumn
+          title="Brands" items={brands} selectedId={selectedBrand?._id || null}
           onSelect={(id) => { const brand = brands.find(b => b._id === id); if (brand) handleSelectBrand(brand); }}
-          onEdit={(item) => handleOpenModal('brand', item)}
-          onDelete={(id) => handleDelete('brand', id)}
-          onAddNew={() => handleOpenModal('brand')}
+          onEdit={canUpdate ? (item) => handleOpenModal('brand', item) : undefined}
+          onDelete={canDelete ? (id) => handleDelete('brand', id) : undefined}
+          onAddNew={canCreate ? () => handleOpenModal('brand') : undefined}
           isLoading={isLoadingBrands}
         />
-        <CategoryColumn title="Sub-Categories" items={subCategories} selectedId={selectedSubCategoryId}
+        <CategoryColumn
+          title="Sub-Categories" items={subCategories} selectedId={selectedSubCategoryId}
           onSelect={handleSelectSubCategory}
-          onEdit={(item) => handleOpenModal('subcategory', item)}
-          onDelete={(id) => handleDelete('subcategory', id)}
-          onAddNew={() => handleOpenModal('subcategory')}
+          onEdit={canUpdate ? (item) => handleOpenModal('subcategory', item) : undefined}
+          onDelete={canDelete ? (id) => handleDelete('subcategory', id) : undefined}
+          onAddNew={canCreate ? () => handleOpenModal('subcategory') : undefined}
           isLoading={isLoadingSubCategories} disabled={!selectedBrand}
         />
 
         <div className="flex flex-col w-full md:w-1/3 bg-white">
           <div className="p-4 border-b border-gray-200 flex justify-between items-center">
             <h3 className="font-semibold text-lg text-gray-800">Products</h3>
-            <button onClick={() => handleOpenModal('product')} disabled={!selectedSubCategoryId} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-black rounded-md disabled:bg-gray-300">
-              <PlusIcon className="h-4 w-4" /> Add Product
-            </button>
+            {canCreate && (
+                <button 
+                  onClick={() => handleOpenModal('product')} 
+                  disabled={!selectedSubCategoryId} 
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-black rounded-md disabled:bg-gray-300"
+                >
+                <PlusIcon className="h-4 w-4" /> Add Product
+              </button>
+            )}
           </div>
-
-<div className="flex-grow overflow-y-auto">
-  {isLoadingProducts && <div className="p-4 text-center text-gray-500">Loading...</div>}
-  {products.map(product => (
-    <div key={product._id} className="group p-4 border-b hover:bg-gray-50">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="font-semibold text-gray-800">{product.name}</p>
-          <p className="text-xs text-gray-500 font-mono mt-1">SKU: {product.sku}</p>
-          <p className="text-sm text-gray-600 mt-1">
-            <span className="font-medium">{product.numberOfItems} items</span> × {product.quantityPerItem}{product.unit} each
-          </p>
-          <p className="text-sm text-blue-600 font-medium mt-1">
-            Total Stock: {product.totalQuantity}{product.unit}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            Expires: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : <span className="text-gray-400">N/A</span>}
-          </p>
-        </div>
-        <div className="text-right ml-4">
-          <p className="text-lg font-semibold text-gray-900">₹{product.price.toFixed(2)}</p>
-          <div className="flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100">
-            <button onClick={() => handleOpenModal('product', product)} className="p-1.5 rounded hover:bg-gray-200">
-              <PencilIcon className="h-5 w-5" />
-            </button>
-            <button onClick={() => handleDelete('product', product._id)} className="p-1.5 rounded text-red-500 hover:bg-red-100">
-              <TrashIcon className="h-5 w-5" />
-            </button>
+          <div className="flex-grow overflow-y-auto">
+            {isLoadingProducts && <div className="p-4 text-center text-gray-500">Loading...</div>}
+            {products.map(product => (
+              <div key={product._id} className="group p-4 border-b hover:bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-semibold text-gray-800">{product.name}</p>
+                    <p className="text-xs text-gray-500 font-mono mt-1">SKU: {product.sku}</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      <span className="font-medium">{product.numberOfItems} items</span> × {product.quantityPerItem}{product.unit} each
+                    </p>
+                    <p className="text-sm text-blue-600 font-medium mt-1">
+                      Total Stock: {product.totalQuantity}{product.unit}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Expires: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : <span className="text-gray-400">N/A</span>}
+                    </p>
+                  </div>
+                  <div className="text-right ml-4">
+                    <p className="text-lg font-semibold text-gray-900">₹{product.price.toFixed(2)}</p>
+                    <div className="flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100">
+                      {canUpdate && (
+                        <button onClick={() => handleOpenModal('product', product)} className="p-1.5 rounded hover:bg-gray-200">
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => handleDelete('product', product._id)} className="p-1.5 rounded text-red-500 hover:bg-red-100">
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!isLoadingProducts && products.length === 0 && (
+              <div className="p-8 text-center text-sm text-gray-400">
+                {selectedSubCategoryId ? 'No products found.' : 'Select a sub-category.'}
+              </div>
+            )}
           </div>
-        </div>
-      </div>
-    </div>
-  ))}
-  {!isLoadingProducts && products.length === 0 && (
-    <div className="p-8 text-center text-sm text-gray-400">
-      {selectedSubCategoryId ? 'No products found.' : 'Select a sub-category.'}
-    </div>
-  )}
-</div>
         </div>
       </div>
     </div>

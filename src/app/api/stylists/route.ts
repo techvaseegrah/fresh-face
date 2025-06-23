@@ -1,9 +1,23 @@
+// src/app/api/stylists/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Stylist, { IStylist } from '@/models/Stylist';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-// GET: Fetch all stylists
+async function checkPermission(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, permission)) {
+    return null;
+  }
+  return session;
+}
+
 export async function GET() {
+  const session = await checkPermission(PERMISSIONS.STYLISTS_READ);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  
   await dbConnect();
   try {
     const stylists = await Stylist.find({}).sort({ createdAt: -1 });
@@ -13,8 +27,10 @@ export async function GET() {
   }
 }
 
-// POST: Create a new stylist
 export async function POST(req: NextRequest) {
+  const session = await checkPermission(PERMISSIONS.STYLISTS_CREATE);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
   await dbConnect();
   try {
     const body: IStylist = await req.json();
@@ -25,8 +41,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT: Update an existing stylist
 export async function PUT(req: NextRequest) {
+  const session = await checkPermission(PERMISSIONS.STYLISTS_UPDATE);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  
   await dbConnect();
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');
@@ -50,9 +68,10 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-
-// DELETE: Delete a stylist
 export async function DELETE(req: NextRequest) {
+  const session = await checkPermission(PERMISSIONS.STYLISTS_DELETE);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
   await dbConnect();
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');

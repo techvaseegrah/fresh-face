@@ -6,10 +6,20 @@ import Customer from '@/models/customermodel';
 import Stylist from '@/models/Stylist';
 import ServiceItem from '@/models/ServiceItem';
 import mongoose from 'mongoose';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 export async function GET(req: Request) {
   try {
     await connectToDatabase();
+
+    const session = await getServerSession(authOptions);
+    if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_READ)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
+
+
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '10', 10);
@@ -76,7 +86,7 @@ export async function GET(req: Request) {
 
     const [results, totalAppointmentsResult] = await Promise.all([
       Appointment.aggregate(pipeline)
-        .sort({ date: 1, time: 1 })
+        .sort({ date: -1, time: -1 })
         .skip(skip)
         .limit(limit),
       Appointment.aggregate([...pipeline, { $count: 'total' }])
@@ -121,7 +131,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
+
     const body = await req.json();
+
+    const session = await getServerSession(authOptions);
+    if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
 
     const {
       phoneNumber,
@@ -144,7 +160,6 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    
 
     // Find or create customer
     let customerDoc = await Customer.findOne({ phoneNumber: phoneNumber.trim() });

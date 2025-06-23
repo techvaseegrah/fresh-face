@@ -1,9 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import ServiceCategory from '@/models/ServiceCategory';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+
+async function checkPermission(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, permission)) {
+    return null;
+  }
+  return session;
+}
 
 // GET all service categories, filtered by targetAudience
 export async function GET(req: NextRequest) {
+  const session = await checkPermission(PERMISSIONS.SERVICES_READ);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
   await dbConnect();
   try {
     const audience = req.nextUrl.searchParams.get('audience');
@@ -19,6 +33,9 @@ export async function GET(req: NextRequest) {
 
 // POST a new service category
 export async function POST(req: NextRequest) {
+  const session = await checkPermission(PERMISSIONS.SERVICES_CREATE);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    
   await dbConnect();
   try {
     const body = await req.json();

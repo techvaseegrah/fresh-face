@@ -4,8 +4,15 @@ import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
 import Stylist from '@/models/Stylist';
 import ServiceItem from '@/models/ServiceItem';
+import { getServerSession } from 'next-auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { authOptions } from '@/lib/auth';
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+    const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
   try {
     await connectToDatabase();
 

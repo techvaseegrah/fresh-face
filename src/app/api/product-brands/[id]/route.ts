@@ -2,8 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Brand from '@/models/ProductBrand';
 import SubCategory from '@/models/ProductSubCategory';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+
+async function checkPermission(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, permission)) {
+    return null;
+  }
+  return session;
+}
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await checkPermission(PERMISSIONS.PRODUCTS_UPDATE);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    
   await dbConnect();
   try {
     const body = await req.json();
@@ -16,6 +30,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await checkPermission(PERMISSIONS.PRODUCTS_DELETE);
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
   await dbConnect();
   try {
     const subCategoryCount = await SubCategory.countDocuments({ brand: params.id });

@@ -3,6 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Invoice from '@/models/invoice';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 // Define the structure of the expected output
 interface DailySummaryTotals {
@@ -18,6 +21,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
+     const session = await getServerSession(authOptions);
+  
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ)) {
+    return NextResponse.json(
+      { success: false, message: 'Unauthorized' },
+      { status: 403 }
+    );
+  }
 
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json(

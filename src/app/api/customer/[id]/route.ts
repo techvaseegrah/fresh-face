@@ -6,6 +6,9 @@ import ServiceItem from '@/models/ServiceItem';
 import Stylist from '@/models/Stylist';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // This interface should reflect the actual fields in your Customer model
 interface LeanCustomer { 
@@ -23,6 +26,12 @@ interface LeanCustomer {
 // ===================================================================================
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
+
+  const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
   if (!mongoose.Types.ObjectId.isValid(customerId)) {
     return NextResponse.json({ success: false, message: 'Invalid Customer ID.' }, { status: 400 });
   }
@@ -111,6 +120,11 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ success: false, message: 'Invalid Customer ID.' }, { status: 400 });
   }
 
+    const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_UPDATE)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -161,6 +175,11 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   const customerId = params.id;
   if (!mongoose.Types.ObjectId.isValid(customerId)) {
     return NextResponse.json({ success: false, message: 'Invalid Customer ID.' }, { status: 400 });
+  }
+
+  const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_DELETE)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
 
   try {

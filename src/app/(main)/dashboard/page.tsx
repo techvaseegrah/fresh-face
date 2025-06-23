@@ -7,6 +7,7 @@ import {
   CalendarDaysIcon,
   UserGroupIcon,
   CreditCardIcon,
+  //TrendingUpIcon,
   ClockIcon,
   EyeIcon,
   PlusIcon,
@@ -165,7 +166,6 @@ export default function DashboardPage() {
   // Permission checks
   const canViewCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ);
   const canViewAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_READ);
-  const canViewBilling = session && hasPermission(session.user.role.permissions, PERMISSIONS.BILLING_READ);
   const canCreateAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE);
   const canCreateCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE);
 
@@ -336,14 +336,7 @@ export default function DashboardPage() {
                 onClick={() => window.location.href = '/crm'}
               />
             )}
-            {canViewBilling && (
-              <QuickActionCard
-                title="View Reports"
-                description="Check sales and performance reports"
-                icon={ChartBarIcon}
-                onClick={() => window.location.href = '/reports'}
-              />
-            )}
+          
           </div>
         </div>
       )}
@@ -469,7 +462,6 @@ export default function DashboardPage() {
       </div>
 
       {/* Revenue Chart */}
-      {canViewBilling && revenueData.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900">Revenue Overview</h2>
@@ -515,7 +507,7 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
-      )}
+      
     </div>
   );
 }
