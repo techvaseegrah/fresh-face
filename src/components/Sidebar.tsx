@@ -18,6 +18,7 @@ import {
   BuildingStorefrontIcon,
   BanknotesIcon
 } from '@heroicons/react/24/outline';
+import { BeakerIcon } from 'lucide-react';
 
 const Sidebar = () => {
   const pathname = usePathname();
@@ -61,7 +62,9 @@ const Sidebar = () => {
     { href: '/eb-upload', label: 'EB Upload', icon: LightBulbIcon, show: canAccessEBUpload },
     { href: '/eb-view', label: 'EB View & Calculate', icon: DocumentTextIcon, show: canAccessEBViewCalculate },
     { href: '/procurement', label: 'Procurements', icon: ShoppingCartIcon, show: canAccessProcurement },
-    { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd }
+    { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd },
+        { href: '/inventory-checker', label: 'Inventory Checker', icon: BeakerIcon, show: true },
+
   ];
 
   const adminItems = [

@@ -74,6 +74,8 @@ export class InventoryManager {
             continue;
           }
           product.totalQuantity -= update.quantityToDeduct;
+          console.log(`Updated total quantity for ${product.name}: ${product.totalQuantity}${product.unit}`);
+          
           if (product.quantityPerItem > 0) {
             product.numberOfItems = Math.floor(product.totalQuantity / product.quantityPerItem);
           }
@@ -111,7 +113,7 @@ export class InventoryManager {
     for (const [productId, update] of consolidatedUpdates) {
       const product = await Product.findById(productId);
       if (!product) continue;
-      
+
       const isPiece = product.unit === 'piece';
       const current = isPiece ? product.numberOfItems : product.totalQuantity;
       const remaining = current - update.quantityToDeduct;

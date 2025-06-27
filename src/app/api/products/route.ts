@@ -6,36 +6,32 @@ import mongoose from 'mongoose';
 
 export async function GET(req: NextRequest) {
   await dbConnect();
-  
+
   const sku = req.nextUrl.searchParams.get('sku');
   const search = req.nextUrl.searchParams.get('search');
   const subCategoryId = req.nextUrl.searchParams.get('subCategoryId');
 
   try {
-    const query: any = {}; 
+    const query: any = {};
 
-    // FIX: Build the query object progressively instead of using mutually exclusive if/else
-    // This ensures that if a subCategoryId is present, it will always be used to filter.
     if (subCategoryId) {
       query.subCategory = new mongoose.Types.ObjectId(subCategoryId);
     }
     if (sku) {
       query.sku = { $regex: `^${sku}$`, $options: 'i' };
-    } 
+    }
     if (search) {
       query.name = { $regex: search, $options: 'i' };
     }
 
-    // If no valid filter is provided, return an empty array.
-    if (Object.keys(query).length === 0) {
-      return NextResponse.json({ success: true, data: [] });
-    }
+    // If no valid filter is provided, the query remains empty,
+    // and all products will be fetched.
 
     const products = await Product.find(query)
       .populate('brand', 'name type')
       .populate('subCategory', 'name')
       .sort({ name: 1 });
-    
+
     return NextResponse.json({ success: true, data: products });
 
   } catch (error) {
@@ -49,6 +45,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const product = await Product.create(body);
+
+    console.log("API PRODUCT CREATION:", product);
+    
     return NextResponse.json({ success: true, data: product }, { status: 201 });
   } catch (error: any) {
     console.error("API PRODUCT CREATION ERROR:", error);
