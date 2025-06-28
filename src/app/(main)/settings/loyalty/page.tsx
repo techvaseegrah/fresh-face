@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
+import { useSession } from 'next-auth/react';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 interface LoyaltySettings {
   rupeesForPoints: number;
@@ -8,9 +10,12 @@ interface LoyaltySettings {
 }
 
 export default function LoyaltySettingsPage() {
+  const { data: session } = useSession();
   const [settings, setSettings] = useState<LoyaltySettings>({ rupeesForPoints: 100, pointsAwarded: 6 });
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const canUpdateSettings = hasPermission(session?.user?.role?.permissions || [], PERMISSIONS.SETTINGS_UPDATE);
 
   // Fetch current settings when the page loads
   useEffect(() => {
@@ -90,6 +95,7 @@ export default function LoyaltySettingsPage() {
               onChange={handleInputChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               required
+              disabled={!canUpdateSettings}
             />
             <p className="text-xs text-gray-500 mt-1">The number of points to award.</p>
           </div>
@@ -106,6 +112,7 @@ export default function LoyaltySettingsPage() {
               onChange={handleInputChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               required
+              disabled={!canUpdateSettings}
             />
             <p className="text-xs text-gray-500 mt-1">Award points for every specified amount spent.</p>
           </div>
@@ -118,7 +125,7 @@ export default function LoyaltySettingsPage() {
         <div className="mt-6">
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !canUpdateSettings}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-300"
           >
             {isLoading ? 'Saving...' : 'Save Settings'}

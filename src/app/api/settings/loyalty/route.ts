@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import Setting, { ILoyaltySettings } from '@/models/Setting'
+import Setting, { ILoyaltySettings } from '@/models/Setting';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // Helper to get settings with a fallback default for the UI
 async function getLoyaltySettings(): Promise<ILoyaltySettings> {
@@ -23,6 +26,10 @@ async function getLoyaltySettings(): Promise<ILoyaltySettings> {
 //  GET: Handler for fetching current loyalty settings for the admin page
 // ===================================================================
 export async function GET(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.SETTINGS_READ)) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
+  }
   try {
     await connectToDatabase();
     const settings = await getLoyaltySettings();
@@ -36,6 +43,10 @@ export async function GET(req: Request) {
 //  PUT: Handler for UPDATING the loyalty settings from the admin page
 // ===================================================================
 export async function PUT(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.SETTINGS_UPDATE)) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
+  }
   try {
     await connectToDatabase();
     const body: ILoyaltySettings = await req.json();

@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await checkPermission(PERMISSIONS.SERVICES_CREATE);
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    
+
   await dbConnect();
   try {
     const body = await req.json();

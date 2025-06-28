@@ -36,7 +36,8 @@ export default function InventoryCheckerPage() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [chartInstance, setChartInstance] = useState<Chart | null>(null);
 
-  const canCheckInventory = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_UPDATE); // Assuming this permission
+  const canCheckInventory = session && hasPermission(session.user.role.permissions, PERMISSIONS.INVENTORY_CHECKER_CREATE);
+  const canReadInventory = session && hasPermission(session.user.role.permissions, PERMISSIONS.INVENTORY_CHECKER_READ);
 
   useEffect(() => {
     console.log('Checking permissions for inventory checker:', session?.user.role.permissions);
@@ -174,7 +175,7 @@ export default function InventoryCheckerPage() {
     setChartInstance(newChartInstance);
   };
 
-  if (!canCheckInventory) {
+  if (!canReadInventory) {
     return (
       <div className="p-6 bg-gray-50 min-h-screen">
         <p className="text-red-500">You do not have permission to access the inventory checker.</p>
@@ -191,65 +192,73 @@ console.log(history);
 
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-medium text-gray-800 mb-4">Check Product Inventory</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="product" className="block text-sm font-medium text-gray-700">
-              Select Product
-            </label>
-            <select
-              id="product"
-              value={selectedProduct?._id || ''}
-              onChange={e => handleProductSelect(e.target.value)}
-              className="mt-1 w-full rounded-md border-gray-300 shadow-sm p-2"
-              required
-            >
-              <option value="">-- Select a product --</option>
-              {products.map(p => (
-                <option key={p._id} value={p._id}>
-                  {p.name} ({p.sku})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedProduct && (
-            <>
-              <div>
-                <label htmlFor="actualQuantity" className="block text-sm font-medium text-gray-700">
-                  Current Quantity ({selectedProduct.unit})
-                </label>
-                <input
-                  id="actualQuantity"
-                  type="number"
-                  step="any"
-                  value={actualQuantity}
-                  onChange={e => setActualQuantity(e.target.value)}
-                  className="mt-1 w-full rounded-md border-gray-300 shadow-sm p-2"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
-                  Notes (optional)
-                </label>
-                <textarea
-                  id="notes"
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  className="mt-1 w-full rounded-md border-gray-300 shadow-sm p-2"
-                  rows={3}
-                ></textarea>
-              </div>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        {canCheckInventory && (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="product" className="block text-sm font-medium text-gray-700">
+                Select Product
+              </label>
+              <select
+                id="product"
+                value={selectedProduct?._id || ''}
+                onChange={(e) => handleProductSelect(e.target.value)}
+                className="mt-1 w-full rounded-md border-gray-300 shadow-sm p-2"
+                required
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Check'}
-              </button>
-            </>
-          )}
-        </form>
+                <option value="">-- Select a product --</option>
+                {products.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.name} ({p.sku})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedProduct && (
+              <>
+                <div>
+                  <label
+                    htmlFor="actualQuantity"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Current Quantity ({selectedProduct.unit})
+                  </label>
+                  <input
+                    id="actualQuantity"
+                    type="number"
+                    step="any"
+                    value={actualQuantity}
+                    onChange={(e) => setActualQuantity(e.target.value)}
+                    className="mt-1 w-full rounded-md border-gray-300 shadow-sm p-2"
+                    required
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="notes"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Notes (optional)
+                  </label>
+                  <textarea
+                    id="notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="mt-1 w-full rounded-md border-gray-300 shadow-sm p-2"
+                    rows={3}
+                  ></textarea>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Check'}
+                </button>
+              </>
+            )}
+          </form>
+        )}
       </div>
 
       {selectedProduct && (

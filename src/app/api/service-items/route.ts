@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
   await dbConnect();
   try {
     const subCategoryId = req.nextUrl.searchParams.get('subCategoryId');
+    const gender = req.nextUrl.searchParams.get('gender');
 
     // 1. Initialize an empty query object
     const query: any = {};
@@ -19,11 +20,12 @@ export async function GET(req: NextRequest) {
       }
       query.subCategory = new mongoose.Types.ObjectId(subCategoryId);
     }
-    // If no subCategoryId is provided, the query object remains empty {}, 
-    // which tells `find` to fetch all documents.
 
-    // 3. Execute the find with the built query
-    const serviceItems = await ServiceItem.find(query)
+    console.log(gender,'gender');
+    
+
+    // 3. Execute the find with the built query and populate necessary fields
+    let serviceItems = await ServiceItem.find(query)
       .populate({
         path: 'subCategory',
         populate: {
@@ -33,6 +35,20 @@ export async function GET(req: NextRequest) {
       })
       .populate('consumables.product', 'name sku unit')
       .sort({ name: 1 });
+
+    // 4. Filter by gender if provided
+    if (gender && (gender === 'male' || gender === 'female')) {
+      serviceItems = serviceItems.filter(item => {
+        // The targetAudience is on the main category, which we populated
+        const targetAudience = item.subCategory?.mainCategory?.targetAudience;
+
+        console.log(targetAudience, 'targetAudience');
+        
+        // Return the service if its audience is 'Unisex' or matches the requested gender
+        return targetAudience === 'Unisex' || targetAudience?.toLowerCase() === gender;
+      });
+    }
+console.log(serviceItems, 'serviceItems');
 
     // Format the results for the frontend
     const formattedServices = serviceItems.map(item => ({
@@ -59,6 +75,7 @@ export async function GET(req: NextRequest) {
     }, { status: 500 });
   }
 }
+
 
 // POST function remains unchanged
 export async function POST(req: NextRequest) {

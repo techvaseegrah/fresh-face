@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import { InventoryManager } from '@/lib/inventoryManager';
 import Customer from '@/models/customermodel';
+import { Gender } from '@/types/gender';
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,12 +19,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Get customer gender if available
-    let customerGender: 'male' | 'female' | 'other' = 'other';
+    let customerGender: Gender = Gender.Other;
     if (customerId) {
       const customer = await Customer.findById(customerId);
-      customerGender = customer?.gender || 'other';
+      customerGender = customer?.gender || Gender.Other;
     }
-
     // Calculate inventory impact
     const inventoryImpact = await InventoryManager.calculateMultipleServicesInventoryImpact(
       serviceIds,

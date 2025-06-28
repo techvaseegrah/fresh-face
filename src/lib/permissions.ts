@@ -69,6 +69,16 @@ export const PERMISSIONS = {
   PROCUREMENT_READ: 'procurement:read',   // View procurement records
   PROCUREMENT_UPDATE: 'procurement:update', // Update procurement records
   PROCUREMENT_DELETE: 'procurement:delete', // Delete procurement records
+  SETTINGS_CREATE: 'settings:create',
+  SETTINGS_READ: 'settings:read',
+  SETTINGS_UPDATE: 'settings:update',
+  SETTINGS_DELETE: 'settings:delete',
+
+  // Inventory Checker management
+  INVENTORY_CHECKER_CREATE: 'inventory-checker:create',
+  INVENTORY_CHECKER_READ: 'inventory-checker:read',
+  INVENTORY_CHECKER_UPDATE: 'inventory-checker:update',
+  INVENTORY_CHECKER_DELETE: 'inventory-checker:delete',
 
   ALL: '*'
 } as const;
@@ -90,7 +100,8 @@ export const PERMISSION_CATEGORIES = {
   REPORTS_ACCESS: 'Reports Access',
   EB_MANAGEMENT: 'EB Management',
   PROCUREMENT_MANAGEMENT: 'Procurement Management', // New category
-  DAYEND_MANAGEMENT: 'Day-end Closing Management'
+  DAYEND_MANAGEMENT: 'Day-end Closing Management',
+  INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management'
 
 } as const;
 
@@ -163,6 +174,18 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SERVICES_READ, description: 'View service information', category: PERMISSION_CATEGORIES.SERVICE_MANAGEMENT },
   { permission: PERMISSIONS.SERVICES_UPDATE, description: 'Update service information', category: PERMISSION_CATEGORIES.SERVICE_MANAGEMENT },
   { permission: PERMISSIONS.SERVICES_DELETE, description: 'Delete services and categories', category: PERMISSION_CATEGORIES.SERVICE_MANAGEMENT },
+
+  // Settings Management
+  { permission: PERMISSIONS.SETTINGS_CREATE, description: 'Create settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.SETTINGS_READ, description: 'Read settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.SETTINGS_UPDATE, description: 'Update settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.SETTINGS_DELETE, description: 'Delete settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+
+  // Inventory Checker Management
+  { permission: PERMISSIONS.INVENTORY_CHECKER_CREATE, description: 'Create inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
+  { permission: PERMISSIONS.INVENTORY_CHECKER_READ, description: 'Read inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
+  { permission: PERMISSIONS.INVENTORY_CHECKER_UPDATE, description: 'Update inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
+  { permission: PERMISSIONS.INVENTORY_CHECKER_DELETE, description: 'Delete inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
 
 
   // Super Admin

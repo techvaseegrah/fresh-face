@@ -9,7 +9,7 @@ import { XMarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { IServiceCategory } from '@/models/ServiceCategory';
 
 type EntityType = 'service-category' | 'service-sub-category' | 'service-item';
-type AudienceType = 'Men' | 'Women' | 'Unisex' | 'Children';
+type AudienceType = 'male' | 'female' | 'Unisex';
 
 interface Props {
   isOpen: boolean;
@@ -279,7 +279,7 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
               {/* Usage Preview */}
               <div className="mt-3 text-xs text-gray-600 bg-white p-2 rounded border">
                 <div className="font-medium mb-1">Usage Preview:</div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <div>Default: {con.quantity.default || 0}{con.unit}</div>
                   <div>Male: {con.quantity.male || con.quantity.default || 0}{con.unit}</div>
                   <div>Female: {con.quantity.female || con.quantity.default || 0}{con.unit}</div>

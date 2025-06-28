@@ -1,4 +1,3 @@
-// models/ServiceItem.ts (Updated)
 import mongoose, { Document, Schema, Model, models } from 'mongoose';
 
 export interface IServiceConsumable {
@@ -41,8 +40,8 @@ const serviceConsumableSchema = new Schema({
     },
     default: {
       type: Number,
-      required: true,
-      min: 0
+      min: 0,
+      required: true
     }
   },
   unit: {

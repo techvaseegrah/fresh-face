@@ -1,6 +1,7 @@
 // src/lib/inventoryManager.ts
 import Product from '@/models/Product';
 import ServiceItem from '@/models/ServiceItem';
+import { Gender } from '@/types/gender';
 
 export interface InventoryUpdate {
   productId: string;
@@ -29,12 +30,13 @@ export class InventoryManager {
 
     return service.consumables.map(consumable => {
       const product = consumable.product;
-      let quantityToUse = consumable.quantity.default || 0;
-      if (customerGender === 'male' && typeof consumable.quantity.male === 'number') {
+   let quantityToUse = consumable.quantity.default || 0;
+      if (customerGender === Gender.Male && typeof consumable.quantity.male === 'number') {
         quantityToUse = consumable.quantity.male;
-      } else if (customerGender === 'female' && typeof consumable.quantity.female === 'number') {
+      } else if (customerGender === Gender.Female && typeof consumable.quantity.female === 'number') {
         quantityToUse = consumable.quantity.female;
       }
+
 
       return {
         productId: product._id.toString(),

@@ -5,6 +5,7 @@ import React, { useState, useEffect, FormEvent } from 'react';
 import { toast } from 'react-toastify';
 import { CrmCustomer, AddCustomerFormData } from '../types';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { Gender } from '@/types/gender';
 
 interface AddEditCustomerModalProps {
   isOpen: boolean;
@@ -18,7 +19,7 @@ interface AddEditCustomerModalProps {
  * It handles its own form state and API submission.
  */
 const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onClose, onSave, customerToEdit }) => {
-  const [formData, setFormData] = useState<AddCustomerFormData>({ name: '', email: '', phoneNumber: '', gender: 'other' });
+  const [formData, setFormData] = useState<AddCustomerFormData>({ name: '', email: '', phoneNumber: '', gender: Gender.Other });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -45,7 +46,7 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
     e.preventDefault();
     setFormError(null);
     setIsSubmitting(true);
-    
+
     const apiEndpoint = isEditMode ? `/api/customer/${customerToEdit?._id}` : '/api/customer';
     const method = isEditMode ? 'PUT' : 'POST';
 
@@ -60,7 +61,7 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Failed to save customer.');
       }
-      
+
       toast.success(`Customer ${isEditMode ? 'updated' : 'added'} successfully!`);
       onSave(); // Trigger parent component to refresh its data
       onClose(); // Close the modal
@@ -84,31 +85,31 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
             <XMarkIcon className="w-6 h-6" />
           </button>
         </div>
-        
+
         {formError && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">{formError}</div>}
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-            <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"/>
+            <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
           </div>
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"/>
+            <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
           </div>
           <div>
             <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-            <input type="tel" name="phoneNumber" id="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"/>
+            <input type="tel" name="phoneNumber" id="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
           </div>
-           <div>
+          <div>
             <label htmlFor="gender" className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
             <select name="gender" id="gender" value={formData.gender} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-                <option value="other">Other</option>
+              <option value={Gender.Female}>Female</option>
+              <option value={Gender.Male}>Male</option>
+              <option value={Gender.Other}>Other</option>
             </select>
           </div>
-          
+
           <div className="mt-8 flex justify-end gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 border border-gray-300 text-sm font-medium rounded-md hover:bg-gray-200" disabled={isSubmitting}>
               Cancel

@@ -10,13 +10,13 @@ import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import CategoryColumn from './CategoryColumn';
 import ServiceFormModal from './ServiceFormModal';
 
-type AudienceType = 'Men' | 'Women' | 'Unisex' | 'Children';
+type AudienceType = 'Unisex' | 'male' | 'female';
 type EntityType = 'service-category' | 'service-sub-category' | 'service-item';
 
 export default function ServiceManager() {
   const { data: session } = useSession();
   
-  const [audienceFilter, setAudienceFilter] = useState<AudienceType>('Women');
+  const [audienceFilter, setAudienceFilter] = useState<AudienceType>('female');
   const [mainCategories, setMainCategories] = useState<IServiceCategory[]>([]);
   const [subCategories, setSubCategories] = useState<IServiceSubCategory[]>([]);
   const [services, setServices] = useState<IServiceItem[]>([]);
@@ -139,7 +139,7 @@ export default function ServiceManager() {
       />
       <div className="p-4 border-b border-gray-200">
         <div className="flex space-x-2 rounded-md bg-gray-100 p-1 w-min">
-          {(['Women', 'Men', 'Unisex', 'Children'] as AudienceType[]).map((type) => (
+          {(['female', 'male', 'Unisex']  as AudienceType[]).map((type) => (
             <button key={type} onClick={() => setAudienceFilter(type)}
               className={`px-6 py-1.5 text-sm font-medium rounded-md transition-colors ${audienceFilter === type ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
             >{type}</button>

@@ -719,25 +719,31 @@ const initialFormData: NewBookingData = {
 
 
 
-  // Initialize form
+  // Initialize form and reset state when it opens
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(initialFormData);
+      setFormError(null);
+      setIsSubmitting(false);
+      setIsCustomerSelected(false);
+      setSelectedServices([]);
+      setAvailableStylists([]);
+      setSelectedCustomerDetails(null);
+      setCustomerSearchResults([]);
+      setShowCustomerHistory(false);
+      setBarcodeQuery('');
+      setSearchMode('phone');
+    }
+  }, [isOpen]);
+
+  // Fetch services when the form opens or gender changes
   useEffect(() => {
     if (!isOpen) return;
 
-    setFormData(initialFormData);
-    setFormError(null);
-    setIsSubmitting(false);
-    setIsCustomerSelected(false);
-    setSelectedServices([]);
-    setAvailableStylists([]);
-    setSelectedCustomerDetails(null);
-    setCustomerSearchResults([]);
-    setShowCustomerHistory(false);
-    setBarcodeQuery('');
-    setSearchMode('phone');
-
     const fetchServices = async () => {
       try {
-        const res = await fetch('/api/service-items');
+        const genderQuery = formData.gender ? `&gender=${formData.gender}` : '';
+        const res = await fetch(`/api/service-items?${genderQuery}`);
         const data = await res.json();
         if (data.success) {
           setAllServices(data.services);
@@ -750,7 +756,7 @@ const initialFormData: NewBookingData = {
     };
 
     fetchServices();
-  }, [isOpen]);
+  }, [isOpen, formData.gender]);
 
   // Set date and time for checked-in appointments
   useEffect(() => {

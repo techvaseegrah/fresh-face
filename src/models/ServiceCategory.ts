@@ -3,12 +3,12 @@ import mongoose, { Document, Schema, Model, models } from 'mongoose';
 export interface IServiceCategory extends Document {
   _id: string;
   name: string;
-  targetAudience: 'Men' | 'Women' | 'Unisex' | 'Children';
+  targetAudience: 'male' | 'female' | 'Unisex';
 }
 
 const ServiceCategorySchema: Schema<IServiceCategory> = new Schema({
   name: { type: String, required: true, trim: true },
-  targetAudience: { type: String, enum: ['Men', 'Women', 'Unisex', 'Children'], required: true },
+  targetAudience: { type: String, enum: ['male', 'female', 'Unisex'], required: true },
 }, { timestamps: true });
 
 ServiceCategorySchema.index({ name: 1, targetAudience: 1 }, { unique: true });

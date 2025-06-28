@@ -48,6 +48,8 @@ const Sidebar = () => {
   const canAccessEBViewCalculate = hasAnyPermission(userPermissions, [PERMISSIONS.EB_VIEW_CALCULATE]);
   const canAccessProcurement = hasAnyPermission(userPermissions, [PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_CREATE, PERMISSIONS.PROCUREMENT_UPDATE, PERMISSIONS.PROCUREMENT_DELETE]);
   const canAccessDayEnd = hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]);
+  const canAccessSettings = hasAnyPermission(userPermissions, [PERMISSIONS.SETTINGS_READ]);
+  const canAccessInventoryChecker = hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]);
 
 
   // Admin section visibility
@@ -64,9 +66,9 @@ const Sidebar = () => {
     { href: '/eb-view', label: 'EB View & Calculate', icon: DocumentTextIcon, show: canAccessEBViewCalculate },
     { href: '/procurement', label: 'Procurements', icon: ShoppingCartIcon, show: canAccessProcurement },
     { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd },
-        { href: '/inventory-checker', label: 'Inventory Checker', icon: BeakerIcon, show: true },
+        { href: '/inventory-checker', label: 'Inventory Checker', icon: BeakerIcon, show: canAccessInventoryChecker },
 
-    {href:'/settings',label:'Settings',icon:Cog6ToothIcon,show:canAccessAdmin}
+    {href:'/settings',label:'Settings',icon:Cog6ToothIcon,show:canAccessSettings}
   ];
 
   const adminItems = [
