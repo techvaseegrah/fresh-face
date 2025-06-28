@@ -181,6 +181,9 @@ export default function InventoryCheckerPage() {
       </div>
     );
   }
+console.log(history);
+
+
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen space-y-6">
@@ -279,7 +282,7 @@ export default function InventoryCheckerPage() {
                       <td className={`px-4 py-2 font-semibold ${check.discrepancy < 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {check.discrepancy.toFixed(2)}
                       </td>
-                        <td className="px-4 py-2">{check.checkedBy.name}</td>
+                        <td className="px-4 py-2">{check.checkedBy?.name}</td>
                       <td className="px-4 py-2">{check.notes}</td>
                     </tr>
                   ))}

@@ -11,6 +11,7 @@ import {
   CreditCardIcon,
   UsersIcon,
   CogIcon,
+  Cog6ToothIcon,
   PowerIcon,
   LightBulbIcon,
   DocumentTextIcon,
@@ -65,6 +66,7 @@ const Sidebar = () => {
     { href:'/DayendClosing', label:'Day-end Closing', icon:BanknotesIcon, show: canAccessDayEnd },
         { href: '/inventory-checker', label: 'Inventory Checker', icon: BeakerIcon, show: true },
 
+    {href:'/settings',label:'Settings',icon:Cog6ToothIcon,show:canAccessAdmin}
   ];
 
   const adminItems = [

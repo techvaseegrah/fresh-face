@@ -19,19 +19,28 @@ export interface MembershipUIDetails {
 }
 
 export interface CrmCustomer {
-  isMember: any;
+  // 1. FIX: Changed 'isMember: any' to 'isMembership?: boolean'
+  // This makes it consistent and type-safe.
+  isMembership?: boolean;
+
   id: string;
   _id: string;
   name: string;
-  email: string;
+  
+  // 2. FIX: Make email optional to match reality
+  email?: string;
+
   phoneNumber: string;
   createdAt?: string;
   status?: 'Active' | 'Inactive' | 'New';
-  gender?: 'male' | 'female' | 'other'; // Added gender
+  gender?: 'male' | 'female' | 'other';
   appointmentHistory?: AppointmentHistoryItem[];
   currentMembership?: MembershipUIDetails | null;
   loyaltyPoints?: number;
-  membershipBarcode?: string; // Added membership barcode
+  membershipBarcode?: string;
+  
+  // This was missing from the customer list view
+  isActive?: boolean;
 }
 
 export interface MembershipPlanFE {
@@ -44,9 +53,9 @@ export interface MembershipPlanFE {
 
 export interface AddCustomerFormData {
   name: string;
-  email: string;
+  email?: string; // Make email optional here too
   phoneNumber: string;
-  gender?: 'male' | 'female' | 'other'; // Added gender
+  gender?: 'male' | 'female' | 'other';
 }
 
 // Pagination details from the API
@@ -54,4 +63,7 @@ export interface PaginationInfo {
   currentPage: number;
   totalPages: number;
   totalCustomers: number;
+  
+  // 3. FIX: Add the 'limit' property that the API sends
+  limit: number;
 }

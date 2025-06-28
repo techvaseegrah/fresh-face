@@ -148,9 +148,6 @@ export default function ProductManager() {
       }
     }
 
-    console.log(payload,'payload');
-    
-
     const apiPath = getApiPath(entityType);
     if (!apiPath) return;
 

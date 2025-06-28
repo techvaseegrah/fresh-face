@@ -1,4 +1,5 @@
-// app/api/customer/[id]
+// /app/api/customer/[id]/route.ts - FINAL CORRECTED VERSION
+
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
@@ -11,19 +12,21 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-// This interface should reflect the actual fields in your Customer model
+// This interface should reflect the actual fields your lean() query returns
 interface LeanCustomer {
   _id: mongoose.Types.ObjectId;
   createdAt?: Date;
   name: string;
   email?: string;
   phoneNumber: string;
-  isActive: boolean; // Add this field
-  isMembership: boolean; // This is the key field for your simple system
+  gender?: string;
+  isActive: boolean;
+  isMembership: boolean;
+  membershipBarcode?: string;
 }
 
 // ===================================================================================
-//  GET: Handler for fetching full customer details (FIXED)
+//  GET: Handler for fetching full customer details (This function is already correct)
 // ===================================================================================
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
@@ -40,60 +43,78 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   try {
     await connectToDatabase();
     
-    // Fetch the core customer data. Removed .lean() to allow post-find hooks to run for decryption.
-    const customer = await Customer.findById(customerId);
+    const customer = await Customer.findById(customerId).lean<LeanCustomer>();
     if (!customer) {
       return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
     }
 
-    // Fetch related data in parallel.
     const [allRecentAppointments, loyaltyData] = await Promise.all([
-      Appointment.find({ customerId: customer._id }).sort({ date: -1 }).limit(20).lean(),
+      Appointment.find({ customerId: customer._id }).sort({ appointmentDateTime: -1, date: -1 }).limit(20).lean(),
       LoyaltyTransaction.aggregate([
         { $match: { customerId: customer._id } },
         { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
       ])
     ]);
 
-    // Determine activity status
     let activityStatus: 'Active' | 'Inactive' | 'New' = 'New';
+    let lastVisit: string | null = null;
     const twoMonthsAgo = new Date();
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
     if (allRecentAppointments.length > 0) {
-      activityStatus = new Date(allRecentAppointments[0].date) >= twoMonthsAgo ? 'Active' : 'Inactive';
+      const lastAppointmentDate = allRecentAppointments[0].appointmentDateTime || allRecentAppointments[0].date;
+      if (lastAppointmentDate) {
+        activityStatus = new Date(lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
+        lastVisit = new Date(lastAppointmentDate).toISOString();
+      }
     } else if (customer.createdAt) {
       activityStatus = new Date(customer.createdAt) < twoMonthsAgo ? 'Inactive' : 'New';
     }
 
     const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
 
-    // Get paid appointment history
-    const paidAppointmentIds = allRecentAppointments.filter(apt => apt.status === 'Paid').slice(0, 10).map(apt => apt._id);
+    const paidAppointmentIds = allRecentAppointments.filter(apt => apt.status === 'Paid').map(apt => apt._id);
     const populatedHistory = await Appointment.find({ _id: { $in: paidAppointmentIds } })
-      .sort({ date: -1 })
+      .sort({ appointmentDateTime: -1, date: -1 })
       .populate({ path: 'stylistId', model: Stylist, select: 'name' })
       .populate({ path: 'serviceIds', model: ServiceItem, select: 'name price' })
       .lean();
 
-    // Construct the final object with decrypted customer data
     const customerDetails = {
       id: customer._id.toString(),
+      _id: customer._id.toString(),
       name: customer.name,
       email: customer.email,
       phoneNumber: customer.phoneNumber,
+      gender: customer.gender,
+      isMember: customer.isMembership,
+      membershipBarcode: customer.membershipBarcode,
+      membershipDetails: customer.isMembership ? { planName: 'Member', status: 'Active' } : null,
       status: activityStatus,
+      lastVisit: lastVisit,
       loyaltyPoints: calculatedLoyaltyPoints,
       currentMembership: customer.isMembership,
       createdAt: customer.createdAt || customer._id.getTimestamp(),
-      appointmentHistory: populatedHistory.map(apt => ({
-        _id: (apt as any)._id.toString(),
-        id: (apt as any)._id.toString(),
-        date: (apt as any).date.toISOString(),
-        totalAmount: (apt as any).amount || 0,
-        stylistName: (apt as any).stylistId?.name || 'N/A',
-        services: Array.isArray((apt as any).serviceIds) ? (apt as any).serviceIds.map((s: any) => s.name) : [],
-      }))
+      appointmentHistory: populatedHistory.map(apt => {
+        let finalDateTime;
+        if (apt.appointmentDateTime && apt.appointmentDateTime instanceof Date) {
+          finalDateTime = apt.appointmentDateTime;
+        } else if (apt.date && apt.time) {
+          const dateStr = apt.date instanceof Date ? apt.date.toISOString().split('T')[0] : apt.date.toString();
+          finalDateTime = new Date(`${dateStr}T${apt.time}:00.000Z`);
+        } else {
+          finalDateTime = apt.createdAt || new Date();
+        }
+        return {
+          _id: (apt as any)._id.toString(),
+          id: (apt as any)._id.toString(),
+          date: finalDateTime.toISOString(),
+          totalAmount: (apt as any).finalAmount || (apt as any).amount || 0,
+          stylistName: (apt as any).stylistId?.name || 'N/A',
+          services: Array.isArray((apt as any).serviceIds) ? (apt as any).serviceIds.map((s: any) => s.name) : [],
+          status: (apt as any).status || 'N/A',
+        };
+      })
     };
 
     return NextResponse.json({ success: true, customer: customerDetails });
@@ -105,7 +126,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 // ===================================================================================
-//  PUT: Handler for UPDATING a customer (FIXED)
+//  PUT: Handler for UPDATING a customer (CORRECTED)
 // ===================================================================================
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
@@ -125,19 +146,29 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (!body.name || !body.phoneNumber) {
       return NextResponse.json({ success: false, message: 'Name and phone number are required.' }, { status: 400 });
     }
+    
+    // --- THIS IS THE FIX TO ENSURE ENCRYPTION ON UPDATE ---
 
-    // Use findById and save() to ensure pre-save hooks for encryption are triggered
+    // 1. Find the existing customer document first. Do NOT use findByIdAndUpdate.
     const customer = await Customer.findById(customerId);
 
     if (!customer) {
       return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
     }
 
+    // 2. Update the fields on the Mongoose document instance.
     customer.name = body.name.trim();
     customer.email = body.email?.trim();
     customer.phoneNumber = body.phoneNumber.trim();
+    if (body.gender && ['male', 'female', 'other'].includes(body.gender)) {
+      customer.gender = body.gender;
+    }
 
+    // 3. Call .save(). This will trigger your 'pre-save' hook,
+    // which automatically handles encrypting the updated fields before saving.
     const updatedCustomer = await customer.save();
+
+    // --- END OF FIX ---
 
     return NextResponse.json({ success: true, customer: updatedCustomer });
 
@@ -151,7 +182,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 // ===================================================================================
-//  DELETE: Handler for "soft deleting" (deactivating) a customer
+//  DELETE: Handler for "soft deleting" (deactivating) a customer (This is correct)
 // ===================================================================================
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;

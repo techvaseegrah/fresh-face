@@ -113,7 +113,6 @@ export class InventoryManager {
     for (const [productId, update] of consolidatedUpdates) {
       const product = await Product.findById(productId);
       if (!product) continue;
-
       const isPiece = product.unit === 'piece';
       const current = isPiece ? product.numberOfItems : product.totalQuantity;
       const remaining = current - update.quantityToDeduct;

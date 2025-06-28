@@ -1,4 +1,4 @@
-// FILE: /app/crm/hooks/useCrm.ts - (COMPLETE, FINAL, AND DEFINITIVE VERSION)
+// /app/crm/hooks/useCrm.ts - FINAL CORRECTED VERSION
 
 'use client';
 
@@ -24,10 +24,7 @@ export function useCrm() {
   const [editingCustomer, setEditingCustomer] = useState<CrmCustomer | null>(null);
   const [panelKey, setPanelKey] = useState(0);
   const [isMembershipUpdating, setIsMembershipUpdating] = useState(false);
-
-  console.log(customers," customers in useCrm hook");
   
-
   // Debounce search term
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -54,8 +51,11 @@ export function useCrm() {
   }, [debouncedSearchTerm]);
 
   useEffect(() => {
-    fetchCustomers(pagination.currentPage);
-  }, [fetchCustomers, pagination.currentPage]);
+    // Only fetch if debouncedSearchTerm is not empty or if it's the initial load
+    if (debouncedSearchTerm || searchTerm === '') {
+      fetchCustomers(pagination.currentPage);
+    }
+  }, [fetchCustomers, pagination.currentPage, debouncedSearchTerm]);
   
   const refreshData = () => {
     fetchCustomers(pagination.currentPage);
@@ -88,14 +88,18 @@ export function useCrm() {
     }
   };
 
+  // 1. THIS IS THE CORRECTED FUNCTION
   const handleViewCustomerDetails = useCallback(async (customer: CrmCustomer) => {
-    if (isDetailPanelOpen && selectedCustomer?.id === customer.id) {
+    // Use `_id` for comparison to be safe
+    if (isDetailPanelOpen && selectedCustomer?._id === customer._id) {
         setIsDetailPanelOpen(false);
         return;
     }
     setPanelKey(prevKey => prevKey + 1); 
     setIsDetailPanelOpen(true);
-    setSelectedCustomer(null);
+    setSelectedCustomer(null); // Show loading state
+
+    // Use `_id` to fetch details, as it's the raw database identifier
     const detailedData = await fetchCustomerDetails(customer._id);
     setSelectedCustomer(detailedData);
   }, [isDetailPanelOpen, selectedCustomer]);
@@ -104,18 +108,18 @@ export function useCrm() {
   const handleOpenEditModal = (customer: CrmCustomer) => { setEditingCustomer(customer); setIsAddEditModalOpen(true); };
   const handleCloseAddEditModal = () => { setIsAddEditModalOpen(false); setEditingCustomer(null); };
 
-  /**
-   * THE FINAL, SIMPLIFIED LOGIC
-   * This function performs the update and uses the fresh, complete data
-   * returned directly from the POST request, eliminating the race condition.
-   */
-  const handleGrantMembership = async (customerId: string) => {
+  // 2. THIS IS THE CORRECTED MEMBERSHIP HANDLER
+  const handleGrantMembership = async (customerId: string, barcode: string) => {
     setIsMembershipUpdating(true);
     try {
       const response = await fetch(`/api/customer/${customerId}/toggle-membership`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isMembership: true }),
+        // Send the complete payload with the barcode
+        body: JSON.stringify({ 
+          isMembership: true,
+          membershipBarcode: barcode,
+        }),
       });
 
       const result = await response.json();
@@ -123,19 +127,18 @@ export function useCrm() {
         throw new Error(result.message || 'Failed to grant membership.');
       }
       
-      toast.success('Membership granted successfully!');
+      toast.success(`Membership granted successfully with barcode: ${result.customer.membershipBarcode}`);
       
-      // --- THE FIX ---
-      // No more `fetchCustomerDetails` call. We use the fresh customer
-      // object that our improved POST API just returned to us.
+      // Use the fresh customer object returned from the API
       const freshCustomerData = result.customer;
 
       // Update the panel with the new complete data.
       setSelectedCustomer(freshCustomerData);
 
       // Update the customer in the main table list in the background.
+      // Use `_id` for reliable matching.
       setCustomers(prev =>
-        prev.map(c => (c.id === customerId ? freshCustomerData : c))
+        prev.map(c => (c._id === customerId ? freshCustomerData : c))
       );
       
       // Force a re-mount of the panel for ultimate reliability.
@@ -155,10 +158,8 @@ export function useCrm() {
   };
 
   return {
-    // State
     customers, pagination, isLoading, pageError, searchTerm, selectedCustomer,
     isDetailPanelOpen, isAddEditModalOpen, editingCustomer, panelKey, isMembershipUpdating,
-    // Handlers
     setSearchTerm, goToPage, refreshData, handleViewCustomerDetails, setIsDetailPanelOpen,
     handleDeleteCustomer, handleOpenAddModal, handleOpenEditModal,
     handleCloseAddEditModal, handleGrantMembership,

@@ -1,10 +1,11 @@
-// components/EditAppointmentForm.tsx
+// /components/EditAppointmentForm.tsx - FINAL CORRECTED VERSION
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { XMarkIcon, ChevronDownIcon, CurrencyRupeeIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 
+// Interfaces remain the same
 interface ServiceFromAPI {
   _id: string;
   name: string;
@@ -18,18 +19,18 @@ interface StylistFromAPI {
   name: string;
 }
 
+// 1. UPDATE THE INTERFACE TO MATCH THE NEW DATA STRUCTURE
 interface AppointmentForEdit {
   id: string;
   customerId: {
     _id: string;
     name: string;
-    phoneNumber: string;
+    phoneNumber?: string;
     isMembership?: boolean;
   };
   stylistId: StylistFromAPI;
   serviceIds?: ServiceFromAPI[];
-  date: string;
-  time: string;
+  appointmentDateTime: string; // <-- USE THE NEW FIELD
   notes?: string;
   status: string;
   appointmentType: string;
@@ -58,7 +59,6 @@ export default function EditAppointmentForm({
     time: '',
     notes: '',
     status: '',
-    appointmentType: ''
   });
 
   const [allServices, setAllServices] = useState<ServiceFromAPI[]>([]);
@@ -68,7 +68,6 @@ export default function EditAppointmentForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Calculate totals
   const calculateTotals = useCallback(() => {
     let total = 0;
     let membershipSavings = 0;
@@ -92,20 +91,29 @@ export default function EditAppointmentForm({
   useEffect(() => {
     if (!isOpen || !appointment) return;
 
+    // 2. THIS IS THE CORE FIX: Derive date and time from the single correct field
+    const appointmentDate = new Date(appointment.appointmentDateTime);
+    
+    // Format to YYYY-MM-DD for the date input
+    const datePart = appointmentDate.toISOString().split('T')[0];
+    
+    // Format to HH:mm for the time input, being careful about timezone conversion
+    const hours = String(appointmentDate.getHours()).padStart(2, '0');
+    const minutes = String(appointmentDate.getMinutes()).padStart(2, '0');
+    const timePart = `${hours}:${minutes}`;
+
     setFormData({
       serviceIds: appointment.serviceIds?.map(s => s._id) || [],
       stylistId: appointment.stylistId._id,
-      date: appointment.date.split('T')[0],
-      time: appointment.time,
+      date: datePart, // Use the derived date part
+      time: timePart, // Use the derived time part
       notes: appointment.notes || '',
       status: appointment.status,
-      appointmentType: appointment.appointmentType
     });
 
     setSelectedServices(appointment.serviceIds || []);
     setError(null);
 
-    // Fetch all services
     const fetchServices = async () => {
       try {
         const res = await fetch('/api/service-items');
@@ -121,7 +129,7 @@ export default function EditAppointmentForm({
     fetchServices();
   }, [isOpen, appointment]);
 
-  // Fetch available stylists
+  // The rest of the component handlers (findAvailableStylists, etc.) are fine
   const findAvailableStylists = useCallback(async () => {
     if (!formData.date || !formData.time || formData.serviceIds.length === 0) {
       setAvailableStylists([appointment?.stylistId || { _id: '', name: 'Current Stylist' }] as StylistFromAPI[]);
@@ -131,14 +139,13 @@ export default function EditAppointmentForm({
     setIsLoadingStylists(true);
     try {
       const serviceQuery = formData.serviceIds.map((id) => `serviceIds=${id}`).join('&');
-      const res = await fetch(`/api/stylists/available?date=${formData.date}&time=${formData.time}&${serviceQuery}`);
+      const res = await fetch(`/api/stylists/available?date=${formData.date}&time=${formData.time}&${serviceQuery}&appointmentId=${appointment?.id}`);
       const data = await res.json();
       
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'Could not fetch stylists.');
       }
 
-      // Always include current stylist in the list
       const currentStylistInList = data.stylists.some((s: any) => s._id === appointment?.stylistId._id);
       if (!currentStylistInList && appointment?.stylistId) {
         data.stylists.unshift(appointment.stylistId);
@@ -151,7 +158,7 @@ export default function EditAppointmentForm({
     } finally {
       setIsLoadingStylists(false);
     }
-  }, [formData.date, formData.time, formData.serviceIds, appointment?.stylistId]);
+  }, [formData.date, formData.time, formData.serviceIds, appointment]);
 
   useEffect(() => {
     findAvailableStylists();
@@ -186,8 +193,14 @@ export default function EditAppointmentForm({
     setIsSubmitting(true);
     setError(null);
 
+    // The payload is correct. It sends separate date/time, which the PUT API handles.
+    const updatePayload = {
+      ...formData,
+      appointmentType: appointment.appointmentType
+    };
+
     try {
-      await onUpdateAppointment(appointment.id, formData);
+      await onUpdateAppointment(appointment.id, updatePayload);
     } catch (err: any) {
       setError(err.message || 'Failed to update appointment');
     } finally {
@@ -199,6 +212,7 @@ export default function EditAppointmentForm({
 
   const inputClasses = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/30 text-sm';
 
+  // JSX rendering remains largely the same
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -221,13 +235,8 @@ export default function EditAppointmentForm({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">
-              {error}
-            </div>
-          )}
+          {error && (<div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{error}</div>)}
 
-          {/* Total Amount Display */}
           <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -236,24 +245,15 @@ export default function EditAppointmentForm({
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-green-600">₹{total.toFixed(2)}</div>
-                {membershipSavings > 0 && (
-                  <div className="text-xs text-green-500">
-                    Member savings: ₹{membershipSavings.toFixed(2)}
-                  </div>
-                )}
+                {membershipSavings > 0 && (<div className="text-xs text-green-500">Member savings: ₹{membershipSavings.toFixed(2)}</div>)}
               </div>
             </div>
           </div>
 
-          {/* Status and Type */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Status</label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                className={inputClasses}
-              >
+              <select value={formData.status} onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))} className={inputClasses}>
                 <option value="Appointment">Appointment</option>
                 <option value="Checked-In">Checked-In</option>
                 <option value="Checked-Out">Checked-Out</option>
@@ -263,68 +263,39 @@ export default function EditAppointmentForm({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Type</label>
-              <select
-                value={formData.appointmentType}
-                onChange={(e) => setFormData(prev => ({ ...prev, appointmentType: e.target.value }))}
-                className={inputClasses}
-                disabled
-              >
+              <select value={appointment.appointmentType} className={`${inputClasses} bg-gray-100`} disabled>
                 <option value="Online">Online</option>
                 <option value="Offline">Offline</option>
               </select>
             </div>
           </div>
 
-          {/* Date and Time */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Date</label>
-              <input
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                className={inputClasses}
-                required
-              />
+              <input type="date" value={formData.date} onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))} className={inputClasses} required />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Time</label>
-              <input
-                type="time"
-                value={formData.time}
-                onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
-                className={inputClasses}
-                required
-              />
+              <input type="time" value={formData.time} onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))} className={inputClasses} required />
             </div>
           </div>
 
-          {/* Services */}
           <div>
             <label className="block text-sm font-medium mb-1">Services</label>
             <select
-              onChange={(e) => {
-                handleAddService(e.target.value);
-                e.target.value = '';
-              }}
+              onChange={(e) => { handleAddService(e.target.value); e.target.value = ''; }}
               value=""
               className={inputClasses}
             >
               <option value="">Add a service...</option>
               {allServices.map((service) => (
-                <option
-                  key={service._id}
-                  value={service._id}
-                  disabled={selectedServices.some((s) => s._id === service._id)}
-                >
+                <option key={service._id} value={service._id} disabled={selectedServices.some((s) => s._id === service._id)}>
                   {service.name} - ₹{service.price}
-                  {appointment.customerId.isMembership && service.membershipRate && 
-                    ` (Member: ₹${service.membershipRate})`
-                  }
+                  {appointment.customerId.isMembership && service.membershipRate && ` (Member: ₹${service.membershipRate})`}
                 </option>
               ))}
             </select>
-
             <div className="mt-2 space-y-2">
               {selectedServices.map((service) => {
                 const isMember = appointment.customerId.isMembership;
@@ -346,13 +317,7 @@ export default function EditAppointmentForm({
                       ) : (
                         <span>₹{service.price}</span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveService(service._id)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        ×
-                      </button>
+                      <button type="button" onClick={() => handleRemoveService(service._id)} className="text-red-500 hover:text-red-700">×</button>
                     </div>
                   </div>
                 );
@@ -360,19 +325,10 @@ export default function EditAppointmentForm({
             </div>
           </div>
 
-          {/* Stylist */}
           <div>
             <label className="block text-sm font-medium mb-1">Stylist</label>
-            <select
-              value={formData.stylistId}
-              onChange={(e) => setFormData(prev => ({ ...prev, stylistId: e.target.value }))}
-              className={inputClasses}
-              disabled={isLoadingStylists}
-              required
-            >
-              {isLoadingStylists ? (
-                <option>Loading stylists...</option>
-              ) : (
+            <select value={formData.stylistId} onChange={(e) => setFormData(prev => ({ ...prev, stylistId: e.target.value }))} className={inputClasses} disabled={isLoadingStylists} required>
+              {isLoadingStylists ? (<option>Loading stylists...</option>) : (
                 availableStylists.map((stylist) => (
                   <option key={stylist._id} value={stylist._id}>
                     {stylist.name}
@@ -383,43 +339,20 @@ export default function EditAppointmentForm({
             </select>
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
-            <textarea
-              rows={3}
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              className={`${inputClasses} resize-none`}
-              placeholder="Any special notes..."
-            />
+            <textarea rows={3} value={formData.notes} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} className={`${inputClasses} resize-none`} placeholder="Any special notes..." />
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-              disabled={isSubmitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2 text-sm bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 min-w-[120px]"
-              disabled={isSubmitting || selectedServices.length === 0}
-            >
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300" disabled={isSubmitting}>Cancel</button>
+            <button type="submit" className="px-6 py-2 text-sm bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isSubmitting || selectedServices.length === 0}>
               {isSubmitting ? (
                 <div className="flex items-center justify-center">
                   <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
                   Updating...
                 </div>
-              ) : (
-                formData.status === 'Checked-Out' ? 
-                  'Update & Proceed to Bill' : 
-                  'Update Appointment'
-              )}
+              ) : ( formData.status === 'Checked-Out' ? 'Update & Proceed to Bill' : 'Update Appointment' )}
             </button>
           </div>
         </form>

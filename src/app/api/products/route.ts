@@ -6,7 +6,6 @@ import mongoose from 'mongoose';
 
 export async function GET(req: NextRequest) {
   await dbConnect();
-
   const sku = req.nextUrl.searchParams.get('sku');
   const search = req.nextUrl.searchParams.get('search');
   const subCategoryId = req.nextUrl.searchParams.get('subCategoryId');
@@ -31,7 +30,6 @@ export async function GET(req: NextRequest) {
       .populate('brand', 'name type')
       .populate('subCategory', 'name')
       .sort({ name: 1 });
-
     return NextResponse.json({ success: true, data: products });
 
   } catch (error) {
