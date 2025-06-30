@@ -99,7 +99,7 @@ export default function StylistHistoryModal({
           </select>
           <div className="space-x-6">
             <span className="font-medium">
-              Total Billed: <strong>${totalAmount.toFixed(2)}</strong>
+              Total Billed: <strong>₹{totalAmount.toFixed(2)}</strong>
             </span>
             <span className="font-medium">
               Extra Time: <strong>{totalExtraTime} min</strong>
