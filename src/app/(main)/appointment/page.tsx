@@ -38,49 +38,56 @@ interface AppointmentWithCustomer {
   id: string;
   customerId: CustomerFromAPI;
   stylistId: StylistFromAPI;
-  date: string;
-  time: string;
+  date: string; // The future appointment date
+  time: string; // The future appointment time (part of 'date' string)
+  createdAt: string; // The timestamp when the booking was made
   notes?: string;
   status: 'Appointment' | 'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
   appointmentType: 'Online' | 'Offline';
-  // FIX: Added the 'duration' property to match the type expected by EditAppointmentForm.
   serviceIds?: Array<{ _id: string; name: string; price: number; membershipRate?: number; duration: number; }>;
   amount?: number;
   estimatedDuration?: number;
   actualDuration?: number;
 
-  // FIX: Added missing properties to match usage in the component
-  appointmentTime?: string;
-  billingStaff?: StylistFromAPI;
+  billingStaffId?: StylistFromAPI;
   paymentDetails?: Record<string, number>;
   finalAmount?: number;
   membershipDiscount?: number;
 }
 
 // --- Helper Functions ---
+// FIX: Removed 'timeZone: "UTC"' to display date in the user's local timezone.
 const formatDate = (dateString: any): string => {
+  if (!dateString) return 'N/A';
   try {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-      timeZone: 'UTC'
     });
   } catch {
     return 'N/A';
   }
 };
 
-const formatTime = (timeString: any): string => {
+// FIX: Removed 'timeZone: "UTC"' to display time in the user's local timezone.
+const formatTime = (dateString: any): string => {
+  if (!dateString) return 'N/A';
   try {
-    const [h, m] = timeString.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 || 12;
-    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
   } catch {
     return 'N/A';
   }
 };
+
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -342,13 +349,12 @@ export default function AppointmentPage() {
                   <th className="px-6 py-3">Client</th>
                   <th className="px-6 py-3">Service(s)</th>
                   <th className="px-6 py-3">Stylist</th>
-                  <th className="px-6 py-3">Date & Time</th>
+                  <th className="px-6 py-3">Booking Time</th>
                   <th className="px-6 py-3">Appointment Time</th>
                   <th className="px-6 py-3">Type</th>
                   <th className="px-2 py-3">Status</th>
-                  <th className="px-6 py-3">Amount</th> {/* NEW COLUMN */}
-                  <th className="px-6 py-3">Staff</th> {/* NEW COLUMN */}
-
+                  <th className="px-6 py-3">Amount</th>
+                  <th className="px-6 py-3">Staff</th>
                   <th className="px-6 py-3">Amount Splitup</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
@@ -361,7 +367,6 @@ export default function AppointmentPage() {
                   const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0
                     ? appointment.serviceIds.map((s) => s.name).join(', ')
                     : 'N/A';
-                  const billingStaffName = appointment.billingStaff?.name || 'N/A';
                   const paymentSummary = appointment.paymentDetails
                     ? Object.entries(appointment.paymentDetails)
                       .filter(([_, amount]) => amount > 0)
@@ -382,18 +387,23 @@ export default function AppointmentPage() {
                       <td className="px-6 py-4">
                         <div>{stylistName}</div>
                       </td>
+
+                      {/* FIX: This column now shows the BOOKING time using 'createdAt' */}
                       <td className="px-6 py-4">
-                        <div>{formatDate(appointment.date)}</div>
-                        <div className="text-xs text-gray-500">{formatTime(appointment.time)}</div>
+                        <div>{formatDate(appointment.createdAt)}</div>
+                        <div className="text-xs text-gray-500">{formatTime(appointment.createdAt)}</div>
                       </td>
-                      {appointment.status === "Appointment" ? (
+
+                      {/* FIX: This column shows the FUTURE appointment time using 'date' */}
+                      {['Appointment', 'Checked-In'].includes(appointment.status) ? (
                         <td className="px-6 py-4">
-                          <div>{formatDate(appointment.appointmentTime)}</div>
-                          <div className="text-xs text-gray-500">{formatTime(appointment.appointmentTime)}</div>
+                          <div>{formatDate(appointment.date)}</div>
+                          <div className="text-xs text-gray-500">{formatTime(appointment.date)}</div>
                         </td>
                       ) : (
                         <td className="px-6 py-4">-</td>
                       )}
+                      
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${appointment.appointmentType === 'Online'
                           ? 'bg-blue-100 text-blue-800'

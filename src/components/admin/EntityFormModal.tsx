@@ -1,3 +1,4 @@
+// src/components/admin/EntityFormModal.tsx
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
@@ -13,7 +14,7 @@ interface Props {
   onClose: () => void;
   onSave: (entityType: EntityType, data: any) => void;
   entityType: EntityType | null;
-  entityToEdit: IProduct | { _id: string; name: string; } | null;
+  entityToEdit: IProduct | { _id: string; name:string; } | null;
   context?: {
     productType?: ProductType;
     brandId?: string;
@@ -74,7 +75,13 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev: any) => ({ ...prev, [name]: value }));
+    
+    // *** MODIFICATION 1: CHECK FOR SKU AND CONVERT TO UPPERCASE ***
+    if (name === 'sku') {
+      setFormData((prev: any) => ({ ...prev, [name]: value.toUpperCase() }));
+    } else {
+      setFormData((prev: any) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -86,6 +93,7 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
     if (entityType === 'product') {
       dataToSave = {
         name: formData.name,
+        // The SKU is already uppercase here because of our handleChange modification
         sku: formData.sku,
         price: parseFloat(formData.price) || 0,
         numberOfItems: parseInt(formData.numberOfItems, 10) || 0,
@@ -137,7 +145,8 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input name="name" value={formData.name || ''} onChange={handleChange} placeholder="Product Name" className="p-2 border rounded-md" required />
-                <input name="sku" value={formData.sku || ''} onChange={handleChange} placeholder="SKU" className="p-2 border rounded-md" required />
+                {/* *** MODIFICATION 2: ADDED 'uppercase' CLASS FOR VISUAL FEEDBACK *** */}
+                <input name="sku" value={formData.sku || ''} onChange={handleChange} placeholder="SKU" className="p-2 border rounded-md uppercase" required />
                 <input name="price" type="number" step="0.01" value={formData.price || ''} onChange={handleChange} placeholder="Price" className="p-2 border rounded-md" required />
                 <div className="relative">
                   <label className="text-xs text-gray-500 absolute -top-2 left-2 bg-white px-1">Number of Items</label>

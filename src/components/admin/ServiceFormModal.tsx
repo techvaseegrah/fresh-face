@@ -170,12 +170,16 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
         </p>
         
         <div className="flex items-center gap-2 mb-4">
+          {/* --- FIX APPLIED HERE --- */}
           <input 
             type="text" 
             value={skuSearch} 
-            onChange={e => setSkuSearch(e.target.value)} 
+            // 1. This converts the typed value to uppercase before setting the state.
+            onChange={e => setSkuSearch(e.target.value.toUpperCase())} 
             placeholder="Search Product by SKU" 
             className="p-2 border rounded w-full"
+            // 2. This style overrides any external CSS that might force the text to appear lowercase.
+            style={{ textTransform: 'uppercase' }}
           />
           <button 
             type="button" 
