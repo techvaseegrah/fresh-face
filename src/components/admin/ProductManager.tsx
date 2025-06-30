@@ -119,6 +119,9 @@ export default function ProductManager() {
     const isEditing = !!entityToEdit;
     const id = isEditing ? entityToEdit._id : '';
     let payload = { ...data };
+    if (entityType === 'product' && payload.sku) {
+      payload.sku = payload.sku.toUpperCase();
+    }
 
     if (!isEditing) {
       payload.type = productType;
