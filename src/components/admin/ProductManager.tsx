@@ -1,4 +1,4 @@
-// src/components/admin/ProductManager.tsx
+
 'use client';
 
 import { IProduct } from '@/models/Product';
@@ -7,18 +7,27 @@ import { IProductSubCategory } from '@/models/ProductSubCategory';
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ShoppingBagIcon, BuildingStorefrontIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import CategoryColumn from './CategoryColumn';
 import EntityFormModal from './EntityFormModal';
-import { log } from 'node:console';
 
 type ProductType = 'Retail' | 'In-House';
 type EntityType = 'brand' | 'subcategory' | 'product';
 
+
+// A simple, reusable skeleton loader for columns
+const ColumnSkeleton = () => (
+  <div className="animate-pulse space-y-2 p-4">
+    <div className="h-8 bg-gray-200 rounded-md w-3/4"></div>
+    <div className="h-10 bg-gray-200 rounded-md"></div>
+    <div className="h-10 bg-gray-200 rounded-md"></div>
+    <div className="h-10 bg-gray-200 rounded-md"></div>
+  </div>
+);
+
 export default function ProductManager() {
   const { data: session } = useSession();
   
-  // ... (all existing state declarations remain the same)
   const [productType, setProductType] = useState<ProductType>('Retail');
   const [brands, setBrands] = useState<IProductBrand[]>([]);
   const [subCategories, setSubCategories] = useState<IProductSubCategory[]>([]);
@@ -35,42 +44,28 @@ export default function ProductManager() {
   const [modalEntityType, setModalEntityType] = useState<EntityType | null>(null);
   const [entityToEdit, setEntityToEdit] = useState<any | null>(null);
 
-  // ** RBAC Permission Checks **
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_CREATE);
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_DELETE);
 
-  console.log('ProductManager permissions:', {
-    canCreate,
-    canUpdate,
-    canDelete,
-    session: session ? { user: session.user.email, role: session.user.role.name } : 'No session',
-  });
-  
-  
-  // ... (all handler functions like fetchBrands, handleSave, handleDelete remain the same)
-  const resetSelections = () => {
+  const resetSelections = useCallback(() => {
     setSelectedBrand(null);
     setSelectedSubCategoryId(null);
     setSubCategories([]);
     setProducts([]);
-  };
+  }, []);
 
   const handleTypeChange = (newType: ProductType) => {
     if (newType === productType) return;
     setProductType(newType);
+    resetSelections();
   };
 
   const fetchBrands = useCallback(async (type: ProductType) => {
     setIsLoadingBrands(true);
-    resetSelections();
     const res = await fetch(`/api/product-brands?type=${type}`);
     const data = await res.json();
-    if (data.success) {
-      setBrands(data.data);
-    } else {
-      setBrands([]);
-    }
+    setBrands(data.success ? data.data : []);
     setIsLoadingBrands(false);
   }, []);
 
@@ -80,28 +75,19 @@ export default function ProductManager() {
 
   const fetchSubCategories = useCallback(async (brandId: string) => {
     setIsLoadingSubCategories(true);
-    setSelectedSubCategoryId(null);
     setProducts([]);
+    setSelectedSubCategoryId(null);
     const res = await fetch(`/api/product-sub-categories?brandId=${brandId}`);
     const data = await res.json();
-    if (data.success) {
-      setSubCategories(data.data);
-    } else {
-      setSubCategories([]);
-    }
+    setSubCategories(data.success ? data.data : []);
     setIsLoadingSubCategories(false);
   }, []);
 
   const fetchProducts = useCallback(async (subCategoryId: string) => {
     setIsLoadingProducts(true);
-    setProducts([]);
     const res = await fetch(`/api/products?subCategoryId=${subCategoryId}`);
     const data = await res.json();
-    if (data.success) {
-      setProducts(data.data);
-    } else {
-      setProducts([]);
-    }
+    setProducts(data.success ? data.data : []);
     setIsLoadingProducts(false);
   }, []);
 
@@ -122,11 +108,14 @@ export default function ProductManager() {
   };
 
   const getApiPath = (entityType: EntityType) => {
-    if (entityType === 'brand') return 'product-brands';
-    if (entityType === 'subcategory') return 'product-sub-categories';
-    if (entityType === 'product') return 'products';
-    return '';
+    const paths: Record<EntityType, string> = {
+      brand: 'product-brands',
+      subcategory: 'product-sub-categories',
+      product: 'products',
+    };
+    return paths[entityType] || '';
   };
+
   const handleSave = async (entityType: EntityType, data: any) => {
     const isEditing = !!entityToEdit;
     const id = isEditing ? entityToEdit._id : '';
@@ -134,18 +123,14 @@ export default function ProductManager() {
 
     if (!isEditing) {
       payload.type = productType;
-      if (entityType === 'subcategory') {
-        payload.brand = selectedBrand?._id;
-      }
+      if (entityType === 'subcategory') payload.brand = selectedBrand?._id;
       if (entityType === 'product') {
         payload.brand = selectedBrand?._id;
         payload.subCategory = selectedSubCategoryId;
       }
-    } else {
-      if (entityType === 'product') {
-        payload.brand = payload.brand._id || payload.brand;
-        payload.subCategory = payload.subCategory._id || payload.subCategory;
-      }
+    } else if (entityType === 'product') {
+      payload.brand = payload.brand._id || payload.brand;
+      payload.subCategory = payload.subCategory._id || payload.subCategory;
     }
 
     const apiPath = getApiPath(entityType);
@@ -182,7 +167,7 @@ export default function ProductManager() {
       try {
         const res = await fetch(`/api/${apiPath}/${id}`, { method: 'DELETE' });
         if (res.ok) {
-          if (entityType === 'brand') fetchBrands(productType);
+          if (entityType === 'brand') { resetSelections(); fetchBrands(productType); }
           if (entityType === 'subcategory' && selectedBrand) { setSelectedSubCategoryId(null); setProducts([]); fetchSubCategories(selectedBrand._id); }
           if (entityType === 'product' && selectedSubCategoryId) fetchProducts(selectedSubCategoryId);
         } else {
@@ -196,9 +181,14 @@ export default function ProductManager() {
     }
   };
 
+  const getStockColor = (stock: number, lowStock: number) => {
+    if (stock <= 0) return 'text-red-600 bg-red-100';
+    if (stock <= lowStock) return 'text-yellow-600 bg-yellow-100';
+    return 'text-green-600 bg-green-100';
+  };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden h-full flex flex-col">
       <EntityFormModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -212,85 +202,119 @@ export default function ProductManager() {
           brandName: selectedBrand?.name,
         }}
       />
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex space-x-2 rounded-md bg-gray-100 p-1 w-min">
-          {(['Retail', 'In-House'] as ProductType[]).map((type) => (
-            <button key={type} onClick={() => handleTypeChange(type)}
-              className={`px-6 py-1.5 text-sm font-medium rounded-md transition-colors ${productType === type ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-            >{type} Products</button>
-          ))}
+      
+      {/* Header with Product Type Toggle */}
+      <div className="p-4 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-800">Product Inventory</h2>
+          <div className="flex space-x-2 rounded-lg bg-gray-200 p-1">
+            {([['Retail', ShoppingBagIcon], ['In-House', BuildingStorefrontIcon]] as [ProductType, React.ElementType][]).map(([type, Icon]) => (
+              <button 
+                key={type} 
+                onClick={() => handleTypeChange(type)}
+                className={`flex items-center gap-2 px-4 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 ease-in-out ${productType === type ? 'bg-white text-indigo-600 shadow-md' : 'text-gray-600 hover:bg-gray-300/50'}`}
+              >
+                <Icon className="h-5 w-5" />
+                <span>{type}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="flex flex-col md:flex-row h-[calc(100vh-250px)] bg-gray-50 overflow-hidden">
-        <CategoryColumn
-          title="Brands" items={brands} selectedId={selectedBrand?._id || null}
-          onSelect={(id) => { const brand = brands.find(b => b._id === id); if (brand) handleSelectBrand(brand); }}
-          onEdit={canUpdate ? (item) => handleOpenModal('brand', item) : undefined}
-          onDelete={canDelete ? (id) => handleDelete('brand', id) : undefined}
-          onAddNew={canCreate ? () => handleOpenModal('brand') : undefined}
-          isLoading={isLoadingBrands}
-        />
-        <CategoryColumn
-          title="Sub-Categories" items={subCategories} selectedId={selectedSubCategoryId}
-          onSelect={handleSelectSubCategory}
-          onEdit={canUpdate ? (item) => handleOpenModal('subcategory', item) : undefined}
-          onDelete={canDelete ? (id) => handleDelete('subcategory', id) : undefined}
-          onAddNew={canCreate ? () => handleOpenModal('subcategory') : undefined}
-          isLoading={isLoadingSubCategories} disabled={!selectedBrand}
-        />
 
-        <div className="flex flex-col w-full md:w-1/3 bg-white">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+      {/* Main Content with 3-column layout */}
+      <div className="flex-grow grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden">
+        {/* Brands Column */}
+        <div className="border-r border-gray-200 flex flex-col h-full">
+          {isLoadingBrands ? <ColumnSkeleton /> : (
+            <CategoryColumn
+              title="Brands"
+              items={brands}
+              selectedId={selectedBrand?._id || null}
+              onSelect={(id) => { const brand = brands.find(b => b._id === id); if (brand) handleSelectBrand(brand); }}
+              onEdit={canUpdate ? (item) => handleOpenModal('brand', item) : undefined}
+              onDelete={canDelete ? (id) => handleDelete('brand', id) : undefined}
+              onAddNew={canCreate ? () => handleOpenModal('brand') : undefined}
+              isLoading={isLoadingBrands}
+            />
+          )}
+        </div>
+
+        {/* Sub-Categories Column */}
+        <div className="border-r border-gray-200 flex flex-col h-full">
+          {isLoadingSubCategories ? <ColumnSkeleton /> : (
+            <CategoryColumn
+              title="Sub-Categories"
+              items={subCategories}
+              selectedId={selectedSubCategoryId}
+              onSelect={handleSelectSubCategory}
+              onEdit={canUpdate ? (item) => handleOpenModal('subcategory', item) : undefined}
+              onDelete={canDelete ? (id) => handleDelete('subcategory', id) : undefined}
+              onAddNew={canCreate ? () => handleOpenModal('subcategory') : undefined}
+              isLoading={isLoadingSubCategories}
+              disabled={!selectedBrand}
+              disabledText="Select a brand to see its sub-categories."
+            />
+          )}
+        </div>
+
+        {/* Products Column */}
+        <div className="flex flex-col w-full h-full bg-gray-50/50">
+          <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
             <h3 className="font-semibold text-lg text-gray-800">Products</h3>
             {canCreate && (
-                <button 
-                  onClick={() => handleOpenModal('product')} 
-                  disabled={!selectedSubCategoryId} 
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-black rounded-md disabled:bg-gray-300"
-                >
+              <button 
+                onClick={() => handleOpenModal('product')} 
+                disabled={!selectedSubCategoryId} 
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
                 <PlusIcon className="h-4 w-4" /> Add Product
               </button>
             )}
           </div>
-          <div className="flex-grow overflow-y-auto">
-            {isLoadingProducts && <div className="p-4 text-center text-gray-500">Loading...</div>}
-            {products.map(product => (
-              <div key={product._id} className="group p-4 border-b hover:bg-gray-50">
+          <div className="flex-grow overflow-y-auto p-4 space-y-3">
+            {isLoadingProducts && <div className="p-4 text-center text-gray-500">Loading products...</div>}
+            {!isLoadingProducts && products.map(product => (
+              <div key={product._id} className="group bg-white p-4 border border-gray-200 rounded-lg shadow-sm hover:shadow-md hover:border-indigo-300 transition-all duration-200">
                 <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-semibold text-gray-800">{product.name}</p>
-                    <p className="text-xs text-gray-500 font-mono mt-1">SKU: {product.sku}</p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      <span className="font-medium">{product.numberOfItems} items</span> × {product.quantityPerItem}{product.unit} each
-                    </p>
-                    <p className="text-sm text-blue-600 font-medium mt-1">
-                      Total Stock: {product.totalQuantity}{product.unit}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Expires: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : <span className="text-gray-400">N/A</span>}
-                    </p>
-                  </div>
-                  <div className="text-right ml-4">
-                    <p className="text-lg font-semibold text-gray-900">₹{product.price.toFixed(2)}</p>
-                    <div className="flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100">
-                      {canUpdate && (
-                        <button onClick={() => handleOpenModal('product', product)} className="p-1.5 rounded hover:bg-gray-200">
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button onClick={() => handleDelete('product', product._id)} className="p-1.5 rounded text-red-500 hover:bg-red-100">
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      )}
+                  <div className="flex-1">
+                    <p className="font-bold text-gray-800 text-base">{product.name}</p>
+                    <p className="text-xs text-gray-500 font-mono mt-1">SKU: {product.sku || 'N/A'}</p>
+                    <div className="flex items-center gap-4 mt-2 text-sm">
+                      <p><span className="font-medium">{product.numberOfItems}</span> items</p>
+                      <p><span className="font-medium">{product.quantityPerItem}{product.unit}</span> / item</p>
                     </div>
+                  </div>
+                  <div className="text-right ml-4 flex-shrink-0">
+                    <p className="text-xl font-bold text-indigo-600">₹{product.price.toFixed(2)}</p>
+                    <div className={`mt-1 px-2 py-0.5 rounded-full text-xs font-semibold inline-block ${getStockColor(product.totalQuantity, product.lowStockThreshold)}`}>
+                      {product.totalQuantity}{product.unit} in stock
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-end mt-3 pt-3 border-t border-gray-100">
+                  <p className="text-xs text-gray-500">
+                    Expires: {product.expiryDate ? new Date(product.expiryDate).toLocaleDateString() : <span className="text-gray-400">No expiry</span>}
+                  </p>
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {canUpdate && (
+                      <button onClick={() => handleOpenModal('product', product)} className="p-1.5 rounded-full text-gray-500 hover:bg-gray-200 hover:text-gray-800">
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button onClick={() => handleDelete('product', product._id)} className="p-1.5 rounded-full text-red-500 hover:bg-red-100">
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
             {!isLoadingProducts && products.length === 0 && (
-              <div className="p-8 text-center text-sm text-gray-400">
-                {selectedSubCategoryId ? 'No products found.' : 'Select a sub-category.'}
+              <div className="p-10 text-center text-sm text-gray-500 bg-white rounded-lg border-2 border-dashed">
+                <h4 className="font-semibold text-base text-gray-700">No Products to Display</h4>
+                <p className="mt-1">{selectedSubCategoryId ? 'There are no products in this sub-category.' : selectedBrand ? 'Please select a sub-category to view its products.' : 'Please select a brand to get started.'}</p>
               </div>
             )}
           </div>

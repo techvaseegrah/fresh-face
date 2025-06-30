@@ -22,7 +22,7 @@ interface Props {
   };
 }
 
-const getNewProductFormState = () => ({
+  const getNewProductFormState = () => ({
   name: '',
   sku: '',
   numberOfItems: '',

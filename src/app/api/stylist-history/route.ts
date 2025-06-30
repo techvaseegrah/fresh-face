@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
       // Format the data for the frontend
       return {
         _id: apt._id.toString(),
-        date: apt.appointmentTime,
+        date: apt.appointmentDateTime,
         customerName: (apt.customerId as any)?.name || 'N/A',
         services: (apt.serviceIds as any[]).map(s => s.name).join(', '),
         amount: apt.finalAmount,

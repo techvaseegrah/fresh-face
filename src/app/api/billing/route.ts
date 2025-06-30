@@ -11,10 +11,9 @@ import Setting from '@/models/Setting'; // Import your existing Setting model
 import { InventoryManager } from '@/lib/inventoryManager';
 import mongoose from 'mongoose';
 
-export async function POST(req: Request) {
+export async function POST(req) {
   try {
     await connectToDatabase();
-
     const body = await req.json();
     const {
       appointmentId,

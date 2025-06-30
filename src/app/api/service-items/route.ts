@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
         path: 'subCategory',
         populate: {
           path: 'mainCategory',
-          model: 'ServiceCategory'
+          model: 'ServiceCategory',
+          select: 'targetAudience'
         }
       })
       .populate('consumables.product', 'name sku unit')
@@ -51,16 +52,15 @@ export async function GET(req: NextRequest) {
 console.log(serviceItems, 'serviceItems');
 
     // Format the results for the frontend
-    const formattedServices = serviceItems.map(item => ({
-      _id: item._id,
-      id: item._id.toString(),
-      name: item.name,
-      price: item.price,
-      duration: item.duration,
-      membershipRate: item.membershipRate,
-      subCategory: item.subCategory,
-      consumables: item.consumables
-    }));
+    const formattedServices = serviceItems.map(item => {
+      const serviceObject = item.toObject(); // Convert Mongoose document to plain object
+      return {
+        ...serviceObject,
+        _id: item._id.toString(),
+        id: item._id.toString(),
+        audience: item.subCategory?.mainCategory?.targetAudience,
+      };
+    });
 
     return NextResponse.json({
       success: true,

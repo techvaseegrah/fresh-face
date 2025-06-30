@@ -22,6 +22,7 @@ export interface IProduct extends Document {
   quantityPerItem: number; // Capacity per bottle/piece
   unit: string;
   stockedDate: Date;
+  gender?: 'Male' | 'Female' | 'Unisex' | 'N/A';
 }
 
 const ProductSchema: Schema<IProduct> = new Schema({

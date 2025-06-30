@@ -52,10 +52,10 @@ export async function GET(req: Request) {
         isMember: customer.isMembership || false,
         membershipDetails: customer.isMembership ? { planName: 'Member', status: 'Active' } : null,
         gender: customer.gender || 'other', loyaltyPoints: calculatedLoyaltyPoints,
-        lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).date : null,
+        lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).appointmentDateTime : null,
         totalSpent: totalSpent,
         appointmentHistory: appointmentHistory.map(apt => ({
-          _id: (apt as any)._id.toString(), date: (apt as any).date,
+          _id: (apt as any)._id.toString(), date: (apt as any).appointmentDateTime,
           services: ((apt as any).serviceIds || []).map((s: any) => s.name),
           totalAmount: (apt as any).finalAmount || (apt as any).amount || 0,
           stylistName: (apt as any).stylistId?.name || 'N/A',

@@ -4,6 +4,7 @@
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
 import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesIcon, TagIcon, GiftIcon, ClockIcon, EyeIcon, QrCodeIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
+import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
 
 // ===================================================================================
 //  INTERFACES & TYPE DEFINITIONS
@@ -579,11 +580,7 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <p className="font-semibold text-gray-800">
-                      {new Date(apt.date).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
+                      {formatDateIST(apt.date)}
                     </p>
                     <p className="text-xs text-gray-600">with {apt.stylistName}</p>
                   </div>

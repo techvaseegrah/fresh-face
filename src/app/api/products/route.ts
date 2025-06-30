@@ -1,4 +1,4 @@
-// src/app/api/products/route.ts (Corrected)
+// src/app/api/products/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Product from '@/models/Product';
