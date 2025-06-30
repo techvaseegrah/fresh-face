@@ -1,4 +1,4 @@
-// /app/appointment/page.tsx - COMPLETE AND FINAL VERSION
+// /app/appointment/page.tsx - COMPLETE AND FINAL VERSION (Self-Contained)
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -16,6 +16,11 @@ import EditAppointmentForm from '@/components/EditAppointmentForm';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
+
+// 1. IMPORT THE TOOLTIP COMPONENT AND ITS STYLES
+import { Tooltip } from 'react-tooltip';
+import 'react-tooltip/dist/react-tooltip.css';
+
 
 // ===================================================================================
 //  INTERFACES
@@ -40,8 +45,8 @@ interface AppointmentWithCustomer {
   id: string;
   customerId: CustomerFromAPI;
   stylistId: StylistFromAPI;
-  appointmentDateTime: string; 
-  createdAt: string; 
+  appointmentDateTime: string;
+  createdAt: string;
   notes?: string;
   status: 'Appointment' | 'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
   appointmentType: 'Online' | 'Offline';
@@ -152,7 +157,7 @@ export default function AppointmentPage() {
       } else {
         fetchAppointments();
       }
-    } catch (err: any) {
+    } catch (err: any)      {
       toast.error(err.message);
       throw err;
     }
@@ -183,7 +188,8 @@ export default function AppointmentPage() {
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
   return (
-    <div className="bg-gray-50/30 p-4 md:p-8">
+    // CHANGED: Adjusted padding to better match the screenshot layout.
+    <div className="bg-gray-50/50 p-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
@@ -209,7 +215,6 @@ export default function AppointmentPage() {
                   <th className="px-2 py-3">Status</th>
                   <th className="px-6 py-3">Amount</th>
                   <th className="px-6 py-3">Staff</th>
-                  <th className="px-6 py-3">Amount Splitup</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -220,7 +225,7 @@ export default function AppointmentPage() {
                   const stylistName = appointment.stylistId?.name || 'N/A';
                   const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map((s) => s.name).join(', ') : 'N/A';
                   const billingStaffName = appointment.billingStaffId?.name || 'N/A';
-                  const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join(', ') || 'No payment' : 'N/A';
+                  const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join('<br />') || 'No payment' : '';
                   
                   const isEditable = !['Paid', 'Cancelled', 'No-Show'].includes(appointment.status);
 
@@ -237,24 +242,35 @@ export default function AppointmentPage() {
                       </td>
                       <td className="px-6 py-4">{serviceNames}</td>
                       <td className="px-6 py-4"><div>{stylistName}</div></td>
-                      
-                      
-                      
-                      {/* BOOKING TIME (The time the booking was created) */}
                       <td className="px-6 py-4">
                         <div>{formatDateIST(appointment.createdAt)}</div>
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.createdAt)}</div>
                       </td>
-
                       <td className="px-6 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${appointment.appointmentType === 'Online' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{appointment.appointmentType}</span></td>
                       <td className="px-2 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(appointment.status)}`}>{appointment.status}</span></td>
-                      <td className="px-6 py-4">{appointment.finalAmount ? (<div><div className="font-semibold text-green-600">₹{appointment.finalAmount.toFixed(2)}</div> {(appointment.membershipDiscount ?? 0) > 0 && (
-        <div className="text-xs text-green-500">
-          Saved ₹{appointment.membershipDiscount!.toFixed(2)}
-        </div>
-      )}</div>) : (<span className="text-gray-400">-</span>)}</td>
+                      
+                      <td className="px-6 py-4">
+                        {appointment.finalAmount ? (
+                          <div
+                            className="cursor-help"
+                            data-tooltip-id="app-tooltip"
+                            data-tooltip-html={`<b>Payment Split</b><br />${paymentSummary}`}
+                            data-tooltip-place="top"
+                          >
+                            <div className="font-semibold text-green-600">₹{appointment.finalAmount.toFixed(2)}</div>
+                            {(appointment.membershipDiscount ?? 0) > 0 && (
+                              <div className="text-xs text-green-500">
+                                Saved ₹{appointment.membershipDiscount!.toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+
                       <td className="px-6 py-4">{billingStaffName}</td>
-                      <td className="px-6 py-4">{paymentSummary}</td>
+                      
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
                           {canUpdateAppointments ? (
@@ -288,6 +304,18 @@ export default function AppointmentPage() {
       <BookAppointmentForm isOpen={isBookAppointmentModalOpen} onClose={() => setIsBookAppointmentModalOpen(false)} onBookAppointment={handleBookNewAppointment} />
       <EditAppointmentForm isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setSelectedAppointmentForEdit(null); }} appointment={selectedAppointmentForEdit} onUpdateAppointment={handleUpdateAppointment} />
       {selectedAppointmentForBilling && isBillingModalOpen && (<BillingModal isOpen={isBillingModalOpen} onClose={handleCloseBillingModal} appointment={selectedAppointmentForBilling} customer={selectedAppointmentForBilling.customerId} stylist={selectedAppointmentForBilling.stylistId} onFinalizeAndPay={handleFinalizeBill} />)}
+
+      <Tooltip
+        id="app-tooltip"
+        variant="dark"
+        style={{
+          backgroundColor: '#2D3748', // A dark grey color
+          color: '#FFF',
+          borderRadius: '6px',
+          padding: '4px 8px',
+          fontSize: '12px'
+        }}
+      />
     </div>
   );
 }
