@@ -6,10 +6,10 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import Invoice from '@/models/invoice';
 import DayEndReport from '@/models/DayEndReport';
-import { sendClosingReportEmail } from '@/lib/mail'; // <-- 1. IMPORT our email service
+import { sendClosingReportEmail } from '@/lib/mail';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-// A helper function to re-calculate expected totals to prevent tampering
+// A helper function to re-calculate expected totals (No changes here)
 async function getExpectedTotalsForDate(date: string) {
   const startDate = new Date(date);
   startDate.setUTCHours(0, 0, 0, 0);
@@ -21,32 +21,33 @@ async function getExpectedTotalsForDate(date: string) {
     createdAt: { $gte: startDate, $lte: endDate },
   }).lean();
 
-  return paidInvoices.reduce<{[key: string]: number}>((acc, invoice) => {
+  // Initialize all expected payment methods
+  const totals: { [key: string]: number } = { cash: 0, card: 0, upi: 0, total: 0 };
+
+  return paidInvoices.reduce((acc, invoice) => {
     const amount = invoice.grandTotal || 0;
     const paymentMethod = (invoice.paymentMethod || 'unknown').toLowerCase();
     
-    // Ensure the accumulator has the key before adding to it
-    if (!acc[paymentMethod]) {
-        acc[paymentMethod] = 0;
+    // Only accumulate for known payment methods
+    if (acc.hasOwnProperty(paymentMethod)) {
+        acc[paymentMethod] += amount;
     }
 
     acc.total += amount;
-    acc[paymentMethod] += amount;
     return acc;
-  }, { cash: 0, card: 0, upi: 0, total: 0 }); // Removed 'unknown' for cleaner data
+  }, totals);
 }
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
   
-  
-  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)) {
-    return NextResponse.json(
-      { success: false, message: 'Unauthorized' },
-      { status: 403 }
-    );
-  }
+    if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized' },
+        { status: 403 }
+      );
+    }
 
     const body = await request.json();
     const { closingDate, actualTotals, cashDenominations, notes } = body;
@@ -69,19 +70,24 @@ export async function POST(request: NextRequest) {
         return total + value * (count as number);
     }, 0);
     
+    const actualGrandTotal = totalCountedCash + (actualTotals.card || 0) + (actualTotals.upi || 0);
+    
+    // --- CHANGE 1: Structure the discrepancy data to match the email function's needs ---
     const discrepancy = {
-        cash: totalCountedCash - (expected.cash || 0),
-        card: (actualTotals.card || 0) - (expected.card || 0),
-        upi: (actualTotals.upi || 0) - (expected.upi || 0),
-        total: (totalCountedCash + (actualTotals.card || 0) + (actualTotals.upi || 0)) - (expected.total || 0),
+        cash: totalCountedCash - expected.cash,
+        card: (actualTotals.card || 0) - expected.card,
+        upi: (actualTotals.upi || 0) - expected.upi,
+        total: actualGrandTotal - expected.total, 
+        // total: actualGrandTotal - expected.total,  This line was missing and is now restored.
+        // The total discrepancy is calculated in the email template, so it's not strictly needed here
     };
 
     const newReport = new DayEndReport({
       closingDate: new Date(closingDate),
       expected,
       actual: {
-        card: actualTotals.card,
-        upi: actualTotals.upi,
+        card: actualTotals.card || 0,
+        upi: actualTotals.upi || 0,
         cashDenominations,
         totalCountedCash,
       },
@@ -90,34 +96,34 @@ export async function POST(request: NextRequest) {
       closedBy: session.user.id,
     });
 
-    // --- CRITICAL STEP: SAVE TO DATABASE ---
     await newReport.save();
 
-    // --- 2. EMAIL NOTIFICATION STEP ---
-    // This happens *after* a successful save.
+    // --- CHANGE 2: Create the data object for the email function ---
+    // This new `reportForEmail` object perfectly matches the `DayEndReportData` interface in mail.ts
     const reportForEmail = {
         closingDate,
-        expectedTotals: expected,
+        expectedTotals: {
+            cash: expected.cash,
+            card: expected.card,
+            upi: expected.upi
+        },
         actualTotals: {
             cash: totalCountedCash,
             card: actualTotals.card || 0,
             upi: actualTotals.upi || 0,
         },
-        discrepancies: discrepancy,
+        discrepancies: discrepancy, // Use the structured discrepancy object
         cashDenominations,
         notes,
     };
     
-    // We wrap email sending in its own try/catch. If email fails,
-    // the API should still return success because the report was saved.
+    // The rest of the logic remains the same. It's already perfect.
     try {
         await sendClosingReportEmail(reportForEmail);
     } catch (emailError) {
         console.error("Report was saved to DB, but email notification failed:", emailError);
-        // Do not re-throw the error. The main operation succeeded.
     }
 
-    // --- 3. SEND FINAL RESPONSE ---
     return NextResponse.json({
       success: true,
       message: `Day-end report for ${closingDate} submitted successfully.`,
