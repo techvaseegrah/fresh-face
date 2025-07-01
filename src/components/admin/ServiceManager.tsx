@@ -24,7 +24,7 @@ const ColumnSkeleton = () => (
 
 export default function ServiceManager() {
   const { data: session } = useSession();
-  
+
   const [audienceFilter, setAudienceFilter] = useState<AudienceType>('female');
   const [mainCategories, setMainCategories] = useState<IServiceCategory[]>([]);
   const [subCategories, setSubCategories] = useState<IServiceSubCategory[]>([]);
@@ -163,8 +163,8 @@ export default function ServiceManager() {
           <h2 className="text-xl font-bold text-gray-800">Service Menu</h2>
           <div className="flex space-x-2 rounded-lg bg-gray-200 p-1">
             {([['female', UserIcon, 'Female'], ['male', UserIcon, 'Male'], ['Unisex', UserGroupIcon, 'Unisex']] as [AudienceType, React.ElementType, string][]).map(([type, Icon, label]) => (
-              <button 
-                key={type} 
+              <button
+                key={type}
                 onClick={() => handleAudienceChange(type)}
                 className={`flex items-center gap-2 px-4 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 ease-in-out ${audienceFilter === type ? 'bg-white text-indigo-600 shadow-md' : 'text-gray-600 hover:bg-gray-300/50'}`}
               >
@@ -210,9 +210,9 @@ export default function ServiceManager() {
           <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-white">
             <h3 className="font-semibold text-lg text-gray-800">Services</h3>
             {canCreate && (
-              <button 
-                onClick={() => handleOpenModal('service-item')} 
-                disabled={!selectedSubCategoryId} 
+              <button
+                onClick={() => handleOpenModal('service-item')}
+                disabled={!selectedSubCategoryId}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 <PlusIcon className="h-4 w-4" /> Add Service

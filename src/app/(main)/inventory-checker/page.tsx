@@ -226,9 +226,9 @@ export default function InventoryCheckerPage() {
               </button>
             </div>
             
-            {isCheckFormVisible && (
+            {isCheckFormVisible || canReadInventory && (
               <div className="animate-fade-in">
-                {canCheckInventory ? (
+                {canCheckInventory||canReadInventory ? (
                   <form onSubmit={handleSubmit} className="space-y-6 pt-4 border-t">
                     <div>
                       <label htmlFor="product" className="block text-sm font-medium text-gray-700 mb-1">Select Product</label>

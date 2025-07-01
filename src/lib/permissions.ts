@@ -69,10 +69,9 @@ export const PERMISSIONS = {
   PROCUREMENT_READ: 'procurement:read',   // View procurement records
   PROCUREMENT_UPDATE: 'procurement:update', // Update procurement records
   PROCUREMENT_DELETE: 'procurement:delete', // Delete procurement records
-  SETTINGS_CREATE: 'settings:create',
   SETTINGS_READ: 'settings:read',
-  SETTINGS_UPDATE: 'settings:update',
-  SETTINGS_DELETE: 'settings:delete',
+  LOYALTY_SETTINGS_READ: 'loyalty_settings:read',
+  LOYALTY_SETTINGS_UPDATE: 'loyalty_settings:update',
 
   // Inventory Checker management
   INVENTORY_CHECKER_CREATE: 'inventory-checker:create',
@@ -176,10 +175,9 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SERVICES_DELETE, description: 'Delete services and categories', category: PERMISSION_CATEGORIES.SERVICE_MANAGEMENT },
 
   // Settings Management
-  { permission: PERMISSIONS.SETTINGS_CREATE, description: 'Create settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
-  { permission: PERMISSIONS.SETTINGS_READ, description: 'Read settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
-  { permission: PERMISSIONS.SETTINGS_UPDATE, description: 'Update settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
-  { permission: PERMISSIONS.SETTINGS_DELETE, description: 'Delete settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.SETTINGS_READ, description: 'Access settings section', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.LOYALTY_SETTINGS_READ, description: 'View loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.LOYALTY_SETTINGS_UPDATE, description: 'Update loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
 
   // Inventory Checker Management
   { permission: PERMISSIONS.INVENTORY_CHECKER_CREATE, description: 'Create inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },

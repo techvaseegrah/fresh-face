@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Setting, { ILoyaltySettings } from '@/models/Setting';
-import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getServerSession } from 'next-auth';
 
 // Helper to get settings with a fallback default for the UI
 async function getLoyaltySettings(): Promise<ILoyaltySettings> {
@@ -27,7 +27,7 @@ async function getLoyaltySettings(): Promise<ILoyaltySettings> {
 // ===================================================================
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.SETTINGS_READ)) {
+  if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.LOYALTY_SETTINGS_READ)) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
   }
   try {
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
 // ===================================================================
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.SETTINGS_UPDATE)) {
+  if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.LOYALTY_SETTINGS_UPDATE)) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
   }
   try {
