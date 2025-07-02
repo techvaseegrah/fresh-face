@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react'; 
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { hasPermission } from '@/lib/permissions'; 
+import { hasPermission } from '@/lib/permissions';
 import { Chart } from 'chart.js/auto';
 import { Toaster, toast } from 'react-hot-toast';
 import { CheckCircle, BarChart2, List, AlertTriangle, ChevronDown, ChevronUp, X } from 'lucide-react';
@@ -17,18 +17,18 @@ interface Product {
 }
 
 interface InventoryCheck {
-    _id: string;
-    product: Product;
-    date: string;
-    expectedQuantity: number;
-    actualQuantity: number;
-    discrepancy: number;
-    notes?: string;
-    checkedBy: { name: string };
+  _id: string;
+  product: Product;
+  date: string;
+  expectedQuantity: number;
+  actualQuantity: number;
+  discrepancy: number;
+  notes?: string;
+  checkedBy: { name: string };
 }
 
 // --- History Modal Component ---
-const HistoryModal = ({ onClose, history, productName }: { onClose: () => void; history: InventoryCheck[]; productName:string; }) => {
+const HistoryModal = ({ onClose, history, productName }: { onClose: () => void; history: InventoryCheck[]; productName: string; }) => {
   const chartCanvasRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<Chart | null>(null);
 
@@ -42,22 +42,22 @@ const HistoryModal = ({ onClose, history, productName }: { onClose: () => void; 
 
   useEffect(() => {
     if (history.length > 0 && chartCanvasRef.current) {
-        const ctx = chartCanvasRef.current.getContext('2d');
-        if (!ctx) return;
-        if (chartInstanceRef.current) {
-          chartInstanceRef.current.destroy();
-        }
-        chartInstanceRef.current = new Chart(ctx, { 
-          type: 'line',
-          data: {
-            labels: history.map(item => new Date(item.date).toLocaleDateString()).reverse(),
-            datasets: [
-              { label: 'Expected', data: history.map(item => item.expectedQuantity).reverse(), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 },
-              { label: 'Actual', data: history.map(item => item.actualQuantity).reverse(), borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.3 },
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } }, scales: { y: { beginAtZero: true } } }
-        });
+      const ctx = chartCanvasRef.current.getContext('2d');
+      if (!ctx) return;
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+      chartInstanceRef.current = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: history.map(item => new Date(item.date).toLocaleDateString()).reverse(),
+          datasets: [
+            { label: 'Expected', data: history.map(item => item.expectedQuantity).reverse(), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 },
+            { label: 'Actual', data: history.map(item => item.actualQuantity).reverse(), borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.3 },
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, tooltip: { mode: 'index', intersect: false } }, scales: { y: { beginAtZero: true } } }
+      });
     }
     return () => {
       if (chartInstanceRef.current) {
@@ -107,7 +107,7 @@ const HistoryModal = ({ onClose, history, productName }: { onClose: () => void; 
 
 // --- Main Page Component ---
 export default function InventoryCheckerPage() {
-  const { data: session } = useSession(); 
+  const { data: session } = useSession();
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [actualQuantity, setActualQuantity] = useState<string>('');
@@ -115,7 +115,7 @@ export default function InventoryCheckerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<InventoryCheck[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  
+
   const [isCheckFormVisible, setIsCheckFormVisible] = useState(true);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
@@ -141,22 +141,22 @@ export default function InventoryCheckerPage() {
   useEffect(() => {
     if (selectedProduct) fetchHistory();
     else setHistory([]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct]);
 
   const fetchHistory = async () => {
     if (!selectedProduct) return;
     setIsHistoryLoading(true);
     try {
-        const res = await fetch(`/api/inventory-check?productId=${selectedProduct._id}`);
-        const data = await res.json();
-        if (data.success) setHistory(data.history);
-        else toast.error(data.message || 'Failed to fetch history.');
+      const res = await fetch(`/api/inventory-check?productId=${selectedProduct._id}`);
+      const data = await res.json();
+      if (data.success) setHistory(data.history);
+      else toast.error(data.message || 'Failed to fetch history.');
     } catch (error) {
-        console.error('Failed to fetch history:', error);
-        toast.error('Failed to fetch history.');
+      console.error('Failed to fetch history:', error);
+      toast.error('Failed to fetch history.');
     } finally {
-        setIsHistoryLoading(false);
+      setIsHistoryLoading(false);
     }
   };
 
@@ -197,11 +197,11 @@ export default function InventoryCheckerPage() {
   if (!canReadInventory) {
     return (
       <div className="flex items-center justify-center h-full p-6 text-center">
-          <div className="bg-white p-8 rounded-lg shadow-md">
-            <AlertTriangle className="mx-auto h-12 w-12 text-red-500" />
-            <h2 className="mt-4 text-xl font-semibold text-gray-800">Access Denied</h2>
-            <p className="mt-2 text-gray-600">You do not have permission to access the inventory checker.</p>
-          </div>
+        <div className="bg-white p-8 rounded-lg shadow-md">
+          <AlertTriangle className="mx-auto h-12 w-12 text-red-500" />
+          <h2 className="mt-4 text-xl font-semibold text-gray-800">Access Denied</h2>
+          <p className="mt-2 text-gray-600">You do not have permission to access the inventory checker.</p>
+        </div>
       </div>
     );
   }
@@ -210,11 +210,11 @@ export default function InventoryCheckerPage() {
     <>
       <div className="p-4 md:p-6 lg:p-8 space-y-8">
         <Toaster position="top-right" reverseOrder={false} />
-        
+
         <h1 className="text-3xl font-bold tracking-tight text-gray-900">Inventory Checker</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           <div className="lg:col-span-1 space-y-4 bg-white p-6 rounded-xl shadow-lg">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-800 flex items-center">
@@ -225,10 +225,10 @@ export default function InventoryCheckerPage() {
                 {isCheckFormVisible ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
               </button>
             </div>
-            
+
             {isCheckFormVisible || canReadInventory && (
               <div className="animate-fade-in">
-                {canCheckInventory||canReadInventory ? (
+                {canCheckInventory || canReadInventory ? (
                   <form onSubmit={handleSubmit} className="space-y-6 pt-4 border-t">
                     <div>
                       <label htmlFor="product" className="block text-sm font-medium text-gray-700 mb-1">Select Product</label>
@@ -238,18 +238,18 @@ export default function InventoryCheckerPage() {
                       </select>
                     </div>
                     {selectedProduct && (<>
-                        <div>
-                          <label htmlFor="actualQuantity" className="block text-sm font-medium text-gray-700 mb-1">Current Quantity ({selectedProduct.unit})</label>
-                          <input id="actualQuantity" type="number" step="any" value={actualQuantity} onChange={(e) => setActualQuantity(e.target.value)} className="mt-1 block w-full rounded-lg border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 transition" required placeholder={`e.g., 15.5`}/>
-                        </div>
-                        <div>
-                          <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-                          <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 block w-full rounded-lg border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 transition" rows={4} placeholder="Any observations or reasons for discrepancy..."></textarea>
-                        </div>
-                        {/* COLOR CHANGE HERE */}
-                        <button type="submit" disabled={isSubmitting || !actualQuantity} className="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all">
-                          {isSubmitting ? 'Submitting...' : 'Submit Check'}
-                        </button>
+                      <div>
+                        <label htmlFor="actualQuantity" className="block text-sm font-medium text-gray-700 mb-1">Current Quantity ({selectedProduct.unit})</label>
+                        <input id="actualQuantity" type="number" step="any" value={actualQuantity} onChange={(e) => setActualQuantity(e.target.value)} className="mt-1 block w-full rounded-lg border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 transition" required placeholder={`e.g., 15.5`} />
+                      </div>
+                      <div>
+                        <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+                        <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 block w-full rounded-lg border-gray-300 bg-gray-50 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 transition" rows={4} placeholder="Any observations or reasons for discrepancy..."></textarea>
+                      </div>
+                      {/* COLOR CHANGE HERE */}
+                      <button type="submit" disabled={isSubmitting || !actualQuantity} className="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-gray-800 hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all">
+                        {isSubmitting ? 'Submitting...' : 'Submit Check'}
+                      </button>
                     </>)}
                   </form>
                 ) : (<p className="text-sm text-gray-500 italic pt-4 border-t">You don't have permission to perform inventory checks.</p>)}

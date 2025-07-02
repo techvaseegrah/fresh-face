@@ -47,10 +47,7 @@ const Sidebar = () => {
   const canAccessAdmin = hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ, PERMISSIONS.ROLES_READ]);
   const canAccessUsers = hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ]);
   const canAccessRoles = hasAnyPermission(userPermissions, [PERMISSIONS.ROLES_READ]);
-
-  // +++ THIS IS THE FIX +++
-  // The 'Alerts' page is part of settings, so we reuse the SETTINGS_READ permission.
-  const canAccessAlerts = hasAnyPermission(userPermissions, [PERMISSIONS.SETTINGS_READ]);
+  const canAccessAlerts = hasAnyPermission(userPermissions, [PERMISSIONS.ALERTS_READ]);
   const canAccessSettings = hasAnyPermission(userPermissions, [PERMISSIONS.SETTINGS_READ]);
 
   const navItems = [

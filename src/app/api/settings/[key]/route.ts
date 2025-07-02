@@ -1,5 +1,3 @@
-// FILE: src/app/api/settings/[key]/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -12,7 +10,7 @@ import Setting from '@/models/Setting';
  */
 export async function GET(request: NextRequest, { params }: { params: { key: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.SETTINGS_VIEW)) {
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ALERTS_READ)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
   }
 
@@ -40,7 +38,7 @@ export async function GET(request: NextRequest, { params }: { params: { key: str
  */
 export async function POST(request: NextRequest, { params }: { params: { key: string } }) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.SETTINGS_EDIT)) {
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ALERTS_CREATE) || !hasPermission(session.user.role.permissions, PERMISSIONS.ALERTS_DELETE)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
   }
 
@@ -75,7 +73,6 @@ export async function POST(request: NextRequest, { params }: { params: { key: st
     );
 
     return NextResponse.json({ success: true, setting: updatedSetting });
-  // +++ THIS LINE HAS BEEN CORRECTED +++
   } catch (error) { 
     console.error(`API Error POST /api/settings/${params.key}:`, error);
     return NextResponse.json({ success: false, message: 'Server Error' }, { status: 500 });

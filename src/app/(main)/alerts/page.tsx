@@ -3,6 +3,8 @@
 'use client';
 
 import { useState, useEffect, FormEvent, FC, PropsWithChildren } from 'react';
+import { useSession } from 'next-auth/react'; // Import useSession
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'; // Import hasPermission and PERMISSIONS
 import { EnvelopeIcon, BellAlertIcon, AtSymbolIcon } from '@heroicons/react/24/outline';
 
 // --- HELPER SUB-COMPONENTS (for a cleaner main component) ---
@@ -43,6 +45,14 @@ const SettingsCard: FC<PropsWithChildren<{ title: string; description: string; i
 
 // --- MAIN ALERTS PAGE COMPONENT ---
 export default function AlertsPage() {
+  const { data: session } = useSession(); // Get session data
+  const userPermissions = session?.user?.role?.permissions || [];
+
+  // Define permissions for the page
+  const canReadAlerts = hasPermission(userPermissions, PERMISSIONS.ALERTS_READ);
+  const canCreateAlerts = hasPermission(userPermissions, PERMISSIONS.ALERTS_CREATE);
+  const canDeleteAlerts = hasPermission(userPermissions, PERMISSIONS.ALERTS_DELETE);
+
   // --- All of your state and logic functions are perfect and remain unchanged ---
   const [isLoading, setIsLoading] = useState(true);
   const [toast, setToast] = useState({ message: '', show: false, isError: false });
@@ -55,29 +65,33 @@ export default function AlertsPage() {
   const [isLowStockSaving, setIsLowStockSaving] = useState(false);
 
   useEffect(() => {
-    const fetchAllSettings = async () => {
-      setIsLoading(true);
-      try {
-        const [dayEndRes, thresholdRes, lowStockRecipientsRes] = await Promise.all([
-          fetch('/api/settings/dayEndReportRecipients'),
-          fetch('/api/settings/globalLowStockThreshold'),
-          fetch('/api/settings/inventoryAlertRecipients')
-        ]);
-        const dayEndData = await dayEndRes.json();
-        const thresholdData = await thresholdRes.json();
-        const lowStockRecipientsData = await lowStockRecipientsRes.json();
-        if (dayEndData.success) setDayEndRecipients(dayEndData.setting.value || []);
-        if (thresholdData.success) setLowStockThreshold(thresholdData.setting.value || '10');
-        if (lowStockRecipientsData.success) setLowStockRecipients(lowStockRecipientsData.setting.value || []);
-      } catch (error) {
-        console.error("Error fetching settings:", error);
-        showToast("Failed to load settings from server.", true);
-      } finally {
+    if (canReadAlerts) {
+        const fetchAllSettings = async () => {
+        setIsLoading(true);
+        try {
+            const [dayEndRes, thresholdRes, lowStockRecipientsRes] = await Promise.all([
+            fetch('/api/settings/dayEndReportRecipients'),
+            fetch('/api/settings/globalLowStockThreshold'),
+            fetch('/api/settings/inventoryAlertRecipients')
+            ]);
+            const dayEndData = await dayEndRes.json();
+            const thresholdData = await thresholdRes.json();
+            const lowStockRecipientsData = await lowStockRecipientsRes.json();
+            if (dayEndData.success) setDayEndRecipients(dayEndData.setting.value || []);
+            if (thresholdData.success) setLowStockThreshold(thresholdData.setting.value || '10');
+            if (lowStockRecipientsData.success) setLowStockRecipients(lowStockRecipientsData.setting.value || []);
+        } catch (error) {
+            console.error("Error fetching settings:", error);
+            showToast("Failed to load settings from server.", true);
+        } finally {
+            setIsLoading(false);
+        }
+        };
+        fetchAllSettings();
+    } else {
         setIsLoading(false);
-      }
-    };
-    fetchAllSettings();
-  }, []);
+    }
+  }, [canReadAlerts]);
 
   const showToast = (message: string, isError = false) => {
     setToast({ message, show: true, isError });
@@ -134,6 +148,15 @@ export default function AlertsPage() {
   if (isLoading) {
     return <div className="p-6 text-center text-gray-500">Loading Alert Settings...</div>;
   }
+
+  if (!canReadAlerts) {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+            <p className="text-gray-600">You do not have permission to view alert settings.</p>
+        </div>
+    );
+  }
   
   return (
     <>
@@ -156,9 +179,9 @@ export default function AlertsPage() {
               <div className="flex items-center gap-3">
                 <div className="relative flex-grow">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><AtSymbolIcon className="h-5 w-5 text-gray-400" /></div>
-                  <input type="email" value={newDayEndRecipient} onChange={(e) => setNewDayEndRecipient(e.target.value)} placeholder="manager@example.com" className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                  <input type="email" value={newDayEndRecipient} onChange={(e) => setNewDayEndRecipient(e.target.value)} placeholder="manager@example.com" className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" disabled={!canCreateAlerts} />
                 </div>
-                <button type="button" onClick={handleAddDayEndEmail} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors">Add</button>
+                <button type="button" onClick={handleAddDayEndEmail} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors" disabled={!canCreateAlerts}>Add</button>
               </div>
               <div className="mt-4 pt-4 border-t border-gray-200 min-h-[50px]">
                 {dayEndRecipients.length > 0 ? (
@@ -166,14 +189,16 @@ export default function AlertsPage() {
                     {dayEndRecipients.map((email) => (
                       <span key={email} className="inline-flex items-center gap-x-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-800 border border-gray-200">
                         {email}
-                        <button type="button" onClick={() => handleRemoveDayEndEmail(email)} className="-mr-1 h-5 w-5 p-0.5 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded-full"><XIcon /></button>
+                        {canDeleteAlerts && (
+                            <button type="button" onClick={() => handleRemoveDayEndEmail(email)} className="-mr-1 h-5 w-5 p-0.5 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded-full"><XIcon /></button>
+                        )}
                       </span>
                     ))}
                   </div>
                 ) : ( <p className="text-sm text-gray-400 text-center py-2">No recipients added yet.</p> )}
               </div>
               <div className="mt-4 flex justify-end">
-                <button type="submit" disabled={isDayEndSaving} className="px-5 py-2 bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-gray-800 disabled:bg-gray-400 transition-colors">{isDayEndSaving ? 'Saving...' : 'Save Changes'}</button>
+                <button type="submit" disabled={isDayEndSaving || !canCreateAlerts} className="px-5 py-2 bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-gray-800 disabled:bg-gray-400 transition-colors">{isDayEndSaving ? 'Saving...' : 'Save Changes'}</button>
               </div>
             </SettingsCard>
 
@@ -187,16 +212,16 @@ export default function AlertsPage() {
               <div className="grid grid-cols-1 gap-y-6">
                 <div>
                   <label htmlFor="low-stock-threshold" className="block text-sm font-medium text-gray-700 mb-2">Global Low Stock Threshold</label>
-                  <input id="low-stock-threshold" type="number" value={lowStockThreshold} onChange={(e) => setLowStockThreshold(e.target.value)} placeholder="e.g., 10" className="block w-full max-w-xs rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" required />
+                  <input id="low-stock-threshold" type="number" value={lowStockThreshold} onChange={(e) => setLowStockThreshold(e.target.value)} placeholder="e.g., 10" className="block w-full max-w-xs rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" required disabled={!canCreateAlerts} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Alert Recipients</label>
                   <div className="flex items-center gap-3">
                     <div className="relative flex-grow">
                       <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><AtSymbolIcon className="h-5 w-5 text-gray-400" /></div>
-                      <input type="email" value={newLowStockRecipient} onChange={(e) => setNewLowStockRecipient(e.target.value)} placeholder="procurement@example.com" className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                      <input type="email" value={newLowStockRecipient} onChange={(e) => setNewLowStockRecipient(e.target.value)} placeholder="procurement@example.com" className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" disabled={!canCreateAlerts} />
                     </div>
-                    <button type="button" onClick={handleAddLowStockEmail} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors">Add</button>
+                    <button type="button" onClick={handleAddLowStockEmail} className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors" disabled={!canCreateAlerts}>Add</button>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-200 min-h-[50px]">
                     {lowStockRecipients.length > 0 ? (
@@ -204,7 +229,9 @@ export default function AlertsPage() {
                         {lowStockRecipients.map((email) => (
                           <span key={email} className="inline-flex items-center gap-x-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-800 border border-gray-200">
                             {email}
-                            <button type="button" onClick={() => handleRemoveLowStockEmail(email)} className="-mr-1 h-5 w-5 p-0.5 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded-full"><XIcon /></button>
+                            {canDeleteAlerts && (
+                                <button type="button" onClick={() => handleRemoveLowStockEmail(email)} className="-mr-1 h-5 w-5 p-0.5 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded-full"><XIcon /></button>
+                            )}
                           </span>
                         ))}
                       </div>
@@ -213,7 +240,7 @@ export default function AlertsPage() {
                 </div>
               </div>
               <div className="mt-6 flex justify-end">
-                <button type="submit" disabled={isLowStockSaving} className="px-5 py-2 bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-gray-800 disabled:bg-gray-400 transition-colors">{isLowStockSaving ? 'Saving...' : 'Save Changes'}</button>
+                <button type="submit" disabled={isLowStockSaving || !canCreateAlerts} className="px-5 py-2 bg-black text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-gray-800 disabled:bg-gray-400 transition-colors">{isLowStockSaving ? 'Saving...' : 'Save Changes'}</button>
               </div>
             </SettingsCard>
           </div>
