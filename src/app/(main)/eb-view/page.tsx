@@ -295,7 +295,7 @@ const ReadingsSummaryModal = ({ isOpen, onClose, readings }: { isOpen: boolean; 
     );
 };
 
-const ReadingDetail = ({ icon: Icon, title, value, imageUrl, onImageZoom, isEditing, onValueChange }: { icon: React.ElementType, title: string, value?: number, imageUrl?: string, onImageZoom: (url: string) => void, isEditing: boolean, onValueChange: (val: number) => void }) => (
+const ReadingDetail = ({ icon: Icon, title, value, imageUrl, onImageZoom, isEditing, onValueChange }: { icon: React.ElementType, title: string, value?: number, imageUrl?: string, onImageZoom: (url: string) => void, isEditing: boolean, onValueChange: (val: number | undefined) => void }) => (
     <div className="bg-slate-50/80 rounded-lg p-4">
         <div className="flex items-center text-slate-600 mb-2">
             <Icon className="h-5 w-5 mr-2" />
@@ -304,13 +304,17 @@ const ReadingDetail = ({ icon: Icon, title, value, imageUrl, onImageZoom, isEdit
         {isEditing ? (
             <input 
                 type="number"
-                value={value || 0}
-                onChange={(e) => onValueChange(parseFloat(e.target.value) || 0)}
+                value={(value === undefined || isNaN(value)) ? '' : value}
+                onChange={(e) => {
+                    const val = e.target.value;
+                    onValueChange(val === '' ? undefined : parseFloat(val));
+                }}
                 className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900"
                 step="0.01"
+                placeholder="Enter reading"
             />
         ) : (
-            <p className="text-2xl font-semibold text-slate-900">{value !== undefined ? `${value.toFixed(2)}` : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>
+            <p className="text-2xl font-semibold text-slate-900">{(value !== undefined && !isNaN(value)) ? `${value.toFixed(2)}` : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>
         )}
         {imageUrl && (
             <div className="mt-3 cursor-pointer group" onClick={() => onImageZoom(imageUrl)}>
@@ -320,26 +324,37 @@ const ReadingDetail = ({ icon: Icon, title, value, imageUrl, onImageZoom, isEdit
     </div>
 );
 
-const EBReadingCard = ({ reading, onUpdate, onImageZoom }: { reading: EBReading; onUpdate: (id: string, startUnits: number, endUnits: number) => void; onImageZoom: (url: string) => void; }) => {
+const EBReadingCard = ({ reading, onUpdate, onImageZoom }: { reading: EBReading; onUpdate: (id: string, startUnits: number | undefined, endUnits: number | undefined) => void; onImageZoom: (url: string) => void; }) => {
     const { data: session } = useSession();
     const [isEditing, setIsEditing] = useState(false);
-    const [startUnits, setStartUnits] = useState(reading.startUnits || 0);
-    const [endUnits, setEndUnits] = useState(reading.endUnits || 0);
+    // State specifically for the values in the input fields during edit mode
+    const [editStartUnits, setEditStartUnits] = useState<number | undefined>();
+    const [editEndUnits, setEditEndUnits] = useState<number | undefined>();
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   
+    // Function to prepare and enter edit mode
+    const handleEnterEditMode = () => {
+        // When starting to edit, initialize the form values.
+        // If the original value is 0, treat it as 'not set' (undefined) for the form.
+        setEditStartUnits(reading.startUnits || undefined);
+        setEditEndUnits(reading.endUnits || undefined);
+        setIsEditing(true);
+    };
+
     const handleUpdate = async () => {
-        if (startUnits < 0 || endUnits < 0) {
+        const sUnits = editStartUnits;
+        const eUnits = editEndUnits;
+        
+        if ((sUnits !== undefined && sUnits < 0) || (eUnits !== undefined && eUnits < 0)) {
             alert('Units must be non-negative');
             return;
         }
-        await onUpdate(reading._id, startUnits, endUnits);
+        await onUpdate(reading._id, sUnits, eUnits);
         setIsEditing(false);
     };
   
     const handleCancelEdit = () => {
         setIsEditing(false);
-        setStartUnits(reading.startUnits || 0);
-        setEndUnits(reading.endUnits || 0);
     };
 
     return (
@@ -349,15 +364,31 @@ const EBReadingCard = ({ reading, onUpdate, onImageZoom }: { reading: EBReading;
                 <div className="px-6 py-4 flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-slate-800">{new Date(reading.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
                     {session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE) && (
-                        <button onClick={isEditing ? handleCancelEdit : () => setIsEditing(true)} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-1 rounded-md hover:bg-indigo-50 transition-colors">
+                        <button onClick={isEditing ? handleCancelEdit : handleEnterEditMode} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-1 rounded-md hover:bg-indigo-50 transition-colors">
                             {isEditing ? 'Cancel' : 'Update Units'}
                         </button>
                     )}
                 </div>
 
                 <div className="px-6 pb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <ReadingDetail icon={SunIcon} title="Morning Reading" value={startUnits} imageUrl={reading.startImageUrl} onImageZoom={onImageZoom} isEditing={isEditing} onValueChange={setStartUnits}/>
-                    <ReadingDetail icon={MoonIcon} title="Evening Reading" value={endUnits} imageUrl={reading.endImageUrl} onImageZoom={onImageZoom} isEditing={isEditing} onValueChange={setEndUnits}/>
+                    <ReadingDetail 
+                        icon={SunIcon} 
+                        title="Morning Reading" 
+                        value={isEditing ? editStartUnits : reading.startUnits} 
+                        imageUrl={reading.startImageUrl} 
+                        onImageZoom={onImageZoom} 
+                        isEditing={isEditing} 
+                        onValueChange={setEditStartUnits}
+                    />
+                    <ReadingDetail 
+                        icon={MoonIcon} 
+                        title="Evening Reading" 
+                        value={isEditing ? editEndUnits : reading.endUnits} 
+                        imageUrl={reading.endImageUrl} 
+                        onImageZoom={onImageZoom} 
+                        isEditing={isEditing} 
+                        onValueChange={setEditEndUnits}
+                    />
                 </div>
 
                 {(reading.unitsConsumed !== undefined || reading.totalCost !== undefined) && (
@@ -424,9 +455,9 @@ export default function EBViewPage() {
     }, [session, canViewCalculateEB]);
 
     const fetchEBReadings = async () => { setIsLoading(true); try { const response = await fetch('/api/eb'); const data = await response.json(); if (data.success) { setReadings(data.readings); } else { alert(data.message || 'Failed to fetch readings.'); } } catch (error) { console.error('Error fetching EB readings:', error); alert('An error occurred while fetching data.'); } finally { setIsLoading(false); } };
-    const updateReadingAPI = async (id: string, startUnits: number, endUnits: number, costPerUnit: number) => { const response = await fetch('/api/eb', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ readingId: id, startUnits, endUnits, costPerUnit }) }); if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || 'Failed to update reading'); } return await response.json(); };
-    const handleSetGlobalCost = async (newCost: number) => { setIsSavingCost(true); try { await Promise.all(readings.map(reading => updateReadingAPI(reading._id, reading.startUnits || 0, reading.endUnits || 0, newCost))); await fetchEBReadings(); } catch (error) { console.error('Failed to apply global cost', error); alert(`An error occurred: ${(error as Error).message}`); } finally { setIsSavingCost(false); setIsCostModalOpen(false); } };
-    const handleUnitUpdate = async (id: string, startUnits: number, endUnits: number) => { const readingToUpdate = readings.find(r => r._id === id); if (!readingToUpdate) return; try { await updateReadingAPI(id, startUnits, endUnits, readingToUpdate.costPerUnit || globalCost); await fetchEBReadings(); } catch (error) { alert((error as Error).message); } };
+    const updateReadingAPI = async (id: string, startUnits: number | undefined, endUnits: number | undefined, costPerUnit: number) => { const response = await fetch('/api/eb', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ readingId: id, startUnits, endUnits, costPerUnit }) }); if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || 'Failed to update reading'); } return await response.json(); };
+    const handleSetGlobalCost = async (newCost: number) => { setIsSavingCost(true); try { await Promise.all(readings.map(reading => updateReadingAPI(reading._id, reading.startUnits, reading.endUnits, newCost))); await fetchEBReadings(); } catch (error) { console.error('Failed to apply global cost', error); alert(`An error occurred: ${(error as Error).message}`); } finally { setIsSavingCost(false); setIsCostModalOpen(false); } };
+    const handleUnitUpdate = async (id: string, startUnits: number | undefined, endUnits: number | undefined) => { const readingToUpdate = readings.find(r => r._id === id); if (!readingToUpdate) return; try { await updateReadingAPI(id, startUnits, endUnits, readingToUpdate.costPerUnit || globalCost); await fetchEBReadings(); } catch (error) { alert((error as Error).message); } };
 
     if (isLoading) {
         return <div className="p-4 sm:p-6 lg:p-8 bg-slate-100"><div className="animate-pulse"><div className="h-10 bg-slate-200 rounded w-80 mb-8"></div><div className="space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-80 bg-slate-200 rounded-2xl"></div>)}</div></div></div>;
@@ -442,7 +473,7 @@ export default function EBViewPage() {
             <ReadingsSummaryModal isOpen={isSummaryModalOpen} onClose={() => setIsSummaryModalOpen(false)} readings={readings} />
             {zoomedImageUrl && <ImageZoomModal src={zoomedImageUrl} onClose={() => setZoomedImageUrl(null)} />}
 
-            <main className="p-4 sm:p-6 lg:p-8 bg-slate-100">
+            <main className=" bg-slate-100">
                 <div className="max-w-7xl mx-auto space-y-8">
                     <div className="flex flex-wrap justify-between items-center gap-4">
                         <div>

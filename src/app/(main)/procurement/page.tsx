@@ -1,4 +1,3 @@
-// src/app/(main)/procurement/page.tsx
 'use client';
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
@@ -119,12 +118,21 @@ export default function ProcurementPage() {
   const [editingRecord, setEditingRecord] = useState<ProcurementRecord | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ProcurementRecord | null>(null);
   const [purchaseHistory, setPurchaseHistory] = useState<ProcurementRecord[]>([]);
+  
+  // Changed state to use string for numeric inputs to avoid type errors
   const [formData, setFormData] = useState({
-    name: '', quantity: 0, price: 0, date: new Date().toISOString().split('T')[0],
-    vendorName: '', brand: '', unit: 'piece', unitPerItem: 0, expiryDate: '',
+    name: '',
+    quantity: '',
+    price: '',
+    date: new Date().toISOString().split('T')[0],
+    vendorName: '',
+    brand: '',
+    unit: 'piece',
+    unitPerItem: '',
+    expiryDate: '',
   });
 
-  const totalPrice = formData.quantity * formData.price;
+  const totalPrice = (parseFloat(formData.quantity) || 0) * (parseFloat(formData.price) || 0);
 
   const canReadProcurement = session && hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_READ);
   const canCreateProcurement = session && hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_CREATE);
@@ -143,13 +151,48 @@ export default function ProcurementPage() {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { const url = editingRecord ? '/api/procurement' : '/api/procurement'; const method = editingRecord ? 'PUT' : 'POST'; const body = { ...(editingRecord && { recordId: editingRecord._id }), ...formData, expiryDate: formData.expiryDate || undefined }; const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (response.ok) { setIsFormOpen(false); setEditingRecord(null); fetchRecords(); } else { const errorData = await response.json(); alert(errorData.message); } } 
-    catch (error) { console.error('Error saving procurement record:', error); alert('Failed to save record'); }
+    try {
+      const url = editingRecord ? '/api/procurement' : '/api/procurement';
+      const method = editingRecord ? 'PUT' : 'POST';
+      // Convert string form state back to numbers for the API
+      const body = {
+        ...(editingRecord && { recordId: editingRecord._id }),
+        ...formData,
+        quantity: parseFloat(formData.quantity) || 0,
+        price: parseFloat(formData.price) || 0,
+        unitPerItem: parseFloat(formData.unitPerItem) || 0,
+        expiryDate: formData.expiryDate || undefined,
+      };
+      const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (response.ok) {
+        setIsFormOpen(false);
+        setEditingRecord(null);
+        fetchRecords();
+      } else {
+        const errorData = await response.json();
+        alert(errorData.message);
+      }
+    } catch (error) {
+      console.error('Error saving procurement record:', error);
+      alert('Failed to save record');
+    }
   };
 
   const handleEdit = (record: ProcurementRecord) => {
-    setIsDetailPanelOpen(false); setEditingRecord(record);
-    setFormData({ name: record.name, quantity: record.quantity, price: record.price, date: new Date(record.date).toISOString().split('T')[0], vendorName: record.vendorName, brand: record.brand, unit: record.unit, unitPerItem: record.unitPerItem, expiryDate: record.expiryDate ? new Date(record.expiryDate).toISOString().split('T')[0] : '', });
+    setIsDetailPanelOpen(false); 
+    setEditingRecord(record);
+    // Convert numbers from the record to strings for the form state
+    setFormData({ 
+      name: record.name, 
+      quantity: String(record.quantity), 
+      price: String(record.price), 
+      date: new Date(record.date).toISOString().split('T')[0], 
+      vendorName: record.vendorName, 
+      brand: record.brand, 
+      unit: record.unit, 
+      unitPerItem: String(record.unitPerItem), 
+      expiryDate: record.expiryDate ? new Date(record.expiryDate).toISOString().split('T')[0] : '', 
+    });
     setIsFormOpen(true);
   };
 
@@ -161,7 +204,7 @@ export default function ProcurementPage() {
   
   const handleAddNew = () => {
     setEditingRecord(null);
-    setFormData({ name: '', quantity: 0, price: 0, date: new Date().toISOString().split('T')[0], vendorName: '', brand: '', unit: 'piece', unitPerItem: 0, expiryDate: '' });
+    setFormData({ name: '', quantity: '', price: '', date: new Date().toISOString().split('T')[0], vendorName: '', brand: '', unit: 'piece', unitPerItem: '', expiryDate: '' });
     setIsFormOpen(true);
   };
 
@@ -176,7 +219,7 @@ export default function ProcurementPage() {
 
   return (
     <>
-      <div className="p-4 md:p-6 bg-gray-50 min-h-screen space-y-6">
+      <div className=" bg-gray-50 min-h-screen space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Procurement</h1>
@@ -188,7 +231,6 @@ export default function ProcurementPage() {
           </div>
         </div>
 
-        {/* This is the only changed section */}
         <div className="bg-white rounded-lg shadow-md">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -245,8 +287,8 @@ export default function ProcurementPage() {
             <div className="flex justify-between items-center p-5 border-b border-gray-200"><h2 id="modal-title" className="text-lg font-semibold text-gray-800">{editingRecord ? 'Edit Procurement Record' : 'Add New Procurement Record'}</h2><button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-full transition-colors"><XMarkIcon className="h-6 w-6" /></button></div>
             <form onSubmit={handleFormSubmit} className="p-6 space-y-6 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4"><div><label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Product Name</label><input id="name" type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required /></div><div><label htmlFor="brand" className="block text-sm font-medium text-gray-700 mb-1">Brand</label><input id="brand" type="text" value={formData.brand} onChange={(e) => setFormData({ ...formData, brand: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required /></div></div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 items-end"><div><label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-1">Quantity</label><input id="quantity" type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" min="0" step="any" required /></div><div><label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Price per Unit (INR)</label><input id="price" type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" min="0" step="0.01" required /></div><div className="md:col-span-2"><label htmlFor="totalPrice" className="block text-sm font-medium text-gray-700 mb-1">Total Price (INR)</label><input id="totalPrice" type="text" value={`₹ ${totalPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} readOnly className="w-full px-3 py-2 rounded-md border-gray-200 bg-gray-100 text-base text-gray-700 font-semibold" /></div></div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4"><div><label htmlFor="unit" className="block text-sm font-medium text-gray-700 mb-1">Unit Type</label><select id="unit" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required>{UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></div><div><label htmlFor="unitPerItem" className="block text-sm font-medium text-gray-700 mb-1">Size per Item</label><input id="unitPerItem" type="number" value={formData.unitPerItem} onChange={(e) => setFormData({ ...formData, unitPerItem: parseFloat(e.target.value) || 0 })} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" min="0" step="any" required /></div><div className="md:col-span-1"><label htmlFor="vendorName" className="block text-sm font-medium text-gray-700 mb-1">Vendor/Supplier</label><input id="vendorName" type="text" value={formData.vendorName} onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required /></div></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 items-end"><div><label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-1">Quantity</label><input id="quantity" type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" min="0" step="any" required /></div><div><label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Price per Unit (INR)</label><input id="price" type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" min="0" step="0.01" required /></div><div className="md:col-span-2"><label htmlFor="totalPrice" className="block text-sm font-medium text-gray-700 mb-1">Total Price (INR)</label><input id="totalPrice" type="text" value={`₹ ${totalPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} readOnly className="w-full px-3 py-2 rounded-md border-gray-200 bg-gray-100 text-base text-gray-700 font-semibold" /></div></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4"><div><label htmlFor="unit" className="block text-sm font-medium text-gray-700 mb-1">Unit Type</label><select id="unit" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required>{UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}</select></div><div><label htmlFor="unitPerItem" className="block text-sm font-medium text-gray-700 mb-1">Size per Item</label><input id="unitPerItem" type="number" value={formData.unitPerItem} onChange={(e) => setFormData({ ...formData, unitPerItem: e.target.value })} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" min="0" step="any" required /></div><div className="md:col-span-1"><label htmlFor="vendorName" className="block text-sm font-medium text-gray-700 mb-1">Vendor/Supplier</label><input id="vendorName" type="text" value={formData.vendorName} onChange={(e) => setFormData({ ...formData, vendorName: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required /></div></div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4"><div><label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label><input id="date" type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" required /></div><div><label htmlFor="expiryDate" className="block text-sm font-medium text-gray-700 mb-1">Expiry Date <span className="text-gray-400">(Optional)</span></label><input id="expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} className="w-full px-3 py-2 rounded-md border border-gray-300 shadow-sm text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition" /></div></div>
               <div className="pt-4 flex justify-end gap-3 border-t border-gray-200"><button type="button" onClick={() => setIsFormOpen(false)} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-colors">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 border border-transparent rounded-lg text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors">{editingRecord ? 'Update Record' : 'Save Record'}</button></div>
             </form>

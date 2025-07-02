@@ -241,7 +241,7 @@ export default function EBUploadPage() {
         />
       )}
 
-      <main className="p-4 sm:p-6 lg:p-8 bg-slate-100">
+      <main className=" bg-slate-100">
         <div className="max-w-7xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900">EB Reading Upload</h1>

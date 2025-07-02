@@ -53,7 +53,7 @@ export default function CrmPage() {
   return (
     <div className="min-h-screen bg-gray-50/30">
       <main
-        className={`flex-grow p-4 md:p-8 transition-all duration-300 ${isDetailPanelOpen ? 'md:mr-[400px] lg:mr-[450px]' : 'mr-0'}`}
+        className={`flex-grow  md: transition-all duration-300 ${isDetailPanelOpen ? 'md:mr-[400px] lg:mr-[450px]' : 'mr-0'}`}
       >
 
         {/* Page Header */}

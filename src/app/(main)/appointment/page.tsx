@@ -188,8 +188,7 @@ export default function AppointmentPage() {
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
   return (
-    // CHANGED: Adjusted padding to better match the screenshot layout.
-    <div className="bg-gray-50/50 p-8">
+    <div className="bg-gray-50/50 ">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
@@ -212,7 +211,7 @@ export default function AppointmentPage() {
                   <th className="px-6 py-3">Stylist</th>
                   <th className="px-6 py-3">Booking Time</th>
                   <th className="px-6 py-3">Type</th>
-                  <th className="px-2 py-3">Status</th>
+                  <th className="px-2 py-3 text-center">Status</th>
                   <th className="px-6 py-3">Amount</th>
                   <th className="px-6 py-3">Staff</th>
                   <th className="px-6 py-3 text-right">Actions</th>
@@ -247,7 +246,11 @@ export default function AppointmentPage() {
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.createdAt)}</div>
                       </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${appointment.appointmentType === 'Online' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{appointment.appointmentType}</span></td>
-                      <td className="px-2 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(appointment.status)}`}>{appointment.status}</span></td>
+                      
+                      <td className="px-2 py-4 text-center">
+                        {/* FIX: Added 'whitespace-nowrap' to prevent text wrapping in the status badge */}
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(appointment.status)}`}>{appointment.status}</span>
+                      </td>
                       
                       <td className="px-6 py-4">
                         {appointment.finalAmount ? (

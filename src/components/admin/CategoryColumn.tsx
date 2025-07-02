@@ -21,6 +21,14 @@ interface Props {
   disabledText?: string;
 }
 
+const ListSkeleton = () => (
+    <div className="p-2 space-y-1 animate-pulse">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="h-12 rounded-lg bg-gray-200 w-full"></div>
+      ))}
+    </div>
+  );
+
 export default function CategoryColumn({ 
   title, 
   items, 
@@ -34,53 +42,90 @@ export default function CategoryColumn({
   disabledText = "Select an item from the previous column first." 
 }: Props) {
   return (
-    <div className={`flex flex-col w-full h-full bg-white ${disabled ? 'opacity-50 bg-gray-50' : ''}`}>
+    <div className="flex flex-col w-full h-full bg-white">
       {/* Column Header */}
-      <div className="p-4 border-b border-gray-200 shrink-0">
+      <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <h3 className="font-semibold text-lg text-gray-800">{title}</h3>
       </div>
 
-      {/* Items List */}
-      <div className="flex-grow overflow-y-auto">
-        {isLoading && (
-          <div className="p-4 space-y-3 animate-pulse">
-            <div className="h-8 rounded bg-gray-200 w-3/4"></div>
-            <div className="h-8 rounded bg-gray-200 w-full"></div>
-            <div className="h-8 rounded bg-gray-200 w-full"></div>
+      {/* Items List and Add Button - This entire container scrolls */}
+      <div className="flex-grow overflow-y-auto p-2">
+        {isLoading && <ListSkeleton />}
+
+        {!isLoading && disabled && (
+          <div className="flex items-center justify-center h-full p-4">
+            <p className="text-sm text-center text-gray-500">{disabledText}</p>
           </div>
         )}
-        {!isLoading && items.map((item) => (
-          <div 
-            key={item._id} 
-            onClick={() => !disabled && onSelect(item._id)}
-            className={`flex justify-between items-center group w-full text-left text-sm pr-2 transition-colors duration-150 ${!disabled ? 'cursor-pointer' : 'cursor-default'} ${selectedId === item._id ? 'bg-indigo-600 text-white' : 'hover:bg-gray-100'}`}
-          >
-            <span className="px-4 py-3 block truncate font-medium">{item.name}</span>
-            <div className={`flex items-center shrink-0 gap-1 ${selectedId === item._id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-              {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(item); }} className={`p-1.5 rounded ${selectedId === item._id ? 'hover:bg-indigo-700' : 'hover:bg-gray-200'}`}><PencilIcon className="h-4 w-4" /></button>}
-              {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(item._id); }} className={`p-1.5 rounded ${selectedId === item._id ? 'hover:bg-indigo-700' : 'hover:bg-red-100 text-red-500'}`}><TrashIcon className="h-4 w-4" /></button>}
-            </div>
-          </div>
-        ))}
-        {!isLoading && items.length === 0 && (
-          <div className="p-4 text-sm text-center text-gray-400 mt-4">
-            {disabled ? disabledText : `No ${title.toLowerCase()} found.`}
-          </div>
+
+        {!isLoading && !disabled && (
+          <>
+            {/* The List of Items */}
+            {items.length > 0 ? (
+              <ul className="space-y-1">
+                {items.map((item) => (
+                  <li key={item._id}>
+                    <button
+                      onClick={() => onSelect(item._id)}
+                      className={`w-full text-left p-3 rounded-lg transition-colors group flex justify-between items-center
+                        ${ selectedId === item._id
+                            ? 'bg-indigo-600 text-white shadow'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`
+                      }
+                    >
+                      <span className="font-medium truncate">{item.name}</span>
+                      <div className={`flex items-center gap-1 transition-opacity
+                        ${ selectedId === item._id
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100'
+                        }`
+                      }>
+                        {onEdit && (
+                          <div 
+                            onClick={(e) => { e.stopPropagation(); onEdit(item); }} 
+                            className={`p-1.5 rounded-full ${selectedId === item._id ? 'hover:bg-indigo-500' : 'hover:bg-gray-200'}`}
+                            title="Edit"
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                          </div>
+                        )}
+                        {onDelete && (
+                           <div 
+                             onClick={(e) => { e.stopPropagation(); onDelete(item._id); }} 
+                             className={`p-1.5 rounded-full ${selectedId === item._id ? 'hover:bg-indigo-500' : 'hover:bg-gray-200 text-red-500'}`}
+                             title="Delete"
+                           >
+                            <TrashIcon className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              // Empty State message
+              <div className="p-4 text-sm text-center text-gray-400">
+                No {title.toLowerCase()} found.
+              </div>
+            )}
+
+            {/* The Add New Button, positioned after the list */}
+            {onAddNew && (
+              <div className="mt-2">
+                <button 
+                  onClick={onAddNew} 
+                  disabled={disabled} 
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  <PlusIcon className="h-5 w-5" /> Add New {title.endsWith('s') ? title.slice(0, -1) : title}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
-
-      {/* Add New Button Footer */}
-      {onAddNew && (
-        <div className="p-2 border-t border-gray-200 shrink-0">
-          <button 
-            onClick={onAddNew} 
-            disabled={disabled} 
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-black rounded-lg hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            <PlusIcon className="h-5 w-5" /> Add New {title.endsWith('s') ? title.slice(0, -1) : title}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

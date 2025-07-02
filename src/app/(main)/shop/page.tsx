@@ -76,7 +76,6 @@ export default function StoreManagementPage() {
                 className={`
                   flex items-center gap-2 whitespace-nowrap py-3 px-4 font-medium text-sm
                   rounded-t-lg transition-all duration-200 ease-in-out
-                  focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500
                   ${
                     activeTab === tab.id
                       ? 'bg-gray-50 border-b-2 border-indigo-600 text-indigo-600'
@@ -93,10 +92,8 @@ export default function StoreManagementPage() {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6 lg:p-8">
-        <div className="max-w-7xl mx-auto">
-          {renderContent()}
-        </div>
+                  <main className="flex-1 bg-gray-50">
+        {renderContent()}
       </main>
     </div>
   );

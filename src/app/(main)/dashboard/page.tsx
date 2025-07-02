@@ -256,7 +256,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-8 bg-gray-50 min-h-screen">
+    <div className=" space-y-8 bg-gray-50 min-h-screen">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
