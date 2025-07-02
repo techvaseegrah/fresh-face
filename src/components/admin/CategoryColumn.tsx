@@ -13,12 +13,11 @@ interface Props {
   items: Item[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onEdit?: (item: Item) => void;
-  onDelete?: (id: string) => void;
-  onAddNew?: () => void;
+  onEdit?: (item: Item) => void; // Optional
+  onDelete?: (id: string) => void; // Optional
+  onAddNew?: () => void; // Optional
   isLoading: boolean;
   disabled?: boolean;
-  disabledText?: string;
 }
 
 const ListSkeleton = () => (

@@ -173,8 +173,7 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
           <input 
             type="text" 
             value={skuSearch} 
-            // The only change is adding .toUpperCase() here
-            onChange={e => setSkuSearch(e.target.value.toUpperCase())} 
+            onChange={e => setSkuSearch(e.target.value)} 
             placeholder="Search Product by SKU" 
             className="p-2 border rounded w-full"
           />

@@ -567,8 +567,11 @@ const BillingModal: React.FC<BillingModalProps> = ({
                 <div className="flex-grow">
                   <label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant & Apply Discounts</label>
                   <div className="relative">
-                    <input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value)} placeholder="Enter unique barcode" autoFocus
-                      className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} />
+                    <input type="text" value={membershipBarcode} 
+                      onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} 
+                      placeholder="Enter unique barcode" 
+                      autoFocus
+                      className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 uppercase ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} />
                     <QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                   </div>
                   {isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}

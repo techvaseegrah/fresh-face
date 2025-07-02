@@ -7,13 +7,11 @@ import {
   CalendarDaysIcon,
   UserGroupIcon,
   CreditCardIcon,
-  TrendingUpIcon,
   ClockIcon,
   EyeIcon,
-  PlusIcon,
   ArrowUpIcon,
   ArrowDownIcon,
-  ChartBarIcon
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import {
   CalendarDaysIcon as CalendarSolid,
@@ -57,6 +55,12 @@ interface RevenueData {
   appointments: number;
 }
 
+interface LowStockData {
+  count: number;
+  products: { name: string; numberOfItems: number; sku: string; }[];
+  threshold: number;
+}
+
 // StatCard Component
 const StatCard = ({ 
   title, 
@@ -85,11 +89,11 @@ const StatCard = ({
 
   return (
     <div 
-      className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''}`}
+      className={`flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''}`}
       onClick={onClick}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
+      <div className="flex items-center justify-between flex-grow">
+        <div className="flex-1 min-h-[60px] ">
           <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
           <p className="text-3xl font-bold text-gray-900">{value}</p>
           {trend && trendValue && (
@@ -158,10 +162,61 @@ export default function DashboardPage() {
     completedToday: 0,
     avgSessionValue: 0
   });
+
+  // +++ ADD THIS ENTIRE NEW COMPONENT BELOW IT +++
+const LowStockStatCard = ({ data }: { data: LowStockData }) => {
+  return (
+    // 'group' enables the hover effect for child elements
+    <div className="group relative">
+    <StatCard
+      title="Products Low on Stock"
+      value={data.count}
+      icon={ExclamationTriangleIcon}
+      color="red"
+      onClick={() => (window.location.href = '/shop')}
+    />
+    
+    {/* +++ NEW LIGHT-THEME, DOWNWARD-HOVERING TOOLTIP +++ */}
+    {data.count > 0 && (
+      <div className="absolute top-full mt-2 w-72 max-h-64 overflow-y-auto rounded-xl bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none shadow-xl border border-gray-200">
+        <div className="p-3">
+          <div className="mb-2 pb-2 border-b border-gray-200">
+            <h4 className="font-semibold text-base text-gray-800">Low Stock Items</h4>
+            <p className="text-xs text-gray-500">Threshold is {data.threshold} or less</p>
+          </div>
+          
+          <ul className="space-y-1">
+            {data.products.slice(0, 10).map(p => (
+              <li key={p.sku} className="flex items-center justify-between text-sm p-1.5 rounded-md">
+                <div className="flex items-center min-w-0">
+                  <ExclamationTriangleIcon className="h-4 w-4 text-red-400 mr-2 shrink-0" />
+                  <span className="truncate pr-2 text-gray-700">{p.name}</span>
+                </div>
+                <span className="font-bold text-red-600 whitespace-nowrap">{p.numberOfItems} left</span>
+              </li>
+            ))}
+          </ul>
+          
+          {data.products.length > 10 && (
+            <p className="text-gray-500 text-xs mt-2 text-center border-t border-gray-200 pt-2">
+              ...and {data.products.length - 10} more
+            </p>
+          )}
+        </div>
+        {/* Tooltip arrow - now pointing up */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-[-5px] h-2.5 w-2.5 bg-white rotate-45 border-l border-t border-gray-200"></div>
+      </div>
+    )}
+  </div>
+);
+};
+
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
   const [revenueData, setRevenueData] = useState<RevenueData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [lowStockData, setLowStockData] = useState<LowStockData>({ count: 0, products: [], threshold: 0 });
 
   // Permission checks
   const canViewCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ);
@@ -178,11 +233,12 @@ export default function DashboardPage() {
       setIsLoading(true);
       
       // Parallel API calls
-      const [statsRes, activitiesRes, appointmentsRes, revenueRes] = await Promise.allSettled([
+      const [statsRes, activitiesRes, appointmentsRes, revenueRes, lowStockRes] = await Promise.allSettled([
         fetch('/api/dashboard/stats'),
         fetch('/api/dashboard/activities'),
         fetch('/api/dashboard/upcoming-appointments'),
-        fetch('/api/dashboard/revenue')
+        fetch('/api/dashboard/revenue'),
+        fetch('/api/dashboard/low-stock-products'),
       ]);
 
       // Handle stats
@@ -214,6 +270,14 @@ export default function DashboardPage() {
         const revenueDataRes = await revenueRes.value.json();
         if (revenueDataRes.success) {
           setRevenueData(revenueDataRes.revenue);
+        }
+      }
+
+       // +++ 5. HANDLE the new low stock data +++
+       if (lowStockRes.status === 'fulfilled' && lowStockRes.value.ok) {
+        const data = await lowStockRes.value.json();
+        if (data.success) {
+          setLowStockData(data);
         }
       }
 
@@ -305,15 +369,9 @@ export default function DashboardPage() {
           trendValue="+18%"
           color="purple"
         />
-        <StatCard
-          title="Active Members"
-          value={stats.activeMembers}
-          icon={ClockSolid}
-          trend="up"
-          trendValue="+8%"
-          color="orange"
-        />
-      </div>
+         <LowStockStatCard data={lowStockData} />
+
+    </div>
 
       {/* Quick Actions */}
       {(canCreateAppointments || canCreateCustomers) && (

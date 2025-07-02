@@ -22,7 +22,7 @@ interface Props {
   };
 }
 
-  const getNewProductFormState = () => ({
+const getNewProductFormState = () => ({
   name: '',
   sku: '',
   numberOfItems: '',
@@ -74,12 +74,7 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    
-    // ---> LOGIC ADDED HERE <---
-    // If the input is for the SKU, convert its value to uppercase.
-    const finalValue = name === 'sku' ? value.toUpperCase() : value;
-    
-    setFormData((prev: any) => ({ ...prev, [name]: finalValue }));
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -91,8 +86,7 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
     if (entityType === 'product') {
       dataToSave = {
         name: formData.name,
-        // ---> LOGIC ADDED HERE (as a fallback) <---
-        sku: formData.sku ? formData.sku.toUpperCase() : '',
+        sku: formData.sku,
         price: parseFloat(formData.price) || 0,
         numberOfItems: parseInt(formData.numberOfItems, 10) || 0,
         quantityPerItem: parseFloat(formData.quantityPerItem) || 0,
@@ -143,7 +137,6 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input name="name" value={formData.name || ''} onChange={handleChange} placeholder="Product Name" className="p-2 border rounded-md" required />
-                {/* The `onChange` handler will automatically convert this input's value to uppercase */}
                 <input name="sku" value={formData.sku || ''} onChange={handleChange} placeholder="SKU" className="p-2 border rounded-md" required />
                 <input name="price" type="number" step="0.01" value={formData.price || ''} onChange={handleChange} placeholder="Price" className="p-2 border rounded-md" required />
                 <div className="relative">
@@ -154,6 +147,7 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
                   <label className="text-xs text-gray-500 absolute -top-2 left-2 bg-white px-1">Quantity Per Item</label>
                   <input name="quantityPerItem" type="number" step="any" value={formData.quantityPerItem || ''} onChange={handleChange} placeholder="e.g., 100 ml per bottle" className="p-2 border rounded-md w-full" required />
                 </div>
+                {/* FIX: Changed to a select dropdown */}
                 <div className="relative">
                   <label className="text-xs text-gray-500 absolute -top-2 left-2 bg-white px-1">Unit</label>
                   <select name="unit" value={formData.unit || ''} onChange={handleChange} className="p-2 border rounded-md w-full" required >

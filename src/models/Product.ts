@@ -22,7 +22,7 @@ export interface IProduct extends Document {
   quantityPerItem: number; // Capacity per bottle/piece
   unit: string;
   stockedDate: Date;
-  gender?: 'Male' | 'Female' | 'Unisex' | 'N/A';
+  lowStockThreshold: number; 
 }
 
 const ProductSchema: Schema<IProduct> = new Schema({
@@ -91,6 +91,13 @@ const ProductSchema: Schema<IProduct> = new Schema({
   stockedDate: {
     type: Date,
     required: true
+  },
+
+  lowStockThreshold: {
+    type: Number,
+    required: true,
+    default: 0, 
+    min: 0,
   }
 }, { timestamps: true });
 

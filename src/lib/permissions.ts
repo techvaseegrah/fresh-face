@@ -79,6 +79,10 @@ export const PERMISSIONS = {
   INVENTORY_CHECKER_UPDATE: 'inventory-checker:update',
   INVENTORY_CHECKER_DELETE: 'inventory-checker:delete',
 
+  ALERTS_CREATE: 'alerts:create',
+  ALERTS_READ: 'alerts:read',
+  ALERTS_DELETE: 'alerts:delete',
+
   ALL: '*'
 } as const;
 
@@ -100,7 +104,8 @@ export const PERMISSION_CATEGORIES = {
   EB_MANAGEMENT: 'EB Management',
   PROCUREMENT_MANAGEMENT: 'Procurement Management', // New category
   DAYEND_MANAGEMENT: 'Day-end Closing Management',
-  INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management'
+  INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
+  ALERTS_MANAGEMENT: 'Alerts Management',
 
 } as const;
 
@@ -178,6 +183,11 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SETTINGS_READ, description: 'Access settings section', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_READ, description: 'View loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_UPDATE, description: 'Update loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+
+  // Alerts Management
+  { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
+  { permission: PERMISSIONS.ALERTS_READ, description: 'Read alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
+  { permission: PERMISSIONS.ALERTS_DELETE, description: 'Delete alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
 
   // Inventory Checker Management
   { permission: PERMISSIONS.INVENTORY_CHECKER_CREATE, description: 'Create inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
