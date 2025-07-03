@@ -141,7 +141,7 @@ export default function AlertsPage() {
         <div className="max-w-3xl mx-auto">
           <div className="mb-10">
             <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Alert Management</h1>
-            <p className="mt-2 text-md text-gray-500">Configure who gets notified about important events and when.</p>
+            <p className="mt-2 text-md text-gray-500">configure who gets notified about important events and when.</p>
           </div>
           
           <div className="space-y-10">
