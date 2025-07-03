@@ -27,6 +27,15 @@ export default function StoreManagementPage() {
   const [activeTab, setActiveTab] = useState<ShopTab | null>(visibleTabs.length > 0 ? visibleTabs[0].id : null)
 
   const renderContent = () => {
+    if (!activeTab) {
+      return (
+        <div className="text-center py-20 bg-white rounded-lg shadow-sm">
+          <h2 className="text-2xl font-bold text-gray-800">Access Denied</h2>
+          <p className="text-gray-500 mt-3 max-w-md mx-auto">You do not have the necessary permissions to manage any of the shop sections. Please contact an administrator if you believe this is an error.</p>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case "products":
         return canReadProducts ? <ProductManager /> : null

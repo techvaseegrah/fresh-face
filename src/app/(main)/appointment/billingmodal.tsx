@@ -5,8 +5,8 @@ import { UserPlusIcon, ClockIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { QrCodeIcon } from 'lucide-react';
 
-// --- TYPE DEFINITIONS ---
-
+// --- TYPE DEFINITIONS & CUSTOMER HISTORY MODAL (Unchanged) ---
+// ... (The code for types and the CustomerHistoryModal remains exactly the same)
 export interface BillLineItem {
   itemType: 'service' | 'product';
   itemId: string;
@@ -19,7 +19,7 @@ export interface BillLineItem {
 
 interface SearchableItem {
   id: string;
-  name: string;
+  name:string;
   price: number;
   membershipRate?: number;
   type: 'service' | 'product';
@@ -216,7 +216,8 @@ const CustomerHistoryModal: React.FC<{
 };
 
 
-// --- MAIN BILLING MODAL ---
+
+// --- MAIN BILLING MODAL (Updated) ---
 
 const BillingModal: React.FC<BillingModalProps> = ({
   isOpen,
@@ -230,14 +231,15 @@ const BillingModal: React.FC<BillingModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [inventoryImpact, setInventoryImpact] = useState<any>(null); // Kept as `any` if API response varies
+  const [inventoryImpact, setInventoryImpact] = useState<any>(null);
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<SearchableItem[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [customerIsMember, setCustomerIsMember] = useState<boolean>(false);
-  const [showMembershipGrant, setShowMembershipGrant] = useState<boolean>(false);
+  const [showMembershipGrantOption, setShowMembershipGrantOption] = useState<boolean>(false);
+  const [isGrantingMembership, setIsGrantingMembership] = useState<boolean>(false);
   const [membershipGranted, setMembershipGranted] = useState<boolean>(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState<boolean>(false);
   const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
@@ -248,6 +250,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean>(true);
   const [isCheckingBarcode, setIsCheckingBarcode] = useState<boolean>(false);
   
+  // ... (All fetch and handler functions remain the same)
   const fetchStaffMembers = useCallback(async () => {
     setIsLoadingStaff(true);
     try {
@@ -296,6 +299,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
       setSearchQuery('');
       setSearchResults([]);
       setMembershipGranted(false);
+      setIsGrantingMembership(false);
       setSelectedStaffId('');
       setPaymentDetails({ cash: 0, card: 0, upi: 0, other: 0 });
       setInventoryImpact(null);
@@ -303,7 +307,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
       
       const isMember = customer?.isMembership || false;
       setCustomerIsMember(isMember);
-      setShowMembershipGrant(!isMember);
+      setShowMembershipGrantOption(!isMember);
       
       const initialItems = appointment.serviceIds?.map(service => {
         const finalPrice = (isMember && typeof service.membershipRate === 'number')
@@ -317,7 +321,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
           quantity: 1,
           finalPrice: finalPrice,
         };
-      }) ?? []; // Use optional chaining and nullish coalescing for safety
+      }) ?? [];
 
       setBillItems(initialItems);
       if (initialItems.length > 0) {
@@ -435,8 +439,9 @@ const BillingModal: React.FC<BillingModalProps> = ({
       const result = await response.json();
       if (result.success) {
         setCustomerIsMember(true);
-        setShowMembershipGrant(false);
+        setShowMembershipGrantOption(false);
         setMembershipGranted(true);
+        setIsGrantingMembership(false);
         toast.success(`Membership granted to ${customer.name}!`);
       } else {
         setError(result.message || 'Failed to grant membership');
@@ -512,14 +517,16 @@ const BillingModal: React.FC<BillingModalProps> = ({
     }
   };
 
+
   if (!isOpen) return null;
 
   return (
     <>
       <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
         <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
-          {/* Header */}
+          {/* --- MODIFIED HEADER --- */}
           <div className="flex justify-between items-center mb-4 pb-3 border-b">
+            {/* Left side content */}
             <div>
               <div className="flex items-center gap-4">
                 <h2 className="text-xl font-semibold">Bill for: <span className="text-indigo-600">{customer.name}</span></h2>
@@ -530,26 +537,48 @@ const BillingModal: React.FC<BillingModalProps> = ({
                 {membershipGranted && <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">Membership Granted</span>}
               </p>
             </div>
-            <button onClick={onClose} className="text-gray-500 text-2xl hover:text-gray-700">×</button>
+            
+            {/* Right side actions */}
+            <div className="flex items-center space-x-4">
+              {showMembershipGrantOption && !customerIsMember && (
+                <button
+                  onClick={() => setIsGrantingMembership(prev => !prev)}
+                  title="Grant Membership"
+                  className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 font-semibold transition-all duration-200 ${
+                    isGrantingMembership 
+                      ? 'border border-yellow-500 text-yellow-700 bg-transparent hover:bg-yellow-50'
+                      : 'border border-yellow-500 text-yellow-700 bg-transparent hover:bg-yellow-50'
+                  }`}
+                >
+                  <UserPlusIcon className="w-4 h-4" />
+                  <span>{isGrantingMembership ? 'Cancel' : 'Grant Membership'}</span>
+                </button>
+              )}
+              <button onClick={onClose} className="text-gray-500 text-2xl hover:text-gray-700">×</button>
+            </div>
           </div>
 
           {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
 
-          {showMembershipGrant && !customerIsMember && (
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          {/* --- TOGGLEABLE MEMBERSHIP FORM --- */}
+          {isGrantingMembership && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg transition-all">
               <div className="flex items-end gap-4">
                 <div className="flex-grow">
-                  <label className="block text-sm font-medium text-yellow-800 mb-1">Grant Membership & Apply Discounts</label>
+                  <label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant & Apply Discounts</label>
                   <div className="relative">
-                    <input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value)} placeholder="Enter unique barcode"
-                      className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} />
+                    <input type="text" value={membershipBarcode} 
+                      onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} 
+                      placeholder="Enter unique barcode" 
+                      autoFocus
+                      className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 uppercase ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} />
                     <QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                   </div>
                   {isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}
                   {!isBarcodeValid && membershipBarcode.trim() && <p className="text-xs text-red-600 mt-1">Barcode already in use.</p>}
                 </div>
                 <button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode} className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-2">
-                  <UserPlusIcon className="w-4 h-4" /> Grant
+                  Confirm & Grant
                 </button>
               </div>
             </div>
@@ -557,6 +586,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
 
           {/* Body */}
           <div className="flex-grow overflow-y-auto pr-2 space-y-4">
+            {/* ... (Rest of the modal body is unchanged) ... */}
             <div>
               <h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>
               {billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div>
@@ -615,6 +645,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
             <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Payment Details</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={paymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total Paid:</span><span className="font-semibold">₹{totals.totalPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>Bill Total:</span><span className="font-semibold">₹{totals.grandTotal.toFixed(2)}</span></div><div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div></div></div></div>
             <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>
           </div>
+
 
           {/* Footer */}
           <div className="mt-auto pt-4 border-t">

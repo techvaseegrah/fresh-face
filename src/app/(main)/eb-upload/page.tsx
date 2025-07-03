@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react'; // FIX: Added useMemo here
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { 
@@ -29,7 +29,7 @@ const formatBytes = (bytes: number, decimals = 2): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-// --- Reusable Image Zoom Modal Component ---
+// --- [FIXED] Reusable Image Zoom Modal Component ---
 const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; }) => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -44,7 +44,8 @@ const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; })
       <button className="absolute top-4 right-4 text-white hover:text-gray-300 z-50 p-2" onClick={onClose} aria-label="Close image zoom view">
         <XMarkOutlineIcon className="h-8 w-8" />
       </button>
-      <div className="relative max-w-4xl max-h-[90vh] transition-transform duration-300 scale-95 animate-zoom-in" onClick={(e) => e.stopPropagation()}>
+      {/* FIX: Added w-full and h-full to this div to give the Image component dimensions to fill */}
+      <div className="relative w-full h-full max-w-4xl max-h-[90vh] transition-transform duration-300 scale-95 animate-zoom-in" onClick={(e) => e.stopPropagation()}>
         <Image src={src} alt="Zoomed meter image" layout="fill" className="object-contain rounded-lg" />
       </div>
     </div>
@@ -93,7 +94,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string; type: 
 };
 
 
-// --- [REDESIGNED] Image Dropzone Component ---
+// --- Image Dropzone Component ---
 const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }: { file: File | null; onFileSelect: (file: File) => void; onClear: () => void; onZoom: () => void; disabled?: boolean; }) => {
   const [isDragging, setIsDragging] = useState(false);
   const preview = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
@@ -142,7 +143,7 @@ const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }
           </div>
         ) : (
           <div className="relative w-full text-left">
-            <div className="overflow-hidden rounded-xl shadow-lg bg-white cursor-zoom-in" onClick={!disabled ? onZoom : undefined}>
+            <div className="overflow-hidden rounded-xl shadow-lg bg-white cursor-zoom-in" onClick={!disabled ? (e) => { e.preventDefault(); e.stopPropagation(); onZoom(); } : undefined}>
                 <Image src={preview} alt="Meter image preview" width={500} height={400} className="w-full h-64 object-cover" />
                 <div className="p-4 border-t border-slate-200">
                   <div className="flex items-start">
@@ -156,7 +157,7 @@ const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }
             </div>
              <button
               type="button"
-              onClick={!disabled ? onClear : undefined}
+              onClick={!disabled ? (e) => { e.preventDefault(); e.stopPropagation(); onClear(); } : undefined}
               className="absolute -top-3 -right-3 bg-white rounded-full p-1 text-slate-500 hover:text-red-600 shadow-md transition-transform duration-200 transform hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Remove image"
               disabled={disabled}
@@ -171,7 +172,7 @@ const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }
   );
 };
 
-// --- [REDESIGNED] Main EB Upload Page Component ---
+// --- Main EB Upload Page Component ---
 export default function EBUploadPage() {
   const { data: session } = useSession();
   const [type, setType] = useState<'morning' | 'evening'>('morning');
@@ -241,7 +242,7 @@ export default function EBUploadPage() {
         />
       )}
 
-      <main className="p-4 sm:p-6 lg:p-8 bg-slate-100">
+      <main className=" bg-slate-100">
         <div className="max-w-7xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900">EB Reading Upload</h1>

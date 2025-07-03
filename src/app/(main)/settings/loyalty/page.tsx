@@ -4,21 +4,22 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
+// 1. UPDATE INTERFACE: Allow number or an empty string for controlled inputs
 interface LoyaltySettings {
-  rupeesForPoints: number;
-  pointsAwarded: number;
+  rupeesForPoints: number | '';
+  pointsAwarded: number | '';
 }
 
 export default function LoyaltySettingsPage() {
   const { data: session } = useSession();
-  const [settings, setSettings] = useState<LoyaltySettings>({ rupeesForPoints: 100, pointsAwarded: 6 });
+  // 2. UPDATE INITIAL STATE: Start with empty strings for empty fields
+  const [settings, setSettings] = useState<LoyaltySettings>({ rupeesForPoints: '', pointsAwarded: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const canViewLoyaltySettings = hasPermission(session?.user?.role?.permissions || [], PERMISSIONS.LOYALTY_SETTINGS_READ);
   const canUpdateLoyaltySettings = hasPermission(session?.user?.role?.permissions || [], PERMISSIONS.LOYALTY_SETTINGS_UPDATE);
 
-  // Fetch current settings when the page loads
   useEffect(() => {
     if (canViewLoyaltySettings) {
       const fetchSettings = async () => {
@@ -26,9 +27,11 @@ export default function LoyaltySettingsPage() {
         try {
           const response = await fetch('/api/settings/loyalty');
           const data = await response.json();
-          if (data.success) {
+          if (data.success && data.settings) {
+            // The API will return numbers, which is fine. The state will update and display them.
             setSettings(data.settings);
           } else {
+            // If settings don't exist, fields will remain empty, which is the desired behavior.
             setMessage({ type: 'error', text: 'Failed to load settings.' });
           }
         } catch (error) {
@@ -43,11 +46,14 @@ export default function LoyaltySettingsPage() {
     }
   }, [canViewLoyaltySettings]);
 
+  // 3. UPDATE INPUT HANDLER: Store the raw string value to allow empty inputs
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    // Set the state with the string value. `type="number"` on the input
+    // already helps prevent non-numeric characters.
     setSettings(prev => ({
       ...prev,
-      [name]: Number(value)
+      [name]: value
     }));
   };
 
@@ -57,14 +63,27 @@ export default function LoyaltySettingsPage() {
         setMessage({ type: 'error', text: 'You do not have permission to update loyalty settings.' });
         return;
     }
+
+    // Add validation for empty fields before submitting
+    if (settings.rupeesForPoints === '' || settings.pointsAwarded === '') {
+        setMessage({ type: 'error', text: 'Both fields are required.' });
+        return;
+    }
+
     setIsLoading(true);
     setMessage(null);
+
+    // 4. UPDATE SUBMISSION LOGIC: Convert state back to numbers for the API
+    const payload = {
+      rupeesForPoints: Number(settings.rupeesForPoints),
+      pointsAwarded: Number(settings.pointsAwarded),
+    };
 
     try {
       const response = await fetch('/api/settings/loyalty', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(payload), // Send the numeric payload
       });
 
       const data = await response.json();
@@ -89,8 +108,9 @@ export default function LoyaltySettingsPage() {
           </div>
       );
   }
-
-  if (isLoading && !settings.rupeesForPoints) {
+  
+  // Simplified loading state
+  if (isLoading) {
     return <div>Loading settings...</div>;
   }
 
@@ -113,6 +133,7 @@ export default function LoyaltySettingsPage() {
               onChange={handleInputChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               required
+              min="0" // Good practice to prevent negative numbers
               disabled={!canUpdateLoyaltySettings}
             />
             <p className="text-xs text-gray-500 mt-1">The number of points to award.</p>
@@ -130,13 +151,15 @@ export default function LoyaltySettingsPage() {
               onChange={handleInputChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               required
+              min="1" // A value of 0 doesn't make sense here
               disabled={!canUpdateLoyaltySettings}
             />
             <p className="text-xs text-gray-500 mt-1">Award points for every specified amount spent.</p>
           </div>
 
+          {/* 5. REFINE DISPLAY: Use Number() or a fallback to prevent display errors with empty strings */}
           <p className="text-center text-gray-800 font-semibold p-3 bg-gray-100 rounded-md">
-            Current Rule: Award {settings.pointsAwarded} points for every ₹{settings.rupeesForPoints} spent.
+            Current Rule: Award {Number(settings.pointsAwarded) || 0} points for every ₹{Number(settings.rupeesForPoints) || 0} spent.
           </p>
         </div>
         

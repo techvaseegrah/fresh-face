@@ -14,7 +14,7 @@ export interface NewBookingData {
   phoneNumber: string;
   customerName: string;
   email: string;
-  gender?: string; // ADD THIS LINE
+  gender?: string;
   serviceIds: string[];
   stylistId: string;
   date: string;
@@ -42,7 +42,7 @@ interface CustomerSearchResult {
   name: string;
   phoneNumber: string;
   email?: string;
-  gender?: string; // ADD THIS LINE
+  gender?: string;
 }
 
 interface AppointmentHistory {
@@ -64,7 +64,7 @@ interface CustomerDetails {
   lastVisit: string | null;
   appointmentHistory: AppointmentHistory[];
   loyaltyPoints?: number;
-  membershipBarcode?: string; // Add barcode field
+  membershipBarcode?: string;
 }
 
 interface BookAppointmentFormProps {
@@ -205,29 +205,6 @@ const CustomerHistoryModal: React.FC<{
 // ===================================================================================
 //  CUSTOMER DETAIL PANEL COMPONENT
 // ===================================================================================
-
-
-interface AppointmentHistory {
-  _id: string;
-  date: string;
-  services: string[];
-  totalAmount: number;
-  stylistName: string;
-  status: string;
-}
-
-interface CustomerDetails {
-  _id: string;
-  name: string;
-  email: string;
-  phoneNumber: string;
-  isMember: boolean;
-  membershipDetails: { planName: string; status: string } | null;
-  lastVisit: string | null;
-  appointmentHistory: AppointmentHistory[];
-  loyaltyPoints?: number;
-  membershipBarcode?: string;
-}
 
 interface CustomerDetailPanelProps {
   customer: CustomerDetails | null;
@@ -484,12 +461,13 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
                   Membership Barcode <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
+                  {/* MODIFIED INPUT */}
                   <input
                     type="text"
                     value={membershipBarcode}
                     onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())}
                     placeholder="Enter barcode (e.g., MEMBER001, ABC123)"
-                    className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 transition-colors ${barcodeError
+                    className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 transition-colors uppercase ${barcodeError
                         ? 'border-red-300 focus:ring-red-500'
                         : isBarcodeValid && membershipBarcode.trim()
                           ? 'border-green-300 focus:ring-green-500'
@@ -646,7 +624,7 @@ const initialFormData: NewBookingData = {
   phoneNumber: '',
   customerName: '',
   email: '',
-  gender: '', // ADD THIS LINE
+  gender: '',
   serviceIds: [],
   stylistId: '',
   date: '',
@@ -836,7 +814,6 @@ const initialFormData: NewBookingData = {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-// In the fetchAndSetCustomerDetails function, add gender handling:
 const fetchAndSetCustomerDetails = async (phone: string) => {
   if (phone.trim().length < 10) {
     setSelectedCustomerDetails(null);
@@ -858,7 +835,7 @@ const fetchAndSetCustomerDetails = async (phone: string) => {
         customerName: cust.name,
         phoneNumber: cust.phoneNumber,
         email: cust.email || '',
-        gender: cust.gender || 'other' // ADD THIS LINE
+        gender: cust.gender || 'other'
       }));
 
       console.log(cust, 'Customer details fetched successfully');
@@ -891,15 +868,7 @@ const fetchAndSetCustomerDetails = async (phone: string) => {
 
       if (res.ok && data.success && data.customer) {
         const cust = data.customer;
-        setFormData((prev) => ({
-          ...prev,
-          customerId: cust._id,
-          customerName: cust.name,
-          phoneNumber: cust.phoneNumber,
-          email: cust.email || ''
-        }));
-        setSelectedCustomerDetails(cust);
-        setIsCustomerSelected(true);
+        fetchAndSetCustomerDetails(cust.phoneNumber);
         setBarcodeQuery('');
         toast.success('Customer found by barcode!');
       } else {
@@ -921,7 +890,7 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
     customerName: customer.name,
     phoneNumber: customer.phoneNumber,
     email: customer.email || '',
-    gender: (customer as any).gender || 'other' // ADD THIS LINE
+    gender: (customer as any).gender || 'other'
   }));
   setIsCustomerSelected(true);
   fetchAndSetCustomerDetails(customer.phoneNumber);
@@ -940,7 +909,8 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
     const resetData: Partial<NewBookingData> = {
       customerId: undefined,
       customerName: '',
-      email: ''
+      email: '',
+      gender: ''
     };
 
     if (clearPhone) {
@@ -963,8 +933,7 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
   const handleToggleMembership = async (customBarcode?: string) => {
     if (!selectedCustomerDetails) return;
 
-    console.log(`Toggling membership for ${selectedCustomerDetails} (${selectedCustomerDetails.phoneNumber})`);
-    
+    console.log(`Toggling membership for ${selectedCustomerDetails.name} (${selectedCustomerDetails.phoneNumber})`);
 
     try {
       const response = await fetch(`/api/customer/${selectedCustomerDetails._id}/toggle-membership`, {
@@ -978,25 +947,18 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
 
       const result = await response.json();
       if (result.success) {
-        setSelectedCustomerDetails(prev => prev ? {
-          ...prev,
-          isMember: !prev.isMember,
-          membershipDetails: !prev.isMember ? {
-            planName: 'Member',
-            status: 'Active'
-          } : null,
-          membershipBarcode: result.customer?.membershipBarcode || prev.membershipBarcode
-        } : null);
-
-        setTimeout(() => {
-          fetchAndSetCustomerDetails(selectedCustomerDetails.phoneNumber);
-        }, 500);
-
         toast.success(
           selectedCustomerDetails.isMember ?
             'Membership removed successfully!' :
             `Membership granted successfully with barcode: ${result.customer.membershipBarcode}`
         );
+        // Refresh details after a short delay to ensure DB update
+        setTimeout(() => {
+          fetchAndSetCustomerDetails(selectedCustomerDetails.phoneNumber);
+        }, 300);
+
+      } else {
+          toast.error(result.message || 'Failed to update membership status');
       }
     } catch (error) {
       toast.error('Failed to update membership status');
@@ -1064,7 +1026,6 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
 
   return (
     <>
-
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-xl p-6 md:p-8 max-w-6xl w-full max-h-[90vh] flex flex-col">
           <div className="flex justify-between items-center mb-6 pb-4 border-b">
@@ -1159,15 +1120,16 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                         </label>
                         <div className="flex gap-2">
                           <div className="relative flex-grow">
+                             {/* MODIFIED INPUT */}
                             <input
                               ref={barcodeInputRef}
                               id="barcodeQuery"
                               type="text"
                               value={barcodeQuery}
-                              onChange={(e) => setBarcodeQuery(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleBarcodeSearch()}
+                              onChange={(e) => setBarcodeQuery(e.target.value.toUpperCase())}
+                              onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleBarcodeSearch(); } }}
                               placeholder="Scan or enter membership barcode..."
-                              className={inputBaseClasses}
+                              className={`${inputBaseClasses} uppercase`}
                               autoComplete="off"
                             />
                             <QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -1229,17 +1191,18 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                     {/* NEW: Gender selection */}
                     <div>
                       <label htmlFor="gender" className="block text-sm font-medium mb-1.5">
-                        Gender
+                        Gender <span className="text-red-500">*</span>
                       </label>
                       <select
                         id="gender"
                         name="gender"
                         value={formData.gender || ''}
                         onChange={handleChange}
+                        required
                         className={`${inputBaseClasses} ${isCustomerSelected ? 'bg-gray-100' : ''}`}
                         disabled={isCustomerSelected}
                       >
-                        <option value="">Select Gender</option>
+                        <option value="" disabled>Select Gender</option>
                         <option value="female">Female</option>
                         <option value="male">Male</option>
                         <option value="other">Other</option>
@@ -1285,7 +1248,7 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                     </select>
                     {formData.status === 'Checked-In' && (
                       <p className="text-sm text-gray-500 mt-1">
-                        Service starts now at {formData.time} on {formData.date}.
+                        Service starts now at {formatTimeIST(formData.time)} on {formatDateIST(formData.date)}.
                       </p>
                     )}
                   </div>

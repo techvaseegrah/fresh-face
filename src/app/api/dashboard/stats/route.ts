@@ -16,12 +16,14 @@ export async function GET() {
 
     await connectToDatabase();
 
+    // The date logic here is correct for using the server's local time.
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-    
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000); // More robust way to get start of next day
+
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999); // Ensure it includes the whole last day
 
     // Parallel queries for better performance
     const [
@@ -34,7 +36,9 @@ export async function GET() {
     ] = await Promise.all([
       // Today's appointments
       Appointment.countDocuments({
-        date: { $gte: startOfDay, $lt: endOfDay }
+        // FIX 1: Changed 'date' to 'appointmentDateTime'
+        appointmentDateTime: { $gte: startOfDay, $lt: endOfDay },
+        status: { $nin: ['Cancelled', 'No-Show'] } // Also good to exclude cancelled
       }),
       
       // Total customers
@@ -57,24 +61,23 @@ export async function GET() {
         }
       ]),
       
-  
+      // FIX 2: Added the query for active members.
+      // This assumes you have an 'isMembership' field on your Customer model.
+      Customer.countDocuments({ isMembership: true, isActive: true }),
       
-      // Pending appointments
+      // Pending appointments FOR TODAY
       Appointment.countDocuments({
-        date: { $gte: startOfDay },
-        status: 'Scheduled'
+        // FIX 1: Changed 'date' to 'appointmentDateTime'
+        appointmentDateTime: { $gte: startOfDay, $lt: endOfDay },
+        status: 'Appointment' // Assuming 'Appointment' or 'Scheduled' is the pending status for today
       }),
       
       // Completed today
       Appointment.countDocuments({
-        date: { $gte: startOfDay, $lt: endOfDay },
-        status: { $in: ['Completed', 'Paid'] }
+        // FIX 1: Changed 'date' to 'appointmentDateTime'
+        appointmentDateTime: { $gte: startOfDay, $lt: endOfDay },
+        status: { $in: ['Checked-Out', 'Paid'] } // Use your final statuses before payment
       }),
-      
-      // New customers this month
-      Customer.countDocuments({
-        createdAt: { $gte: startOfMonth, $lte: endOfMonth }
-      })
     ]);
 
     const monthlyRevenue = monthlyInvoices[0]?.totalRevenue || 0;

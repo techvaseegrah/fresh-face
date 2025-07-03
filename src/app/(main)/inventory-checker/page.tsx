@@ -208,7 +208,7 @@ export default function InventoryCheckerPage() {
 
   return (
     <>
-      <div className="p-4 md:p-6 lg:p-8 space-y-8">
+      <div className="">
         <Toaster position="top-right" reverseOrder={false} />
 
         <h1 className="text-3xl font-bold tracking-tight text-gray-900">Inventory Checker</h1>
