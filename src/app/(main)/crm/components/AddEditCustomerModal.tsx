@@ -1,4 +1,4 @@
-// FILE: /app/crm/components/AddEditCustomerModal.tsx
+// src/app/(main)/crm/components/AddEditCustomerModal.tsx
 'use client';
 
 import React, { useState, useEffect, FormEvent } from 'react';
@@ -10,35 +10,37 @@ import { Gender } from '@/types/gender';
 interface AddEditCustomerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: () => void; // Callback to trigger a data refresh on the parent
+  onSave: () => void;
   customerToEdit: CrmCustomer | null;
 }
 
-/**
- * A modal form for either adding a new customer or editing an existing one.
- * It handles its own form state and API submission.
- */
 const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onClose, onSave, customerToEdit }) => {
-  const [formData, setFormData] = useState<AddCustomerFormData>({ name: '', email: '', phoneNumber: '', gender: Gender.Other });
+  const [formData, setFormData] = useState<AddCustomerFormData>({ name: '', email: '', phoneNumber: '', gender: Gender.Other, dob: '', survey: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const isEditMode = !!customerToEdit;
 
-  // Effect to reset form state when the modal opens or the customer to edit changes
   useEffect(() => {
     if (isOpen) {
       if (isEditMode) {
-        setFormData({ name: customerToEdit.name, email: customerToEdit.email, phoneNumber: customerToEdit.phoneNumber, gender: customerToEdit.gender || 'other' });
+        setFormData({
+            name: customerToEdit.name,
+            email: customerToEdit.email || '',
+            phoneNumber: customerToEdit.phoneNumber,
+            gender: customerToEdit.gender || 'other',
+            dob: customerToEdit.dob ? new Date(customerToEdit.dob).toISOString().split('T')[0] : '',
+            survey: customerToEdit.survey || ''
+        });
       } else {
-        setFormData({ name: '', email: '', phoneNumber: '', gender: 'other' });
+        setFormData({ name: '', email: '', phoneNumber: '', gender: 'other', dob: '', survey: '' });
       }
       setFormError(null);
       setIsSubmitting(false);
     }
   }, [isOpen, customerToEdit, isEditMode]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
@@ -63,8 +65,8 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
       }
 
       toast.success(`Customer ${isEditMode ? 'updated' : 'added'} successfully!`);
-      onSave(); // Trigger parent component to refresh its data
-      onClose(); // Close the modal
+      onSave();
+      onClose();
 
     } catch (error: any) {
       setFormError(error.message);
@@ -93,13 +95,17 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
             <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
           </div>
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
-          </div>
-          <div>
+           <div>
             <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
             <input type="tel" name="phoneNumber" id="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
+          </div>
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>
+            <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
+          </div>
+           <div>
+            <label htmlFor="dob" className="block text-sm font-medium text-gray-700 mb-1">Date of Birth (Optional)</label>
+            <input type="date" name="dob" id="dob" value={formData.dob} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
           </div>
           <div>
             <label htmlFor="gender" className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
@@ -108,6 +114,10 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
               <option value={Gender.Male}>Male</option>
               <option value={Gender.Other}>Other</option>
             </select>
+          </div>
+           <div>
+            <label htmlFor="survey" className="block text-sm font-medium text-gray-700 mb-1">How did you hear about us? (Optional)</label>
+            <textarea name="survey" id="survey" value={formData.survey} onChange={handleChange} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
           </div>
 
           <div className="mt-8 flex justify-end gap-3">

@@ -213,8 +213,6 @@ export default function ProductManager() {
       }
     }
   }
-
-  console.log(products, "products in product manager");
   
 
   return (

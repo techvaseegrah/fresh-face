@@ -34,6 +34,8 @@ export interface CrmCustomer {
   createdAt?: string;
   status?: 'Active' | 'Inactive' | 'New';
   gender?: 'male' | 'female' | 'other';
+    dob?: string; // Add dob
+  survey?: string; // Add survey
   appointmentHistory?: AppointmentHistoryItem[];
   currentMembership?: MembershipUIDetails | null;
   loyaltyPoints?: number;
@@ -56,6 +58,8 @@ export interface AddCustomerFormData {
   email?: string; // Make email optional here too
   phoneNumber: string;
   gender?: 'male' | 'female' | 'other';
+  dob?: string; // Add dob
+  survey?: string; // Add survey
 }
 
 // Pagination details from the API

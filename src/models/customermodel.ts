@@ -5,10 +5,12 @@ import { encrypt, decrypt, createSearchHash } from '@/lib/crypto';
 export interface ICustomer extends Document {
   name: string;
   phoneNumber: string;
-  email: string;
+  email?: string; // Now optional
+  dob?: Date; // Optional Date of Birth
+  survey?: string; // Optional survey info
   phoneHash: string;
-  nameHash: string;      // NEW
-  emailHash: string;     // NEW
+  nameHash: string;
+  emailHash?: string;
   loyaltyPoints: number;
   isMembership: boolean;
   membershipBarcode?: string;
@@ -28,10 +30,10 @@ export interface ICustomerModel extends Model<ICustomer> {
 
 const customerSchema = new Schema({
   name: { type: String, required: true },
-  phoneNumber: { type: String, required: true }, // Will store encrypted number
-  email: { type: String, required: true }, // Will store encrypted email
-  // nameHash: { type: String, required: true, index: true },
-  // emailHash: { type: String, required: true, unique: true, index: true },
+  phoneNumber: { type: String, required: true },
+  email: { type: String, required: false }, // No longer required
+  dob: { type: Date, required: false }, // Optional Date of Birth
+  survey: { type: String, required: false, trim: true }, // Optional survey info
   phoneHash: { type: String, required: true, unique: true, index: true },
   loyaltyPoints: { type: Number, default: 0, min: 0 },
   isMembership: { type: Boolean, default: false, index: true },
@@ -43,12 +45,10 @@ const customerSchema = new Schema({
 
 // --- Mongoose Middleware for Encryption ---
 customerSchema.pre<ICustomer>('save', function (next) {
-  // Encrypt fields only if they are modified
   if (this.isModified('name')) this.name = encrypt(this.name);
-  if (this.isModified('email')) this.email = encrypt(this.email);
+  if (this.isModified('email') && this.email) this.email = encrypt(this.email);
 
   if (this.isModified('phoneNumber')) {
-    // Note: The raw phoneNumber is available here before encryption
     const normalizedPhone = String(this.phoneNumber).replace(/\D/g, '');
     this.phoneHash = createSearchHash(normalizedPhone);
     this.phoneNumber = encrypt(this.phoneNumber);
@@ -59,7 +59,6 @@ customerSchema.pre<ICustomer>('save', function (next) {
 // --- Mongoose Middleware for Decryption ---
 const decryptFields = (doc: any) => {
   if (doc) {
-    // Use a temporary variable for batch updates to avoid re-encrypting decrypted data
     const decryptedDoc = doc.toObject ? doc.toObject() : { ...doc };
 
     if (decryptedDoc.name) doc.name = decrypt(decryptedDoc.name);
@@ -71,7 +70,7 @@ const decryptFields = (doc: any) => {
 customerSchema.post('findOne', decryptFields);
 customerSchema.post('find', (docs) => docs.forEach(decryptFields));
 customerSchema.post('findOneAndUpdate', decryptFields);
-customerSchema.post('save', decryptFields); // Decrypt after saving to have plain text in the returned object
+customerSchema.post('save', decryptFields);
 
 // --- Existing Methods ---
 customerSchema.methods.toggleMembership = function (this: ICustomer, status = true, customBarcode?: string): Promise<ICustomer> {
