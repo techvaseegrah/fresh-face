@@ -13,6 +13,8 @@ export interface IServiceConsumable {
 
 export interface IServiceItem extends Document {
   _id: string;
+    serviceCode: string; // <-- ADD THIS LINE
+
   name: string;
   price: number;
   membershipRate?: number;
@@ -52,6 +54,14 @@ const serviceConsumableSchema = new Schema({
 }, { _id: false });
 
 const serviceItemSchema = new Schema({
+   serviceCode: {
+    type: String,
+    required: [true, 'Service Code is required.'],
+    unique: true,
+    trim: true,
+    uppercase: true,
+    index: true,
+  },
   name: {
     type: String,
     required: true,

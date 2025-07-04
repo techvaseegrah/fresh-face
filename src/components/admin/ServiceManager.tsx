@@ -19,6 +19,8 @@ import {
 } from "@heroicons/react/24/outline"
 import CategoryColumn from "./CategoryColumn"
 import ServiceFormModal from "./ServiceFormModal"
+import { toast } from "react-toastify"
+import ServiceImportModal from "./ServiceImportModal"
 
 type AudienceType = "Unisex" | "male" | "female"
 type EntityType = "service-category" | "service-sub-category" | "service-item"
@@ -47,6 +49,7 @@ export default function ServiceManager() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalEntityType, setModalEntityType] = useState<EntityType | null>(null)
   const [entityToEdit, setEntityToEdit] = useState<any | null>(null)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false); // <-- ADD NEW STATE
 
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_CREATE)
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_UPDATE)
@@ -120,6 +123,20 @@ export default function ServiceManager() {
     return paths[entityType] || ""
   }
 
+   const handleImportSuccess = (report: any) => {
+    const successMessage = `Import complete: ${report.successfulImports} imported, ${report.failedImports} failed.`;
+    toast.success(successMessage, { autoClose: 10000 });
+
+    if (report.failedImports > 0) {
+      console.error("Service Import Errors:", report.errors);
+      toast.error("Some services failed to import. Check the developer console for a detailed report.", { autoClose: false });
+    }
+    
+    // Refresh the view
+    fetchMainCategories(audienceFilter);
+  };
+
+
   const handleSave = async (entityType: EntityType, data: any) => {
     const isEditing = !!entityToEdit
     const id = isEditing ? entityToEdit._id : ""
@@ -183,6 +200,12 @@ export default function ServiceManager() {
         }}
       />
 
+       <ServiceImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={handleImportSuccess}
+      />
+
       {/* Header */}
       <div className="p-6 border-b border-slate-200 bg-slate-50/50">
         <div className="flex items-center justify-between">
@@ -210,6 +233,12 @@ export default function ServiceManager() {
               </button>
             ))}
           </div>
+           <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors duration-150 shadow-sm"
+              >
+                Import Services
+              </button>
         </div>
       </div>
 

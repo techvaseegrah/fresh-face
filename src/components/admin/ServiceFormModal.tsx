@@ -372,6 +372,18 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
               />
             </div>
 
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Service Code (SKU)</label>
+                <input
+                  name="serviceCode"
+                  value={formData.serviceCode || ""}
+                  onChange={(e) => setFormData(prev => ({...prev, serviceCode: e.target.value.toUpperCase()}))}
+                  placeholder="e.g., SVC-CUT-01"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-150"
+                  required
+                />
+              </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Price</label>

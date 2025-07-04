@@ -9,12 +9,17 @@ import { hasPermission, PERMISSIONS } from "@/lib/permissions"
 import { PlusIcon, PencilIcon, TrashIcon, CubeIcon, TagIcon } from "@heroicons/react/24/outline"
 import CategoryColumn from "./CategoryColumn"
 import EntityFormModal from "./EntityFormModal"
+import { toast } from "react-toastify"
+import ProductImportModal from "./ProductImportModal"
 
 type ProductType = "Retail" | "In-House"
 type EntityType = "brand" | "subcategory" | "product"
 
 export default function ProductManager() {
   const { data: session } = useSession()
+
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false); // <-- ADD NEW STATE
+
 
   const [productType, setProductType] = useState<ProductType>("Retail")
   const [brands, setBrands] = useState<IProductBrand[]>([])
@@ -42,6 +47,27 @@ export default function ProductManager() {
     setSubCategories([])
     setProducts([])
   }
+
+    const handleImportSuccess = (report: any) => {
+    const successMessage = `
+      Import complete! 
+      ${report.successfulImports} successful. 
+      ${report.failedImports} failed.
+      ${report.newBrands.length} new brands created.
+      ${report.newSubCategories.length} new sub-categories created.
+    `;
+    toast.success(successMessage);
+
+    // If there were errors, show them in the console or a more detailed modal
+    if (report.failedImports > 0) {
+      console.error("Import Errors:", report.errors);
+      toast.error("Some rows failed to import. Check the console for details.");
+    }
+    
+    // Refresh the view
+    fetchBrands(productType);
+  };
+
 
   const handleTypeChange = (newType: ProductType) => {
     if (newType === productType) return
@@ -188,6 +214,9 @@ export default function ProductManager() {
     }
   }
 
+  console.log(products, "products in product manager");
+  
+
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden h-full flex flex-col">
       <EntityFormModal
@@ -203,6 +232,13 @@ export default function ProductManager() {
           brandName: selectedBrand?.name,
         }}
       />
+
+          <ProductImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={handleImportSuccess}
+      />
+
 
       {/* Header */}
       <div className="p-6 border-b border-slate-200 bg-slate-50/50">
@@ -223,6 +259,12 @@ export default function ProductManager() {
                 {type} Products
               </button>
             ))}
+             <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="ml-4 flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors duration-150 shadow-sm"
+          >
+              Import from Excel
+          </button>
           </div>
         </div>
       </div>
@@ -282,6 +324,7 @@ export default function ProductManager() {
 
             {!isLoadingProducts &&
               products.map((product) => (
+                
                 <div
                   key={product._id}
                   className="group bg-white p-4 border border-slate-200 rounded-lg shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200"
