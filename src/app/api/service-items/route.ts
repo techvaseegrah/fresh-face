@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
   await dbConnect();
   try {
     const body = await req.json();
+    console.log('Creating ServiceItem with body:', body);
+    
     const serviceItem = await ServiceItem.create(body);
     return NextResponse.json({ success: true, data: serviceItem }, { status: 201 });
   } catch (error: any) {
