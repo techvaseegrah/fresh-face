@@ -2,9 +2,25 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { DocumentTextIcon, CurrencyRupeeIcon, XMarkIcon, ClockIcon, SunIcon, MoonIcon, ArrowUpRightIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
+import { 
+    DocumentTextIcon, 
+    CurrencyRupeeIcon, 
+    XMarkIcon, 
+    ClockIcon, 
+    SunIcon, 
+    MoonIcon, 
+    ArrowUpRightIcon, 
+    CalendarDaysIcon,
+    ArrowDownTrayIcon
+} from '@heroicons/react/24/outline';
 import Image from 'next/image';
 import Link from 'next/link';
+
+// --- Import Reusable Report Components ---
+// Adjust these paths if your components are in a different directory
+import ReportDownloadModal from '@/components/ReportDownloadModal';
+import { downloadReport } from '@/lib/reportService';
+
 
 // --- INTERFACES ---
 
@@ -29,7 +45,7 @@ interface EBReading {
 }
 
 
-// --- REUSABLE COMPONENTS ---
+// --- REUSABLE SUB-COMPONENTS ---
 
 const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; }) => {
     useEffect(() => {
@@ -327,15 +343,11 @@ const ReadingDetail = ({ icon: Icon, title, value, imageUrl, onImageZoom, isEdit
 const EBReadingCard = ({ reading, onUpdate, onImageZoom }: { reading: EBReading; onUpdate: (id: string, startUnits: number | undefined, endUnits: number | undefined) => void; onImageZoom: (url: string) => void; }) => {
     const { data: session } = useSession();
     const [isEditing, setIsEditing] = useState(false);
-    // State specifically for the values in the input fields during edit mode
     const [editStartUnits, setEditStartUnits] = useState<number | undefined>();
     const [editEndUnits, setEditEndUnits] = useState<number | undefined>();
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   
-    // Function to prepare and enter edit mode
     const handleEnterEditMode = () => {
-        // When starting to edit, initialize the form values.
-        // If the original value is 0, treat it as 'not set' (undefined) for the form.
         setEditStartUnits(reading.startUnits || undefined);
         setEditEndUnits(reading.endUnits || undefined);
         setIsEditing(true);
@@ -441,6 +453,8 @@ export default function EBViewPage() {
     const [isSavingCost, setIsSavingCost] = useState(false);
     const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
     const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     const canViewCalculateEB = useMemo(() => 
         session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE),
@@ -459,6 +473,22 @@ export default function EBViewPage() {
     const handleSetGlobalCost = async (newCost: number) => { setIsSavingCost(true); try { await Promise.all(readings.map(reading => updateReadingAPI(reading._id, reading.startUnits, reading.endUnits, newCost))); await fetchEBReadings(); } catch (error) { console.error('Failed to apply global cost', error); alert(`An error occurred: ${(error as Error).message}`); } finally { setIsSavingCost(false); setIsCostModalOpen(false); } };
     const handleUnitUpdate = async (id: string, startUnits: number | undefined, endUnits: number | undefined) => { const readingToUpdate = readings.find(r => r._id === id); if (!readingToUpdate) return; try { await updateReadingAPI(id, startUnits, endUnits, readingToUpdate.costPerUnit || globalCost); await fetchEBReadings(); } catch (error) { alert((error as Error).message); } };
 
+    // --- CORRECTED Handler for EB Report Download ---
+    const handleDownloadEbReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }) => {
+        setIsDownloading(true);
+        try {
+             console.log("2. EB PAGE received these params:", params);
+            // This now calls the correct API endpoint for the EB report
+            await downloadReport('/api/eb/report', params);
+            
+            setIsReportModalOpen(false);
+        } catch (error: any) {
+            alert(`Download failed: ${error.message}`);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
     if (isLoading) {
         return <div className="p-4 sm:p-6 lg:p-8 bg-slate-100"><div className="animate-pulse"><div className="h-10 bg-slate-200 rounded w-80 mb-8"></div><div className="space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-80 bg-slate-200 rounded-2xl"></div>)}</div></div></div>;
     }
@@ -473,8 +503,15 @@ export default function EBViewPage() {
             <ReadingsSummaryModal isOpen={isSummaryModalOpen} onClose={() => setIsSummaryModalOpen(false)} readings={readings} />
             {zoomedImageUrl && <ImageZoomModal src={zoomedImageUrl} onClose={() => setZoomedImageUrl(null)} />}
 
+            <ReportDownloadModal
+                isOpen={isReportModalOpen}
+                onClose={() => setIsReportModalOpen(false)}
+                onDownload={handleDownloadEbReport}
+                isDownloading={isDownloading}
+            />
+
             <main className=" bg-slate-100">
-                <div className="max-w-7xl mx-auto space-y-8">
+                <div className="max-w-7xl mx-auto space-y-8 p-4 sm:p-6 lg:p-8">
                     <div className="flex flex-wrap justify-between items-center gap-4">
                         <div>
                             <h1 className="text-3xl font-bold tracking-tight text-slate-900">EB Readings</h1>
@@ -494,6 +531,15 @@ export default function EBViewPage() {
                                     <CurrencyRupeeIcon className="h-5 w-5 mr-2" />
                                     Set Cost Per Unit
                                 </button>
+                                
+                                <button
+                                    onClick={() => setIsReportModalOpen(true)}
+                                    className="text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium flex items-center px-4 py-2 rounded-lg shadow-sm transition-colors"
+                                >
+                                    <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
+                                    Download Report
+                                </button>
+                                
                                 <button onClick={() => setIsSummaryModalOpen(true)} className="text-sm bg-indigo-600 text-white hover:bg-indigo-700 font-medium flex items-center px-4 py-2 rounded-lg shadow-sm transition-colors">
                                     <DocumentTextIcon className="h-5 w-5 mr-2" />
                                     View Summary
