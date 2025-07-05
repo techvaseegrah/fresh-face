@@ -183,7 +183,7 @@ export default function ServiceManager() {
     }
   }
 
-  return (
+  return (  
     <div className="bg-white rounded-xl shadow-lg overflow-hidden h-full flex flex-col">
       <ServiceFormModal
         isOpen={isModalOpen}
