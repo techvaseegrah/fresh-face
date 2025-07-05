@@ -307,7 +307,7 @@ export default function InventoryCheckerPage() {
   // A reusable function to render a product list for a given category
   const renderProductList = (title: string, icon: React.ReactNode, productList: Product[]) => (
     <div className="space-y-4">
-      <h2 className="text-2xl font-semibold text-gray-800 flex items-center">{icon}{title}</h2>
+      <h2 className="text-2xl font-semibold text-gray-800 flex items-center mt-8">{icon}{title}</h2>
       <div className="bg-white rounded-xl shadow-lg overflow-hidden">
         <ul className="divide-y divide-gray-200">
           {productList.length === 0 && !isProductsLoading && ( <li className="p-6 text-center text-gray-500">{searchQuery ? `No products with SKU matching "${searchQuery}" found.` : 'No products found in this category.'}</li> )}
@@ -363,7 +363,7 @@ export default function InventoryCheckerPage() {
 
   return (
     <>
-      <div className="p-4 md:p-6 lg:p-8 space-y-8">
+      <div >
         <Toaster position="top-right" reverseOrder={false} />
         {/* Page Header and Search Bar */}
         <div className="flex flex-wrap items-center justify-between gap-4">
