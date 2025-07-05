@@ -51,6 +51,8 @@ export default function ServiceManager() {
   const [entityToEdit, setEntityToEdit] = useState<any | null>(null)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false); // <-- ADD NEW STATE
 
+
+
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_CREATE)
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_UPDATE)
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_DELETE)
@@ -122,17 +124,13 @@ export default function ServiceManager() {
     }
     return paths[entityType] || ""
   }
-
-   const handleImportSuccess = (report: any) => {
+  const handleImportSuccess = (report: any) => {
     const successMessage = `Import complete: ${report.successfulImports} imported, ${report.failedImports} failed.`;
     toast.success(successMessage, { autoClose: 10000 });
-
     if (report.failedImports > 0) {
       console.error("Service Import Errors:", report.errors);
-      toast.error("Some services failed to import. Check the developer console for a detailed report.", { autoClose: false });
+      toast.error("Some services failed to import. Check the console for a detailed report.", { autoClose: false });
     }
-    
-    // Refresh the view
     fetchMainCategories(audienceFilter);
   };
 
@@ -200,10 +198,12 @@ export default function ServiceManager() {
         }}
       />
 
-       <ServiceImportModal
+ {/* **THE FIX: Pass the current audience to the import modal** */}
+      <ServiceImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onImportSuccess={handleImportSuccess}
+        audience={audienceFilter} 
       />
 
       {/* Header */}
@@ -233,12 +233,14 @@ export default function ServiceManager() {
               </button>
             ))}
           </div>
-           <button
-                onClick={() => setIsImportModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors duration-150 shadow-sm"
-              >
-                Import Services
-              </button>
+          {canCreate && (
+                <button
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm"
+                >
+                    Import Services
+                </button>
+             )}
         </div>
       </div>
 
