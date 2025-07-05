@@ -23,6 +23,9 @@ declare global {
   var mongoose: MongooseGlobal;
 }
 
+console.log("MONGO_URI:", MONGO_URI);
+
+
 // 3) Initialize `global.mongoose` if it doesn’t already exist (e.g. on first hot reload)
 if (!global.mongoose) {
   global.mongoose = { conn: null, promise: null };
