@@ -1,3 +1,5 @@
+// src/app/(main)/appointment/billingmodal.tsx
+
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -5,8 +7,7 @@ import { UserPlusIcon, ClockIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { QrCodeIcon } from 'lucide-react';
 
-// --- TYPE DEFINITIONS & CUSTOMER HISTORY MODAL (Unchanged) ---
-// ... (The code for types and the CustomerHistoryModal remains exactly the same)
+// --- TYPE DEFINITIONS ---
 export interface BillLineItem {
   itemType: 'service' | 'product';
   itemId: string;
@@ -17,14 +18,19 @@ export interface BillLineItem {
   finalPrice: number;
 }
 
+// MODIFICATION 1: Update SearchableItem to receive the new data from the API
 interface SearchableItem {
   id: string;
-  name:string;
+  name: string;
   price: number;
   membershipRate?: number;
   type: 'service' | 'product';
+  categoryName?: string; // To hold the product's brand/category name
+  unit?: string;         // To hold the product's unit (e.g., ml, pcs)
+  sku?: string;
 }
 
+// ... (Rest of the interfaces and the CustomerHistoryModal component remain the same)
 interface AppointmentForModal {
   _id: string;
   id: string;
@@ -217,7 +223,7 @@ const CustomerHistoryModal: React.FC<{
 
 
 
-// --- MAIN BILLING MODAL (Updated) ---
+// --- MAIN BILLING MODAL ---
 
 const BillingModal: React.FC<BillingModalProps> = ({
   isOpen,
@@ -250,7 +256,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean>(true);
   const [isCheckingBarcode, setIsCheckingBarcode] = useState<boolean>(false);
   
-  // ... (All fetch and handler functions remain the same)
+  // ... (All helper functions like fetchStaffMembers, fetchInventoryImpact, useEffects, etc. remain unchanged)
   const fetchStaffMembers = useCallback(async () => {
     setIsLoadingStaff(true);
     try {
@@ -383,6 +389,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
     return () => clearTimeout(handler);
   }, [membershipBarcode]);
 
+  // MODIFICATION 2: Update this function to correctly format the product name with its category.
   const handleAddItemToBill = (item: SearchableItem) => {
     if (billItems.some(bi => bi.itemId === item.id)) {
       toast.info(`${item.name} is already in the bill.`);
@@ -390,10 +397,24 @@ const BillingModal: React.FC<BillingModalProps> = ({
     }
     const finalPrice = (customerIsMember && item.type === 'service' && typeof item.membershipRate === 'number')
       ? item.membershipRate : item.price;
+
+    let displayName = item.name;
+    // Format the name only for products
+    if (item.type === 'product') {
+      // Prepend the category name (which is the brand name) if it exists
+      if (item.categoryName) {
+        displayName = `${item.categoryName} - ${displayName}`;
+      }
+      // Append the unit for clarity
+      if (item.unit) {
+        displayName = `${displayName} (${item.unit})`;
+      }
+    }
+    
     const newItem: BillLineItem = {
       itemType: item.type,
       itemId: item.id,
-      name: item.name,
+      name: displayName, // Use the newly formatted display name
       unitPrice: item.price,
       membershipRate: item.membershipRate,
       quantity: 1,
@@ -407,6 +428,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
     searchInputRef.current?.focus();
   };
 
+  // ... (Rest of the functions handleRemoveItem, handleQuantityChange, handleGrantMembership, handlePaymentChange, etc. are unchanged)
   const handleRemoveItem = (indexToRemove: number) => {
     const updatedBillItems = billItems.filter((_, idx) => idx !== indexToRemove);
     setBillItems(updatedBillItems);
@@ -524,9 +546,9 @@ const BillingModal: React.FC<BillingModalProps> = ({
     <>
       <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
         <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
-          {/* --- MODIFIED HEADER --- */}
+          {/* Header */}
           <div className="flex justify-between items-center mb-4 pb-3 border-b">
-            {/* Left side content */}
+            {/* ... header JSX is unchanged ... */}
             <div>
               <div className="flex items-center gap-4">
                 <h2 className="text-xl font-semibold">Bill for: <span className="text-indigo-600">{customer.name}</span></h2>
@@ -538,7 +560,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
               </p>
             </div>
             
-            {/* Right side actions */}
             <div className="flex items-center space-x-4">
               {showMembershipGrantOption && !customerIsMember && (
                 <button
@@ -557,10 +578,10 @@ const BillingModal: React.FC<BillingModalProps> = ({
               <button onClick={onClose} className="text-gray-500 text-2xl hover:text-gray-700">×</button>
             </div>
           </div>
-
+          
+          {/* ... error and membership grant JSX are unchanged ... */}
           {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
 
-          {/* --- TOGGLEABLE MEMBERSHIP FORM --- */}
           {isGrantingMembership && (
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg transition-all">
               <div className="flex items-end gap-4">
@@ -586,7 +607,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
 
           {/* Body */}
           <div className="flex-grow overflow-y-auto pr-2 space-y-4">
-            {/* ... (Rest of the modal body is unchanged) ... */}
+            {/* ... Bill items table is unchanged, as item.name is now pre-formatted ... */}
             <div>
               <h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>
               {billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div>
@@ -613,6 +634,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
                 </div>}
             </div>
             
+            {/* ... inventory impact is unchanged ... */}
             {isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
             {inventoryImpact?.inventoryImpact?.length > 0 && (
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -630,17 +652,21 @@ const BillingModal: React.FC<BillingModalProps> = ({
               </div>
             )}
 
+            {/* ... search input section ... */}
             <div className="border-t pt-4">
               <label htmlFor="itemSearch" className="block text-sm font-medium text-gray-700 mb-1">Add Additional Items</label>
               <div className="relative"><input ref={searchInputRef} id="itemSearch" type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search services or products..." className="w-full px-3 py-2 border rounded-md" autoComplete="off" />
                 {(isSearching || searchResults.length > 0) && (
                   <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-48 overflow-y-auto shadow-lg">
                     {isSearching && <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>}
-                    {!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span>{item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}
+                    {/* MODIFICATION 3: Update the search results display to include the category name for products. */}
+                    {!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span className="font-medium">{item.type === 'product' && item.categoryName ? `${item.categoryName} - ${item.name}` : item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}
                     {!isSearching && searchResults.length === 0 && searchQuery.length >= 2 && <li className="px-3 py-2 text-sm text-gray-500">No items found.</li>}
                   </ul>)}
               </div>
             </div>
+
+            {/* ... rest of the modal body (staff, payment, notes) is unchanged ... */}
             <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingStaff}><option value="">{isLoadingStaff ? 'Loading staff...' : 'Select billing staff'}</option>{availableStaff.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
             <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Payment Details</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={paymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total Paid:</span><span className="font-semibold">₹{totals.totalPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>Bill Total:</span><span className="font-semibold">₹{totals.grandTotal.toFixed(2)}</span></div><div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div></div></div></div>
             <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>
@@ -649,6 +675,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
 
           {/* Footer */}
           <div className="mt-auto pt-4 border-t">
+            {/* ... footer JSX is unchanged ... */}
             <div className="grid grid-cols-2 gap-8 items-end">
               <div className="space-y-2 text-sm">{totals.membershipSavings > 0 ? (<><div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>₹{totals.originalTotal.toFixed(2)}</span></div><div className="flex justify-between text-green-600 font-semibold"><span>Membership Savings:</span><span>-₹{totals.membershipSavings.toFixed(2)}</span></div></>) : (<div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>₹{totals.originalTotal.toFixed(2)}</span></div>)}</div>
               <div className="text-right"><div className="text-gray-600">Grand Total</div><div className="text-3xl font-bold text-gray-900">₹{totals.grandTotal.toFixed(2)}</div></div>

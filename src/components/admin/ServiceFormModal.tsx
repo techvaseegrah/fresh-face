@@ -8,7 +8,7 @@ import { XMarkIcon, TrashIcon, MagnifyingGlassIcon } from "@heroicons/react/24/o
 import type { IServiceCategory } from "@/models/ServiceCategory"
 
 type EntityType = "service-category" | "service-sub-category" | "service-item"
-type AudienceType = "male" | "female" | "Unisex"
+type AudienceType = "male" | "female" 
 
 interface Props {
   isOpen: boolean;
@@ -103,13 +103,9 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
         } else if (context.audience === 'female') {
             currentConsumable.quantity.female = qtyValue;
         }
-        // Ensure default is always set for non-unisex audiences
-        if (context.audience !== 'Unisex') {
-            currentConsumable.quantity.default = qtyValue || 0;
-        }
-    } else if (field.startsWith("quantity.")) {
-        const quantityField = field.split(".")[1] as "male" | "female" | "default";
-        currentConsumable.quantity = { ...currentConsumable.quantity, [quantityField]: value === "" ? undefined : Number(value) };
+      
+        currentConsumable.quantity.default = qtyValue || 0;
+    
     } else {
         (currentConsumable as any)[field] = value;
     }
@@ -172,18 +168,29 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
                 <button type="button" onClick={() => setConsumables(consumables.filter((_, i) => i !== index))} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Remove consumable"><TrashIcon className="h-5 w-5" /></button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {context.audience === 'Unisex' ? (
-                  <>
-                    <div><label className="block text-xs font-medium text-slate-700 mb-2">Default Qty <span className="text-red-500">*</span></label><input type="number" value={con.quantity.default || ""} onChange={(e) => handleConsumableChange(index, "quantity.default", Number.parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" min="0" step="0.1" required /></div>
-                    <div><label className="block text-xs font-medium text-slate-700 mb-2">Male Qty</label><input type="number" value={con.quantity.male || ""} onChange={(e) => handleConsumableChange(index, "quantity.male", e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" min="0" step="0.1" placeholder="Optional"/></div>
-                    <div><label className="block text-xs font-medium text-slate-700 mb-2">Female Qty</label><input type="number" value={con.quantity.female || ""} onChange={(e) => handleConsumableChange(index, "quantity.female", e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" min="0" step="0.1" placeholder="Optional"/></div>
-                  </>
-                ) : (
-                  <div className="md:col-span-2"><label className="block text-xs font-medium text-slate-700 mb-2">Quantity ({context.audience}) <span className="text-red-500">*</span></label><input type="number" value={context.audience === 'male' ? con.quantity.male ?? con.quantity.default : con.quantity.female ?? con.quantity.default} onChange={(e) => handleConsumableChange(index, "quantity", e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" min="0" step="0.1" required /></div>
-                )}
-                <div><label className="block text-xs font-medium text-slate-700 mb-2">Unit</label><input type="text" value={con.unit} onChange={(e) => handleConsumableChange(index, "unit", e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="ml, pcs, etc."/></div>
+                <label className="block text-xs font-medium text-slate-700 mb-2">Quantity ({context.audience}) <span className="text-red-500">*</span></label>
+                  <input 
+                    type="number" 
+                    value={context.audience === 'male' ? con.quantity.male ?? con.quantity.default : con.quantity.female ?? con.quantity.default} 
+                    onChange={(e) => handleConsumableChange(index, "quantity", e.target.value)} 
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" 
+                    min="0" 
+                    step="0.1" 
+                    required 
+                    />
+                  </div>
+      
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-2">Unit</label>
+                  <input 
+                    type="text" 
+                    value={con.unit} 
+                    onChange={(e) => handleConsumableChange(index, "unit", e.target.value)} 
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" 
+                    placeholder="ml, pcs, etc."
+                  />
+                </div>
               </div>
-            </div>
           ))}
           {consumables.length === 0 && <div className="text-center py-8 text-slate-500"><p className="text-sm">No consumables added yet.</p></div>}
         </div>
