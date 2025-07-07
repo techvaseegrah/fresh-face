@@ -142,6 +142,7 @@ export async function GET(req: Request) {
 // ===================================================================================
 //  POST: Handler for creating a customer
 // ===================================================================================
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE)) {
@@ -170,7 +171,13 @@ export async function POST(req: Request) {
         }, { status: 409 });
     }
 
-    const newCustomer = await Customer.create({...body, phoneHash});
+    const newCustomer = await Customer.create({
+        ...body,
+        phoneHash,
+        email: body.email || undefined,
+        dob: body.dob || undefined,
+        survey: body.survey || undefined,
+    });
 
     return NextResponse.json({ success: true, customer: newCustomer }, { status: 201 });
   } catch (error: any) {

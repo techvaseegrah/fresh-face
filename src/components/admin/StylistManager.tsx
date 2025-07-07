@@ -1,6 +1,5 @@
 "use client"
 
-import type { IStylist } from "@/models/Stylist"
 import {
   PlusIcon,
   PencilIcon,
@@ -9,14 +8,21 @@ import {
   UserGroupIcon,
   PhoneIcon,
   AcademicCapIcon,
+  ArrowDownTrayIcon, // <-- Added new icon
 } from "@heroicons/react/24/outline"
 import { useEffect, useState } from "react"
-import StylistFormModal from "./StylistFormModal"
-import StylistHistoryModal from "../StylistHistoryModal"
 import { useSession } from "next-auth/react"
 import { hasPermission, PERMISSIONS } from "@/lib/permissions"
 
-// Define the history item interface here or import it
+// Import Modals and Services
+import StylistFormModal from "./StylistFormModal"
+import StylistHistoryModal from "../StylistHistoryModal"
+import ReportDownloadModal from "./../ReportDownloadModal" // <-- Import new modal
+import { downloadReport } from "@/lib/reportService" // <-- Import new service
+
+// Import the IStylist interface from your models
+import type { IStylist } from "@/models/Stylist"
+
 interface IStylistHistoryItem {
   _id: string
   date: string
@@ -53,16 +59,20 @@ const LoadingSkeleton = () => (
 export default function StylistManager() {
   const { data: session } = useSession()
 
+  // Existing States
   const [stylists, setStylists] = useState<IStylist[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [editingStylist, setEditingStylist] = useState<IStylist | null>(null)
-
-  // States for history modal
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
   const [selectedStylist, setSelectedStylist] = useState<IStylist | null>(null)
   const [historyData, setHistoryData] = useState<IStylistHistoryItem[]>([])
   const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+
+  // --- NEW STATES FOR REPORT DOWNLOAD ---
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  // --- END NEW STATES ---
 
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.STYLISTS_CREATE)
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.STYLISTS_UPDATE)
@@ -87,6 +97,21 @@ export default function StylistManager() {
     fetchStylists()
   }, [])
 
+  // --- NEW HANDLER FOR REPORT DOWNLOAD ---
+  const handleDownloadReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }) => {
+    setIsDownloading(true)
+    try {
+      await downloadReport('api/stylists/report',params)
+      setIsReportModalOpen(false) // Close modal on successful download trigger
+    } catch (error: any) {
+      alert(`Download failed: ${error.message}`) // Provide feedback to the user
+    } finally {
+      setIsDownloading(false) // Reset loading state
+    }
+  }
+  // --- END NEW HANDLER ---
+
+  // --- Existing handlers remain unchanged ---
   const handleOpenFormModal = (stylist: IStylist | null = null) => {
     setEditingStylist(stylist)
     setIsFormModalOpen(true)
@@ -102,15 +127,10 @@ export default function StylistManager() {
     setIsHistoryModalOpen(true)
     setIsHistoryLoading(true)
     try {
-      // Use the new endpoint with a query parameter
       const res = await fetch(`/api/stylist-history?stylistId=${stylist._id}`)
       const data = await res.json()
-      if (data.success) {
-        setHistoryData(data.data)
-      } else {
-        console.error("Failed to fetch stylist history:", data.message)
-        setHistoryData([]) // Clear previous data on error
-      }
+      if (data.success) setHistoryData(data.data)
+      else setHistoryData([])
     } catch (error) {
       console.error("Error fetching stylist history:", error)
       setHistoryData([])
@@ -129,11 +149,8 @@ export default function StylistManager() {
     if (confirm("Are you sure you want to delete this stylist?")) {
       try {
         const res = await fetch(`/api/stylists?id=${id}`, { method: "DELETE" })
-        if (res.ok) {
-          fetchStylists()
-        } else {
-          console.error("Failed to delete stylist")
-        }
+        if (res.ok) fetchStylists()
+        else console.error("Failed to delete stylist")
       } catch (error) {
         console.error("Error deleting stylist", error)
       }
@@ -151,7 +168,6 @@ export default function StylistManager() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(stylistData),
       })
-
       if (res.ok) {
         handleCloseFormModal()
         fetchStylists()
@@ -167,6 +183,7 @@ export default function StylistManager() {
 
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden h-full flex flex-col">
+      {/* All modals rendered at the top level */}
       <StylistFormModal
         isOpen={isFormModalOpen}
         onClose={handleCloseFormModal}
@@ -182,6 +199,15 @@ export default function StylistManager() {
         isLoading={isHistoryLoading}
       />
 
+      {/* --- RENDER THE NEW REPORT MODAL --- */}
+      <ReportDownloadModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        onDownload={handleDownloadReport}
+        isDownloading={isDownloading}
+      />
+      {/* --- END NEW MODAL RENDER --- */}
+
       {/* Header */}
       <div className="p-6 border-b border-slate-200 bg-slate-50/50">
         <div className="flex items-center justify-between">
@@ -192,19 +218,31 @@ export default function StylistManager() {
               <p className="text-sm text-slate-500">Manage your team of professional stylists</p>
             </div>
           </div>
-          {canCreate && (
+          <div className="flex items-center gap-3">
+            {/* --- NEW DOWNLOAD BUTTON --- */}
             <button
-              onClick={() => handleOpenFormModal()}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors duration-150 shadow-sm"
+              onClick={() => setIsReportModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition-colors duration-150 shadow-sm border border-slate-300"
             >
-              <PlusIcon className="h-4 w-4" />
-              Add New Stylist
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              Download Reports
             </button>
-          )}
+            {/* --- END NEW BUTTON --- */}
+
+            {canCreate && (
+              <button
+                onClick={() => handleOpenFormModal()}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors duration-150 shadow-sm"
+              >
+                <PlusIcon className="h-4 w-4" />
+                Add New Stylist
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Content */}
+      {/* Content Body (no changes here) */}
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <LoadingSkeleton />
@@ -232,10 +270,9 @@ export default function StylistManager() {
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {stylists.map((stylist, index) => (
               <div
-                key={stylist._id}
+                key={String(stylist._id)}
                 className="group bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200 overflow-hidden"
               >
-                {/* Card Header */}
                 <div className="p-6 border-b border-slate-100">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
@@ -254,7 +291,6 @@ export default function StylistManager() {
                   </div>
                 </div>
 
-                {/* Card Content */}
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex items-center gap-2">
@@ -272,7 +308,6 @@ export default function StylistManager() {
                       </div>
                     </div>
                   </div>
-
                   <div className="flex items-start gap-2">
                     <AcademicCapIcon className="h-4 w-4 text-slate-400 mt-0.5" />
                     <div className="flex-1">
@@ -282,7 +317,6 @@ export default function StylistManager() {
                   </div>
                 </div>
 
-                {/* Card Actions */}
                 {(canUpdate || canDelete) && (
                   <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-100">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -306,7 +340,7 @@ export default function StylistManager() {
                       )}
                       {canDelete && (
                         <button
-                          onClick={() => handleDelete(stylist._id)}
+                          onClick={() => handleDelete(String(stylist._id))}
                           className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors duration-150"
                           title="Delete Stylist"
                         >

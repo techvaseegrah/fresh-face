@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
       query.subCategory = new mongoose.Types.ObjectId(subCategoryId);
     }
 
-    console.log(gender,'gender');
     
 
     // 3. Execute the find with the built query and populate necessary fields
@@ -49,7 +48,7 @@ export async function GET(req: NextRequest) {
         return targetAudience === 'Unisex' || targetAudience?.toLowerCase() === gender;
       });
     }
-console.log(serviceItems, 'serviceItems');
+
 
     // Format the results for the frontend
     const formattedServices = serviceItems.map(item => {
@@ -82,6 +81,7 @@ export async function POST(req: NextRequest) {
   await dbConnect();
   try {
     const body = await req.json();
+    
     const serviceItem = await ServiceItem.create(body);
     return NextResponse.json({ success: true, data: serviceItem }, { status: 201 });
   } catch (error: any) {

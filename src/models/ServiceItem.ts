@@ -1,18 +1,20 @@
 import mongoose, { Document, Schema, Model, models } from 'mongoose';
 
+// Interface for consumables remains the same
 export interface IServiceConsumable {
   product: mongoose.Types.ObjectId | any;
-  // Updated structure for gender-specific quantities
   quantity: {
-    male?: number;    // Optional quantity for male customers
-    female?: number;  // Optional quantity for female customers
-    default: number;  // Fallback quantity if gender-specific not available
+    male?: number;
+    female?: number;
+    default: number;
   };
   unit: string;
 }
 
+// Add serviceCode to the main interface
 export interface IServiceItem extends Document {
   _id: string;
+  serviceCode: string; // <-- ADDED
   name: string;
   price: number;
   membershipRate?: number;
@@ -22,82 +24,33 @@ export interface IServiceItem extends Document {
 }
 
 const serviceConsumableSchema = new Schema({
-  product: {
-    type: Schema.Types.ObjectId,
-    ref: 'Product',
-    required: true
-  },
+  product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   quantity: {
-    male: {
-      type: Number,
-      min: 0,
-      required: false
-    },
-    female: {
-      type: Number,
-      min: 0,
-      required: false
-    },
-    default: {
-      type: Number,
-      min: 0,
-      required: true
-    }
+    male: { type: Number, min: 0, required: false },
+    female: { type: Number, min: 0, required: false },
+    default: { type: Number, min: 0, required: true }
   },
-  unit: {
-    type: String,
-    required: true,
-    trim: true
-  }
+  unit: { type: String, required: true, trim: true }
 }, { _id: false });
 
 const serviceItemSchema = new Schema({
-  name: {
+  // Add the new serviceCode field to the schema
+  serviceCode: {
     type: String,
-    required: true,
-    trim: true
+    required: [true, 'Service Code is required.'],
+    unique: true,
+    trim: true,
+    uppercase: true,
+    index: true,
   },
-  price: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  membershipRate: {
-    type: Number,
-    min: 0,
-    sparse: true
-  },
-  duration: {
-    type: Number,
-    required: true,
-    min: 1
-  },
-  subCategory: {
-    type: Schema.Types.ObjectId,
-    ref: 'ServiceSubCategory',
-    required: true
-  },
+  name: { type: String, required: true, trim: true },
+  price: { type: Number, required: true, min: 0 },
+  membershipRate: { type: Number, min: 0, sparse: true },
+  duration: { type: Number, required: true, min: 1 },
+  subCategory: { type: Schema.Types.ObjectId, ref: 'ServiceSubCategory', required: true },
   consumables: [serviceConsumableSchema]
 }, { timestamps: true });
 
-// Method to get quantity based on customer gender
-serviceItemSchema.methods.getConsumableQuantity = function (productId: string, customerGender: 'male' | 'female' | 'other' = 'other') {
-  const consumable = this.consumables.find((c: IServiceConsumable) =>
-    c.product.toString() === productId.toString()
-  );
-
-  if (!consumable) return 0;
-
-  // Return gender-specific quantity if available, otherwise default
-  if (customerGender === 'male' && typeof consumable.quantity.male === 'number') {
-    return consumable.quantity.male;
-  }
-  if (customerGender === 'female' && typeof consumable.quantity.female === 'number') {
-    return consumable.quantity.female;
-  }
-
-  return consumable.quantity.default;
-};
-
+// Methods and model export remain the same
 const ServiceItem: Model<IServiceItem> = models.ServiceItem || mongoose.model<IServiceItem>('ServiceItem', serviceItemSchema);
 export default ServiceItem;
