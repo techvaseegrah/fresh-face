@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
-import Invoice from '@/models/invoice';
+import Invoice from '@/models/invoice'; // Ensure this imports your UPDATED schema
 import Stylist from '@/models/Stylist';
 import Customer from '@/models/customermodel';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
@@ -11,14 +11,19 @@ import Setting from '@/models/Setting';
 import { InventoryManager, InventoryUpdate } from '@/lib/inventoryManager';
 import { sendLowStockAlertEmail } from '@/lib/mail';
 import mongoose from 'mongoose';
-import { IProduct } from '@/models/Product'; // This import is already correct
+import { IProduct } from '@/models/Product';
+
+// In a shared types file or here, define your special ID
+const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
 
     const body = await req.json();
-       console.log("--- RECEIVED BILLING BODY ---", JSON.stringify(body, null, 2)); 
+    console.log("--- RECEIVED BILLING BODY ---", JSON.stringify(body, null, 2)); 
+
+    // --- MODIFIED: Destructure the new discount fields ---
     const {
       appointmentId,
       customerId,
@@ -34,9 +39,13 @@ export async function POST(req: Request) {
       notes,
       customerWasMember,
       membershipGrantedDuringBilling,
+      // --- ADDED: New fields from the payload ---
+      manualDiscountType,
+      manualDiscountValue,
+      finalManualDiscountApplied,
     } = body;
 
-    // --- VALIDATION ---
+    // --- VALIDATION (no changes needed here) ---
     if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
         return NextResponse.json({ success: false, message: 'Invalid or missing Appointment ID.' }, { status: 400 });
     }
@@ -48,7 +57,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: `Payment amount mismatch. Total: ₹${grandTotal}, Paid: ₹${totalPaid}` }, { status: 400 });
     }
 
-    // --- DATA FETCHING ---
+    // --- DATA FETCHING (no changes needed here) ---
     const appointment = await Appointment.findById(appointmentId).populate('serviceIds customerId');
     if (!appointment) {
       return NextResponse.json({ success: false, message: 'Appointment not found' }, { status: 404 });
@@ -56,8 +65,6 @@ export async function POST(req: Request) {
     const customer = await Customer.findById(customerId);
     const customerGender = customer?.gender || 'other';
     
-    // +++ THIS IS THE FIX +++
-    // We explicitly type the array to be an array of IProduct objects.
     let lowStockProducts: IProduct[] = [];
 
     // --- INVENTORY LOGIC ---
@@ -71,42 +78,66 @@ export async function POST(req: Request) {
         );
           allInventoryUpdates.push(...serviceProductUpdates);
       }
-        const retailProductUpdates: InventoryUpdate[] =items
-          .filter((item:any) =>item.itemType ==='product' && item.quantity>0)
-          .map((item: any)=> ({
+      
+      // --- MODIFIED: Filter out the membership fee before processing inventory ---
+      const retailProductUpdates: InventoryUpdate[] = items
+          .filter((item: any) => 
+              item.itemType === 'product' && 
+              item.quantity > 0 &&
+              item.itemId !== MEMBERSHIP_FEE_ITEM_ID // Crucial filter
+          )
+          .map((item: any) => ({
             productId: item.itemId,
             productName: item.name,
             quantityToDeduct: item.quantity,
             unit:'piece',
           }));
+      // --- END MODIFICATION ---
 
-          allInventoryUpdates.push(...retailProductUpdates);
+      allInventoryUpdates.push(...retailProductUpdates);
 
-        if (allInventoryUpdates.length > 0) {
-          console.log('Applying inventory updates for:', allInventoryUpdates);
-          const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates);
+      if (allInventoryUpdates.length > 0) {
+        console.log('Applying inventory updates for:', allInventoryUpdates);
+        const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates);
 
-          if (inventoryUpdateResult.success) {
-            lowStockProducts = inventoryUpdateResult.lowStockProducts;
-          } else {
-            console.error('One or more inventory updates failed:', inventoryUpdateResult.errors);
-          }
+        if (inventoryUpdateResult.success) {
+          lowStockProducts = inventoryUpdateResult.lowStockProducts;
+        } else {
+          console.error('One or more inventory updates failed:', inventoryUpdateResult.errors);
         }
-      }catch (inventoryError) {
+      }
+    } catch (inventoryError) {
       console.error('Inventory update failed, but billing will continue:', inventoryError);
     }
 
-    // --- INVOICE & APPOINTMENT UPDATE ---
+    // --- MODIFIED: INVOICE CREATION with Manual Discount ---
     const invoice = await Invoice.create({
-      appointmentId, customerId, stylistId, billingStaffId, lineItems: items,
-      serviceTotal: serviceTotal || 0, productTotal: productTotal || 0,
-      subtotal: subtotal || grandTotal, membershipDiscount: membershipDiscount || 0,
-      grandTotal, paymentDetails, notes, customerWasMember: customerWasMember || false,
+      appointmentId, 
+      customerId, 
+      stylistId, 
+      billingStaffId, 
+      lineItems: items,
+      serviceTotal: serviceTotal || 0, 
+      productTotal: productTotal || 0,
+      subtotal: subtotal || grandTotal, 
+      membershipDiscount: membershipDiscount || 0,
+      grandTotal, 
+      paymentDetails, 
+      notes, 
+      customerWasMember: customerWasMember || false,
       membershipGrantedDuringBilling: membershipGrantedDuringBilling || false,
       paymentStatus: 'Paid',
+      // --- ADDED: Map payload to the nested manualDiscount object in your schema ---
+      manualDiscount: {
+        type: manualDiscountType || null,
+        value: manualDiscountValue || 0,
+        appliedAmount: finalManualDiscountApplied || 0,
+      }
     });
     console.log('Created invoice:', invoice.invoiceNumber);
+    // --- END MODIFICATION ---
 
+    // The rest of your code remains the same
     await Appointment.findByIdAndUpdate(appointmentId, {
       amount: subtotal || grandTotal,
       membershipDiscount: membershipDiscount || 0,
@@ -118,7 +149,7 @@ export async function POST(req: Request) {
     }, { new: true });
     console.log('Updated appointment to Paid status');
 
-    // --- LOYALTY POINTS LOGIC ---
+    // --- LOYALTY POINTS LOGIC (no changes) ---
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty' });
     if (loyaltySettingDoc && loyaltySettingDoc.value && grandTotal > 0) {
       const { rupeesForPoints, pointsAwarded } = loyaltySettingDoc.value;
@@ -139,7 +170,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // --- FINAL STEPS & NOTIFICATIONS ---
+    // --- FINAL STEPS & NOTIFICATIONS (no changes) ---
     await Stylist.findByIdAndUpdate(stylistId, {
       isAvailable: true,
       currentAppointmentId: null,

@@ -5,10 +5,12 @@ import { UserPlusIcon, ClockIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { QrCodeIcon } from 'lucide-react';
 
-// --- TYPE DEFINITIONS & CUSTOMER HISTORY MODAL (Unchanged) ---
-// ... (The code for types and the CustomerHistoryModal remains exactly the same)
+// This is a static ID for the membership fee item, used for identification. The price is dynamic.
+const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
+
+// --- TYPE DEFINITIONS ---
 export interface BillLineItem {
-  itemType: 'service' | 'product';
+  itemType: 'service' | 'product' | 'fee';
   itemId: string;
   name: string;
   unitPrice: number;
@@ -19,7 +21,7 @@ export interface BillLineItem {
 
 interface SearchableItem {
   id: string;
-  name:string;
+  name: string;
   price: number;
   membershipRate?: number;
   type: 'service' | 'product';
@@ -66,6 +68,9 @@ export interface FinalizeBillingPayload {
   notes: string;
   customerWasMember: boolean;
   membershipGrantedDuringBilling: boolean;
+  manualDiscountType: 'fixed' | 'percentage' | null;
+  manualDiscountValue: number;
+  finalManualDiscountApplied: number;
 }
 
 interface BillingModalProps {
@@ -94,7 +99,6 @@ interface CustomerDetailsWithHistory {
 
 
 // --- CUSTOMER HISTORY MODAL ---
-
 const CustomerHistoryModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -216,9 +220,7 @@ const CustomerHistoryModal: React.FC<{
 };
 
 
-
-// --- MAIN BILLING MODAL (Updated) ---
-
+// --- MAIN BILLING MODAL ---
 const BillingModal: React.FC<BillingModalProps> = ({
   isOpen,
   onClose,
@@ -249,8 +251,36 @@ const BillingModal: React.FC<BillingModalProps> = ({
   const [membershipBarcode, setMembershipBarcode] = useState<string>('');
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean>(true);
   const [isCheckingBarcode, setIsCheckingBarcode] = useState<boolean>(false);
+  const [discount, setDiscount] = useState<number>(0);
+  const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
   
-  // ... (All fetch and handler functions remain the same)
+  // --- STATE FOR DYNAMIC MEMBERSHIP FEE ---
+  const [membershipFee, setMembershipFee] = useState<number | null>(null);
+  const [isLoadingFee, setIsLoadingFee] = useState<boolean>(true);
+
+  // --- FUNCTION TO FETCH FEE FROM SETTINGS API ---
+  const fetchMembershipFee = useCallback(async () => {
+    setIsLoadingFee(true);
+    try {
+      const res = await fetch('/api/settings/membership');
+      if (!res.ok) {
+        throw new Error('Could not fetch membership fee setting.');
+      }
+      const data = await res.json();
+      if (data.success && typeof data.price === 'number') {
+        setMembershipFee(data.price);
+      } else {
+        throw new Error(data.message || 'Failed to get fee price.');
+      }
+    } catch (err: any) {
+      console.error('Membership Fee Fetch Error:', err.message);
+      setError('Error: Membership fee is not configured. Please contact admin.');
+      setMembershipFee(null);
+    } finally {
+      setIsLoadingFee(false);
+    }
+  }, []);
+
   const fetchStaffMembers = useCallback(async () => {
     setIsLoadingStaff(true);
     try {
@@ -294,6 +324,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      // Reset all state on open
       setError(null);
       setNotes('');
       setSearchQuery('');
@@ -303,7 +334,12 @@ const BillingModal: React.FC<BillingModalProps> = ({
       setSelectedStaffId('');
       setPaymentDetails({ cash: 0, card: 0, upi: 0, other: 0 });
       setInventoryImpact(null);
+      setDiscount(0);
+      setDiscountType('fixed');
+      
+      // Fetch dynamic data
       fetchStaffMembers();
+      fetchMembershipFee();
       
       const isMember = customer?.isMembership || false;
       setCustomerIsMember(isMember);
@@ -328,7 +364,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
         fetchInventoryImpact(initialItems);
       }
     }
-  }, [isOpen, appointment, customer, fetchStaffMembers, fetchInventoryImpact]);
+  }, [isOpen, appointment, customer, fetchStaffMembers, fetchInventoryImpact, fetchMembershipFee]);
 
   useEffect(() => {
     setBillItems(prevItems =>
@@ -426,8 +462,16 @@ const BillingModal: React.FC<BillingModalProps> = ({
   };
 
   const handleGrantMembership = async () => {
+    if (isLoadingFee || membershipFee === null) {
+      toast.error("Membership fee is still loading or not configured. Please wait or contact an admin.");
+      return;
+    }
     if (!membershipBarcode.trim() || !isBarcodeValid) {
       setError('Please enter a unique, valid barcode.');
+      return;
+    }
+    if (billItems.some(item => item.itemId === MEMBERSHIP_FEE_ITEM_ID)) {
+      toast.info("Membership fee is already in the bill.");
       return;
     }
     try {
@@ -442,7 +486,18 @@ const BillingModal: React.FC<BillingModalProps> = ({
         setShowMembershipGrantOption(false);
         setMembershipGranted(true);
         setIsGrantingMembership(false);
-        toast.success(`Membership granted to ${customer.name}!`);
+        toast.success(`Membership granted to ${customer.name}! Fee added to bill.`);
+        
+        const membershipFeeItem: BillLineItem = {
+            itemType: 'fee',
+            itemId: MEMBERSHIP_FEE_ITEM_ID,
+            name: 'New Membership Fee',
+            unitPrice: membershipFee,
+            quantity: 1,
+            finalPrice: membershipFee,
+        };
+        setBillItems(prevItems => [...prevItems, membershipFeeItem]);
+
       } else {
         setError(result.message || 'Failed to grant membership');
       }
@@ -456,27 +511,50 @@ const BillingModal: React.FC<BillingModalProps> = ({
   };
 
   const totals = useMemo(() => {
-    let serviceTotal = 0, productTotal = 0, originalTotal = 0, membershipSavings = 0;
+    let serviceTotal = 0, productTotal = 0, membershipSavings = 0, feeTotal = 0;
+    
     billItems.forEach(item => {
-      originalTotal += item.unitPrice * item.quantity;
       if (item.itemType === 'service') {
         serviceTotal += item.finalPrice;
         if (customerIsMember && typeof item.membershipRate === 'number') {
           membershipSavings += (item.unitPrice - item.membershipRate) * item.quantity;
         }
-      } else {
+      } else if (item.itemType === 'product') {
         productTotal += item.finalPrice;
+      } else if (item.itemType === 'fee') {
+        feeTotal += item.finalPrice;
       }
     });
-    const grandTotal = serviceTotal + productTotal;
+
+    const subtotalBeforeDiscount = serviceTotal + productTotal + feeTotal;
+    
+    let calculatedDiscount = 0;
+    if (discountType === 'fixed') {
+        calculatedDiscount = discount;
+    } else {
+        calculatedDiscount = (subtotalBeforeDiscount * discount) / 100;
+    }
+    calculatedDiscount = Math.min(subtotalBeforeDiscount, calculatedDiscount);
+
+    const grandTotal = subtotalBeforeDiscount - calculatedDiscount;
     const totalPaid = Object.values(paymentDetails).reduce((sum, amount) => sum + amount, 0);
     const balance = grandTotal - totalPaid;
-    return { serviceTotal, productTotal, originalTotal, grandTotal, membershipSavings, totalPaid, balance };
-  }, [billItems, customerIsMember, paymentDetails]);
+    
+    return { 
+        serviceTotal, 
+        productTotal, 
+        subtotalBeforeDiscount, 
+        grandTotal, 
+        membershipSavings, 
+        calculatedDiscount, 
+        totalPaid, 
+        balance 
+    };
+  }, [billItems, customerIsMember, paymentDetails, discount, discountType]);
 
   const handleFinalizeClick = async () => {
-    if (billItems.length === 0 || totals.grandTotal <= 0) {
-      setError('Cannot finalize an empty or zero-value bill.');
+    if (billItems.length === 0 || totals.grandTotal < 0) {
+      setError('Cannot finalize an empty or negative value bill.');
       return;
     }
     if (!selectedStaffId) {
@@ -499,13 +577,16 @@ const BillingModal: React.FC<BillingModalProps> = ({
         items: billItems,
         serviceTotal: totals.serviceTotal,
         productTotal: totals.productTotal,
-        subtotal: totals.originalTotal,
+        subtotal: totals.subtotalBeforeDiscount,
         membershipDiscount: totals.membershipSavings,
         grandTotal: totals.grandTotal,
         paymentDetails,
         notes,
         customerWasMember: customer?.isMembership || false,
         membershipGrantedDuringBilling: membershipGranted,
+        manualDiscountType: discount > 0 ? discountType : null,
+        manualDiscountValue: discount,
+        finalManualDiscountApplied: totals.calculatedDiscount,
       };
       
       await onFinalizeAndPay(finalPayload);
@@ -524,9 +605,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
     <>
       <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
         <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
-          {/* --- MODIFIED HEADER --- */}
           <div className="flex justify-between items-center mb-4 pb-3 border-b">
-            {/* Left side content */}
             <div>
               <div className="flex items-center gap-4">
                 <h2 className="text-xl font-semibold">Bill for: <span className="text-indigo-600">{customer.name}</span></h2>
@@ -537,18 +616,12 @@ const BillingModal: React.FC<BillingModalProps> = ({
                 {membershipGranted && <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">Membership Granted</span>}
               </p>
             </div>
-            
-            {/* Right side actions */}
             <div className="flex items-center space-x-4">
               {showMembershipGrantOption && !customerIsMember && (
                 <button
                   onClick={() => setIsGrantingMembership(prev => !prev)}
                   title="Grant Membership"
-                  className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 font-semibold transition-all duration-200 ${
-                    isGrantingMembership 
-                      ? 'border border-yellow-500 text-yellow-700 bg-transparent hover:bg-yellow-50'
-                      : 'border border-yellow-500 text-yellow-700 bg-transparent hover:bg-yellow-50'
-                  }`}
+                  className="px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 font-semibold transition-all duration-200 border border-yellow-500 text-yellow-700 bg-transparent hover:bg-yellow-50"
                 >
                   <UserPlusIcon className="w-4 h-4" />
                   <span>{isGrantingMembership ? 'Cancel' : 'Grant Membership'}</span>
@@ -559,13 +632,12 @@ const BillingModal: React.FC<BillingModalProps> = ({
           </div>
 
           {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
-
-          {/* --- TOGGLEABLE MEMBERSHIP FORM --- */}
+          
           {isGrantingMembership && (
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg transition-all">
               <div className="flex items-end gap-4">
                 <div className="flex-grow">
-                  <label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant & Apply Discounts</label>
+                  <label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant</label>
                   <div className="relative">
                     <input type="text" value={membershipBarcode} 
                       onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} 
@@ -577,16 +649,18 @@ const BillingModal: React.FC<BillingModalProps> = ({
                   {isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}
                   {!isBarcodeValid && membershipBarcode.trim() && <p className="text-xs text-red-600 mt-1">Barcode already in use.</p>}
                 </div>
-                <button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode} className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-2">
-                  Confirm & Grant
+                <button 
+                  onClick={handleGrantMembership} 
+                  disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode || isLoadingFee || membershipFee === null} 
+                  className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-2 min-w-[200px] justify-center"
+                >
+                  {isLoadingFee ? 'Loading Fee...' : `Confirm & Grant (₹${membershipFee})`}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Body */}
           <div className="flex-grow overflow-y-auto pr-2 space-y-4">
-            {/* ... (Rest of the modal body is unchanged) ... */}
             <div>
               <h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>
               {billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div>
@@ -599,13 +673,26 @@ const BillingModal: React.FC<BillingModalProps> = ({
                       {billItems.map((item, idx) => (
                         <tr key={`${item.itemId}-${idx}`} className="border-b hover:bg-gray-50">
                           <td className="px-4 py-3">
-                            <div><span className="font-medium">{item.name}</span><span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${item.itemType === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.itemType}</span></div>
+                            <div>
+                              <span className="font-medium">{item.name}</span>
+                              <span className={`ml-2 text-xs capitalize px-1.5 py-0.5 rounded-full ${
+                                  item.itemType === 'service' ? 'bg-blue-100 text-blue-800' :
+                                  item.itemType === 'product' ? 'bg-green-100 text-green-800' :
+                                  'bg-purple-100 text-purple-800'
+                                }`}>
+                                {item.itemType}
+                              </span>
+                            </div>
                             {customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number' && <div className="text-xs text-green-600 mt-1"><span className="line-through text-gray-400">₹{item.unitPrice.toFixed(2)}</span><span className="ml-2">Member Price</span></div>}
                           </td>
                           <td className="px-4 py-3 text-center"><input type="number" min="1" value={item.quantity} onChange={(e) => handleQuantityChange(idx, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border rounded text-center" /></td>
                           <td className="px-4 py-3 text-right">₹{((customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice).toFixed(2)}</td>
                           <td className="px-4 py-3 text-right font-semibold">₹{item.finalPrice.toFixed(2)}</td>
-                          <td className="px-4 py-3 text-center"><button onClick={() => handleRemoveItem(idx)} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded">Remove</button></td>
+                          <td className="px-4 py-3 text-center">
+                            <button onClick={() => handleRemoveItem(idx)} disabled={item.itemId === MEMBERSHIP_FEE_ITEM_ID} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">
+                              Remove
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -642,20 +729,68 @@ const BillingModal: React.FC<BillingModalProps> = ({
               </div>
             </div>
             <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingStaff}><option value="">{isLoadingStaff ? 'Loading staff...' : 'Select billing staff'}</option>{availableStaff.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
+
+            <div className="pt-4 border-t">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label>
+              <div className="flex">
+                  <div className="relative flex-grow">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                          {discountType === 'fixed' ? '₹' : '%'}
+                      </span>
+                      <input
+                          type="number"
+                          min="0"
+                          value={discount || ''}
+                          onChange={e => setDiscount(parseFloat(e.target.value) || 0)}
+                          className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="0"
+                      />
+                  </div>
+                  <button
+                      onClick={() => setDiscountType('fixed')}
+                      className={`px-4 py-2 text-sm font-semibold border transition-colors ${discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                      Fixed (₹)
+                  </button>
+                  <button
+                      onClick={() => setDiscountType('percentage')}
+                      className={`px-4 py-2 text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                      Percent (%)
+                  </button>
+              </div>
+            </div>
+
             <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Payment Details</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={paymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total Paid:</span><span className="font-semibold">₹{totals.totalPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>Bill Total:</span><span className="font-semibold">₹{totals.grandTotal.toFixed(2)}</span></div><div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div></div></div></div>
             <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>
           </div>
 
 
-          {/* Footer */}
           <div className="mt-auto pt-4 border-t">
             <div className="grid grid-cols-2 gap-8 items-end">
-              <div className="space-y-2 text-sm">{totals.membershipSavings > 0 ? (<><div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>₹{totals.originalTotal.toFixed(2)}</span></div><div className="flex justify-between text-green-600 font-semibold"><span>Membership Savings:</span><span>-₹{totals.membershipSavings.toFixed(2)}</span></div></>) : (<div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>₹{totals.originalTotal.toFixed(2)}</span></div>)}</div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal:</span>
+                  <span>₹{totals.subtotalBeforeDiscount.toFixed(2)}</span>
+                </div>
+                {totals.membershipSavings > 0 && (
+                  <div className="flex justify-between text-green-600 font-semibold">
+                      <span>Membership Savings:</span>
+                      <span>-₹{totals.membershipSavings.toFixed(2)}</span>
+                  </div>
+                )}
+                {totals.calculatedDiscount > 0 && (
+                  <div className="flex justify-between text-orange-600 font-semibold">
+                      <span>Manual Discount:</span>
+                      <span>-₹{totals.calculatedDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
               <div className="text-right"><div className="text-gray-600">Grand Total</div><div className="text-3xl font-bold text-gray-900">₹{totals.grandTotal.toFixed(2)}</div></div>
             </div>
             <div className="mt-6 flex justify-end space-x-3">
               <button onClick={onClose} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300" disabled={isLoading}>Cancel</button>
-              <button onClick={handleFinalizeClick} className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isLoading || billItems.length === 0 || totals.grandTotal <= 0 || !selectedStaffId || Math.abs(totals.balance) > 0.01}>
+              <button onClick={handleFinalizeClick} className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isLoading || billItems.length === 0 || !selectedStaffId || Math.abs(totals.balance) > 0.01}>
                 {isLoading ? <div className="flex items-center justify-center"><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />Processing...</div> : `Complete Payment`}
               </button>
             </div>

@@ -98,7 +98,6 @@ export default function ServiceManager() {
     try {
       const res = await fetch(`/api/service-items?subCategoryId=${subCategoryId}`)
       const data = await res.json()
-      // Note: your API returns { success, services }, so we use data.services
       setServices(data.success ? data.services : [])
     } catch (error) {
       toast.error("Failed to load services.")
@@ -281,7 +280,7 @@ export default function ServiceManager() {
       {/* Content Area */}
       <div className="flex min-h-0 flex-1 flex-row">
         <CategoryColumn
-          className="w-1/3 border-r border-slate-200"
+          className="w-1/3"
           title="Categories"
           items={mainCategories}
           selectedId={selectedMainCategory?._id || null}
@@ -296,7 +295,7 @@ export default function ServiceManager() {
         />
 
         <CategoryColumn
-          className="w-1/3 border-r border-slate-200"
+          className="w-1/3"
           title="Sub-Categories"
           items={subCategories}
           selectedId={selectedSubCategoryId}
@@ -348,7 +347,8 @@ export default function ServiceManager() {
                   key={service._id}
                   className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-md"
                 >
-                  <div className="border-b border-slate-100 p-4">
+                  {/* Header Section */}
+                  <div className="p-4">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
                         <h4 className="mb-1 truncate text-base font-semibold text-slate-900">
@@ -376,8 +376,40 @@ export default function ServiceManager() {
                       </div>
                     </div>
                   </div>
-                  {/* (Your consumables mapping logic is fine, just formatted it) */}
-                  <div className="border-t border-slate-100 bg-white px-4 py-2">
+
+                  {/* Consumables Section */}
+                  {service.consumables && service.consumables.length > 0 && (
+                    <div className="border-y border-slate-100 bg-slate-50/50 px-4 py-3">
+                      <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                        Consumables ({service.consumables.length})
+                      </h5>
+                      <div className="max-h-24 space-y-2 overflow-y-auto pr-2">
+                        {service.consumables.map((con, index) => {
+                          const serviceAudience = service.audience as AudienceType
+                          const quantity =
+                            serviceAudience === "male" && con.quantity.male !== undefined
+                              ? con.quantity.male
+                              : serviceAudience === "female" && con.quantity.female !== undefined
+                                ? con.quantity.female
+                                : con.quantity.default
+                          return (
+                            <div key={index} className="flex items-center justify-between">
+                              <span className="mr-2 flex-1 truncate text-xs text-slate-600">
+                                {(con.product as any)?.name || "N/A"}
+                              </span>
+                              <span className="rounded border bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
+                                {quantity}
+                                {con.unit}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions Section */}
+                  <div className="bg-white px-4 py-2">
                     <div className="flex justify-end gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                       {canUpdate && (
                         <button

@@ -83,6 +83,9 @@ export const PERMISSIONS = {
   ALERTS_READ: 'alerts:read',
   ALERTS_DELETE: 'alerts:delete',
 
+  MEMBERSHIP_SETTINGS_READ: 'membership_settings:read',
+  MEMBERSHIP_SETTINGS_WRITE: 'membership_settings:write',
+
   ALL: '*'
 } as const;
 
@@ -183,6 +186,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SETTINGS_READ, description: 'Access settings section', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_READ, description: 'View loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_UPDATE, description: 'Update loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_READ,description: 'view membership settings', name: 'Read Membership Settings' },
+  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_WRITE,description: 'Update membership settings', name: 'Update Membership Settings' },
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
