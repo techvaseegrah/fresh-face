@@ -115,7 +115,7 @@ export default function LoyaltySettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto bg-white rounded-lg shadow-md">
+    <div className="max-w-2xl  bg-white rounded-lg shadow-md">
       <h1 className="text-2xl font-bold mb-4">Loyalty Point Management</h1>
       <p className="text-gray-600 mb-6">Define the rules for how customers earn loyalty points.</p>
       

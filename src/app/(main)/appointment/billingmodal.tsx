@@ -17,6 +17,7 @@ export interface BillLineItem {
   membershipRate?: number;
   quantity: number;
   finalPrice: number;
+   isRemovable?: boolean;
 }
 
 interface SearchableItem {
@@ -24,7 +25,7 @@ interface SearchableItem {
   name: string;
   price: number;
   membershipRate?: number;
-  type: 'service' | 'product';
+  type: 'service' | 'product' | 'fee';
 }
 
 interface AppointmentForModal {
@@ -495,6 +496,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
             unitPrice: membershipFee,
             quantity: 1,
             finalPrice: membershipFee,
+            isRemovable: false
         };
         setBillItems(prevItems => [...prevItems, membershipFeeItem]);
 
@@ -689,7 +691,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
                           <td className="px-4 py-3 text-right">₹{((customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice).toFixed(2)}</td>
                           <td className="px-4 py-3 text-right font-semibold">₹{item.finalPrice.toFixed(2)}</td>
                           <td className="px-4 py-3 text-center">
-                            <button onClick={() => handleRemoveItem(idx)} disabled={item.itemId === MEMBERSHIP_FEE_ITEM_ID} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">
+                            <button onClick={() => handleRemoveItem(idx)} disabled={item.isRemovable === false} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">
                               Remove
                             </button>
                           </td>

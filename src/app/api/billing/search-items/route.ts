@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import ServiceItem from '@/models/ServiceItem';
 import Product from '@/models/Product';
+import Setting from '@/models/Setting'; // --- ADDED: Import the Setting model ---
+
+// --- ADDED: A constant for the special ID ---
+const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 
 export async function GET(req: Request) {
   try {
@@ -17,9 +21,8 @@ export async function GET(req: Request) {
 
     const searchRegex = new RegExp(query, 'i');
 
-    // Search both services and products in parallel
+    // Search both services and products in parallel (Your existing logic is great)
     const [services, products] = await Promise.all([
-      // Search services
       ServiceItem.find({
         name: { $regex: searchRegex }
       })
@@ -27,10 +30,9 @@ export async function GET(req: Request) {
       .limit(5)
       .lean(),
       
-      // Search products for retail
       Product.find({
         name: { $regex: searchRegex },
-        type: 'Retail' // Only retail products should be sold to customers
+        type: 'Retail'
       })
       .populate('brand', 'name')
       .populate('subCategory', 'name')
@@ -39,8 +41,8 @@ export async function GET(req: Request) {
       .lean()
     ]);
 
-    // Format the results
-    const items = [
+    // Format the results into a mutable array
+    let items = [ // --- MODIFIED: Changed from const to let ---
       ...services.map(service => ({
         id: service._id.toString(),
         name: service.name,
@@ -56,6 +58,31 @@ export async function GET(req: Request) {
         sku: product.sku
       }))
     ];
+
+    // --- THIS IS THE NEW LOGIC TO INJECT THE MEMBERSHIP FEE ---
+    // Check if the search query is relevant to "membership"
+    const lowerCaseQuery = query.toLowerCase();
+    if ('membership fee'.includes(lowerCaseQuery)) {
+      const feeSetting = await Setting.findOne({ key: 'membershipFee' }).lean();
+      
+      // Ensure the setting exists and has a valid price
+      if (feeSetting && feeSetting.value) {
+        const feePrice = parseFloat(feeSetting.value);
+        if (!isNaN(feePrice) && feePrice > 0) {
+          
+          const membershipFeeItem = {
+            id: MEMBERSHIP_FEE_ITEM_ID,
+            name: 'New Membership Fee',
+            price: feePrice,
+            type: 'fee' as const, // Use the special 'fee' type
+          };
+
+          // Add the fee to the beginning of the search results for better UX
+          items.unshift(membershipFeeItem);
+        }
+      }
+    }
+    // --- END OF NEW LOGIC ---
 
     return NextResponse.json({ 
       success: true, 
