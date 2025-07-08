@@ -1,4 +1,5 @@
-// src/app/api/service-items/route.ts (Corrected)
+// src/app/api/service-items/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import ServiceItem from '@/models/ServiceItem';
@@ -9,11 +10,10 @@ export async function GET(req: NextRequest) {
   try {
     const subCategoryId = req.nextUrl.searchParams.get('subCategoryId');
     const gender = req.nextUrl.searchParams.get('gender');
+    const search = req.nextUrl.searchParams.get('search');
 
-    // 1. Initialize an empty query object
     const query: any = {};
 
-    // 2. If a subCategoryId is provided, add it to the query
     if (subCategoryId) {
       if (!mongoose.Types.ObjectId.isValid(subCategoryId)) {
         return NextResponse.json({ success: false, error: 'Invalid Sub-Category ID' }, { status: 400 });
@@ -21,9 +21,10 @@ export async function GET(req: NextRequest) {
       query.subCategory = new mongoose.Types.ObjectId(subCategoryId);
     }
 
-    
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
 
-    // 3. Execute the find with the built query and populate necessary fields
     let serviceItems = await ServiceItem.find(query)
       .populate({
         path: 'subCategory',
@@ -36,23 +37,15 @@ export async function GET(req: NextRequest) {
       .populate('consumables.product', 'name sku unit')
       .sort({ name: 1 });
 
-    // 4. Filter by gender if provided
     if (gender && (gender === 'male' || gender === 'female')) {
       serviceItems = serviceItems.filter(item => {
-        // The targetAudience is on the main category, which we populated
         const targetAudience = item.subCategory?.mainCategory?.targetAudience;
-
-        console.log(targetAudience, 'targetAudience');
-        
-        // Return the service if its audience is 'Unisex' or matches the requested gender
         return targetAudience === 'Unisex' || targetAudience?.toLowerCase() === gender;
       });
     }
 
-
-    // Format the results for the frontend
     const formattedServices = serviceItems.map(item => {
-      const serviceObject = item.toObject(); // Convert Mongoose document to plain object
+      const serviceObject = item.toObject();
       return {
         ...serviceObject,
         _id: item._id.toString(),
@@ -63,8 +56,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      services: formattedServices, // Used by appointment forms
-      data: formattedServices      // Used by service manager
+      services: formattedServices,
+      data: formattedServices
     });
   } catch (error: any) {
     console.error('ServiceItem API Error:', error);
@@ -75,8 +68,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-
-// POST function remains unchanged
 export async function POST(req: NextRequest) {
   await dbConnect();
   try {

@@ -1,11 +1,15 @@
 // scripts/createSuperAdmin.js
 const bcrypt = require('bcryptjs');
 const { MongoClient } = require('mongodb');
+require('dotenv').config();
 
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = 'mongodb+srv://techvaseegrah:XcZFCBAJBLTK2Wj0@ffprod.vrpjiy0.mongodb.net/?retryWrites=true&w=majority&appName=FFProd';
 const SUPER_ADMIN_EMAIL = 'superadmin@freshface.com';
 const SUPER_ADMIN_PASSWORD = 'SuperAdmin123!';
 const SUPER_ADMIN_NAME = 'Super Administrator';
+
+console.log('MONGODB_URI:', MONGODB_URI);
+
 
 async function createSuperAdmin() {
   const client = new MongoClient(MONGODB_URI);

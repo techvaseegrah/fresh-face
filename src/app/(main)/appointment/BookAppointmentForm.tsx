@@ -1,10 +1,11 @@
-// components/BookAppointmentForm.tsx - COMPLETE IMPLEMENTATION WITH BARCODE SUPPORT
+// src/app/(main)/appointment/BookAppointmentForm.tsx
 'use client';
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
 import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesIcon, TagIcon, GiftIcon, ClockIcon, EyeIcon, QrCodeIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
+import { useDebounce } from '@/hooks/useDebounce'; 
 
 // ===================================================================================
 //  INTERFACES & TYPE DEFINITIONS
@@ -642,6 +643,12 @@ const initialFormData: NewBookingData = {
   const [availableStylists, setAvailableStylists] = useState<StylistFromAPI[]>([]);
   const [isLoadingStylists, setIsLoadingStylists] = useState(false);
 
+  // START: Code for Service Search
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [filteredServices, setFilteredServices] = useState<ServiceFromAPI[]>([]);
+  const debouncedServiceSearch = useDebounce(serviceSearch, 300);
+  // END: Code for Service Search
+
   const [customerSearchResults, setCustomerSearchResults] = useState<CustomerSearchResult[]>([]);
   const [isSearchingCustomers, setIsSearchingCustomers] = useState(false);
   const [isCustomerSelected, setIsCustomerSelected] = useState(false);
@@ -708,30 +715,36 @@ const initialFormData: NewBookingData = {
       setShowCustomerHistory(false);
       setBarcodeQuery('');
       setSearchMode('phone');
+      setServiceSearch('');
+      setFilteredServices([]);
     }
   }, [isOpen]);
 
-  // Fetch services when the form opens or gender changes
+  // Fetch services based on search
   useEffect(() => {
     if (!isOpen) return;
 
     const fetchServices = async () => {
       try {
-        const genderQuery = formData.gender ? `&gender=${formData.gender}` : '';
-        const res = await fetch(`/api/service-items?${genderQuery}`);
+        const searchQuery = debouncedServiceSearch ? `&search=${encodeURIComponent(debouncedServiceSearch)}` : '';
+        const res = await fetch(`/api/service-items?${searchQuery}`);
         const data = await res.json();
         if (data.success) {
-          setAllServices(data.services);
+            setFilteredServices(data.services);
         } else {
-          setFormError('Failed to load services. Please refresh the page.');
+            setFormError('Failed to load services.');
         }
       } catch (e) {
-        setFormError('Failed to load services. Please refresh the page.');
+        setFormError('Failed to load services.');
       }
     };
+    
+    // Fetch immediately if search is empty (to populate initially), or when debounce triggers
+    if(debouncedServiceSearch || serviceSearch === '') {
+        fetchServices();
+    }
+  }, [isOpen, debouncedServiceSearch, serviceSearch]);
 
-    fetchServices();
-  }, [isOpen, formData.gender]);
 
   // Set date and time for checked-in appointments
   useEffect(() => {
@@ -762,9 +775,8 @@ const initialFormData: NewBookingData = {
       }
 
       setAvailableStylists(data.stylists);
-
       if (formData.stylistId && !data.stylists.some((s: any) => s._id === formData.stylistId)) {
-        setFormData((prev) => ({ ...prev, stylistId: '' }));
+          setFormData((prev) => ({ ...prev, stylistId: '' }));
       }
     } catch (err: any) {
       setFormError(err.message);
@@ -772,7 +784,7 @@ const initialFormData: NewBookingData = {
     } finally {
       setIsLoadingStylists(false);
     }
-  }, [formData.date, formData.time, formData.serviceIds, formData.stylistId]);
+  }, [formData.date, formData.time, formData.serviceIds]);
 
   useEffect(() => {
     findAvailableStylists();
@@ -965,16 +977,15 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
     }
   };
 
-  const handleAddService = (serviceId: string) => {
-    if (!serviceId) return;
-    const serviceToAdd = allServices.find((s) => s._id === serviceId);
-    if (serviceToAdd && !selectedServices.some((s) => s._id === serviceId)) {
-      const newSelected = [...selectedServices, serviceToAdd];
-      setSelectedServices(newSelected);
-      setFormData((prev) => ({
-        ...prev,
-        serviceIds: newSelected.map((s) => s._id)
-      }));
+  const handleAddService = (service: ServiceFromAPI) => {
+    if (service && !selectedServices.some((s) => s._id === service._id)) {
+        const newSelected = [...selectedServices, service];
+        setSelectedServices(newSelected);
+        setFormData((prev) => ({
+            ...prev,
+            serviceIds: newSelected.map((s) => s._id)
+        }));
+        setServiceSearch('');
     }
   };
 
@@ -1292,35 +1303,35 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                       Add Services <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <select
-                        onChange={(e) => {
-                          handleAddService(e.target.value);
-                          e.target.value = '';
-                        }}
-                        value=""
-                        className={`${inputBaseClasses} pr-8`}
-                      >
-                        <option value="" disabled>-- Click to add a service --</option>
-                        {allServices.map((service) => (
-                          <option
-                            key={service._id}
-                            value={service._id}
-                            disabled={selectedServices.some((s) => s._id === service._id)}
-                          >
-                            {service.name} - ₹{service.price}
-                            {service.membershipRate && ` (Member: ₹${service.membershipRate})`}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2">
-                        <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-                      </div>
+                      <input
+                          type="text"
+                          value={serviceSearch}
+                          onChange={(e) => setServiceSearch(e.target.value)}
+                          placeholder="Search for services..."
+                          className={`${inputBaseClasses} pr-8`}
+                      />
+                      {serviceSearch && filteredServices.length > 0 && (
+                          <ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                              {filteredServices.map((service) => (
+                                  <li
+                                      key={service._id}
+                                      onClick={() => handleAddService(service)}
+                                      className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"
+                                  >
+                                      {service.name} - ₹{service.price}
+                                      {service.membershipRate && ` (Member: ₹${service.membershipRate})`}
+                                  </li>
+                              ))}
+                          </ul>
+                      )}
                     </div>
                   </div>
 
                   <div className="mt-3 space-y-2">
                     {selectedServices.map((service) => {
                       const showMembershipPrice = selectedCustomerDetails?.isMember && service.membershipRate;
+                      const finalPrice = showMembershipPrice ? service.membershipRate! : service.price;
+
                       return (
                         <div
                           key={service._id}
@@ -1336,7 +1347,7 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                             {showMembershipPrice ? (
                               <div className="text-right">
                                 <div className="line-through text-gray-400">₹{service.price.toFixed(2)}</div>
-                                <div className="text-green-600 font-semibold">₹{service.membershipRate!.toFixed(2)}</div>
+                                <div className="text-green-600 font-semibold">₹{finalPrice.toFixed(2)}</div>
                               </div>
                             ) : (
                               <span>₹{service.price.toFixed(2)}</span>
@@ -1375,6 +1386,7 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                     <label htmlFor="stylist" className="block text-sm font-medium mb-1.5">
                       Stylist <span className="text-red-500">*</span>
                     </label>
+                    <div className="relative"> 
                     <select
                       id="stylist"
                       name="stylistId"
@@ -1382,7 +1394,8 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                       onChange={handleChange}
                       required
                       disabled={formData.serviceIds.length === 0 || !formData.date || !formData.time || isLoadingStylists}
-                      className={`${inputBaseClasses} pr-8 disabled:bg-gray-100`}
+                     
+                      className={`${inputBaseClasses} disabled:bg-gray-100`}
                     >
                       <option value="" disabled>
                         {isLoadingStylists ? 'Checking availability...' : 'Select a stylist'}
@@ -1397,10 +1410,9 @@ const handleSelectCustomer = (customer: CustomerSearchResult) => {
                         )
                       )}
                     </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 top-6 flex items-center px-2">
-                      <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-                    </div>
                   </div>
+                  
+                </div>
 
                   <div className="mt-5">
                     <label htmlFor="notes" className="block text-sm font-medium mb-1.5">

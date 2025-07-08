@@ -36,7 +36,8 @@ export async function GET(req: Request) {
       })
       .populate('brand', 'name')
       .populate('subCategory', 'name')
-      .select('name price sku unit')
+      // Ensure 'brand' is selected so we can access it
+      .select('name price sku unit brand')
       .limit(5)
       .lean()
     ]);
@@ -50,12 +51,16 @@ export async function GET(req: Request) {
         membershipRate: service.membershipRate,
         type: 'service' as const
       })),
+      // THIS IS THE CORRECTED SECTION
       ...products.map(product => ({
         id: product._id.toString(),
-        name: `${product.name} (${product.unit})`,
+        name: product.name, // Send the raw name
         price: product.price,
         type: 'product' as const,
-        sku: product.sku
+        sku: product.sku,
+        unit: product.unit, // Send the unit separately
+        // Use the populated brand name, with a fallback
+        categoryName: (product.brand as any)?.name || 'Product' 
       }))
     ];
 

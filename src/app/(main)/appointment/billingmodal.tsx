@@ -1,3 +1,5 @@
+// src/app/(main)/appointment/billingmodal.tsx
+
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -20,6 +22,7 @@ export interface BillLineItem {
    isRemovable?: boolean;
 }
 
+// MODIFICATION 1: Update SearchableItem to receive the new data from the API
 interface SearchableItem {
   id: string;
   name: string;
@@ -28,6 +31,7 @@ interface SearchableItem {
   type: 'service' | 'product' | 'fee';
 }
 
+// ... (Rest of the interfaces and the CustomerHistoryModal component remain the same)
 interface AppointmentForModal {
   _id: string;
   id: string;
@@ -420,6 +424,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
     return () => clearTimeout(handler);
   }, [membershipBarcode]);
 
+  // MODIFICATION 2: Update this function to correctly format the product name with its category.
   const handleAddItemToBill = (item: SearchableItem) => {
     if (billItems.some(bi => bi.itemId === item.id)) {
       toast.info(`${item.name} is already in the bill.`);
@@ -427,10 +432,24 @@ const BillingModal: React.FC<BillingModalProps> = ({
     }
     const finalPrice = (customerIsMember && item.type === 'service' && typeof item.membershipRate === 'number')
       ? item.membershipRate : item.price;
+
+    let displayName = item.name;
+    // Format the name only for products
+    if (item.type === 'product') {
+      // Prepend the category name (which is the brand name) if it exists
+      if (item.categoryName) {
+        displayName = `${item.categoryName} - ${displayName}`;
+      }
+      // Append the unit for clarity
+      if (item.unit) {
+        displayName = `${displayName} (${item.unit})`;
+      }
+    }
+    
     const newItem: BillLineItem = {
       itemType: item.type,
       itemId: item.id,
-      name: item.name,
+      name: displayName, // Use the newly formatted display name
       unitPrice: item.price,
       membershipRate: item.membershipRate,
       quantity: 1,
@@ -444,6 +463,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
     searchInputRef.current?.focus();
   };
 
+  // ... (Rest of the functions handleRemoveItem, handleQuantityChange, handleGrantMembership, handlePaymentChange, etc. are unchanged)
   const handleRemoveItem = (indexToRemove: number) => {
     const updatedBillItems = billItems.filter((_, idx) => idx !== indexToRemove);
     setBillItems(updatedBillItems);
@@ -632,7 +652,8 @@ const BillingModal: React.FC<BillingModalProps> = ({
               <button onClick={onClose} className="text-gray-500 text-2xl hover:text-gray-700">×</button>
             </div>
           </div>
-
+          
+          {/* ... error and membership grant JSX are unchanged ... */}
           {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
           
           {isGrantingMembership && (
@@ -702,6 +723,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
                 </div>}
             </div>
             
+            {/* ... inventory impact is unchanged ... */}
             {isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
             {inventoryImpact?.inventoryImpact?.length > 0 && (
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -719,17 +741,21 @@ const BillingModal: React.FC<BillingModalProps> = ({
               </div>
             )}
 
+            {/* ... search input section ... */}
             <div className="border-t pt-4">
               <label htmlFor="itemSearch" className="block text-sm font-medium text-gray-700 mb-1">Add Additional Items</label>
               <div className="relative"><input ref={searchInputRef} id="itemSearch" type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search services or products..." className="w-full px-3 py-2 border rounded-md" autoComplete="off" />
                 {(isSearching || searchResults.length > 0) && (
                   <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-48 overflow-y-auto shadow-lg">
                     {isSearching && <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>}
-                    {!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span>{item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}
+                    {/* MODIFICATION 3: Update the search results display to include the category name for products. */}
+                    {!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span className="font-medium">{item.type === 'product' && item.categoryName ? `${item.categoryName} - ${item.name}` : item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}
                     {!isSearching && searchResults.length === 0 && searchQuery.length >= 2 && <li className="px-3 py-2 text-sm text-gray-500">No items found.</li>}
                   </ul>)}
               </div>
             </div>
+
+            {/* ... rest of the modal body (staff, payment, notes) is unchanged ... */}
             <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingStaff}><option value="">{isLoadingStaff ? 'Loading staff...' : 'Select billing staff'}</option>{availableStaff.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
 
             <div className="pt-4 border-t">
@@ -769,6 +795,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
 
 
           <div className="mt-auto pt-4 border-t">
+            {/* ... footer JSX is unchanged ... */}
             <div className="grid grid-cols-2 gap-8 items-end">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">

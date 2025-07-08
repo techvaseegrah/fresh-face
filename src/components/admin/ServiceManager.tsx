@@ -221,7 +221,6 @@ export default function ServiceManager() {
   const audienceButtons: [AudienceType, React.ElementType, string][] = [
     ["female", UserIcon, "Female"],
     ["male", UserIcon, "Male"],
-    ["Unisex", UserGroupIcon, "Unisex"],
   ]
 
   return (
