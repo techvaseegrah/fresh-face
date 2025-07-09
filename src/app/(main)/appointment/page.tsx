@@ -16,11 +16,8 @@ import EditAppointmentForm from '@/components/EditAppointmentForm';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
-
-// 1. IMPORT THE TOOLTIP COMPONENT AND ITS STYLES
 import { Tooltip } from 'react-tooltip';
 import 'react-tooltip/dist/react-tooltip.css';
-
 
 // ===================================================================================
 //  INTERFACES
@@ -88,6 +85,7 @@ export default function AppointmentPage() {
   const [selectedAppointmentForBilling, setSelectedAppointmentForBilling] = useState<AppointmentWithCustomer | null>(null);
 
   const [statusFilter, setStatusFilter] = useState('All');
+  const [dateFilter, setDateFilter] = useState('all'); // NEW: State for date filter ('all' or 'today')
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalAppointmentsCount, setTotalAppointmentsCount] = useState(0);
@@ -95,7 +93,18 @@ export default function AppointmentPage() {
   const fetchAppointments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({ status: statusFilter, page: currentPage.toString(), limit: '10', search: searchTerm });
+      // MODIFIED: Added date filter to the API call
+      const params = new URLSearchParams({ 
+        status: statusFilter, 
+        page: currentPage.toString(), 
+        limit: '10', 
+        search: searchTerm 
+      });
+
+      if (dateFilter === 'today') {
+        params.append('date', 'today');
+      }
+
       const res = await fetch(`/api/appointment?${params.toString()}`);
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'Failed to fetch appointments');
@@ -109,7 +118,7 @@ export default function AppointmentPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, currentPage, searchTerm]);
+  }, [statusFilter, currentPage, searchTerm, dateFilter]); // MODIFIED: Added dateFilter dependency
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -122,7 +131,7 @@ export default function AppointmentPage() {
     return () => clearTimeout(handler);
   }, [searchTerm, fetchAppointments, currentPage]);
 
-  useEffect(() => { fetchAppointments(); }, [currentPage, statusFilter]);
+  useEffect(() => { fetchAppointments(); }, [currentPage, statusFilter, dateFilter]); // MODIFIED: Added dateFilter dependency
 
   const handleBookNewAppointment = async (bookingData: NewBookingData) => {
     try {
@@ -193,13 +202,31 @@ export default function AppointmentPage() {
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
       </div>
+      {/* MODIFIED: Added Date Filter buttons and adjusted layout */}
       <div className="mb-6 flex flex-col md:flex-row items-center gap-4">
         <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10" /></div>
+        
+        {/* NEW: Date filter button group */}
+        <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">
+          <button
+            onClick={() => { setDateFilter('all'); setCurrentPage(1); }}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
+          >
+            All Time
+          </button>
+          <button
+            onClick={() => { setDateFilter('today'); setCurrentPage(1); }}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'today' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
+          >
+            Today
+          </button>
+        </div>
+
         <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">{['All', 'Appointment', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled'].map((status) => (<button key={status} onClick={() => handleFilterChange(status)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${statusFilter === status ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>{status}</button>))}</div>
       </div>
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {isLoading && (<div className="p-10 text-center text-gray-500">Loading appointments...</div>)}
-        {!isLoading && allAppointments.length === 0 && (<div className="p-10 text-center text-gray-500">{searchTerm || statusFilter !== 'All' ? 'No appointments match criteria.' : 'No appointments scheduled.'}</div>)}
+        {!isLoading && allAppointments.length === 0 && (<div className="p-10 text-center text-gray-500">{searchTerm || statusFilter !== 'All' || dateFilter !== 'all' ? 'No appointments match criteria.' : 'No appointments scheduled.'}</div>)}
         {!isLoading && allAppointments.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
@@ -225,7 +252,6 @@ export default function AppointmentPage() {
                   const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map((s) => s.name).join(', ') : 'N/A';
                   const billingStaffName = appointment.billingStaffId?.name || 'N/A';
                   const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join('<br />') || 'No payment' : '';
-
                   const isEditable = !['Paid', 'Cancelled', 'No-Show'].includes(appointment.status);
 
                   return (
@@ -246,52 +272,21 @@ export default function AppointmentPage() {
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.createdAt)}</div>
                       </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${appointment.appointmentType === 'Online' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{appointment.appointmentType}</span></td>
-
                       <td className="px-2 py-4 text-center">
-                        {/* FIX: Added 'whitespace-nowrap' to prevent text wrapping in the status badge */}
                         <span className={`px-2 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(appointment.status)}`}>{appointment.status}</span>
                       </td>
-
                       <td className="px-6 py-4">
                         {appointment.finalAmount ? (
-                          <div
-                            className="cursor-help"
-                            data-tooltip-id="app-tooltip"
-                            data-tooltip-html={`<b>Payment Split</b><br />${paymentSummary}`}
-                            data-tooltip-place="top"
-                          >
+                          <div className="cursor-help" data-tooltip-id="app-tooltip" data-tooltip-html={`<b>Payment Split</b><br />${paymentSummary}`} data-tooltip-place="top">
                             <div className="font-semibold text-green-600">₹{appointment.finalAmount.toFixed(2)}</div>
-                            {(appointment.membershipDiscount ?? 0) > 0 && (
-                              <div className="text-xs text-green-500">
-                                Saved ₹{appointment.membershipDiscount!.toFixed(2)}
-                              </div>
-                            )}
+                            {(appointment.membershipDiscount ?? 0) > 0 && (<div className="text-xs text-green-500">Saved ₹{appointment.membershipDiscount!.toFixed(2)}</div>)}
                           </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
+                        ) : (<span className="text-gray-400">-</span>)}
                       </td>
-
                       <td className="px-6 py-4">{billingStaffName}</td>
-
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
-                          {canUpdateAppointments ? (
-                            isEditable ? (
-                              <button
-                                onClick={() => handleEditAppointment(appointment)}
-                                className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"
-                              >
-                                <PencilIcon className="w-3 h-3" />
-                                Edit
-                              </button>
-                            ) : (
-                              <span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
-                                <CheckCircleIcon className="w-4 h-4" />
-                                Completed
-                              </span>
-                            )
-                          ) : null}
+                          {canUpdateAppointments ? (isEditable ? (<button onClick={() => handleEditAppointment(appointment)} className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"><PencilIcon className="w-3 h-3" />Edit</button>) : (<span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full"><CheckCircleIcon className="w-4 h-4" />Completed</span>)) : null}
                         </div>
                       </td>
                     </tr>
@@ -308,17 +303,7 @@ export default function AppointmentPage() {
       <EditAppointmentForm isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setSelectedAppointmentForEdit(null); }} appointment={selectedAppointmentForEdit} onUpdateAppointment={handleUpdateAppointment} />
       {selectedAppointmentForBilling && isBillingModalOpen && (<BillingModal isOpen={isBillingModalOpen} onClose={handleCloseBillingModal} appointment={selectedAppointmentForBilling} customer={selectedAppointmentForBilling.customerId} stylist={selectedAppointmentForBilling.stylistId} onFinalizeAndPay={handleFinalizeBill} />)}
 
-      <Tooltip
-        id="app-tooltip"
-        variant="dark"
-        style={{
-          backgroundColor: '#2D3748', // A dark grey color
-          color: '#FFF',
-          borderRadius: '6px',
-          padding: '4px 8px',
-          fontSize: '12px'
-        }}
-      />
+      <Tooltip id="app-tooltip" variant="dark" style={{ backgroundColor: '#2D3748', color: '#FFF', borderRadius: '6px', padding: '4px 8px', fontSize: '12px' }} />
     </div>
   );
 }

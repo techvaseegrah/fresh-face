@@ -1,4 +1,4 @@
-// /app/api/appointment/route.ts - FINAL CORRECTED VERSION
+// /app/api/appointment/route.ts - FINAL VERSION
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -10,10 +10,10 @@ import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { createSearchHash } from '@/lib/crypto'; // Assuming you have this helper
+import { createSearchHash, encrypt } from '@/lib/crypto';
 
 // ===================================================================================
-//  GET: Handler for fetching appointments (with backward compatibility)
+//  GET: Handler with Upgraded Search and Date Filter
 // ===================================================================================
 export async function GET(req: Request) {
   try {
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
     const limit = parseInt(searchParams.get('limit') || '10', 10);
     const statusFilter = searchParams.get('status');
     const searchQuery = searchParams.get('search');
+    const dateFilter = searchParams.get('date');
     const skip = (page - 1) * limit;
 
     const matchStage: any = {};
@@ -36,25 +37,45 @@ export async function GET(req: Request) {
       matchStage.status = statusFilter;
     }
 
+    if (dateFilter === 'today') {
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const now = new Date();
+        const istNow = new Date(now.getTime() + istOffset);
+        const startOfTodayIST = new Date(istNow);
+        startOfTodayIST.setUTCHours(0, 0, 0, 0);
+        const endOfTodayIST = new Date(istNow);
+        endOfTodayIST.setUTCHours(23, 59, 59, 999);
+        const startOfTodayUTC = new Date(startOfTodayIST.getTime() - istOffset);
+        const endOfTodayUTC = new Date(endOfTodayIST.getTime() - istOffset);
+        matchStage.appointmentDateTime = { $gte: startOfTodayUTC, $lte: endOfTodayUTC };
+    }
+
     if (searchQuery) {
-        const searchConditions = [];
-        const normalizedPhone = String(searchQuery).replace(/\D/g, '');
+        const searchStr = searchQuery.trim();
+        const customerSearchOrConditions = [];
+        customerSearchOrConditions.push({ searchableName: { $regex: searchStr, $options: 'i' } });
+        
+        const normalizedPhone = searchStr.replace(/\D/g, '');
         if (normalizedPhone) {
-            const phoneHash = createSearchHash(normalizedPhone);
-            const matchingCustomers = await Customer.find({ phoneHash }).select('_id').lean();
-            if (matchingCustomers.length > 0) {
-                searchConditions.push({ customerId: { $in: matchingCustomers.map(c => c._id) } });
-            }
+            customerSearchOrConditions.push({ phoneHash: createSearchHash(normalizedPhone) });
+            customerSearchOrConditions.push({ last4PhoneNumber: { $regex: normalizedPhone } });
         }
-        const stylistQuery = { name: { $regex: searchQuery, $options: 'i' } };
+        
+        const matchingCustomers = await Customer.find({ $or: customerSearchOrConditions }).select('_id').lean();
+        const customerIds = matchingCustomers.map(c => c._id);
+
+        const stylistQuery = { name: { $regex: searchStr, $options: 'i' } };
         const matchingStylists = await Stylist.find(stylistQuery).select('_id').lean();
-        if (matchingStylists.length > 0) {
-            searchConditions.push({ stylistId: { $in: matchingStylists.map(s => s._id) } });
-        }
-        if (searchConditions.length > 0) {
-            matchStage.$or = searchConditions;
+        const stylistIds = matchingStylists.map(s => s._id);
+
+        const finalSearchOrConditions = [];
+        if (customerIds.length > 0) finalSearchOrConditions.push({ customerId: { $in: customerIds } });
+        if (stylistIds.length > 0) finalSearchOrConditions.push({ stylistId: { $in: stylistIds } });
+        
+        if (finalSearchOrConditions.length > 0) {
+            matchStage.$or = finalSearchOrConditions;
         } else {
-            matchStage._id = new mongoose.Types.ObjectId();
+            matchStage._id = new mongoose.Types.ObjectId(); 
         }
     }
     
@@ -64,15 +85,13 @@ export async function GET(req: Request) {
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
-        .sort({ appointmentDateTime: -1, date: -1 }) // Sort by new field first for consistency
+        .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 })
         .skip(skip)
         .limit(limit),
       Appointment.countDocuments(matchStage)
     ]);
     
     const totalPages = Math.ceil(totalAppointmentsResult / limit);
-
-    // This mapping ensures backward compatibility for old data
     const formattedAppointments = appointments.map(apt => {
         let finalDateTime;
         if (apt.appointmentDateTime && apt.appointmentDateTime instanceof Date) {
@@ -83,13 +102,7 @@ export async function GET(req: Request) {
         } else {
             finalDateTime = apt.createdAt || new Date();
         }
-
-        return {
-            ...apt.toObject(),
-            id: apt._id.toString(),
-            appointmentDateTime: finalDateTime.toISOString(),
-            createdAt: (apt.createdAt || finalDateTime).toISOString(),
-        };
+        return { ...apt.toObject(), id: apt._id.toString(), appointmentDateTime: finalDateTime.toISOString(), createdAt: (apt.createdAt || finalDateTime).toISOString() };
     });
 
     return NextResponse.json({
@@ -105,14 +118,13 @@ export async function GET(req: Request) {
 }
 
 // ===================================================================================
-//  POST: Handler for creating appointments (CORRECTED)
+//  POST: Handler with the "Bulletproof" fix for creating customers
 // ===================================================================================
 export async function POST(req: Request) {
   try {
     await connectToDatabase();
     const body = await req.json();
 
-    // Destructure all expected fields from the form
     const { phoneNumber, customerName, email, gender, serviceIds, stylistId, date, time, notes, status, appointmentType = 'Online' } = body;
 
     if (!phoneNumber || !customerName || !serviceIds || !stylistId || !date || !time) {
@@ -120,27 +132,37 @@ export async function POST(req: Request) {
     }
 
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
-    const phoneHash = createSearchHash(normalizedPhone);
-    let customerDoc = await Customer.findOne({ phoneHash });
+    const phoneHashToFind = createSearchHash(normalizedPhone);
+    let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind });
 
     if (!customerDoc) {
-      customerDoc = await Customer.create({
-        phoneHash,
-        name: customerName,
-        phoneNumber, // Encrypted by pre-save hook
-        email,       // Encrypted by pre-save hook
+      // Manually prepare all fields here, bypassing any faulty model hooks.
+      const customerDataForCreation = {
+        // --- Searchable Fields (Plain Text) ---
+        searchableName: customerName,
+        phoneHash: createSearchHash(normalizedPhone),
+        last4PhoneNumber: normalizedPhone.length >= 4 ? normalizedPhone.slice(-4) : undefined,
+        
+        // --- Encrypted Fields ---
+        name: encrypt(customerName),
+        phoneNumber: encrypt(phoneNumber),
+        email: email ? encrypt(email) : undefined,
+        
+        // --- Other Fields ---
         gender: gender || 'other'
-      });
+      };
+
+      customerDoc = await Customer.create(customerDataForCreation);
+      if (!customerDoc) {
+        throw new Error("Customer creation returned null unexpectedly.");
+      }
     }
 
-    // --- THIS IS THE FIX ---
-    // Create the correct UTC timestamp from the IST time provided by the form
     const assumedUtcDate = new Date(`${date}T${time}:00.000Z`);
     const istOffsetInMinutes = 330;
     const assumedUtcTimestamp = assumedUtcDate.getTime();
     const correctUtcTimestamp = assumedUtcTimestamp - (istOffsetInMinutes * 60 * 1000);
     const appointmentDateUTC = new Date(correctUtcTimestamp);
-    // --- END OF FIX ---
 
     const services = await ServiceItem.find({ _id: { $in: serviceIds } }).select('duration price membershipRate');
     const estimatedDuration = services.reduce((total, service) => total + service.duration, 0);
@@ -153,7 +175,7 @@ export async function POST(req: Request) {
         status,
         appointmentType,
         estimatedDuration,
-        appointmentDateTime: appointmentDateUTC, // Use the new, correct field
+        appointmentDateTime: appointmentDateUTC,
     };
 
     const newAppointment = new Appointment(appointmentData);

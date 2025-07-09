@@ -1,69 +1,65 @@
 // lib/reportGenerator.ts
 
-import ExcelJS from "exceljs"
-import puppeteer from 'puppeteer';
-import { ReportStylistData } from "./data/reportData"
+import ExcelJS from "exceljs";
+import { chromium } from "playwright";
+import { ReportStylistData } from "./data/reportData";
 
 // ===================================================================================
-//  Helper Function for Duration Formatting
+// Helper Function: Format Duration
 // ===================================================================================
 
 /**
  * Converts total minutes into a human-readable "X hr Y min" format.
- * @param {number} totalMinutes - The total duration in minutes.
- * @returns {string} The formatted duration string.
  */
 function formatDuration(totalMinutes: number | null | undefined): string {
   if (!totalMinutes || totalMinutes <= 0) {
-    return '0 hr 0 min';
+    return "0 hr 0 min";
   }
   const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60; // The remainder is the minutes
+  const minutes = totalMinutes % 60;
   return `${hours} hr ${minutes} min`;
 }
 
+// ===================================================================================
+// Excel Report Generator
+// ===================================================================================
 
-// ===================================================================================
-//  Excel Report Generator (Updated)
-// ===================================================================================
 export async function createExcelReport(data: ReportStylistData[]): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet("Stylist Performance")
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Stylist Performance");
 
   sheet.columns = [
     { header: "Stylist Name", key: "stylistName", width: 30 },
     { header: "Total Appointments", key: "totalAppointments", width: 20 },
     { header: "Total Revenue (₹)", key: "totalRevenue", width: 20, style: { numFmt: "₹ #,##0.00" } },
-    // --- CHANGE: Update the header for the new format ---
     { header: "Total Time Worked", key: "billedTime", width: 20 },
-  ]
+  ];
 
   data.forEach(item => {
     sheet.addRow({
-      stylistName: item.stylistName || 'N/A',
+      stylistName: item.stylistName || "N/A",
       totalAppointments: item.totalAppointments || 0,
       totalRevenue: item.totalRevenue || 0,
-      // --- CHANGE: Use the new helper function for formatting ---
       billedTime: formatDuration(item.totalDuration),
-    })
-  })
+    });
+  });
 
-  sheet.getRow(1).font = { bold: true }
-  
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  sheet.getRow(1).font = { bold: true };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
+// ===================================================================================
+// PDF Report Generator (Using Playwright)
+// ===================================================================================
 
-// ===================================================================================
-//  PDF Report Generator (Updated)
-// ===================================================================================
 export async function createPdfReport(
   data: ReportStylistData[],
   startDate: Date,
   endDate: Date
 ): Promise<Buffer> {
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await chromium.launch();
   const page = await browser.newPage();
 
   const htmlContent = `
@@ -130,7 +126,6 @@ export async function createPdfReport(
                 <th>Stylist Name</th>
                 <th class="text-right">Total Appointments</th>
                 <th class="text-right">Total Revenue (₹)</th>
-                <!-- --- CHANGE: Update the header for the new format --- -->
                 <th class="text-right">Total Time Worked</th>
               </tr>
             </thead>
@@ -140,7 +135,6 @@ export async function createPdfReport(
                   <td>${item.stylistName || 'N/A'}</td>
                   <td class="text-right">${item.totalAppointments || 0}</td>
                   <td class="text-right">₹${(item.totalRevenue || 0).toFixed(2)}</td>
-                  <!-- --- CHANGE: Use the new helper function for formatting --- -->
                   <td class="text-right">${formatDuration(item.totalDuration)}</td>
                 </tr>
               `).join('')}
@@ -151,11 +145,12 @@ export async function createPdfReport(
     </html>
   `;
 
-  await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+  await page.setContent(htmlContent, { waitUntil: "domcontentloaded" });
+
   const pdfBuffer = await page.pdf({
-    format: 'A4',
+    format: "A4",
     printBackground: true,
-    margin: { top: '40px', right: '40px', bottom: '40px', left: '40px' }
+    margin: { top: "40px", right: "40px", bottom: "40px", left: "40px" },
   });
 
   await browser.close();

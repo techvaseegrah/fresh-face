@@ -1,4 +1,5 @@
 // app/api/customer/search/route.ts - CORRECTED
+
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
@@ -21,20 +22,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'A search query is required.' }, { status: 400 });
     }
     
-    const normalizedPhone = String(query).replace(/\D/g, '');
-
     // --- FETCH FULL DETAILS FOR SIDE PANEL ---
     if (fetchDetails) {
+      // This part remains the same, as it's for an exact lookup
+      const normalizedPhone = String(query).replace(/\D/g, '');
       const phoneHash = createSearchHash(normalizedPhone);
       const customer = await Customer.findOne({ phoneHash }); 
 
       if (!customer) {
         return NextResponse.json({ success: true, customer: null });
       }
-
-      // This part remains the same as it correctly fetches details after finding the customer
+      
       const [appointmentHistory, loyaltyData] = await Promise.all([
-        Appointment.find({ customerId: customer._id }).sort({ date: -1 }).limit(20)
+        Appointment.find({ customerId: customer._id }).sort({ appointmentDateTime: -1 }).limit(20)
             .populate({ path: 'stylistId', model: Stylist, select: 'name' })
             .populate({ path: 'serviceIds', model: ServiceItem, select: 'name' }).lean(),
         LoyaltyTransaction.aggregate([
@@ -42,18 +42,13 @@ export async function GET(req: Request) {
           { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
         ])
       ]);
-
       const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
-      
-      const totalSpent = appointmentHistory.filter(apt => (apt as any).status === 'Paid').reduce((sum, apt) => sum + ((apt as any).finalAmount || (apt as any).amount || 0), 0);
-
       const customerDetails = {
         _id: customer._id.toString(), name: customer.name, email: customer.email, phoneNumber: customer.phoneNumber,
         isMember: customer.isMembership || false,
         membershipDetails: customer.isMembership ? { planName: 'Member', status: 'Active' } : null,
         gender: customer.gender || 'other', loyaltyPoints: calculatedLoyaltyPoints,
         lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).appointmentDateTime : null,
-        totalSpent: totalSpent,
         appointmentHistory: appointmentHistory.map(apt => ({
           _id: (apt as any)._id.toString(), date: (apt as any).appointmentDateTime,
           services: ((apt as any).serviceIds || []).map((s: any) => s.name),
@@ -62,23 +57,36 @@ export async function GET(req: Request) {
           status: (apt as any).status || 'Unknown'
         }))
       };
-
       return NextResponse.json({ success: true, customer: customerDetails });
     }
-    // --- GENERAL SEARCH FOR DROPDOWN ---
+    // --- GENERAL SEARCH FOR DROPDOWN (UPGRADED) ---
     else {
-      if (query.trim().length < 3) {
+      if (query.trim().length < 2) { // Changed to 2 for better usability
         return NextResponse.json({ success: true, customers: [] });
       }
 
-      // ** THE FIX: Search by exact phone hash. A regex search on a hash is not possible. **
-      const phoneHash = createSearchHash(normalizedPhone);
-      const customers = await Customer.find({
-        phoneHash: phoneHash,
-        isActive: true
+      const searchStr = query.trim();
+      const searchOrConditions = [];
+
+      // 1. Search by partial name using the 'searchableName' field
+      searchOrConditions.push({ searchableName: { $regex: searchStr, $options: 'i' } });
+
+      // 2. Search by phone number (partial or full)
+      const normalizedPhone = searchStr.replace(/\D/g, '');
+      if (normalizedPhone) {
+          // For full number, match the hash
+          searchOrConditions.push({ phoneHash: createSearchHash(normalizedPhone) });
+          // For partial number, match the last 4 digits
+          searchOrConditions.push({ last4PhoneNumber: { $regex: normalizedPhone } });
+      }
+      
+      // Find all customers that match ANY of the conditions
+      const customers = await Customer.find({ 
+        $or: searchOrConditions,
+        isActive: true 
       })
       .select('name phoneNumber email isMembership gender') // Added gender
-      .limit(10);
+      .limit(10); // Limit results for a dropdown
       
       // The post-find hook decrypts the fields automatically
       return NextResponse.json({ success: true, customers });

@@ -3,14 +3,19 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 import { encrypt, decrypt, createSearchHash } from '@/lib/crypto';
 
 export interface ICustomer extends Document {
+  // --- Encrypted Fields ---
   name: string;
   phoneNumber: string;
-  email?: string; // Now optional
-  dob?: Date; // Optional Date of Birth
-  survey?: string; // Optional survey info
+  email?: string;
+  
+  // --- Search & Index Fields ---
   phoneHash: string;
-  nameHash: string;
-  emailHash?: string;
+  searchableName: string;
+  last4PhoneNumber?: string;
+
+  // --- Other Existing Fields ---
+  dob?: Date;
+  survey?: string;
   loyaltyPoints: number;
   isMembership: boolean;
   membershipBarcode?: string;
@@ -20,6 +25,7 @@ export interface ICustomer extends Document {
   updatedAt: Date;
   gender?: 'male' | 'female' | 'other';
 
+  // --- Methods ---
   toggleMembership(status?: boolean, customBarcode?: string): Promise<ICustomer>;
 }
 
@@ -29,12 +35,19 @@ export interface ICustomerModel extends Model<ICustomer> {
 }
 
 const customerSchema = new Schema({
+  // --- Sensitive Fields ---
   name: { type: String, required: true },
   phoneNumber: { type: String, required: true },
-  email: { type: String, required: false }, // No longer required
-  dob: { type: Date, required: false }, // Optional Date of Birth
-  survey: { type: String, required: false, trim: true }, // Optional survey info
+  email: { type: String, required: false },
+
+  // --- Search & Index Fields ---
   phoneHash: { type: String, required: true, unique: true, index: true },
+  searchableName: { type: String, required: true, index: true, lowercase: true },
+  last4PhoneNumber: { type: String, index: true },
+
+  // --- Other Existing Fields ---
+  dob: { type: Date, required: false },
+  survey: { type: String, required: false, trim: true },
   loyaltyPoints: { type: Number, default: 0, min: 0 },
   isMembership: { type: Boolean, default: false, index: true },
   membershipBarcode: { type: String, unique: true, sparse: true, index: true },
@@ -43,36 +56,29 @@ const customerSchema = new Schema({
   gender: { type: String, enum: ['male', 'female', 'other'], required: false, lowercase: true },
 }, { timestamps: true });
 
-// --- Mongoose Middleware for Encryption ---
-customerSchema.pre<ICustomer>('save', function (next) {
-  if (this.isModified('name')) this.name = encrypt(this.name);
-  if (this.isModified('email') && this.email) this.email = encrypt(this.email);
+// --- REMOVED ---
+// The pre('save') hook was the source of validation errors due to dev server caching.
+// This logic is now handled explicitly in the API route.
 
-  if (this.isModified('phoneNumber')) {
-    const normalizedPhone = String(this.phoneNumber).replace(/\D/g, '');
-    this.phoneHash = createSearchHash(normalizedPhone);
-    this.phoneNumber = encrypt(this.phoneNumber);
-  }
-  next();
-});
-
-// --- Mongoose Middleware for Decryption ---
+// --- Mongoose Middleware for Decryption (CORRECT) ---
 const decryptFields = (doc: any) => {
   if (doc) {
     const decryptedDoc = doc.toObject ? doc.toObject() : { ...doc };
-
     if (decryptedDoc.name) doc.name = decrypt(decryptedDoc.name);
     if (decryptedDoc.email) doc.email = decrypt(decryptedDoc.email);
     if (decryptedDoc.phoneNumber) doc.phoneNumber = decrypt(decryptedDoc.phoneNumber);
   }
 };
 
+// These hooks correctly handle all "read" operations.
 customerSchema.post('findOne', decryptFields);
 customerSchema.post('find', (docs) => docs.forEach(decryptFields));
 customerSchema.post('findOneAndUpdate', decryptFields);
-customerSchema.post('save', decryptFields);
 
-// --- Existing Methods ---
+// --- REMOVED ---
+// The post('save') hook was causing the "_id of null" error.
+
+// --- Existing Methods & Statics (Unchanged) ---
 customerSchema.methods.toggleMembership = function (this: ICustomer, status = true, customBarcode?: string): Promise<ICustomer> {
   this.isMembership = status;
   if (status) {
