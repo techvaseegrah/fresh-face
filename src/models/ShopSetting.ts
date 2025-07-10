@@ -1,20 +1,19 @@
-// lib/models/ShopSetting.ts
+// src/lib/models/ShopSetting.ts
 
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 // --- UPDATED INTERFACE ---
 export interface IShopSetting extends Document {
-  key: string; // A unique key to ensure we only have one settings document
+  key: string; 
   defaultDailyHours: number;
   defaultOtRate: number;
   defaultExtraDayRate: number;
-  // --- NEW FIELDS ---
   loyaltyPointPerPrice: number;
   loyaltyPointsAwarded: number;
+  staffIdBaseNumber: number; // --- (NEW) --- Add new field to the interface
 }
 
 const ShopSettingSchema: Schema<IShopSetting> = new Schema({
-  // We use this static key to always find the single settings document for the shop.
   key: {
     type: String,
     unique: true,
@@ -36,14 +35,19 @@ const ShopSettingSchema: Schema<IShopSetting> = new Schema({
     required: [true, 'Default extra day rate is required.'],
     default: 100,
   },
-  // --- NEW SCHEMA DEFINITIONS ---
   loyaltyPointPerPrice: {
     type: Number,
-    default: 100, // e.g., for every ₹100 spent
+    default: 100, 
   },
   loyaltyPointsAwarded: {
     type: Number,
-    default: 1,   // e.g., the customer gets 1 point
+    default: 1,   
+  },
+  // --- (NEW) --- Add the new field to the schema
+  staffIdBaseNumber: {
+    type: Number,
+    required: [true, 'Staff ID base number is required.'],
+    default: 3101, // Set your desired default starting number here
   },
 }, { timestamps: true });
 

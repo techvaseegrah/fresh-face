@@ -1,18 +1,26 @@
-// src/app/api/staff/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
 import Stylist from '../../../models/Stylist';
+import ShopSetting from '../../../models/ShopSetting';
 import mongoose, { Types } from 'mongoose';
 
 // Helper function to validate MongoDB ObjectId string
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
 
 // Define a more specific type for lean results that include _id
-// This ensures that _id is properly typed when using .lean()
 type LeanStaffDocument = Omit<IStaff, keyof mongoose.Document<Types.ObjectId>> & { _id: Types.ObjectId };
 
+/**
+ * Reads the current start number from the shop settings.
+ * Used to pre-fill the Staff ID field on the ADD staff page.
+ */
+async function getNextStaffId(): Promise<string> {
+    await dbConnect();
+    const settings = await ShopSetting.findOne({ key: 'defaultSettings' }).lean();
+    const startNumber = settings?.staffIdBaseNumber || 1;
+    return startNumber.toString();
+}
 
 export async function GET(request: NextRequest) {
   await dbConnect();
@@ -22,18 +30,19 @@ export async function GET(request: NextRequest) {
   const position = searchParams.get('position');
 
   try {
+    if (action === 'getNextId') {
+      const nextId = await getNextStaffId();
+      return NextResponse.json({ success: true, data: { nextId } });
+    }
+
     if (action === 'list') {
       const filter: { status: 'active'; position?: string } = { status: 'active' };
-
-      // If a position is provided in the URL, add it to the filter
       if (position) {
         filter.position = position;
       }
-
       const staffList = await Staff.find(filter)
         .sort({ name: 'asc' })
         .lean<LeanStaffDocument[]>();
-
       return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
     }
 
@@ -59,66 +68,68 @@ export async function POST(request: NextRequest) {
   await dbConnect();
   try {
     const body = await request.json();
-    // 1. Destructure aadharNumber from the request body
-    const { name, email, position, phone, salary, address, image, aadharNumber } = body;
+    const { name, email, position, phone, salary, address, image, aadharNumber, joinDate } = body;
 
     if (!name || !email || !position) {
       return NextResponse.json({ success: false, error: 'Name, email, and position are required' }, { status: 400 });
     }
 
-    // Check for existing staff by email
-    const existingStaffByEmail = await Staff.findOne({ email }).lean();
-    if (existingStaffByEmail) {
-      return NextResponse.json({ success: false, error: 'Email already exists' }, { status: 400 });
-    }
-    
-    // Optional: Check for existing staff by Aadhar number if provided
-    if (aadharNumber) {
-        const existingStaffByAadhar = await Staff.findOne({ aadharNumber }).lean();
-        if (existingStaffByAadhar) {
-            return NextResponse.json({ success: false, error: 'Aadhar number already exists' }, { status: 400 });
+    const settings = await ShopSetting.findOneAndUpdate(
+        { key: 'defaultSettings' },
+        { $inc: { staffIdBaseNumber: 1 } },
+        { new: false, upsert: true }
+    );
+
+    const newStaffIdNumber = (settings?.staffIdBaseNumber || 1).toString();
+
+    const existingStaff = await Staff.findOne({
+        $or: [
+            { staffIdNumber: newStaffIdNumber },
+            { email },
+            ...(aadharNumber ? [{ aadharNumber }] : [])
+        ]
+    }).lean();
+
+    if (existingStaff) {
+        await ShopSetting.updateOne({ key: 'defaultSettings' }, { $inc: { staffIdBaseNumber: -1 } });
+        
+        let errorMessage = 'A user with this data already exists.';
+        if (existingStaff.staffIdNumber === newStaffIdNumber) {
+            errorMessage = `Staff ID ${newStaffIdNumber} already exists. Please check settings and try again.`;
+        } else if (existingStaff.email === email) {
+            errorMessage = 'Email already exists.';
+        } else if (aadharNumber && existingStaff.aadharNumber === aadharNumber) {
+            errorMessage = 'Aadhar number already exists.';
         }
+        return NextResponse.json({ success: false, error: errorMessage }, { status: 409 });
     }
 
-    // 2. Add aadharNumber when creating the new staff member
     const newStaffDoc = new Staff({
-      name, email, position, phone, salary, address,
-      aadharNumber,
+      staffIdNumber: newStaffIdNumber,
+      name, email, position, phone, salary, address, aadharNumber, joinDate,
       image: image || null,
       status: 'active',
     });
     const savedStaff = await newStaffDoc.save();
 
-    // ======================================================================
-    //  AUTOMATION LOGIC: Check position and create a linked stylist record
-    // ======================================================================
     if (savedStaff.position.toLowerCase().trim() === 'stylist') {
       const existingStylist = await Stylist.findOne({ staffInfo: savedStaff._id });
       if (!existingStylist) {
-        console.log(`Staff member ${savedStaff.name} is a stylist. Creating linked stylist record...`);
         const newStylist = new Stylist({
           staffInfo: savedStaff._id,
           availabilityStatus: 'Available',
         });
         await newStylist.save();
-        console.log(`Stylist record created for ${savedStaff.name}.`);
       }
     }
-    // ======================================================================
 
     const staffObject = savedStaff.toObject();
     return NextResponse.json({ success: true, data: {...staffObject, id: savedStaff._id.toString()} }, { status: 201 });
   } catch (error: any) {
     console.error('Error adding staff:', error);
+    await ShopSetting.updateOne({ key: 'defaultSettings' }, { $inc: { staffIdBaseNumber: -1 } });
     if (error.name === 'ValidationError') {
         return NextResponse.json({ success: false, error: error.message }, { status: 400 });
-    }
-    if (error instanceof SyntaxError) {
-        return NextResponse.json({ success: false, error: 'Invalid JSON payload' }, { status: 400 });
-    }
-    // Handle the unique constraint error from the database
-    if (error.code === 11000) {
-        return NextResponse.json({ success: false, error: 'A user with that email or Aadhar number already exists.' }, { status: 409 });
     }
     return NextResponse.json({ success: false, error: `Failed to add staff member: ${error.message || 'Unknown error'}` }, { status: 500 });
   }
@@ -127,60 +138,56 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   await dbConnect();
   const { searchParams } = request.nextUrl;
-  const staffId = searchParams.get('id');
+  const staffId = searchParams.get('id'); // This is the unique MongoDB _id
 
   if (!staffId || !isValidObjectId(staffId)) {
     return NextResponse.json({ success: false, error: 'Valid Staff ID is required' }, { status: 400 });
   }
 
   try {
-    const body = await request.json();
-    // 1. Destructure aadharNumber from the request body
-    const { name, email, position, phone, salary, address, image, status, aadharNumber } = body;
-    const updateData: Partial<IStaff> = {};
-
-    // 2. Add aadharNumber to the updateData object if it exists
-    if (name !== undefined) updateData.name = name;
-    if (email !== undefined) updateData.email = email;
-    if (position !== undefined) updateData.position = position;
-    if (phone !== undefined) updateData.phone = phone;
-    if (salary !== undefined) updateData.salary = salary;
-    if (address !== undefined) updateData.address = address;
-    if (image !== undefined) updateData.image = image;
-    if (aadharNumber !== undefined) updateData.aadharNumber = aadharNumber;
-    if (status !== undefined && ['active', 'inactive'].includes(status)) updateData.status = status as 'active' | 'inactive';
+    const updateData = await request.json(); // We now allow staffIdNumber to be part of the update
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 });
     }
     
-    // Check for uniqueness on email and aadhar number before updating
-    if (updateData.email || updateData.aadharNumber) {
-        const orConditions = [];
-        if (updateData.email) orConditions.push({ email: updateData.email });
-        if (updateData.aadharNumber) orConditions.push({ aadharNumber: updateData.aadharNumber });
+    // Combined check for all potential duplicates
+    const orConditions: any[] = [];
+    // Check for duplicate Staff ID
+    if (updateData.staffIdNumber) {
+        orConditions.push({ staffIdNumber: updateData.staffIdNumber });
+    }
+    if (updateData.email) {
+        orConditions.push({ email: updateData.email });
+    }
+    if (updateData.aadharNumber) {
+        orConditions.push({ aadharNumber: updateData.aadharNumber });
+    }
 
-        if (orConditions.length > 0) {
-            const existingStaff = await Staff.findOne({
-                _id: { $ne: staffId }, // Check for a document that is NOT the one we're updating
-                $or: orConditions
-            }).lean();
+    if (orConditions.length > 0) {
+        const existingStaff = await Staff.findOne({
+            _id: { $ne: staffId }, // IMPORTANT: Exclude the current staff member from the check
+            $or: orConditions
+        }).lean();
 
-            if (existingStaff) {
-                const errorMessage = existingStaff.email === updateData.email 
-                    ? 'New email already in use by another staff member.'
-                    : 'New Aadhar number already in use by another staff member.';
-                return NextResponse.json({ success: false, error: errorMessage }, { status: 409 });
+        if (existingStaff) {
+            let errorMessage = 'Data is already in use by another staff member.';
+            if (updateData.staffIdNumber && existingStaff.staffIdNumber === updateData.staffIdNumber) {
+                errorMessage = 'This Staff ID is already in use by another staff member.';
+            } else if (updateData.email && existingStaff.email === updateData.email) {
+                errorMessage = 'This Email is already in use by another staff member.';
+            } else if (updateData.aadharNumber && existingStaff.aadharNumber === updateData.aadharNumber) {
+                errorMessage = 'This Aadhar number is already in use by another staff member.';
             }
+            return NextResponse.json({ success: false, error: errorMessage }, { status: 409 });
         }
     }
 
+    // The updateData now includes the potentially new staffIdNumber
     const updatedStaff = await Staff.findByIdAndUpdate(staffId, { $set: updateData }, { new: true, runValidators: true }).lean<LeanStaffDocument>();
     if (!updatedStaff) {
       return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
     }
-
-    // Future Enhancement: If position changes from/to 'stylist', you could add/remove the Stylist record here.
 
     return NextResponse.json({ success: true, data: {...updatedStaff, id: updatedStaff._id.toString()} });
   } catch (error: any) {
@@ -208,8 +215,6 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    // This is a "soft delete" that just deactivates the staff member.
-    // This is good practice because it preserves historical data.
     const deactivatedStaff = await Staff.findByIdAndUpdate(
       staffId,
       { status: 'inactive' },

@@ -22,20 +22,26 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'Staff not found.' }, { status: 404 });
     }
     
-    // Create a date object and zero out the time to match how it's stored in the DB
-    const targetDate = new Date(date);
-    targetDate.setHours(0, 0, 0, 0);
+    // ====================================================================
+    // THE FIX IS HERE
+    // Replace the old date logic with the reliable UTC parsing method.
+    // ====================================================================
+    const [year, month, day] = date.split('-').map(Number);
+    // This creates a UTC date that will precisely match the record in the database.
+    const targetDate = new Date(Date.UTC(year, month - 1, day));
 
-    // Find and delete the specific daily sale record
+    // Find and delete the specific daily sale record using the correct UTC date
     const deleteResult = await DailySale.deleteOne({ 
       staff: staffId, 
       date: targetDate 
     });
 
+    // If no document was deleted, it means none was found for that specific UTC date.
     if (deleteResult.deletedCount === 0) {
-      return NextResponse.json({ message: 'No data found for the selected day to reset.' });
+      return NextResponse.json({ message: 'No data found for the selected day to reset.' }, { status: 404 });
     }
 
+    // If we get here, the reset was successful.
     return NextResponse.json({ message: 'Daily data for the selected day has been reset successfully.' }, { status: 200 });
 
   } catch (error: any) {

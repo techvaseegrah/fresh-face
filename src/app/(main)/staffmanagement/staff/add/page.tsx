@@ -4,19 +4,21 @@ import React, { useState, FormEvent, ChangeEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Save, Upload, PlusCircle, XCircle,
-  User, Mail, Phone, Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Image as ImageIcon
+  User, Mail, Phone, Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Image as ImageIcon,
+  Badge
 } from 'lucide-react';
 
 import { useStaff, NewStaffPayload, PositionOption } from '../../../../../context/StaffContext';
-import Button from '../../../../../components/ui/Button'; // Ensure this path is correct!
+import Button from '../../../../../components/ui/Button';
 
 interface StaffFormData {
+  staffIdNumber: string;
   name: string;
   email: string;
   phone: string;
   position: string;
   joinDate: string;
-  salary: number | ''; // Allow empty string for the form
+  salary: number | '';
   address: string;
   image: string | null;
   aadharNumber: string;
@@ -32,13 +34,15 @@ const AddStaffPage: React.FC = () => {
     addPositionOption
   } = useStaff();
 
+  // --- MODIFICATION: Set initial state to 'Loading...' for better user feedback ---
   const [formData, setFormData] = useState<StaffFormData>({
+    staffIdNumber: 'Loading...',
     name: '',
     email: '',
     phone: '',
-    position: contextPositionOptions.find(opt => opt.value !== "")?.value || contextPositionOptions[0]?.value || '',
+    position: '', // This will be set by the useEffect below
     joinDate: new Date().toISOString().split('T')[0],
-    salary: '', // Changed from 0 to empty string
+    salary: '',
     address: '',
     image: DEFAULT_STAFF_IMAGE,
     aadharNumber: '',
@@ -50,6 +54,30 @@ const AddStaffPage: React.FC = () => {
   const [showAddPositionForm, setShowAddPositionForm] = useState(false);
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
+
+  // --- ADDITION: useEffect to fetch the next available Staff ID when the component loads ---
+  useEffect(() => {
+    const fetchNextId = async () => {
+      try {
+        const response = await fetch('/api/staff?action=getNextId');
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Failed to fetch Staff ID from server.');
+        }
+        const result = await response.json();
+        if (result.success) {
+          setFormData(prev => ({ ...prev, staffIdNumber: result.data.nextId }));
+        } else {
+          throw new Error(result.error || 'Could not retrieve next Staff ID.');
+        }
+      } catch (err: any) {
+        setFormData(prev => ({ ...prev, staffIdNumber: 'Error' }));
+        setError(`Could not load Staff ID: ${err.message}`);
+        console.error(err);
+      }
+    };
+    fetchNextId();
+  }, []); // The empty array [] ensures this hook runs only once when the component mounts.
 
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
@@ -111,6 +139,12 @@ const AddStaffPage: React.FC = () => {
     setIsSubmitting(true);
     setError(null);
 
+    // --- MODIFICATION: Add validation check for Staff ID state ---
+    if (formData.staffIdNumber === 'Loading...' || formData.staffIdNumber === 'Error') {
+      setError("Staff ID is not available. Please wait or refresh the page.");
+      setIsSubmitting(false);
+      return;
+    }
     if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim()) {
         setError("Please fill in all required fields marked with * (Name, Email, Phone, Position).");
         setIsSubmitting(false);
@@ -121,19 +155,20 @@ const AddStaffPage: React.FC = () => {
         setIsSubmitting(false);
         return;
     }
-    if (formData.salary !== '' && Number(formData.salary) < 0) { // Updated salary validation
+    if (formData.salary !== '' && Number(formData.salary) < 0) {
         setError("Salary cannot be negative.");
         setIsSubmitting(false);
         return;
     }
 
     const apiData: NewStaffPayload = {
+        staffIdNumber: formData.staffIdNumber,
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
         position: formData.position,
         joinDate: formData.joinDate,
-        salary: Number(formData.salary) || 0, // Convert to number, default to 0 if empty
+        salary: Number(formData.salary) || 0,
         address: formData.address || undefined,
         image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
         aadharNumber: formData.aadharNumber || undefined,
@@ -238,6 +273,21 @@ const AddStaffPage: React.FC = () => {
             </div>
           </div>
 
+          {/* --- MODIFICATION: This input is now automated and cannot be edited by the user --- */}
+          <div>
+            <IconLabel htmlFor="staffIdNumber" icon={<Badge size={14} className="text-gray-500" />} text="Staff ID*" />
+            <input 
+              id="staffIdNumber" 
+              name="staffIdNumber" 
+              type="text" 
+              required 
+              value={formData.staffIdNumber} 
+              onChange={handleInputChange} 
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black bg-gray-100 cursor-not-allowed" 
+              disabled={isSubmitting}
+              readOnly // This is key to prevent user edits
+            />
+          </div>
           <div>
             <IconLabel htmlFor="name" icon={<User size={14} className="text-gray-500" />} text="Full Name*" />
             <input id="name" name="name" type="text" required value={formData.name} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
@@ -254,7 +304,7 @@ const AddStaffPage: React.FC = () => {
             <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number" />
             <input id="aadharNumber" name="aadharNumber" type="text" pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
-
+          
           <div>
             <IconLabel htmlFor="position" icon={<Briefcase size={14} className="text-gray-500" />} text="Position*" />
             <div className="flex items-center space-x-2">
@@ -328,7 +378,7 @@ const AddStaffPage: React.FC = () => {
               </div>
             )}
           </div>
-
+          
           <div>
             <IconLabel htmlFor="joinDate" icon={<Calendar size={14} className="text-gray-500" />} text="Join Date*" />
             <input id="joinDate" name="joinDate" type="date" required value={formData.joinDate} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>

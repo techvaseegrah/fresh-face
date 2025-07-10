@@ -1,12 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
-import { Wallet, Plus, X, BarChart, Hourglass, CheckCircle2, XCircle, Banknote, Scale, Calendar, User, FileText } from 'lucide-react';
+import {
+  IndianRupee, Calendar, Search, Download,
+  CreditCard, CheckCircle, X, Clock,
+  ArrowUpCircle, ArrowDownCircle, History, Edit, Wallet, Plus, FileText, BarChart, Hourglass, CheckCircle2, XCircle, Banknote, Scale,
+  FileDown
+} from 'lucide-react';
 import { useStaff, StaffMember, AdvancePaymentType } from '../../../../context/StaffContext';
-import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import Card from '../../../../components/ui/Card';
+import Button from '../../../../components/ui/Button';
+import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 
-// A reusable Stat Card component for the dashboard feel (No changes needed here, it's already responsive)
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+
+// A reusable Stat Card component
 const StatCard = ({ icon, title, value, description }: { icon: React.ReactNode, title: string, value: string, description?: string }) => (
   <div className="bg-white p-5 rounded-xl shadow-md border border-gray-200/80 transition-all hover:shadow-lg hover:-translate-y-1">
     <div className="flex items-center justify-between">
@@ -37,6 +48,8 @@ const AdvancePayment: React.FC = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  
+  const [exportFilter, setExportFilter] = useState('this_month');
 
   const handleOpenDetails = (staffId: string) => {
     const staff = staffMembers.find(s => s.id === staffId);
@@ -60,7 +73,6 @@ const AdvancePayment: React.FC = () => {
     }
     setIsSubmitting(true);
     
-    // --- MODIFIED: Replaced try/catch toasts with toast.promise for better UX ---
     const submitPromise = requestAdvance({ ...formData });
 
     toast.promise(
@@ -77,16 +89,13 @@ const AdvancePayment: React.FC = () => {
       setShowNewRequestForm(false);
       setFormData({ staffId: '', amount: 0, reason: '', repaymentPlan: 'One-time deduction' });
     } catch (error) {
-      // Error is handled by toast.promise, but we can still log it.
       console.error('Failed to submit advance request:', error);
     } finally {
       setIsSubmitting(false);
     }
-    // --- END MODIFICATION ---
   };
 
   const handleApprove = async (id: string) => {
-    // --- MODIFIED: Replaced try/catch toasts with toast.promise for better UX ---
     const approvePromise = updateAdvanceStatus(id, 'approved');
 
     toast.promise(
@@ -98,13 +107,10 @@ const AdvancePayment: React.FC = () => {
       }
     );
 
-    // Optionally log the error without showing a second toast
     approvePromise.catch(error => console.error('Failed to approve advance:', error));
-    // --- END MODIFICATION ---
   };
 
   const handleReject = async (id: string) => {
-    // --- MODIFIED: Replaced try/catch toasts with toast.promise for better UX ---
     const rejectPromise = updateAdvanceStatus(id, 'rejected');
     
     toast.promise(
@@ -116,12 +122,10 @@ const AdvancePayment: React.FC = () => {
       }
     );
     
-    // Optionally log the error without showing a second toast
     rejectPromise.catch(error => console.error('Failed to reject advance:', error));
-    // --- END MODIFICATION ---
   };
 
-  // --- Calculations for Main Dashboard & Side Panel ---
+
   const pendingPayments = advancePayments.filter((p) => p.status === 'pending');
   const historyPayments = advancePayments
     .filter((p) => p.status !== 'pending')
@@ -157,6 +161,179 @@ const AdvancePayment: React.FC = () => {
       .reduce((sum, p) => sum + p.amount, 0);
     remainingSalary = (selectedStaff.salary || 0) - currentMonthApprovedAdvances;
   }
+
+  const getFilteredHistory = () => {
+    const now = new Date();
+    if (exportFilter === 'this_month') {
+        const start = startOfMonth(now);
+        const end = endOfMonth(now);
+        return historyPayments.filter(p => {
+            const pDate = parseISO(p.requestDate);
+            return pDate >= start && pDate <= end;
+        });
+    }
+    if (exportFilter === 'last_month') {
+        const lastMonthDate = subMonths(now, 1);
+        const start = startOfMonth(lastMonthDate);
+        const end = endOfMonth(lastMonthDate);
+        return historyPayments.filter(p => {
+            const pDate = parseISO(p.requestDate);
+            return pDate >= start && pDate <= end;
+        });
+    }
+    return historyPayments;
+  };
+
+  const handleExportExcel = () => {
+    const filteredData = getFilteredHistory();
+    if (filteredData.length === 0) {
+      toast.info("No data to export for the selected period.");
+      return;
+    }
+
+    const totalAmount = filteredData.reduce((sum, p) => sum + p.amount, 0);
+
+    const dataToExport = filteredData.map(payment => {
+      const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
+      const staff = staffMembers.find(s => s.id === staffDetailsId);
+      return {
+        'Staff ID': staff?.staffIdNumber || 'N/A',
+        'Staff Name': staff?.name || 'N/A',
+        'Position': staff?.position || 'N/A',
+        'Amount (₹)': payment.amount,
+        'Request Date': format(parseISO(payment.requestDate), 'yyyy-MM-dd'),
+        'Status': payment.status,
+        'Processed Date': payment.approvedDate ? format(parseISO(payment.approvedDate), 'yyyy-MM-dd') : 'N/A',
+        'Reason': payment.reason
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+
+    const totalRow = [
+      '', 
+      '', 
+      'Total Amount:',
+      totalAmount, 
+      '',
+      '',
+      '',
+      '',
+    ];
+    XLSX.utils.sheet_add_aoa(worksheet, [totalRow], { origin: -1 });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "AdvanceHistory");
+
+    worksheet['!cols'] = [
+      { wch: 15 }, { wch: 20 }, { wch: 18 }, { wch: 12 },
+      { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 40 },
+    ];
+
+    let filenamePeriodPart = '';
+    const now = new Date();
+    if (exportFilter === 'this_month') {
+        filenamePeriodPart = format(now, 'MMMM-yyyy');
+    } else if (exportFilter === 'last_month') {
+        const lastMonth = subMonths(now, 1);
+        filenamePeriodPart = format(lastMonth, 'MMMM-yyyy');
+    } else {
+        filenamePeriodPart = 'all-time';
+    }
+
+    XLSX.writeFile(workbook, `Advance_Payment_History_${filenamePeriodPart}.xlsx`);
+    toast.success("Excel file downloaded successfully!");
+  };
+
+  const handleExportPDF = () => {
+    const filteredData = getFilteredHistory();
+    if (filteredData.length === 0) {
+      toast.info("No data to export for the selected period.");
+      return;
+    }
+
+    const doc = new jsPDF();
+    const tableColumn = ["S.No", "Staff ID", "Staff Name", "Amount (₹)", "Request Date", "Status", "Processed Date"];
+    const tableRows: (string | number)[][] = [];
+
+    const totalAmount = filteredData.reduce((sum, p) => sum + p.amount, 0);
+
+    filteredData.forEach((payment, index) => {
+      const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
+      const staff = staffMembers.find(s => s.id === staffDetailsId);
+      const paymentData = [
+        index + 1,
+        staff?.staffIdNumber || 'N/A',
+        staff?.name || 'N/A',
+        // --- FIX 1: Remove currency symbol from data cell ---
+        payment.amount.toLocaleString('en-IN'),
+        format(parseISO(payment.requestDate), 'dd MMM, yyyy'),
+        payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
+        payment.approvedDate ? format(parseISO(payment.approvedDate), 'dd MMM, yyyy') : 'N/A',
+      ];
+      tableRows.push(paymentData);
+    });
+    
+    let reportPeriodTitle = '';
+    let filenamePeriodPart = '';
+    const now = new Date();
+
+    if (exportFilter === 'this_month') {
+        reportPeriodTitle = format(now, 'MMMM yyyy');
+        filenamePeriodPart = format(now, 'MMMM-yyyy');
+    } else if (exportFilter === 'last_month') {
+        const lastMonth = subMonths(now, 1);
+        reportPeriodTitle = format(lastMonth, 'MMMM yyyy');
+        filenamePeriodPart = format(lastMonth, 'MMMM-yyyy');
+    } else {
+        reportPeriodTitle = 'All Time';
+        filenamePeriodPart = 'all-time';
+    }
+
+    doc.setFontSize(18);
+    doc.text(`Advance Payment History (${reportPeriodTitle})`, 14, 22);
+
+    const tableFooterRow = [
+        { 
+            content: 'Total Amount:', 
+            colSpan: 3, 
+            styles: { halign: 'right' as const, fontStyle: 'bold' as const } 
+        },
+        { 
+            // --- FIX 2: Remove currency symbol from footer cell ---
+            content: totalAmount.toLocaleString('en-IN'), 
+            styles: { halign: 'right' as const, fontStyle: 'bold' as const } 
+        },
+        { content: '' }, // placeholder for Request Date column
+        { content: '' }, // placeholder for Status column
+        { content: '' }, // placeholder for Processed Date column
+    ];
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      foot: [tableFooterRow],
+      startY: 30,
+      theme: 'grid',
+      headStyles: { fillColor: [44, 62, 80] },
+      footStyles: { fillColor: [232, 232, 232], textColor: 0, fontStyle: 'bold' as const },
+      styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle' },
+      columnStyles: {
+          0: { cellWidth: 12 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 25, halign: 'right' as const }, // This will now work correctly
+          4: { cellWidth: 28 },
+          5: { cellWidth: 25, halign: 'center' as const },
+          6: { cellWidth: 28 },
+      },
+    });
+
+    const filename = `Advance_Payment_History_${filenamePeriodPart}.pdf`;
+    doc.save(filename);
+    toast.success("PDF file downloaded successfully!");
+  };
+
 
   if (loadingAdvancePayments) {
     return <div className="flex items-center justify-center h-screen bg-slate-50 text-xl text-gray-600">Loading Advance Data...</div>;
@@ -195,7 +372,7 @@ const AdvancePayment: React.FC = () => {
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-black text-gray-900">
                   <option value="">Select Staff</option>
                   {staffMembers.filter(s => s.status === 'active').map((staff) => (
-                    <option key={staff.id} value={staff.id}>{staff.name} - {staff.position}</option>
+                    <option key={staff.id} value={staff.id}>{staff.name} (ID: {staff.staffIdNumber})</option>
                   ))}
                 </select>
               </div>
@@ -235,7 +412,8 @@ const AdvancePayment: React.FC = () => {
         {pendingPayments.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {pendingPayments.map(payment => {
-              const staff = typeof payment.staffId === 'object' ? payment.staffId : staffMembers.find(s => s.id === payment.staffId);
+              const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
+              const staff = staffMembers.find(s => s.id === staffDetailsId);
               return (
                 <div key={payment.id} className="bg-white rounded-xl shadow-md border border-gray-200/80 flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
                   <div className="p-5 flex items-center gap-4 border-b border-gray-200 cursor-pointer" onClick={() => staff && handleOpenDetails(staff.id)}>
@@ -243,6 +421,7 @@ const AdvancePayment: React.FC = () => {
                     <div>
                       <p className="font-bold text-gray-800">{staff?.name}</p>
                       <p className="text-sm text-gray-500">{staff?.position}</p>
+                      <p className="text-xs text-gray-400">ID: {staff?.staffIdNumber || 'N/A'}</p>
                     </div>
                   </div>
                   <div className="p-5 flex-grow space-y-3">
@@ -280,9 +459,40 @@ const AdvancePayment: React.FC = () => {
         )}
       </div>
 
-      {/* The rest of the component remains the same... */}
       <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-gray-200/80">
-        <h3 className="text-2xl font-bold text-gray-700 p-6">Advance Payment History</h3>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center p-5 sm:p-6 border-b border-gray-200 gap-4">
+            <h3 className="text-2xl font-bold text-gray-700">Advance Payment History</h3>
+            <div className="flex items-center gap-2 sm:gap-3">
+                <select
+                    value={exportFilter}
+                    onChange={(e) => setExportFilter(e.target.value)}
+                    className="px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
+                >
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="all_time">All Time</option>
+                </select>
+                <button
+                    onClick={handleExportExcel}
+                    disabled={getFilteredHistory().length === 0}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Export to Excel"
+                >
+                    <FileDown size={16} className="text-green-600" />
+                    <span className="hidden sm:inline">Excel</span>
+                </button>
+                <button
+                    onClick={handleExportPDF}
+                    disabled={getFilteredHistory().length === 0}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Download as PDF"
+                >
+                    <FileDown size={16} className="text-red-600" />
+                    <span className="hidden sm:inline">PDF</span>
+                </button>
+            </div>
+        </div>
+        
         <div className="overflow-x-auto hidden md:block">
           <table className="min-w-full">
             <thead className="bg-slate-100">
@@ -296,7 +506,8 @@ const AdvancePayment: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {historyPayments.map((payment) => {
-                const staff = typeof payment.staffId === 'object' ? payment.staffId : staffMembers.find(s => s.id === payment.staffId);
+                const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
+                const staff = staffMembers.find(s => s.id === staffDetailsId);
                 return (
                   <tr key={payment.id} className="hover:bg-slate-50 transition-colors duration-200">
                     <td className="px-6 py-4 whitespace-nowrap cursor-pointer" onClick={() => staff && handleOpenDetails(staff.id)}>
@@ -305,6 +516,7 @@ const AdvancePayment: React.FC = () => {
                         <div className="ml-4">
                           <div className="text-sm font-semibold text-gray-900">{staff?.name}</div>
                           <div className="text-sm text-gray-500">{staff?.position}</div>
+                          <div className="text-xs text-gray-400">ID: {staff?.staffIdNumber || 'N/A'}</div>
                         </div>
                       </div>
                     </td>
@@ -329,7 +541,8 @@ const AdvancePayment: React.FC = () => {
         <div className="block md:hidden">
             <div className='divide-y divide-gray-200'>
             {historyPayments.map((payment) => {
-                const staff = typeof payment.staffId === 'object' ? payment.staffId : staffMembers.find(s => s.id === payment.staffId);
+                const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
+                const staff = staffMembers.find(s => s.id === staffDetailsId);
                 return (
                     <div key={payment.id} className="p-4" onClick={() => staff && handleOpenDetails(staff.id)}>
                         <div className='flex justify-between items-start gap-3'>
@@ -338,6 +551,7 @@ const AdvancePayment: React.FC = () => {
                                 <div>
                                     <p className="text-sm font-semibold text-gray-900">{staff?.name}</p>
                                     <p className="text-xs text-gray-500">{staff?.position}</p>
+                                    <p className="text-xs text-gray-400">ID: {staff?.staffIdNumber || 'N/A'}</p>
                                 </div>
                             </div>
                              <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${payment.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
@@ -387,6 +601,7 @@ const AdvancePayment: React.FC = () => {
                   <img className="h-24 w-24 rounded-full object-cover ring-4 ring-offset-2 ring-gray-300" src={selectedStaff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedStaff.name)}&background=random&color=fff&size=128`} alt={selectedStaff.name} />
                   <h3 className="text-2xl font-bold text-gray-900 mt-4">{selectedStaff.name}</h3>
                   <p className="text-md text-gray-600">{selectedStaff.position}</p>
+                  <p className="text-sm text-gray-500 mt-1">ID: {selectedStaff.staffIdNumber || 'N/A'}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-8">
                     <div className="bg-white p-4 rounded-xl shadow-sm border text-center flex flex-col items-center justify-center">

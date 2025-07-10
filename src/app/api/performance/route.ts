@@ -46,12 +46,9 @@ export async function GET(request: NextRequest) {
       // Map the records to the format expected by the frontend
       const details = dailyRecords.map(record => ({
         date: record.date.toISOString(),
-        // Use default 0 if a value is missing
         serviceSales: record.serviceSale || 0,
         productSales: record.productSale || 0,
         customersServed: record.customerCount || 0,
-        // ✅ THE FIX: Your DailySale model does not have a 'rating' field.
-        // We will return 0 to prevent the error.
         rating: 0,
       }));
 
@@ -59,7 +56,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ====================================================================
-    // --- ORIGINAL: Logic for monthly summary (for the main page) ---
+    // --- Logic for monthly summary (for the main page) ---
     // ====================================================================
     const staffPerformance = await DailySale.aggregate([
       // 1. Filter sales records for the selected month and year
@@ -71,6 +68,10 @@ export async function GET(request: NextRequest) {
         $group: {
           _id: '$staff',
           totalSales: { $sum: { $add: ['$serviceSale', '$productSale'] } },
+          // --- **THIS IS THE FIX**: We now also sum service and product sales separately ---
+          totalServiceSales: { $sum: '$serviceSale' },
+          totalProductSales: { $sum: '$productSale' },
+          // ----------------------------------------------------------------------------
           totalCustomers: { $sum: '$customerCount' },
         },
       },
@@ -83,28 +84,33 @@ export async function GET(request: NextRequest) {
           as: 'staffDetails' 
         }
       },
-      // 4. Deconstruct the staffDetails array, preserving records with no staff match
+      // 4. Deconstruct the staffDetails array
       { 
         $unwind: {
           path: '$staffDetails',
           preserveNullAndEmptyArrays: true
         }
       },
-      // Filter out records where staff details might not be found (e.g., deleted staff)
+      // Filter out records where staff details might not be found
       {
         $match: {
           'staffDetails._id': { $exists: true }
         }
       },
-      // 5. Project the final fields and calculate the rating
+      // 5. Project the final fields for the response
       {
         $project: {
           _id: 0,
           staffId: '$staffDetails._id',
+          staffIdNumber: '$staffDetails.staffIdNumber', 
           name: '$staffDetails.name',
           position: '$staffDetails.position',
           image: '$staffDetails.image',
           sales: '$totalSales',
+          // --- **THIS IS THE FIX**: Include the new fields in the final output ---
+          totalServiceSales: '$totalServiceSales',
+          totalProductSales: '$totalProductSales',
+          // -----------------------------------------------------------------------
           customers: '$totalCustomers',
           
           rating: {
@@ -163,7 +169,7 @@ export async function GET(request: NextRequest) {
       : 0;
 
     return NextResponse.json({ 
-        success: true, // Added for consistency
+        success: true,
         summary: {
             averageRating: parseFloat(overallAverageRating.toFixed(1)),
             totalCustomers: summary.totalCustomers,

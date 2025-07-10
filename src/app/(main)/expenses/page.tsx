@@ -3,21 +3,26 @@
 import { useState, useEffect, FormEvent, useMemo, Fragment } from 'react';
 
 // --- IMPORTS FOR UI & MODAL ---
-import { 
-  PlusCircleIcon, 
-  DocumentChartBarIcon, 
-  XMarkIcon, 
-  CalendarDaysIcon, 
+import {
+  PlusCircleIcon,
+  DocumentChartBarIcon,
+  XMarkIcon,
+  CalendarDaysIcon,
   BanknotesIcon,
   ClipboardDocumentListIcon,
   ArrowUpCircleIcon,
-  TagIcon
+  TagIcon,
+  ArrowDownTrayIcon
 } from '@heroicons/react/24/outline';
 import { Dialog, Transition } from '@headlessui/react';
 
 // --- IMPORTS FOR NOTIFICATIONS ---
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+
+// --- IMPORTS FOR PDF & EXCEL EXPORT ---
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 
 // --- INTERFACES ---
@@ -29,17 +34,96 @@ interface IExpense {
   date: string;
 }
 
-// Props interface for our internal modal component
-interface DailyExpenseModalProps {
+interface ExpenseDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  dateString: string;
+  title: string;
   historyData: IExpense[];
 }
 
-// --- HELPER / SUB-COMPONENT: The Modal for Daily Expenses ---
-function DailyExpenseModal({ isOpen, onClose, dateString, historyData }: DailyExpenseModalProps) {
-  const dailyTotal = historyData.reduce((sum, expense) => sum + expense.amount, 0);
+function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDetailsModalProps) {
+  const modalTotal = historyData.reduce((sum, expense) => sum + expense.amount, 0);
+
+  // PDF Download Handler
+  const handlePdfDownload = () => {
+    const doc = new jsPDF();
+    
+    const reportTitle = `Expenses Report - ${title}`;
+    doc.text(reportTitle, 14, 22);
+
+    const tableColumn = ["Date", "Type", "Description", "Time", "Amount"];
+    const tableRows: (string | number)[][] = [];
+
+    historyData.forEach(expense => {
+      const expenseData = [
+        new Date(expense.date).toLocaleDateString('en-GB'),
+        expense.type,
+        expense.description || 'N/A',
+        new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+        `₹${expense.amount.toFixed(2)}`
+      ];
+      tableRows.push(expenseData);
+    });
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 30,
+      theme: 'grid',
+      headStyles: { fillColor: [34, 41, 47] },
+      foot: [
+        [
+            { content: 'TOTAL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+            { content: `₹${modalTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold' } }
+        ]
+      ],
+      footStyles: { fontStyle: 'bold', fillColor: [240, 240, 240], textColor: [0, 0, 0] }
+    });
+    
+    const fileName = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_expenses_report.pdf`;
+    doc.save(fileName);
+  };
+
+  // CSV Download Handler
+  const handleCsvDownload = () => {
+    const reportTitle = `Expenses Report - ${title}`;
+    const escapedTitle = `"${reportTitle.replace(/"/g, '""')}"\r\n\r\n`;
+
+    const tableColumn = ["Date", "Type", "Description", "Time", "Amount"];
+    const escapeCsvCell = (cell: string) => `"${cell.replace(/"/g, '""')}"`;
+
+    let csvContent = escapedTitle;
+    csvContent += tableColumn.join(',') + '\r\n';
+
+    historyData.forEach(expense => {
+      const formattedDate = `'${new Date(expense.date).toLocaleDateString('en-GB')}`;
+
+      const row = [
+        formattedDate,
+        expense.type,
+        escapeCsvCell(expense.description || 'N/A'),
+        new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+        expense.amount.toFixed(2)
+      ].join(',');
+      csvContent += row + '\r\n';
+    });
+    
+    csvContent += `\r\n,,,Total,${modalTotal.toFixed(2)}`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      const fileName = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_expenses_report.csv`;
+      link.setAttribute('href', url);
+      link.setAttribute('download', fileName);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -50,13 +134,12 @@ function DailyExpenseModal({ isOpen, onClose, dateString, historyData }: DailyEx
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4 text-center">
             <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
-              <Dialog.Panel className="w-full max-w-3xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all border-t-4 border-gray-800">
+              <Dialog.Panel className="w-full max-w-4xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all border-t-4 border-gray-800">
                 <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-gray-900 flex justify-between items-start">
                   <div className="flex items-center gap-3">
                     <DocumentChartBarIcon className="h-7 w-7 text-gray-700"/>
                     <div>
-                      Expenses for:
-                      <span className="block text-gray-600 font-normal">{new Date(dateString).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                      <span className="block text-gray-600 font-normal">{title}</span>
                     </div>
                   </div>
                   <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 transition-colors">
@@ -66,8 +149,9 @@ function DailyExpenseModal({ isOpen, onClose, dateString, historyData }: DailyEx
                 <div className="mt-6">
                   <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-gray-200">
                     <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-100 sticky top-0">
+                      <thead className="bg-gray-100 sticky top-0 z-10">
                         <tr>
+                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                           <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
@@ -77,6 +161,7 @@ function DailyExpenseModal({ isOpen, onClose, dateString, historyData }: DailyEx
                       <tbody className="bg-white divide-y divide-gray-200 [&>*:nth-child(even)]:bg-slate-50">
                         {historyData.map(expense => (
                           <tr key={expense._id} className="hover:bg-gray-100">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleDateString('en-GB')}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">{expense.type}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{expense.description || <span className="text-gray-400">N/A</span>}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -88,12 +173,23 @@ function DailyExpenseModal({ isOpen, onClose, dateString, historyData }: DailyEx
                       </tbody>
                        <tfoot className="bg-gray-100 sticky bottom-0 border-t-2 border-gray-300">
                           <tr>
-                            <td colSpan={3} className="px-6 py-4 text-right text-sm font-bold text-gray-800 uppercase">Total</td>
-                            <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">₹{dailyTotal.toFixed(2)}</td>
+                            <td colSpan={4} className="px-6 py-4 text-right text-sm font-bold text-gray-800 uppercase">Total</td>
+                            <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">₹{modalTotal.toFixed(2)}</td>
                           </tr>
                       </tfoot>
                     </table>
                   </div>
+                </div>
+
+                <div className="mt-6 flex justify-end items-center gap-3">
+                    <button onClick={handleCsvDownload} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors">
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        Export to Excel (CSV)
+                    </button>
+                    <button onClick={handlePdfDownload} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-md hover:bg-gray-900 transition-colors">
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        Download PDF
+                    </button>
                 </div>
               </Dialog.Panel>
             </Transition.Child>
@@ -134,7 +230,11 @@ export default function ExpensesPage() {
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedHistory, setSelectedHistory] = useState<{ dateString: string, data: IExpense[] }>({ dateString: '', data: [] });
+  const [selectedHistory, setSelectedHistory] = useState<{ title: string, data: IExpense[] }>({ title: '', data: [] });
+
+  // State to manage history view (Daily, Weekly, Monthly)
+  const [historyView, setHistoryView] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
+
 
   useEffect(() => { fetchExpenses() }, []);
 
@@ -183,19 +283,24 @@ export default function ExpensesPage() {
   }, [allExpenses]);
 
 
-  const groupedAndSortedExpenses = useMemo(() => {
-    const filtered = allExpenses.filter(expense => {
+  const filteredExpenses = useMemo(() => {
+    return allExpenses.filter(expense => {
       const expenseDate = new Date(expense.date);
       const start = filterStartDate ? new Date(filterStartDate) : null;
       const end = filterEndDate ? new Date(filterEndDate) : null;
-      if(start) start.setHours(0,0,0,0);
-      if(end) end.setHours(23,59,59,999);
+      if (start) start.setHours(0, 0, 0, 0);
+      if (end) end.setHours(23, 59, 59, 999);
+
       const typeMatch = filterType === 'all' || expense.type === filterType;
       const startDateMatch = !start || expenseDate >= start;
       const endDateMatch = !end || expenseDate <= end;
       return typeMatch && startDateMatch && endDateMatch;
     });
-    const groupedByDate = filtered.reduce((acc, expense) => {
+  }, [allExpenses, filterType, filterStartDate, filterEndDate]);
+
+
+  const groupedAndSortedExpenses = useMemo(() => {
+    const groupedByDate = filteredExpenses.reduce((acc, expense) => {
       const dateKey = new Date(expense.date).toDateString();
       if (!acc[dateKey]) acc[dateKey] = { total: 0, count: 0, records: [] };
       acc[dateKey].total += expense.amount;
@@ -204,7 +309,46 @@ export default function ExpensesPage() {
       return acc;
     }, {} as Record<string, { total: number, count: number, records: IExpense[] }>);
     return Object.entries(groupedByDate).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
-  }, [allExpenses, filterType, filterStartDate, filterEndDate]);
+  }, [filteredExpenses]);
+
+  const weeklyGroupedExpenses = useMemo(() => {
+    const getStartOfWeek = (d: Date) => {
+      const date = new Date(d);
+      const day = date.getDay();
+      const diff = date.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+      const startOfWeek = new Date(date.setDate(diff));
+      startOfWeek.setHours(0, 0, 0, 0);
+      return startOfWeek;
+    };
+    
+    const groupedByWeek = filteredExpenses.reduce((acc, expense) => {
+      const weekStart = getStartOfWeek(new Date(expense.date));
+      const weekKey = weekStart.toISOString();
+      if (!acc[weekKey]) acc[weekKey] = { total: 0, count: 0, records: [] };
+      acc[weekKey].total += expense.amount;
+      acc[weekKey].count += 1;
+      acc[weekKey].records.push(expense);
+      return acc;
+    }, {} as Record<string, { total: number, count: number, records: IExpense[] }>);
+
+    return Object.entries(groupedByWeek).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+  }, [filteredExpenses]);
+  
+  const monthlyGroupedExpenses = useMemo(() => {
+    const groupedByMonth = filteredExpenses.reduce((acc, expense) => {
+      const expenseDate = new Date(expense.date);
+      const monthStart = new Date(expenseDate.getFullYear(), expenseDate.getMonth(), 1);
+      const monthKey = monthStart.toISOString();
+      if (!acc[monthKey]) acc[monthKey] = { total: 0, count: 0, records: [] };
+      acc[monthKey].total += expense.amount;
+      acc[monthKey].count += 1;
+      acc[monthKey].records.push(expense);
+      return acc;
+    }, {} as Record<string, { total: number, count: number, records: IExpense[] }>);
+
+    return Object.entries(groupedByMonth).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+  }, [filteredExpenses]);
+
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -248,25 +392,39 @@ export default function ExpensesPage() {
     setShowAddType(false);
   };
 
-  const handleViewHistory = (dateString: string, records: IExpense[]) => {
-    setSelectedHistory({ dateString, data: records });
+  const handleViewHistory = (title: string, records: IExpense[]) => {
+    setSelectedHistory({ title, data: records });
     setIsModalOpen(true);
   };
   
+  const getHistoryItemTitle = (dateString: string, view: typeof historyView) => {
+      const date = new Date(dateString);
+      if (view === 'Daily') {
+          return date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+      }
+      if (view === 'Weekly') {
+          const endOfWeek = new Date(date);
+          endOfWeek.setDate(date.getDate() + 6);
+          const startStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          const endStr = endOfWeek.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+          return `Week of ${startStr} - ${endStr}`;
+      }
+      if (view === 'Monthly') {
+          return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      }
+      return '';
+  };
+  
+  const dataToRender = {
+    'Daily': groupedAndSortedExpenses,
+    'Weekly': weeklyGroupedExpenses,
+    'Monthly': monthlyGroupedExpenses,
+  }[historyView];
+
+
   return (
     <div className="bg-gray-100 min-h-screen">
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-      />
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light"/>
 
       <div className="container mx-auto p-4 md:p-8 max-w-7xl">
         <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4">
@@ -275,29 +433,12 @@ export default function ExpensesPage() {
               <p className="text-gray-500 mt-1">Today's expense summary and history.</p>
             </div>
             <div className="flex items-center gap-4">
-                <select 
-                  id="filterType" 
-                  value={filterType} 
-                  onChange={e => setFilterType(e.target.value)} 
-                  className="w-full sm:w-auto bg-white border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
+                <select id="filterType" value={filterType} onChange={e => setFilterType(e.target.value)} className="w-full sm:w-auto bg-white border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="all">All Types</option>
                     {expenseTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <input 
-                  type="date" 
-                  id="filterStartDate" 
-                  value={filterStartDate} 
-                  onChange={e => setFilterStartDate(e.target.value)} 
-                  className="w-full sm:w-auto bg-white border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" 
-                />
-                <input 
-                  type="date" 
-                  id="filterEndDate" 
-                  value={filterEndDate} 
-                  onChange={e => setFilterEndDate(e.target.value)} 
-                  className="w-full sm:w-auto bg-white border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" 
-                />
+                <input type="date" id="filterStartDate" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-full sm:w-auto bg-white border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <input type="date" id="filterEndDate" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-full sm:w-auto bg-white border border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
         </div>
 
@@ -389,24 +530,46 @@ export default function ExpensesPage() {
             </div>
 
             <div className="bg-white p-6 rounded-lg shadow-md flex flex-col h-full">
-              <h2 className="text-xl font-semibold text-gray-700 mb-4">Daily Expense History</h2>
-              <div className="flex-grow overflow-y-auto pr-2 -mr-2">
-                  {isLoading && <p>Loading history...</p>}
+              <h2 className="text-xl font-semibold text-gray-700 mb-4">Expense History</h2>
+              
+              <div className="flex w-full space-x-1 rounded-lg bg-gray-200 p-1 mb-4">
+                {(['Daily', 'Weekly', 'Monthly'] as const).map(view => (
+                    <button 
+                        key={view} 
+                        onClick={() => setHistoryView(view)} 
+                        className={`w-full rounded-md py-1.5 text-sm font-medium leading-5 transition-colors focus:outline-none 
+                            ${historyView === view ? 'bg-white text-gray-900 shadow' : 'text-gray-600 hover:bg-white/50'}`
+                        }
+                    >
+                        {view}
+                    </button>
+                ))}
+              </div>
+
+              {/* === THIS IS THE NEW, FIXED CODE === */}
+              {/* Wrapper to create a positioning context and take up remaining space */}
+              <div className="relative flex-grow">
+                {/* The actual scrollable element, positioned to fill the wrapper */}
+                <div className="absolute inset-0 overflow-y-auto pr-2">
+                  {isLoading && <p className="p-4">Loading history...</p>}
                   {!isLoading && (
                     <div className="space-y-4">
-                      {groupedAndSortedExpenses.length > 0 ? (
-                        groupedAndSortedExpenses.map(([dateString, data]) => (
-                          <div key={dateString} className="p-4 border rounded-lg flex items-center justify-between bg-gray-50 hover:shadow-sm transition-shadow">
-                            <div className="flex items-center gap-4">
-                              <div className="flex-shrink-0 bg-gray-100 p-3 rounded-lg"><CalendarDaysIcon className="h-6 w-6 text-gray-600" /></div>
-                              <div>
-                                <h3 className="font-bold text-lg text-gray-800">{new Date(dateString).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h3>
-                                <p className="text-sm text-gray-500">{data.count} records found. Total spent: <span className="font-semibold text-gray-600">₹{data.total.toFixed(2)}</span></p>
+                      {dataToRender.length > 0 ? (
+                        dataToRender.map(([dateString, data]) => {
+                          const title = getHistoryItemTitle(dateString, historyView);
+                          return (
+                            <div key={dateString} className="p-4 border rounded-lg flex items-center justify-between bg-gray-50 hover:shadow-sm transition-shadow">
+                              <div className="flex items-center gap-4">
+                                <div className="flex-shrink-0 bg-gray-100 p-3 rounded-lg"><CalendarDaysIcon className="h-6 w-6 text-gray-600" /></div>
+                                <div>
+                                  <h3 className="font-bold text-lg text-gray-800">{title}</h3>
+                                  <p className="text-sm text-gray-500">{data.count} records found. Total spent: <span className="font-semibold text-gray-600">₹{data.total.toFixed(2)}</span></p>
+                                </div>
                               </div>
+                              <button onClick={() => handleViewHistory(title, data.records)} className="bg-gray-800 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-900 text-sm transition-colors">View Details</button>
                             </div>
-                            <button onClick={() => handleViewHistory(dateString, data.records)} className="bg-gray-800 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-900 text-sm transition-colors">View Details</button>
-                          </div>
-                        ))
+                          )
+                        })
                       ) : (
                         <div className="text-center py-10 border-2 border-dashed border-gray-300 rounded-lg h-full flex flex-col justify-center">
                             <DocumentChartBarIcon className="mx-auto h-12 w-12 text-gray-400" />
@@ -416,12 +579,13 @@ export default function ExpensesPage() {
                       )}
                     </div>
                   )}
+                </div>
               </div>
             </div>
         </div>
       </div>
 
-      <DailyExpenseModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} dateString={selectedHistory.dateString} historyData={selectedHistory.data} />
+      <ExpenseDetailsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedHistory.title} historyData={selectedHistory.data} />
     </div>
   );
 }

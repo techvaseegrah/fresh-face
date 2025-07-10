@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, model, models } from 'mongoose';
 
 // Defines the structure for a rule in the database
 export interface IIncentiveRule extends Document {
-  type: 'daily' | 'monthly'; // To distinguish between the two rule sets
+  type: 'daily' | 'monthly';
   target: {
     multiplier: number;
   };
@@ -13,7 +13,8 @@ export interface IIncentiveRule extends Document {
     reviewPhotoValue: number;
   };
   incentive: {
-    rate: number; // e.g., 0.05 for 5%
+    rate: number;
+    doubleRate: number; // ADDED: The missing property for TypeScript
     applyOn: 'totalSaleValue' | 'serviceSaleOnly';
   };
 }
@@ -32,6 +33,7 @@ const IncentiveRuleSchema = new Schema<IIncentiveRule>({
   },
   incentive: {
     rate: { type: Number, required: true, default: 0.05 },
+    doubleRate: { type: Number, default: 0.10 }, // ADDED: The missing field for the database schema
     applyOn: { type: String, enum: ['totalSaleValue', 'serviceSaleOnly'], default: 'totalSaleValue' }
   },
 }, { timestamps: true });

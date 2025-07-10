@@ -1,3 +1,5 @@
+// src/app/(main)/layout/Sidebar.tsx
+
 'use client';
 
 import Link from 'next/link';
@@ -21,8 +23,9 @@ import {
   BuildingStorefrontIcon,
   BanknotesIcon,
   BellAlertIcon,
-  ReceiptPercentIcon, // Added for Expenses
-  ChevronDownIcon,      // Added for dropdown indicator
+  ReceiptPercentIcon,
+  ChevronDownIcon,
+  // KeyIcon is no longer needed here
 } from '@heroicons/react/24/outline';
 import { BeakerIcon } from 'lucide-react';
 
@@ -34,7 +37,6 @@ const SalaryIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentC
 const StaffListIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> );
 const TargetIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 21a9 9 0 100-18 9 9 0 000 18z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 100-6 3 3 0 000 6z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v2m0 16v2m-8-9H2m18 0h-2"></path></svg> );
 const IncentivesIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg> );
-
 
 // --- INTERFACES ---
 interface NavSubItem {
@@ -64,10 +66,7 @@ const Sidebar = () => {
   
   const userPermissions = session?.user?.role?.permissions || [];
 
-  // --- UNIFIED NAVIGATION CONFIGURATION ---
   const navItems = useMemo((): NavItemConfig[] => {
-    // Sub-items for Staff Management
-    // Note: Assuming these PERMISSIONS exist in your permissions file
     const staffSubItems: NavSubItem[] = [
       { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ATTENDANCE_READ]) },
       { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ADVANCE_READ]) },
@@ -78,7 +77,6 @@ const Sidebar = () => {
       { href: '/staffmanagement/staff/stafflist', label: 'Staff List', icon: <StaffListIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_LIST_READ]), basePathForActive: '/staffmanagement/staff' },
     ];
 
-    // Sub-items for Administration
     const adminSubItems: NavSubItem[] = [
       { href: '/admin/users', label: 'Users', icon: <UsersIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ]) },
       { href: '/admin/roles', label: 'Roles', icon: <CogIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ROLES_READ]) }
@@ -87,7 +85,6 @@ const Sidebar = () => {
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
 
-    // --- FINAL MERGED LIST OF ALL NAVIGATION ITEMS ---
     return [
       { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.DASHBOARD_READ, PERMISSIONS.DASHBOARD_MANAGE]) },
       { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.APPOINTMENTS_READ, PERMISSIONS.APPOINTMENTS_CREATE]) },
@@ -119,12 +116,24 @@ const Sidebar = () => {
         show: canSeeAdministration,
         subItems: adminSubItems.filter(item => item.show),
       },
-      { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SETTINGS_READ]) },
+      // --- (MODIFIED) --- Settings is now a simple link without any sub-items
+      {
+        href: '/settings',
+        label: 'Settings',
+        icon: <Cog6ToothIcon className="h-5 w-5" />,
+        // Show the link if the user has permission to see ANY part of the settings section
+        show: hasAnyPermission(userPermissions, [
+          PERMISSIONS.SETTINGS_READ,
+          PERMISSIONS.SETTINGS_STAFF_ID_MANAGE,
+          // PERMISSIONS.SETTINGS_SHOP_INFO_MANAGE,
+          PERMISSIONS.ATTENDANCE_SETTINGS_READ,
+          PERMISSIONS.LOYALTY_SETTINGS_READ,
+        ]),
+      },
     ];
   }, [userPermissions]);
 
   useEffect(() => {
-    // Find the parent item whose sub-item is currently active and open it
     const activeParent = navItems.find(item =>
       item.subItems?.some(subItem => {
         const activeCheckPath = subItem.basePathForActive || subItem.href;
@@ -142,17 +151,16 @@ const Sidebar = () => {
     signOut({ callbackUrl: '/login' });
   };
   
-  // Checks if a top-level item or any of its children are active
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
-    if (!item.subItems) {
-      // For items without children, check if the path starts with the item's href
-      return currentPath.startsWith(item.href);
+    // For dropdowns, check sub-items
+    if (item.subItems && item.subItems.length > 0) {
+      return item.subItems.some(subItem => {
+        const activeCheckPath = subItem.basePathForActive || subItem.href;
+        return currentPath.startsWith(activeCheckPath);
+      });
     }
-    // For parent items, check if any child's path is active
-    return item.subItems.some(subItem => {
-      const activeCheckPath = subItem.basePathForActive || subItem.href;
-      return currentPath.startsWith(activeCheckPath);
-    });
+    // For simple links, check the link's own href
+    return currentPath.startsWith(item.href);
   };
 
   return (
@@ -178,7 +186,6 @@ const Sidebar = () => {
             return (
               <div key={item.href}>
                 {item.subItems && item.subItems.length > 0 ? (
-                  // RENDER COLLAPSIBLE ITEM
                   <>
                     <button onClick={() => handleItemClick(item.href)} aria-expanded={isOpen} className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
                       <span className="flex items-center gap-3">{item.icon}<span>{item.label}</span></span>
@@ -202,7 +209,6 @@ const Sidebar = () => {
                     </div>
                   </>
                 ) : (
-                  // RENDER SINGLE LINK ITEM
                   <Link href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
                     {item.icon}
                     <span>{item.label}</span>
@@ -233,8 +239,11 @@ const Sidebar = () => {
                 </div>
               </div>
             </div>
-            <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors">
-              <PowerIcon className="h-4 w-4" />
+            <button 
+              onClick={handleSignOut} 
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <PowerIcon className="h-5 w-5" />
               <span>Sign Out</span>
             </button>
           </div>

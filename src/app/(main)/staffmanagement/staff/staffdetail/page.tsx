@@ -6,7 +6,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Edit, Phone, Mail, MapPin, Calendar as CalendarIcon, DollarSign,
-  CheckCircle, XCircle, BarChart3, CalendarClock, AlertTriangle
+  CheckCircle, XCircle, BarChart3, CalendarClock, AlertTriangle,
+  Badge // --- (MODIFIED) --- Import the Badge icon
 } from 'lucide-react';
 import {
   useStaff,
@@ -53,7 +54,16 @@ const StaffDetailsContent: React.FC = () => {
             setStaff(staffData);
             await fetchPerformanceRecords({ month: '', year: new Date().getFullYear(), staffId: staffIdFromQuery });
         } else {
-             throw new Error('Staff member not found in context.');
+             // Attempt to fetch from API if not in context (optional fallback)
+             const response = await fetch(`/api/staff?id=${staffIdFromQuery}`);
+             if (!response.ok) throw new Error('Failed to fetch staff details from server.');
+             const result = await response.json();
+             if (result.success && result.data) {
+                setStaff(result.data);
+                await fetchPerformanceRecords({ month: '', year: new Date().getFullYear(), staffId: staffIdFromQuery });
+             } else {
+                throw new Error(result.error || 'Staff member not found.');
+             }
         }
 
       } catch (err: any) {
@@ -79,7 +89,6 @@ const StaffDetailsContent: React.FC = () => {
 
 
   if (isLoading) return <div className="p-6 text-center">Loading staff details...</div>;
-  // --- CHANGE: Button variant is now "black" ---
   if (error && !staff) return <div className="p-6 text-center"><p className="text-red-500">{error}</p><Button variant="black" onClick={() => router.push('/staffmanagement/staff/stafflist')} className="mt-4">Back to List</Button></div>;
   if (!staff) return <div className="flex flex-col items-center justify-center min-h-[60vh] p-4"><h2 className="text-xl font-bold text-gray-800 mb-2">Staff Not Found</h2><p className="text-gray-600 mb-6 text-center">ID: {staffIdFromQuery || 'N/A'}</p><Button variant="black" onClick={() => router.push('/staffmanagement/staff/stafflist')}>Back to List</Button></div>;
 
@@ -106,7 +115,6 @@ const StaffDetailsContent: React.FC = () => {
           <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => router.push('/staffmanagement/staff/stafflist')} className="mr-4">Back</Button>
           <h1 className="text-xl md:text-2xl font-bold text-gray-800">Staff Details</h1>
         </div>
-        {/* --- CHANGE: Button variant is now "black" --- */}
         <Button variant="black" icon={<Edit size={16} />} onClick={() => router.push(`/staffmanagement/staff/editstaff?staffId=${staff.id}`)} className="mt-4 md:mt-0">Edit Profile</Button>
       </div>
 
@@ -121,6 +129,11 @@ const StaffDetailsContent: React.FC = () => {
             <p className="text-gray-600 mb-4">{staff.position}</p>
             <div className="w-full border-t border-gray-200 my-4"></div>
             <div className="w-full space-y-3 text-left px-4 text-sm">
+              {/* --- (MODIFIED) --- Added Staff ID display */}
+              <div className="flex items-start">
+                <Badge className="h-5 w-5 text-gray-500 mr-3 mt-0.5 shrink-0" />
+                <span className="text-gray-700 font-medium">ID: {staff.staffIdNumber}</span>
+              </div>
               <div className="flex items-start"><Phone className="h-5 w-5 text-gray-500 mr-3 mt-0.5 shrink-0" /><span className="text-gray-700 break-all">{staff.phone}</span></div>
               <div className="flex items-start"><Mail className="h-5 w-5 text-gray-500 mr-3 mt-0.5 shrink-0" /><span className="text-gray-700 break-all">{staff.email}</span></div>
               <div className="flex items-start"><MapPin className="h-5 w-5 text-gray-500 mr-3 mt-0.5 shrink-0" /><span className="text-gray-700">{staff.address || 'N/A'}</span></div>
@@ -175,7 +188,6 @@ const StaffDetailsContent: React.FC = () => {
                 </div>
               ) : (<p className="text-sm text-gray-500 text-center py-4">No recent attendance data for this staff.</p>)}
               <div className="flex justify-end items-center mt-2">
-                {/* --- CHANGE: Link color is now black --- */}
                 <Link href={`/staffmanagement/attendance?staffId=${staff.id}`} className="text-sm text-black hover:text-gray-700 font-medium">View Full History</Link>
               </div>
             </div>
@@ -192,7 +204,6 @@ const StaffDetailsContent: React.FC = () => {
                 {latestPerformance.comments && (<div><p className="text-sm text-gray-600 mb-1 font-medium">Comments:</p><p className="text-sm bg-gray-50 p-3 rounded-md whitespace-pre-wrap border border-gray-200">{latestPerformance.comments}</p></div>)}
                 <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-4">
                   <div className="flex items-center text-sm text-gray-500"><CalendarClock className="h-4 w-4 mr-1.5 shrink-0" /><span>{format(new Date(latestPerformance.year, new Date(Date.parse(latestPerformance.month +" 1, 2000")).getMonth()), 'MMMM yyyy')}</span></div>
-                  {/* --- CHANGE: Link color is now black --- */}
                   <Link href={`/staffmanagement/performance?staffId=${staff.id}`} className="text-sm text-black hover:text-gray-700 font-medium flex items-center"><span>Full History</span><BarChart3 className="ml-1.5 h-4 w-4 shrink-0" /></Link>
                 </div>
               </div>

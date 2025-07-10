@@ -6,11 +6,11 @@ import Attendance, { IAttendance } from '../../../models/Attendance';
 import Staff, { IStaff } from '../../../models/staff';
 import TemporaryExit, { ITemporaryExit } from '../../../models/TemporaryExit';
 import mongoose, { Types } from 'mongoose';
-import { differenceInMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth } from 'date-fns';
+import { differenceInMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
 
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
 
-// --- GET Handler (No changes needed) ---
+// --- GET Handler ---
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const action = searchParams.get('action');
@@ -23,10 +23,11 @@ export async function GET(request: NextRequest) {
       const todayStartBoundary = startOfDay(todayDate);
       const todayEndBoundary = endOfDay(todayDate);
 
+      // --- MODIFICATION: Added 'staffIdNumber' to the populate select string ---
       const records = await Attendance.find({
         date: { $gte: todayStartBoundary, $lte: todayEndBoundary },
       })
-        .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position'> | null }>({ path: 'staffId', model: Staff, select: 'name image position' })
+        .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
         .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
         .sort({ checkIn: 'asc' })
         .lean();
@@ -53,8 +54,9 @@ export async function GET(request: NextRequest) {
       const startDate = new Date(Date.UTC(parsedYear, parsedMonth - 1, 1));
       const endDate = endOfMonth(startDate);
 
+      // --- MODIFICATION: Added 'staffIdNumber' to the populate select string ---
       const records = await Attendance.find({ date: { $gte: startDate, $lte: endDate } })
-        .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position'> | null }>({ path: 'staffId', model: Staff, select: 'name image position' })
+        .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
         .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
         .sort({ date: 'asc', checkIn: 'asc' })
         .lean();
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// --- POST Handler (Corrected) ---
+// --- POST Handler ---
 export async function POST(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const action = searchParams.get('action');
@@ -82,13 +84,11 @@ export async function POST(request: NextRequest) {
     
     if (action === 'checkIn') {
         const body = await request.json();
-        // FIX: Destructure requiredHours from the request body
         const { staffId, requiredHours } = body;
 
         if (!staffId || !isValidObjectId(staffId)) {
             return NextResponse.json({ success: false, error: 'Invalid or missing staff ID' }, { status: 400 });
         }
-        // FIX: Add validation for the requiredHours
         if (typeof requiredHours !== 'number' || requiredHours <= 0) {
             return NextResponse.json({ success: false, error: 'Invalid or missing requiredHours' }, { status: 400 });
         }
@@ -106,27 +106,24 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ success: false, error: 'Attendance already recorded and checked-in for today' }, { status: 400 });
             }
             existingRecord.checkIn = new Date();
-            // FIX: Set status to incomplete, not present
             existingRecord.status = 'incomplete';
-            // FIX: Set required minutes when updating an existing (but not checked-in) record
             existingRecord.requiredMinutes = requiredHours * 60;
             const updatedRecord = await existingRecord.save();
-            const populatedUpdatedRecord = await Attendance.findById(updatedRecord._id).populate('staffId', 'name image position').populate('temporaryExits').lean();
+            const populatedUpdatedRecord = await Attendance.findById(updatedRecord._id).populate('staffId', 'name image position staffIdNumber').populate('temporaryExits').lean();
             return NextResponse.json({ success: true, data: populatedUpdatedRecord });
         }
         
         const now = new Date();
-        // FIX: Create the new record with the correct requiredMinutes and initial status
         const newAttendance = new Attendance({
             staffId: new Types.ObjectId(staffId),
             date: now,
             checkIn: now,
-            status: 'incomplete', // Status is 'incomplete' until work is done
-            requiredMinutes: requiredHours * 60, // Save the required hours in minutes
+            status: 'incomplete', 
+            requiredMinutes: requiredHours * 60,
         });
 
         const savedRecord = await newAttendance.save();
-        const populatedRecord = await Attendance.findById(savedRecord._id).populate('staffId', 'name image position').populate('temporaryExits').lean();
+        const populatedRecord = await Attendance.findById(savedRecord._id).populate('staffId', 'name image position staffIdNumber').populate('temporaryExits').lean();
         return NextResponse.json({ success: true, data: populatedRecord }, { status: 201 });
     } 
     
@@ -139,8 +136,7 @@ export async function POST(request: NextRequest) {
       if (attendance.checkOut) return NextResponse.json({ success: false, error: 'Already checked out' }, { status: 400 });
       if (!attendance.checkIn) return NextResponse.json({ success: false, error: 'Cannot check-out without a check-in record' }, { status: 400 });
       
-      // Use the requiredMinutes from the record itself (saved during check-in)
-      const standardWorkMinutes = attendance.requiredMinutes || (9 * 60); // Fallback to 9 hours if not present
+      const standardWorkMinutes = attendance.requiredMinutes || (9 * 60);
       
       const populatedExits = attendance.temporaryExits as unknown as ITemporaryExit[];
       if (populatedExits.some(exit => !exit.endTime)) { return NextResponse.json({ success: false, error: 'An exit is still ongoing. End it before checking out.' }, { status: 400 }); }
@@ -159,7 +155,7 @@ export async function POST(request: NextRequest) {
       attendance.overtimeHours = overtimeMinutes / 60;
       
       await attendance.save();
-      const populatedResponseRecord = await Attendance.findById(attendance._id).populate('staffId', 'name image position').populate('temporaryExits').lean();
+      const populatedResponseRecord = await Attendance.findById(attendance._id).populate('staffId', 'name image position staffIdNumber').populate('temporaryExits').lean();
       return NextResponse.json({ success: true, data: populatedResponseRecord });
     }
     
@@ -180,6 +176,58 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, data: savedTempExit.toObject() });
     }
     
+    else if (action === 'weekOff') {
+      const { staffIds, date: dateString } = await request.json();
+
+      if (!staffIds || !Array.isArray(staffIds) || staffIds.length === 0) {
+        return NextResponse.json({ success: false, error: "staffIds must be a non-empty array." }, { status: 400 });
+      }
+      const date = parseISO(dateString);
+      if (!dateString || !isValid(date)) {
+        return NextResponse.json({ success: false, error: "A valid date string (YYYY-MM-DD) is required." }, { status: 400 });
+      }
+
+      const targetDateStart = startOfDay(date);
+      const targetDateEnd = endOfDay(date);
+
+      const bulkOps = staffIds.map(staffId => ({
+        updateOne: {
+          filter: {
+            staffId: new Types.ObjectId(staffId),
+            date: { $gte: targetDateStart, $lte: targetDateEnd }
+          },
+          update: {
+            $set: {
+              status: 'week_off',
+              isWorkComplete: true,
+              totalWorkingMinutes: 0,
+              requiredMinutes: 0,
+              checkIn: null,
+              checkOut: null,
+              temporaryExits: [],
+              notes: "Manually applied week off."
+            },
+            $setOnInsert: {
+              staffId: new Types.ObjectId(staffId),
+              date: targetDateStart
+            }
+          },
+          upsert: true,
+        },
+      }));
+
+      if (bulkOps.length > 0) {
+        await Attendance.bulkWrite(bulkOps);
+      }
+
+      const updatedRecords = await Attendance.find({
+        staffId: { $in: staffIds.map(id => new Types.ObjectId(id)) },
+        date: { $gte: targetDateStart, $lte: targetDateEnd },
+      }).populate('staffId', 'name image position staffIdNumber').populate('temporaryExits').lean();
+
+      return NextResponse.json({ success: true, data: updatedRecords });
+    }
+    
     return NextResponse.json({ success: false, error: 'Invalid action for POST request' }, { status: 400 });
 
   } catch (error: any) {
@@ -188,7 +236,7 @@ export async function POST(request: NextRequest) {
    }
 }
 
-// --- PUT Handler (No changes needed) ---
+// --- PUT Handler ---
 export async function PUT(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const action = searchParams.get('action');
@@ -214,4 +262,42 @@ export async function PUT(request: NextRequest) {
         }
     }
     return NextResponse.json({ success: false, error: "Invalid action for PUT request" }, { status: 400 });
+}
+
+// --- DELETE Handler ---
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+  const attendanceId = searchParams.get('id');
+
+  try {
+    await dbConnect();
+
+    if (!attendanceId || !isValidObjectId(attendanceId)) {
+      return NextResponse.json(
+        { success: false, error: "A valid 'id' query parameter is required." },
+        { status: 400 }
+      );
+    }
+
+    const deletedRecord = await Attendance.findByIdAndDelete(attendanceId);
+
+    if (!deletedRecord) {
+      return NextResponse.json(
+        { success: false, error: "Attendance record not found to delete." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Attendance record deleted successfully.",
+    });
+
+  } catch (error: any) {
+    console.error(`API DELETE /api/attendance (id: ${attendanceId}) Error:`, error);
+    return NextResponse.json(
+      { success: false, error: `Server error: ${error.message || 'Unknown error'}` },
+      { status: 500 }
+    );
+  }
 }

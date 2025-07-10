@@ -5,7 +5,8 @@ import { toast } from 'react-toastify';
 import {
   IndianRupee, Calendar, Search, Download,
   CreditCard, CheckCircle, X, Clock,
-  ArrowUpCircle, ArrowDownCircle, History
+  ArrowUpCircle, ArrowDownCircle, History, Edit, Badge,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useStaff, StaffMember, SalaryRecordType } from '../../../../context/StaffContext';
 import Card from '../../../../components/ui/Card';
@@ -13,7 +14,9 @@ import Button from '../../../../components/ui/Button';
 import { format, parseISO } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
+// --- Interface Definitions ---
 interface SalaryInputs {
   otHours: string;
   extraDays: string;
@@ -26,8 +29,7 @@ interface ShopSettings {
   defaultExtraDayRate: number;
 }
 
-
-// --- Payment Detail Sidebar Component (No changes here) ---
+// --- Payment Detail Sidebar Component ---
 interface PaymentDetailSidebarProps {
   record: SalaryRecordType | null;
   allPaidRecords: SalaryRecordType[];
@@ -76,7 +78,11 @@ const PaymentDetailSidebar: React.FC<PaymentDetailSidebarProps> = ({ record, all
           {staff && (
             <div className="flex items-center space-x-4">
               <img className="h-16 w-16 rounded-full object-cover ring-4 ring-slate-200" src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random`} alt={staff.name}/>
-              <div><h3 className="text-xl font-bold text-slate-900">{staff.name}</h3><p className="text-md text-slate-500">{staff.position}</p></div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">{staff.name}</h3>
+                <p className="flex items-center gap-2 text-sm text-slate-500"><Badge size={14} /> ID: {staff.staffIdNumber || 'N/A'}</p>
+                <p className="text-md text-slate-500">{staff.position}</p>
+              </div>
             </div>
           )}
           <div className="bg-slate-50 p-4 rounded-lg text-center">
@@ -122,12 +128,12 @@ const PaymentDetailSidebar: React.FC<PaymentDetailSidebarProps> = ({ record, all
   );
 };
 
-
+// --- Main Salary Component ---
 const Salary: React.FC = () => {
   const {
     staffMembers,
     salaryRecords,
-    processSalary,
+    processSalary, 
     markSalaryAsPaid,
     advancePayments,
     fetchSalaryRecords,
@@ -139,8 +145,10 @@ const Salary: React.FC = () => {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [buttonLoadingStates, setButtonLoadingStates] = useState<Record<string, { processing?: boolean; paying?: boolean }>>({});
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [processingStaff, setProcessingStaff] = useState<StaffMember | null>(null);
+  const [editingRecord, setEditingRecord] = useState<SalaryRecordType | null>(null);
   const [salaryInputs, setSalaryInputs] = useState<SalaryInputs>({ otHours: '0', extraDays: '0', foodDeduction: '0', recurExpense: '0' });
   const [isModalLoading, setIsModalLoading] = useState(false);
   const [shopSettings, setShopSettings] = useState<ShopSettings | null>(null);
@@ -161,40 +169,98 @@ const Salary: React.FC = () => {
     stableFetchSalaryRecords({ populateStaff: 'true' });
   }, [stableFetchSalaryRecords]);
   
-  const filteredStaff = useMemo(() => staffMembers.filter(staff => staff.name.toLowerCase().includes(searchTerm.toLowerCase()) && staff.status === 'active'), [staffMembers, searchTerm]);
+  const enrichedSalaryRecords = useMemo(() => {
+    if (!salaryRecords.length || !staffMembers.length) {
+      return salaryRecords;
+    }
+    return salaryRecords.map(record => {
+      const fullStaffDetails = staffMembers.find(staff => {
+         const recordStaffId = typeof record.staffId === 'string' ? record.staffId : (record.staffId as any)?.id;
+         return staff.id === recordStaffId;
+      });
 
-  const openProcessingModal = async (staff: StaffMember) => {
+      if (fullStaffDetails) {
+        return { ...record, staffDetails: fullStaffDetails };
+      }
+      return record;
+    });
+  }, [salaryRecords, staffMembers]);
+
+
+  const filteredStaff = useMemo(() => {
+    const activeStaff = staffMembers.filter(staff => staff.status === 'active');
+    if (!searchTerm) {
+        return activeStaff;
+    }
+    const lowercasedFilter = searchTerm.toLowerCase();
+    return activeStaff.filter(staff =>
+        staff.name.toLowerCase().includes(lowercasedFilter) ||
+        (staff.staffIdNumber && staff.staffIdNumber.includes(lowercasedFilter))
+    );
+  }, [staffMembers, searchTerm]);
+  
+  const getSalaryRecord = useCallback((staffId: string): SalaryRecordType | undefined => {
+    return enrichedSalaryRecords.find(r => {
+      const recordStaffId = typeof r.staffId === 'string' ? r.staffId : (r.staffId as any)?.id;
+      return recordStaffId === staffId && r.month === months[currentMonthIndex] && r.year === currentYear;
+    });
+  }, [enrichedSalaryRecords, months, currentMonthIndex, currentYear]);
+
+  const currentMonthProcessedRecords = useMemo(() => {
+    return enrichedSalaryRecords.filter(r => r.month === months[currentMonthIndex] && r.year === currentYear);
+  }, [enrichedSalaryRecords, months, currentMonthIndex, currentYear]);
+
+  const currentMonthPaidRecords = useMemo(() => {
+    return currentMonthProcessedRecords.filter(r => r.isPaid);
+  }, [currentMonthProcessedRecords]);
+
+  const allPaidRecords = useMemo(() => {
+    return enrichedSalaryRecords
+      .filter(r => r.isPaid)
+      .sort((a, b) => {
+          if (!a.paidDate || !b.paidDate) return 0;
+          return parseISO(b.paidDate).getTime() - parseISO(a.paidDate).getTime();
+      });
+  }, [enrichedSalaryRecords]);
+  
+  const totalSalaryExpense = useMemo(() => {
+    return currentMonthPaidRecords.reduce((total, r) => total + (r.netSalary ?? 0), 0);
+  }, [currentMonthPaidRecords]);
+  
+  const processedSalariesCount = useMemo(() => currentMonthProcessedRecords.length, [currentMonthProcessedRecords]);
+  
+  const paidSalariesCount = useMemo(() => currentMonthPaidRecords.length, [currentMonthPaidRecords]);
+
+  const pendingPaymentsCount = useMemo(() => processedSalariesCount - paidSalariesCount, [processedSalariesCount, paidSalariesCount]);
+  
+  const openProcessingModal = async (staff: StaffMember, recordToEdit: SalaryRecordType | null = null) => {
     setProcessingStaff(staff);
+    setEditingRecord(recordToEdit);
     setIsModalOpen(true);
     setIsModalLoading(true);
 
     try {
-      const [attendanceRes, settingsRes] = await Promise.all([
-        fetch(`/api/attendance?action=getOvertimeTotal&staffId=${staff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`),
-        fetch('/api/settings')
-      ]);
-
-      const attendanceResult = await attendanceRes.json();
+      const settingsRes = await fetch('/api/settings');
       const settingsResult = await settingsRes.json();
+      if (!settingsResult.success) throw new Error(settingsResult.error || "Failed to fetch shop settings.");
+      setShopSettings(settingsResult.data);
 
-      let otHours = '0';
-      if (attendanceResult.success && attendanceResult.data.totalOtHours > 0) {
-        otHours = attendanceResult.data.totalOtHours.toFixed(2);
-      }
-      
-      setSalaryInputs({ 
-          otHours: otHours, 
-          extraDays: '0', 
-          foodDeduction: '2500', 
-          recurExpense: '0' 
-      });
-
-      if (settingsResult.success) {
-        setShopSettings(settingsResult.data);
+      if (recordToEdit) {
+        setSalaryInputs({
+          otHours: recordToEdit.otHours.toString(),
+          extraDays: recordToEdit.extraDays.toString(),
+          foodDeduction: recordToEdit.foodDeduction.toString(),
+          recurExpense: recordToEdit.recurExpense.toString(),
+        });
       } else {
-        throw new Error(settingsResult.error || "Failed to fetch shop settings.");
+        const attendanceRes = await fetch(`/api/attendance?action=getOvertimeTotal&staffId=${staff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
+        const attendanceResult = await attendanceRes.json();
+        let otHours = '0';
+        if (attendanceResult.success && attendanceResult.data.totalOtHours > 0) {
+          otHours = attendanceResult.data.totalOtHours.toFixed(2);
+        }
+        setSalaryInputs({ otHours, extraDays: '0', foodDeduction: '2500', recurExpense: '0' });
       }
-
     } catch (error) {
       console.error("Failed to fetch initial salary data:", error);
       toast.error("Could not fetch required data. Please check settings and try again.");
@@ -204,7 +270,7 @@ const Salary: React.FC = () => {
     }
   };
   
-  const handleProcessSalary = async () => {
+  const handleConfirmProcessOrUpdate = async () => {
     if (!processingStaff || !shopSettings) {
         toast.error("Settings data is missing. Cannot process salary.");
         return;
@@ -212,16 +278,16 @@ const Salary: React.FC = () => {
     setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: true } }));
     setIsModalOpen(false);
 
-    const advanceToDeduct = advancePayments
-      ?.filter(adv => {
-        const idToCompare = typeof adv.staffId === 'string' ? adv.staffId : (adv.staffId as any)?.id;
-        if (idToCompare !== processingStaff.id || adv.status !== 'approved' || !adv.approvedDate) {
-            return false;
-        }
-        const approvedDate = parseISO(adv.approvedDate);
-        return approvedDate.getMonth() === currentMonthIndex && approvedDate.getFullYear() === currentYear;
-      })
-      .reduce((total, adv) => total + (Number(adv.amount) || 0), 0) || 0;
+    const advanceToDeduct = editingRecord
+      ? editingRecord.advanceDeducted
+      : advancePayments
+          ?.filter(adv => {
+            const idToCompare = typeof adv.staffId === 'string' ? adv.staffId : (adv.staffId as any)?.id;
+            if (idToCompare !== processingStaff.id || adv.status !== 'approved' || !adv.approvedDate) return false;
+            const approvedDate = parseISO(adv.approvedDate);
+            return approvedDate.getMonth() === currentMonthIndex && approvedDate.getFullYear() === currentYear;
+          })
+          .reduce((total, adv) => total + (Number(adv.amount) || 0), 0) || 0;
 
     const inputs = {
       otHours: parseFloat(salaryInputs.otHours) || 0,
@@ -241,6 +307,7 @@ const Salary: React.FC = () => {
     const netSalary = totalEarnings - totalDeductions;
 
     const payload = {
+        ...(editingRecord && { id: editingRecord.id }),
         staffId: processingStaff.id, month: months[currentMonthIndex], year: currentYear,
         baseSalary, otHours: inputs.otHours, otAmount, extraDays: inputs.extraDays, extraDayPay,
         foodDeduction: inputs.foodDeduction, recurExpense: inputs.recurExpense,
@@ -248,17 +315,17 @@ const Salary: React.FC = () => {
         isPaid: false, paidDate: null
     };
 
-    // --- MODIFICATION: Implemented react-toastify for processing salary ---
+    const isUpdating = !!editingRecord;
     const processPromise = processSalary(payload as any);
 
     toast.promise(
       processPromise,
       {
-        pending: `Processing salary for ${processingStaff.name}...`,
-        success: `Salary processed for ${processingStaff.name}!`,
+        pending: isUpdating ? `Updating salary for ${processingStaff.name}...` : `Processing salary for ${processingStaff.name}...`,
+        success: isUpdating ? `Salary updated successfully!` : `Salary processed for ${processingStaff.name}!`,
         error: {
-          render({data}: any){ // Renders the error message from the rejected promise
-            return `Error: ${data.message || 'Failed to process salary'}`
+          render({data}: any){
+            return `Error: ${data.message || (isUpdating ? 'Failed to update salary' : 'Failed to process salary')}`
           }
         }
       }
@@ -267,29 +334,26 @@ const Salary: React.FC = () => {
     try {
       await processPromise;
     } catch (error) {
-      // The toast is already handled by toast.promise, but we can still log the error
-      console.error("Failed to process salary (page level):", error);
+      console.error("Failed to process/update salary:", error);
     } finally {
       setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } }));
       setProcessingStaff(null);
+      setEditingRecord(null);
     }
-    // --- END MODIFICATION ---
   };
 
   const handlePayNow = async (record: SalaryRecordType, staff: StaffMember) => {
     if (!record || !staff) return;
     setButtonLoadingStates(prev => ({ ...prev, [staff.id]: { ...prev[staff.id], paying: true } }));
     
-    // --- MODIFICATION: Implemented react-toastify for paying salary ---
     const payPromise = markSalaryAsPaid(record, staff, format(new Date(), 'yyyy-MM-dd'));
-
     toast.promise(
       payPromise,
       {
         pending: `Paying ${staff.name}...`,
         success: `Salary marked as paid for ${staff.name}!`,
         error: {
-          render({data}: any) { // Renders the error message from the rejected promise
+          render({data}: any) {
             return `Payment failed: ${data.message || 'Unknown error'}`;
           }
         }
@@ -299,37 +363,15 @@ const Salary: React.FC = () => {
     try {
       await payPromise;
     } catch (error) {
-      // The toast is already handled by toast.promise, but we can still log the error
       console.error("Failed to mark salary as paid:", error);
     } finally {
       setButtonLoadingStates(prev => ({ ...prev, [staff.id]: { paying: false } }));
     }
-    // --- END MODIFICATION ---
   };
-  
-  const getSalaryRecord = useCallback((staffId: string): SalaryRecordType | undefined => {
-    return salaryRecords.find(r => {
-      const recordStaffId = typeof r.staffId === 'string' ? r.staffId : (r.staffId as any)?.id;
-      return recordStaffId === staffId && r.month === months[currentMonthIndex] && r.year === currentYear;
-    });
-  }, [salaryRecords, months, currentMonthIndex, currentYear]);
 
-  const paidSalaryRecords = useMemo(() => {
-    return salaryRecords
-      .filter(r => r.isPaid)
-      .sort((a, b) => {
-          if (!a.paidDate || !b.paidDate) return 0;
-          return parseISO(b.paidDate).getTime() - parseISO(a.paidDate).getTime();
-      });
-  }, [salaryRecords]);
-
-  const currentMonthSalaryRecords = useMemo(() => paidSalaryRecords.filter(r => r.month === months[currentMonthIndex] && r.year === currentYear), [paidSalaryRecords, months, currentMonthIndex, currentYear]);
-  const totalSalaryExpense = useMemo(() => currentMonthSalaryRecords.reduce((total, r) => total + (r.netSalary ?? 0), 0), [currentMonthSalaryRecords]);
-  const processedSalariesCount = useMemo(() => salaryRecords.filter(r => r.month === months[currentMonthIndex] && r.year === currentYear).length, [salaryRecords, months, currentMonthIndex, currentYear]);
-  const pendingPaymentsCount = useMemo(() => processedSalariesCount - currentMonthSalaryRecords.length, [processedSalariesCount, currentMonthSalaryRecords.length]);
-  
+  // --- UPDATED: handleExportPDF Function ---
   const handleExportPDF = () => {
-    if (currentMonthSalaryRecords.length === 0) {
+    if (currentMonthPaidRecords.length === 0) {
       toast.info("No paid salary data to export for this month.");
       return;
     }
@@ -337,88 +379,138 @@ const Salary: React.FC = () => {
     setIsExporting(true);
 
     try {
-      const doc = new jsPDF();
+      const doc = new jsPDF({ orientation: 'landscape' });
       const monthStr = months[currentMonthIndex];
       const yearStr = currentYear;
-      const fileName = `salary_report_${monthStr.toLowerCase()}_${yearStr}.pdf`;
+      const fileName = `salary_report_paid_${monthStr.toLowerCase()}_${yearStr}.pdf`;
 
-      // Title
       doc.setFontSize(22);
       doc.setFont('helvetica', 'bold');
       doc.text('Salary Report', 14, 20);
-
-      // Subtitle
       doc.setFontSize(12);
       doc.setFont('helvetica', 'normal');
       doc.text(`Month: ${monthStr} ${yearStr}`, 14, 28);
       
-      // Summary
+      const totalPaidExpense = currentMonthPaidRecords.reduce((total, r) => total + (r.netSalary ?? 0), 0);
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text(`Summary for ${monthStr} ${yearStr}:`, 14, 40);
       
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`- Total Salary Expense (Processed): Rs. ${totalSalaryExpense.toLocaleString('en-IN')}`, 14, 48);
-      doc.text(`- Processed Salaries:             ${processedSalariesCount} / ${staffMembers.length}`, 14, 54);
-      doc.text(`- Pending Payments:               ${pendingPaymentsCount}`, 14, 60);
+      autoTable(doc, {
+        startY: 45,
+        theme: 'plain',
+        tableWidth: 'wrap',
+        styles: { fontSize: 10, cellPadding: 1 },
+        columnStyles: {
+            0: { halign: 'left', cellWidth: 'auto' },
+            1: { halign: 'right', cellWidth: 'auto' },
+        },
+        body: [
+            [`Total Salary Expense (Paid):`, `Rs. ${totalPaidExpense.toLocaleString('en-IN')}`],
+            [`Processed Salaries:`, `${processedSalariesCount}`],
+            [`Paid Salaries:`, `${paidSalariesCount}`],
+            [`Pending Payments:`, `${pendingPaymentsCount}`],
+        ],
+      });
 
       const tableHead = [
-        '#',
-        'Staff Name',
-        'Position',
-        'Base (Rs.)',
-        'Earnings',
-        'Deductions',
-        'Advance',
-        'Net (Rs.)',
-        'Paid Date'
+        '#', 'Staff ID', 'Staff Name', 'Position', 'Base Salary', 'OT Hrs', 'OT Amt',
+        'Extra Days', 'Extra Day Pay', 'Total Earnings', 'Food Ded', 'Recur Ded',
+        'Adv Ded', 'Total Ded', 'Net Salary', 'Paid Date'
       ];
-
-      const tableBody = currentMonthSalaryRecords.map((record, index) => {
+      
+      const tableBody = currentMonthPaidRecords.map((record, index) => {
         const staff = record.staffDetails;
-        const earnings = (record.otAmount || 0) + (record.extraDayPay || 0);
-        const mainDeductions = (record.foodDeduction || 0) + (record.recurExpense || 0);
-        
         return [
-          index + 1,
-          staff?.name || 'Unknown',
-          staff?.position || 'N/A',
-          record.baseSalary.toLocaleString('en-IN'),
-          earnings.toLocaleString('en-IN'),
-          mainDeductions.toLocaleString('en-IN'),
-          (record.advanceDeducted || 0).toLocaleString('en-IN'),
+          index + 1, staff?.staffIdNumber || 'N/A', staff?.name || 'Unknown', staff?.position || 'N/A',
+          record.baseSalary.toLocaleString('en-IN'), record.otHours, record.otAmount.toLocaleString('en-IN'),
+          record.extraDays, record.extraDayPay.toLocaleString('en-IN'), record.totalEarnings.toLocaleString('en-IN'),
+          record.foodDeduction.toLocaleString('en-IN'), record.recurExpense.toLocaleString('en-IN'),
+          record.advanceDeducted.toLocaleString('en-IN'), record.totalDeductions.toLocaleString('en-IN'),
           record.netSalary.toLocaleString('en-IN'),
           record.paidDate ? format(parseISO(record.paidDate), 'dd/MM/yy') : 'N/A'
         ];
       });
 
+      const lastSummaryY = (doc as any).lastAutoTable.finalY || 65;
       autoTable(doc, {
-        head: [tableHead],
-        body: tableBody,
-        startY: 70,
-        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 8 },
-        styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+        head: [tableHead], body: tableBody, startY: lastSummaryY + 5,
+        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontSize: 7 },
+        styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
         alternateRowStyles: { fillColor: [245, 245, 245] },
-        columnStyles: {
-            0: { cellWidth: 8 },
-            1: { cellWidth: 'auto' },
-            2: { cellWidth: 25 },
-            3: { halign: 'right' },
-            4: { halign: 'right' },
-            5: { halign: 'right' },
-            6: { halign: 'right' },
-            7: { halign: 'right' },
-            8: { halign: 'center' },
-        }
+        columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 15 }, 2: { cellWidth: 25 }, 3: { cellWidth: 25 } }
       });
 
       doc.save(fileName);
+      toast.success("PDF report exported successfully!");
     } catch (error) {
       console.error("Failed to generate PDF:", error);
       toast.error("An error occurred while generating the PDF.");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // --- UPDATED: handleExportExcel Function ---
+  const handleExportExcel = () => {
+    if (currentMonthPaidRecords.length === 0) {
+      toast.info("No paid salary data to export for this month.");
+      return;
+    }
+    
+    setIsExportingExcel(true);
+
+    try {
+      const monthStr = months[currentMonthIndex];
+      const yearStr = currentYear;
+      const fileName = `salary_report_paid_${monthStr.toLowerCase()}_${yearStr}.xlsx`;
+      
+      const totalPaidExpense = currentMonthPaidRecords.reduce((total, r) => total + (r.netSalary ?? 0), 0);
+      const summaryData = [
+        [`Salary Report for ${monthStr} ${yearStr}`],
+        [],
+        ['Summary'],
+        ['Total Salary Expense (Paid)', `Rs. ${totalPaidExpense.toLocaleString('en-IN')}`],
+        ['Processed Salaries', processedSalariesCount],
+        ['Paid Salaries', paidSalariesCount],
+        ['Pending Payments', pendingPaymentsCount],
+        [],
+      ];
+
+      const headers = [
+        'Staff ID', 'Staff Name', 'Position', 'Base Salary', 'OT Hours', 'OT Amount',
+        'Extra Days', 'Extra Day Pay', 'Total Earnings', 'Food Deduction', 'Recurring Expense',
+        'Advance Deducted', 'Total Deductions', 'Net Salary', 'Paid Date'
+      ];
+      
+      const reportData = currentMonthPaidRecords.map(record => {
+        const staff = record.staffDetails;
+        return [
+          staff?.staffIdNumber || 'N/A', staff?.name || 'Unknown', staff?.position || 'N/A',
+          record.baseSalary, record.otHours, record.otAmount, record.extraDays, record.extraDayPay,
+          record.totalEarnings, record.foodDeduction, record.recurExpense, record.advanceDeducted,
+          record.totalDeductions, record.netSalary,
+          record.paidDate ? format(parseISO(record.paidDate), 'yyyy-MM-dd') : 'N/A',
+        ];
+      });
+
+      const finalData = [...summaryData, headers, ...reportData];
+      const worksheet = XLSX.utils.aoa_to_sheet(finalData);
+      
+      worksheet['!merges'] = [ { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } } ];
+      const colWidths = headers.map((header, i) => ({ wch: Math.max(header.length, ...finalData.map(row => (row[i] ?? '').toString().length)) + 2 }));
+      worksheet['!cols'] = colWidths;
+      
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, `Salary ${monthStr} ${yearStr}`);
+      
+      XLSX.writeFile(workbook, fileName);
+      toast.success("Excel report exported successfully!");
+    } catch (error) {
+      console.error("Failed to generate Excel file:", error);
+      toast.error("An error occurred while generating the Excel file.");
+    } finally {
+      setIsExportingExcel(false);
     }
   };
   
@@ -428,18 +520,13 @@ const Salary: React.FC = () => {
     let displayValue = value;
 
     if (value === '—') {
-        prefix = '';
-        color = 'text-slate-500';
+        prefix = ''; color = 'text-slate-500';
     } else if (Number(value) === 0 && type !== 'base') {
-        prefix = '';
-        color = 'text-slate-500';
-        displayValue = '0';
+        prefix = ''; color = 'text-slate-500'; displayValue = '0';
     } else if (type === 'earning') {
-        prefix = '+₹';
-        color = 'text-green-600';
+        prefix = '+₹'; color = 'text-green-600';
     } else if (type === 'deduction') {
-        prefix = '-₹';
-        color = 'text-red-600';
+        prefix = '-₹'; color = 'text-red-600';
     }
 
     return (
@@ -453,7 +540,6 @@ const Salary: React.FC = () => {
     );
   };
 
-
   return (
     <>
       {isModalOpen && processingStaff && (
@@ -461,21 +547,26 @@ const Salary: React.FC = () => {
             <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-xl z-50 transform transition-all">
                 <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h3 className="text-xl font-semibold text-slate-900">Process Salary for {processingStaff.name}</h3>
+                    <h3 className="text-xl font-semibold text-slate-900">{editingRecord ? 'Edit' : 'Process'} Salary for {processingStaff.name}</h3>
                     <p className="text-sm text-slate-500">For {months[currentMonthIndex]} {currentYear}</p>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => setIsModalOpen(false)} icon={<X size={20}/>}/>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                     <h4 className="col-span-full font-bold text-slate-800 border-b pb-2 mt-2">Earnings</h4>
-                    <div><label className="block text-sm font-medium text-slate-700">OT Hours</label><div className="relative"><input type="number" value={salaryInputs.otHours} onChange={e => setSalaryInputs({...salaryInputs, otHours: e.target.value})} disabled={isModalLoading} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/>{isModalLoading && <span className="absolute right-2 top-3 text-xs text-slate-500">Fetching...</span>}</div><p className="text-xs text-slate-500 mt-1">Auto-calculated from attendance.</p></div>
+                    <div><label className="block text-sm font-medium text-slate-700">OT Hours</label><div className="relative"><input type="number" value={salaryInputs.otHours} onChange={e => setSalaryInputs({...salaryInputs, otHours: e.target.value})} disabled={isModalLoading} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/>{isModalLoading && !editingRecord && <span className="absolute right-2 top-3 text-xs text-slate-500">Fetching...</span>}</div><p className="text-xs text-slate-500 mt-1">Auto-calculated on 'Process', editable here.</p></div>
                     <div><label className="block text-sm font-medium text-slate-700">Extra Days</label><input type="number" value={salaryInputs.extraDays} onChange={e => setSalaryInputs({...salaryInputs, extraDays: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
                     
                     <h4 className="col-span-full font-bold text-slate-800 border-b pb-2 mt-4">Deductions</h4>
                     <div><label className="block text-sm font-medium text-slate-700">Food Money (₹)</label><input type="number" value={salaryInputs.foodDeduction} onChange={e => setSalaryInputs({...salaryInputs, foodDeduction: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
                     <div><label className="block text-sm font-medium text-slate-700">Recurring Expense (₹)</label><input type="number" value={salaryInputs.recurExpense} onChange={e => setSalaryInputs({...salaryInputs, recurExpense: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
                 </div>
-                <div className="mt-8 flex justify-end space-x-3"><Button variant="outline-danger" onClick={() => setIsModalOpen(false)}>Cancel</Button><Button variant="black" onClick={handleProcessSalary} isLoading={isModalLoading}>Confirm & Process</Button></div>
+                <div className="mt-8 flex justify-end space-x-3">
+                  <Button variant="outline-danger" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+                  <Button variant="black" onClick={handleConfirmProcessOrUpdate} isLoading={isModalLoading || buttonLoadingStates[processingStaff.id]?.processing}>
+                    {editingRecord ? 'Confirm & Update' : 'Confirm & Process'}
+                  </Button>
+                </div>
             </div>
         </div>
       )}
@@ -483,14 +574,10 @@ const Salary: React.FC = () => {
       <div className="space-y-8 p-4 md:p-8 bg-slate-50 min-h-screen">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <h1 className="text-3xl font-bold text-slate-800">Salary Management</h1>
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2 p-2.5 border border-slate-300 rounded-lg bg-white shadow-sm">
-                <Calendar size={18} className="text-slate-600" />
-                <span className="text-sm font-medium text-slate-700">{months[currentMonthIndex]} {currentYear}</span>
-              </div>
-              <Button variant="black" icon={<Download size={16}/>} onClick={handleExportPDF} isLoading={isExporting} disabled={loadingSalary || currentMonthSalaryRecords.length === 0}>
-                Export PDF
-              </Button>
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 p-2.5 border border-slate-300 rounded-lg bg-white shadow-sm"><Calendar size={18} className="text-slate-600" /><span className="text-sm font-medium text-slate-700">{months[currentMonthIndex]} {currentYear}</span></div>
+              <Button variant="outline" icon={<FileSpreadsheet size={16}/>} onClick={handleExportExcel} isLoading={isExportingExcel} disabled={loadingSalary || currentMonthPaidRecords.length === 0}>Excel</Button>
+              <Button variant="black" icon={<Download size={16}/>} onClick={handleExportPDF} isLoading={isExporting} disabled={loadingSalary || currentMonthPaidRecords.length === 0}>PDF</Button>
             </div>
         </div>
 
@@ -502,7 +589,7 @@ const Salary: React.FC = () => {
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200">
             <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-200">
-                <div className="relative w-full md:w-auto"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" /><input type="text" placeholder="Search staff by name..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-11 pr-4 py-2.5 w-full md:w-80 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2" /></div>
+                <div className="relative w-full md:w-auto"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" /><input type="text" placeholder="Search staff by name or ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-11 pr-4 py-2.5 w-full md:w-80 border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2" /></div>
                 <div className="flex items-center gap-2">
                     <select value={currentMonthIndex} onChange={e => setCurrentMonthIndex(Number(e.target.value))} className="px-4 py-2.5 border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">{months.map((month, index) => <option key={month} value={index}>{month}</option>)}</select>
                     <select value={currentYear} onChange={e => setCurrentYear(Number(e.target.value))} className="px-4 py-2.5 border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2">{years.map(year => <option key={year} value={year}>{year}</option>)}</select>
@@ -514,7 +601,9 @@ const Salary: React.FC = () => {
              filteredStaff.length > 0 ? (
                 filteredStaff.map((staff) => {
                     const record = getSalaryRecord(staff.id);
-                    const isLoading = buttonLoadingStates[staff.id]?.processing || buttonLoadingStates[staff.id]?.paying;
+                    const isPaying = buttonLoadingStates[staff.id]?.paying;
+                    const isProcessing = buttonLoadingStates[staff.id]?.processing;
+                    
                     return (
                         <Card key={staff.id} className="p-4 transition-shadow hover:shadow-md border border-slate-200 rounded-lg">
                             <div className="grid grid-cols-1 lg:grid-cols-12 lg:items-center gap-x-4 gap-y-3">
@@ -523,6 +612,7 @@ const Salary: React.FC = () => {
                                     <div>
                                         <p className="text-md font-bold text-slate-900">{staff.name}</p>
                                         <p className="text-sm text-slate-500">{staff.position}</p>
+                                        <p className="text-xs text-slate-500 mt-1">ID: {staff.staffIdNumber || 'N/A'}</p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-x-4 gap-y-3 border-t lg:border-t-0 pt-3 lg:pt-0 lg:col-span-6">
@@ -539,7 +629,18 @@ const Salary: React.FC = () => {
                                       <p className="text-lg font-bold text-slate-900">{record ? `₹${(record.netSalary ?? 0).toLocaleString('en-IN')}` : '—'}</p>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    {record ? ( record.isPaid ? <Button variant="success" size="sm" disabled icon={<CheckCircle size={14}/>}>Paid</Button> : <Button variant="black" size="sm" onClick={() => handlePayNow(record, staff)} isLoading={isLoading}>Pay Now</Button>) : (<Button variant="black" size="sm" onClick={() => openProcessingModal(staff)} isLoading={isLoading}>Process</Button>)}
+                                    {record ? (
+                                      record.isPaid ? (
+                                        <Button variant="success" size="sm" disabled icon={<CheckCircle size={14}/>} onClick={() => setSelectedPaymentRecord(record)}>Paid</Button>
+                                      ) : (
+                                        <>
+                                          <Button variant="outline" size="sm" onClick={() => openProcessingModal(staff, record)} disabled={isPaying} icon={<Edit size={14}/>}>Edit</Button>
+                                          <Button variant="black" size="sm" onClick={() => handlePayNow(record, staff)} isLoading={isPaying}>Pay Now</Button>
+                                        </>
+                                      )
+                                    ) : (
+                                      <Button variant="black" size="sm" onClick={() => openProcessingModal(staff, null)} isLoading={isProcessing}>Process</Button>
+                                    )}
                                   </div>
                                 </div>
                             </div>
@@ -560,6 +661,7 @@ const Salary: React.FC = () => {
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Staff</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Staff ID</th>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Month</th>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Amount</th>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Date</th>
@@ -567,21 +669,20 @@ const Salary: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-100">
-                        {currentMonthSalaryRecords.length > 0 ? (
-                            currentMonthSalaryRecords.map((record) => {
+                        {currentMonthPaidRecords.length > 0 ? (
+                            currentMonthPaidRecords.map((record) => {
                             const staff = record.staffDetails;
                             
                             return (
-                                <tr 
-                                  key={`paid-${record.id}`} 
-                                  className="hover:bg-slate-50 transition-colors cursor-pointer"
-                                  onClick={() => setSelectedPaymentRecord(record)}
-                                >
+                                <tr key={`paid-${record.id}`} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedPaymentRecord(record)}>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         {staff ? (
                                         <div className="flex items-center">
                                             <img className="h-10 w-10 rounded-full object-cover" src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random`} alt={staff.name}/>
-                                            <div className="ml-4"><div className="text-sm font-medium text-slate-900">{staff.name}</div></div>
+                                            <div className="ml-4">
+                                                <div className="text-sm font-medium text-slate-900">{staff.name}</div>
+                                                <div className="text-xs text-slate-500">{staff.position}</div>
+                                            </div>
                                         </div>
                                         ) : (
                                         <div className="flex items-center">
@@ -590,15 +691,16 @@ const Salary: React.FC = () => {
                                         </div>
                                         )}
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{staff?.staffIdNumber || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{record.month} {record.year}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-800 font-bold">₹{record.netSalary.toLocaleString('en-IN')}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{record.paidDate ? format(parseISO(record.paidDate), 'MMM d, yyyy') : 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap"><span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800"><CheckCircle size={14} /> Paid</span></td>
+                                    <td className="px-6 py-4 whitespace-nowrap"><span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800"><CheckCircle size={14} /> Paid</span></td>
                                 </tr>
                             )
                             })
                         ) : (
-                            <tr><td colSpan={5} className="text-center py-10 text-slate-500">No paid salaries for this period yet.</td></tr>
+                            <tr><td colSpan={6} className="text-center py-10 text-slate-500">No paid salaries for this period yet.</td></tr>
                         )}
                         </tbody>
                     </table>
@@ -609,7 +711,7 @@ const Salary: React.FC = () => {
       
       <PaymentDetailSidebar 
         record={selectedPaymentRecord} 
-        allPaidRecords={paidSalaryRecords}
+        allPaidRecords={allPaidRecords}
         onSelectPastPayment={(record) => setSelectedPaymentRecord(record)}
         onClose={() => setSelectedPaymentRecord(null)} 
       />

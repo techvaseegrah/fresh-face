@@ -5,20 +5,23 @@ import React, { useState, useEffect, ChangeEvent, FormEvent, Suspense } from 're
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
     ArrowLeft, Save, Upload, PlusCircle, XCircle, User, Mail, Phone, 
-    Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Activity 
+    Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Activity,
+    Badge // --- (NEW) --- Import Badge icon for Staff ID
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { useStaff, StaffMember, UpdateStaffPayload, PositionOption } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
+// --- (MODIFIED) --- Add staffIdNumber to the form data interface
 interface EditStaffFormData {
+  staffIdNumber: string;
   name: string;
   email: string;
   phone: string;
   position: string;
   joinDate: string;
-  salary: string; // Changed to string to allow empty input
+  salary: string;
   address: string;
   image: string | null;
   status: 'active' | 'inactive';
@@ -38,13 +41,15 @@ const EditStaffContent: React.FC = () => {
     addPositionOption
   } = useStaff();
 
+  // --- (MODIFIED) --- Add staffIdNumber to the initial state
   const [formData, setFormData] = useState<EditStaffFormData>({
+    staffIdNumber: '',
     name: '',
     email: '',
     phone: '',
     position: '',
     joinDate: '',
-    salary: '', // Initialize as empty string
+    salary: '',
     address: '',
     image: DEFAULT_STAFF_IMAGE,
     status: 'active',
@@ -79,13 +84,15 @@ const EditStaffContent: React.FC = () => {
           if (result.success && result.data) {
             const fetchedStaffData = result.data as StaffMember;
 
+            // --- (MODIFIED) --- Populate all form fields from fetched data
             setFormData({
+              staffIdNumber: fetchedStaffData.staffIdNumber || '',
               name: fetchedStaffData.name,
               email: fetchedStaffData.email,
               phone: fetchedStaffData.phone,
               position: fetchedStaffData.position,
               joinDate: fetchedStaffData.joinDate ? format(new Date(fetchedStaffData.joinDate), 'yyyy-MM-dd') : '',
-              salary: String(fetchedStaffData.salary), // Convert number to string for state
+              salary: String(fetchedStaffData.salary),
               address: fetchedStaffData.address || '',
               image: fetchedStaffData.image || DEFAULT_STAFF_IMAGE,
               status: fetchedStaffData.status,
@@ -169,8 +176,8 @@ const EditStaffContent: React.FC = () => {
     setIsSubmitting(true);
     setError(null);
 
-    // Form validation
-    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.joinDate.trim() || !formData.salary.trim()) {
+    // --- (MODIFIED) --- Add staffIdNumber to validation
+    if (!formData.staffIdNumber.trim() || !formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.joinDate.trim() || !formData.salary.trim()) {
         setError("Please fill in all required fields marked with *.");
         setIsSubmitting(false);
         return;
@@ -187,13 +194,15 @@ const EditStaffContent: React.FC = () => {
         return;
     }
     
+    // --- (MODIFIED) --- Add staffIdNumber to the API payload
     const apiData: UpdateStaffPayload = {
+        staffIdNumber: formData.staffIdNumber,
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
         position: formData.position,
         joinDate: formData.joinDate,
-        salary: salaryValue, // Use parsed numeric value for API
+        salary: salaryValue,
         address: formData.address || undefined,
         image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
         status: formData.status,
@@ -202,7 +211,7 @@ const EditStaffContent: React.FC = () => {
 
     try {
       await updateStaffMember(staffId, apiData);
-      router.push(`/staffmanagement/staff/staffdetail?staffId=${staffId}`);
+      router.push('/staffmanagement/staff/stafflist'); // Navigate to list to see updated card
     } catch (apiError: any) {
       console.error('Failed to update staff member:', apiError);
       setError(apiError.message || 'Failed to update staff. Please try again.');
@@ -233,7 +242,7 @@ const EditStaffContent: React.FC = () => {
           <Button
             variant="outline"
             icon={<ArrowLeft size={16} />}
-            onClick={() => router.push(`/staffmanagement/staff/staffdetail?staffId=${staffId}`)}
+            onClick={() => router.back()} // Changed to router.back() for better UX
             className="mr-4"
             disabled={isSubmitting}
           >
@@ -305,6 +314,17 @@ const EditStaffContent: React.FC = () => {
             </div>
           </div>
 
+          {/* --- (NEW) Staff ID Input Field --- */}
+          <div>
+            <label htmlFor="staffIdNumber" className="block text-sm font-medium text-gray-700 mb-1">Staff ID*</label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Badge className="h-5 w-5 text-gray-400" aria-hidden="true" />
+              </div>
+              <input id="staffIdNumber" name="staffIdNumber" type="text" required value={formData.staffIdNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData} />
+            </div>
+          </div>
+
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name*</label>
             <div className="relative">
@@ -314,6 +334,7 @@ const EditStaffContent: React.FC = () => {
               <input id="name" name="name" type="text" required value={formData.name} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData} />
             </div>
           </div>
+
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email Address*</label>
              <div className="relative">
@@ -341,7 +362,6 @@ const EditStaffContent: React.FC = () => {
               <input id="aadharNumber" name="aadharNumber" type="text" pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData}/>
             </div>
           </div>
-
           <div>
             <label htmlFor="position" className="block text-sm font-medium text-gray-700 mb-1">Position*</label>
             <div className="flex items-center space-x-2">
@@ -418,7 +438,6 @@ const EditStaffContent: React.FC = () => {
               </div>
             )}
           </div>
-
           <div>
             <label htmlFor="joinDate" className="block text-sm font-medium text-gray-700 mb-1">Join Date*</label>
              <div className="relative">
@@ -459,12 +478,11 @@ const EditStaffContent: React.FC = () => {
             </div>
           </div>
         </div>
-
         <div className="mt-8 flex justify-end space-x-3">
           <Button
             type="button"
             variant="outline-danger"
-            onClick={() => router.push(`/staffmanagement/staff/staffdetail?staffId=${staffId}`)}
+            onClick={() => router.back()} // Changed to router.back()
             disabled={isSubmitting || isLoadingData}
           >
             Cancel

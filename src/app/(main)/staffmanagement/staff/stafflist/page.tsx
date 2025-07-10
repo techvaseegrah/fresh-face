@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Plus, Edit, Trash, Search, Eye, Filter, RefreshCw, X,
-  Users, UserCheck, UserX, Mail, Phone, Home, CreditCard, Calendar, Briefcase, AtSign
+  Users, UserCheck, UserX, Mail, Phone, Home, CreditCard, Calendar, Briefcase, AtSign,
+  Badge // --- (NEW) --- Import Badge icon for Staff ID
 } from 'lucide-react';
 import { useStaff, StaffMember } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
-// --- (NEW) Helper Component for Sidebar Details ---
+// --- Helper Component for Sidebar Details (Unchanged) ---
 const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
   <div className="flex items-start gap-4 py-3">
     <div className="flex-shrink-0 w-6 text-slate-400">{icon}</div>
@@ -22,7 +23,7 @@ const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value: React.
 );
 
 
-// --- (MODIFIED) Staff Detail Sidebar Component ---
+// --- Staff Detail Sidebar Component (Unchanged) ---
 interface StaffDetailSidebarProps {
   staff: StaffMember | null;
   onClose: () => void;
@@ -112,6 +113,8 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
           <div className="bg-white p-4 rounded-lg border border-slate-200">
             <h4 className="text-md font-semibold text-slate-800 mb-2">Employment Details</h4>
             <dl className="divide-y divide-slate-200">
+              {/* --- (NEW) Staff ID Detail Item --- */}
+              <DetailItem icon={<Badge size={20}/>} label="Staff ID" value={staff.staffIdNumber || 'N/A'} />
               <DetailItem icon={<CreditCard size={20}/>} label="Aadhar Number" value={staff.aadharNumber || 'N/A'} />
               <DetailItem 
                 icon={<span className="font-bold text-lg">₹</span>} 
@@ -149,7 +152,7 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
   );
 };
 
-// --- (NEW) Stat Card Component ---
+// --- Stat Card Component (Unchanged) ---
 const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number; color: string }> = ({ icon, title, value, color }) => (
   <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
     <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${color}`}>
@@ -162,7 +165,7 @@ const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string |
   </div>
 );
 
-// --- (NEW) Staff Card Component (replaces table row) ---
+// --- (MODIFIED) Staff Card Component ---
 const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) => void }> = ({ staff, onSelect }) => (
   <div 
     className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
@@ -174,17 +177,19 @@ const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) =
         src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
         alt={staff.name}
       />
-      <div className="flex-1">
+      <div className="flex-1 min-w-0"> {/* Added min-w-0 to help with truncation */}
         <h3 className="font-bold text-slate-800 text-md truncate">{staff.name}</h3>
-        <p className="text-sm text-slate-500">{staff.position}</p>
+        <p className="text-sm text-slate-500 truncate">{staff.position}</p>
+        {/* --- (NEW) Staff ID on Card --- */}
+        <p className="text-xs text-slate-400 mt-1 truncate">ID: {staff.staffIdNumber || 'N/A'}</p>
       </div>
     </div>
     <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
-       <div className="flex items-center gap-2 text-sm text-slate-600">
-         <Mail size={14} className="text-slate-400"/>
+       <div className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
+         <Mail size={14} className="text-slate-400 flex-shrink-0"/>
          <span className="truncate">{staff.email}</span>
        </div>
-       <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${
+       <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full flex-shrink-0 ${
           staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
         }`}>
           {staff.status.charAt(0).toUpperCase() + staff.status.slice(1)}
@@ -224,12 +229,14 @@ const StaffList: React.FC = () => {
     return [...new Set(staffMembers.map(s => s.position).filter((p): p is string => !!p))].sort();
   }, [staffMembers]);
 
+  // --- (MODIFIED) Filtered Staff Logic to include searching by Staff ID ---
   const filteredStaff = useMemo(() => {
     return (staffMembers || [])
       .filter(staff => 
         ((staff.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
          (staff.position?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-         (staff.email?.toLowerCase() || "").includes(searchTerm.toLowerCase())) &&
+         (staff.email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+         (String(staff.staffIdNumber || '').toLowerCase()).includes(searchTerm.toLowerCase())) && // Search by ID
         (filters.status ? staff.status === filters.status : true) &&
         (filters.position ? staff.position === filters.position : true)
       )
@@ -303,7 +310,7 @@ const StaffList: React.FC = () => {
             </div>
           )}
 
-          {/* --- (NEW) STATS CARDS --- */}
+          {/* --- STATS CARDS --- */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <StatCard icon={<Users size={24} className="text-indigo-600"/>} title="Total Staff" value={staffMembers?.length || 0} color="bg-indigo-100" />
             <StatCard icon={<UserCheck size={24} className="text-green-600"/>} title="Active" value={staffMembers?.filter(s => s.status === 'active').length || 0} color="bg-green-100" />
@@ -318,7 +325,8 @@ const StaffList: React.FC = () => {
               </div>
               <input
                 type="text"
-                placeholder="Search by name, position, email..."
+                // --- (MODIFIED) Placeholder text ---
+                placeholder="Search by name, ID, position..."
                 className="pl-10 pr-4 py-2 w-full border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-900 placeholder:text-slate-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -359,7 +367,7 @@ const StaffList: React.FC = () => {
             </div>
           </div>
           
-          {/* --- (MODIFIED) STAFF LIST AREA --- */}
+          {/* --- STAFF LIST AREA --- */}
           {loadingStaff && !staffMembers?.length ? (
               <div className="text-center py-20">
                 <RefreshCw className="h-10 w-10 text-slate-400 mx-auto animate-spin mb-3" />

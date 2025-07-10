@@ -3,25 +3,30 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-// Make sure to add the new permission to your permissions file
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-// Define all your settings sections here
+// Define all your settings sections in the desired order
 const settingsNavigation = [
-  // --- ADD THIS NEW ITEM ---
+  // { 
+  //   name: 'Shop Information', 
+  //   href: '/settings', // The root page for settings
+  //   permission: PERMISSIONS.SETTINGS_SHOP_INFO_MANAGE 
+  // },
   { 
     name: 'Attendance Settings', 
-    href: '/settings/attendancesetting', // This must match the folder name
-    permission: PERMISSIONS.ATTENDANCE_SETTINGS_READ // Add this new permission
+    href: '/settings/attendancesetting',
+    permission: PERMISSIONS.ATTENDANCE_SETTINGS_READ 
   },
-  // --- EXISTING ITEM ---
   { 
     name: 'Loyalty Points', 
     href: '/settings/loyalty', 
     permission: PERMISSIONS.LOYALTY_SETTINGS_READ 
   },
-  //{ name: 'Shop Information', href: '/settings/shop-information' },
-  //{ name: 'Password', href: '/settings/password' },
+  { 
+    name: 'Staff ID', 
+    href: '/settings/staffid', 
+    permission: PERMISSIONS.SETTINGS_STAFF_ID_MANAGE 
+  },
 ];
 
 function classNames(...classes: string[]) {
@@ -36,23 +41,33 @@ export default function SettingsNav() {
   return (
     <aside className="w-64 flex-shrink-0 border-r border-gray-200">
       <nav className="flex flex-col space-y-1 p-4">
-        {settingsNavigation.map((item) => (
-          hasPermission(userPermissions, item.permission) && (
+        {settingsNavigation.map((item) => {
+          // Check if the user has permission to see this item
+          if (!hasPermission(userPermissions, item.permission)) {
+            return null; // Don't render the link if no permission
+          }
+
+          // Improved logic for determining the active link.
+          const isActive = (item.href === '/settings')
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
+
+          return (
             <Link
               key={item.name}
               href={item.href}
               className={classNames(
-                pathname.startsWith(item.href)
+                isActive
                   ? 'bg-black text-white'
                   : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900',
                 'group flex items-center px-3 py-2 text-sm font-medium rounded-md'
               )}
-              aria-current={pathname.startsWith(item.href) ? 'page' : undefined}
+              aria-current={isActive ? 'page' : undefined}
             >
               <span className="truncate">{item.name}</span>
             </Link>
-          )
-        ))}
+          );
+        })}
       </nav>
     </aside>
   );
