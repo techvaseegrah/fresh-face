@@ -125,77 +125,119 @@ export async function POST(req: Request) {
     await connectToDatabase();
     const body = await req.json();
 
-    const { phoneNumber, customerName, email, gender, serviceIds, stylistId, date, time, notes, status, appointmentType = 'Online' } = body;
+    // MODIFIED: Destructure `serviceAssignments` instead of `serviceIds` and `stylistId`
+    const { 
+      // customerId, // We will get this from the found/created customer document
+      customerName, 
+      phoneNumber, 
+      email, 
+      gender, 
+      date, 
+      time, 
+      notes, 
+      status, 
+      appointmentType = 'Online',
+      serviceAssignments // <-- The new, important array
+    } = body;
 
-    if (!phoneNumber || !customerName || !serviceIds || !stylistId || !date || !time) {
-      return NextResponse.json({ success: false, message: "Missing required fields." }, { status: 400 });
+    // MODIFIED: Update validation to check for the new `serviceAssignments` array
+    if (!phoneNumber || !customerName || !date || !time || !serviceAssignments || !Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
+      return NextResponse.json({ success: false, message: "Missing required fields or services." }, { status: 400 });
     }
 
+    // --- Find or Create Customer (This logic remains the same) ---
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
     const phoneHashToFind = createSearchHash(normalizedPhone);
     let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind });
 
     if (!customerDoc) {
-      // Manually prepare all fields here, bypassing any faulty model hooks.
       const customerDataForCreation = {
-        // --- Searchable Fields (Plain Text) ---
         searchableName: customerName,
         phoneHash: createSearchHash(normalizedPhone),
         last4PhoneNumber: normalizedPhone.length >= 4 ? normalizedPhone.slice(-4) : undefined,
-        
-        // --- Encrypted Fields ---
         name: encrypt(customerName),
         phoneNumber: encrypt(phoneNumber),
         email: email ? encrypt(email) : undefined,
-        
-        // --- Other Fields ---
         gender: gender || 'other'
       };
-
       customerDoc = await Customer.create(customerDataForCreation);
       if (!customerDoc) {
-        throw new Error("Customer creation returned null unexpectedly.");
+        throw new Error("Customer creation failed unexpectedly.");
       }
     }
+    // Now `customerDoc` holds the definitive customer document, either found or newly created.
 
+    // --- Date/Time Handling (This logic remains the same) ---
+    // This correctly converts the incoming local time from the form into a UTC timestamp for DB storage.
     const assumedUtcDate = new Date(`${date}T${time}:00.000Z`);
     const istOffsetInMinutes = 330;
     const assumedUtcTimestamp = assumedUtcDate.getTime();
     const correctUtcTimestamp = assumedUtcTimestamp - (istOffsetInMinutes * 60 * 1000);
     const appointmentDateUTC = new Date(correctUtcTimestamp);
 
-    const services = await ServiceItem.find({ _id: { $in: serviceIds } }).select('duration price membershipRate');
-    const estimatedDuration = services.reduce((total, service) => total + service.duration, 0);
+    // ===============================================================================
+    //  CORE LOGIC CHANGE: Handle Multiple Service Assignments
+    // ===============================================================================
 
-    const appointmentData: any = {
+    // NEW: Generate a single ID to group all these individual appointments together.
+    // This is like a "receipt number" for the entire booking.
+    const groupBookingId = new mongoose.Types.ObjectId();
+
+    // NEW: Map over the `serviceAssignments` array to create an array of appointment documents.
+    const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
+      // For each assignment, fetch its full service details.
+      const service = await ServiceItem.findById(assignment.serviceId).select('duration price membershipRate').lean();
+      if (!service) {
+        throw new Error(`Service with ID ${assignment.serviceId} not found.`);
+      }
+
+      // Create a temporary Appointment instance to use the `calculateTotal` method.
+      // Note: We're passing only ONE serviceId here to calculate per-service costs.
+      const tempAppointmentForCalc = new Appointment({
         customerId: customerDoc._id,
-        stylistId,
-        serviceIds,
+        serviceIds: [assignment.serviceId] // IMPORTANT: Calculate cost for this single service
+      });
+      const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
+
+      return {
+        customerId: customerDoc._id,
+        stylistId: assignment.stylistId,
+        serviceIds: [assignment.serviceId], // The appointment holds the single service it's for.
+        guestName: assignment.guestName,   // Optional name for who is receiving the service.
         notes,
         status,
         appointmentType,
-        estimatedDuration,
+        estimatedDuration: service.duration,
         appointmentDateTime: appointmentDateUTC,
-    };
+        groupBookingId: groupBookingId, // Assign the same group ID to all.
 
-    const newAppointment = new Appointment(appointmentData);
-    const { grandTotal, membershipSavings } = await newAppointment.calculateTotal();
-    appointmentData.finalAmount = grandTotal;
-    appointmentData.amount = grandTotal + membershipSavings;
-    appointmentData.membershipDiscount = membershipSavings;
+        // Per-service financial details
+        finalAmount: grandTotal,
+        amount: grandTotal + membershipSavings,
+        membershipDiscount: membershipSavings,
 
-    if (status === 'Checked-In') {
-        appointmentData.checkInTime = new Date();
-    }
-
-    const createdAppointment = await Appointment.create(appointmentData);
+        // Set check-in time if applicable
+        checkInTime: status === 'Checked-In' ? new Date() : undefined,
+      };
+    });
     
-    const populatedAppointment = await Appointment.findById(createdAppointment._id)
-      .populate({ path: 'customerId' })
-      .populate({ path: 'stylistId', select: 'name' })
-      .populate({ path: 'serviceIds', select: 'name price duration membershipRate' });
+    // NEW: Wait for all the individual appointment data objects to be prepared.
+    const newAppointmentsData = await Promise.all(newAppointmentsDataPromises);
+    
+    // NEW: Use `insertMany` to create all appointment documents in a single, efficient database operation.
+    const createdAppointments = await Appointment.insertMany(newAppointmentsData);
 
-    return NextResponse.json({ success: true, appointment: populatedAppointment }, { status: 201 });
+    if (!createdAppointments || createdAppointments.length === 0) {
+      throw new Error("Failed to create appointment records in the database.");
+    }
+    
+    // You can choose to return the first created appointment for a success message,
+    // or return the whole array. Returning the array might be more informative.
+    return NextResponse.json({ 
+      success: true, 
+      message: `${createdAppointments.length} service(s) booked successfully!`,
+      appointments: createdAppointments 
+    }, { status: 201 });
 
   } catch (err: any) {
     console.error("API Error creating appointment:", err);
