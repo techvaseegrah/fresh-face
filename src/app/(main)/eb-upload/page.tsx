@@ -1,25 +1,22 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { 
   ArrowUpTrayIcon, 
-  XMarkIcon as XMarkOutlineIcon, // Renamed to avoid conflict
-  SunIcon, 
-  MoonIcon,
+  XMarkIcon as XMarkOutlineIcon,
   DocumentIcon,
-  CalendarDaysIcon
-} from '@heroicons/react/24/outline';
-import { 
-  PhotoIcon, 
-  XCircleIcon, 
+  CalendarDaysIcon,
+  PhotoIcon,
+  XCircleIcon,
   CheckCircleIcon,
-  XMarkIcon
+  XMarkIcon as XMarkSolidIcon // Renamed for clarity
 } from '@heroicons/react/24/solid';
 import Image from 'next/image';
 
-// --- Utility Function ---
+// --- Utility & Reusable Components (Keep these in separate files in a real app) ---
+
 const formatBytes = (bytes: number, decimals = 2): string => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -29,7 +26,6 @@ const formatBytes = (bytes: number, decimals = 2): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-// --- [FIXED] Reusable Image Zoom Modal Component ---
 const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; }) => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -44,7 +40,6 @@ const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; })
       <button className="absolute top-4 right-4 text-white hover:text-gray-300 z-50 p-2" onClick={onClose} aria-label="Close image zoom view">
         <XMarkOutlineIcon className="h-8 w-8" />
       </button>
-      {/* FIX: Added w-full and h-full to this div to give the Image component dimensions to fill */}
       <div className="relative w-full h-full max-w-4xl max-h-[90vh] transition-transform duration-300 scale-95 animate-zoom-in" onClick={(e) => e.stopPropagation()}>
         <Image src={src} alt="Zoomed meter image" layout="fill" className="object-contain rounded-lg" />
       </div>
@@ -52,7 +47,6 @@ const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; })
   );
 };
 
-// --- Reusable Notification Toast Component ---
 const NotificationToast = ({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void; }) => {
   useEffect(() => {
     const timer = setTimeout(() => onClose(), 5000);
@@ -60,32 +54,20 @@ const NotificationToast = ({ message, type, onClose }: { message: string; type: 
   }, [onClose]);
 
   const isSuccess = type === 'success';
-  const baseBg = isSuccess ? 'bg-green-50' : 'bg-red-50';
-  const iconColor = isSuccess ? 'text-green-400' : 'text-red-400';
-  const textColor = isSuccess ? 'text-green-800' : 'text-red-800';
-  const Icon = isSuccess ? CheckCircleIcon : XCircleIcon;
-
   return (
     <div className="fixed top-5 right-5 z-[60] w-full max-w-sm animate-fade-in-down">
-      <div className={`rounded-lg ${baseBg} p-4 shadow-lg ring-1 ring-black ring-opacity-5`}>
+      <div className={`rounded-lg ${isSuccess ? 'bg-green-50' : 'bg-red-50'} p-4 shadow-lg ring-1 ring-black ring-opacity-5`}>
         <div className="flex">
           <div className="flex-shrink-0">
-            <Icon className={`h-5 w-5 ${iconColor}`} aria-hidden="true" />
+            {isSuccess ? <CheckCircleIcon className="h-5 w-5 text-green-400" /> : <XCircleIcon className="h-5 w-5 text-red-400" />}
           </div>
           <div className="ml-3">
-            <p className={`text-sm font-medium ${textColor}`}>{message}</p>
+            <p className={`text-sm font-medium ${isSuccess ? 'text-green-800' : 'text-red-800'}`}>{message}</p>
           </div>
           <div className="ml-auto pl-3">
-            <div className="-mx-1.5 -my-1.5">
-              <button
-                type="button"
-                onClick={onClose}
-                className={`inline-flex rounded-md p-1.5 ${textColor} hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2`}
-              >
-                <span className="sr-only">Dismiss</span>
-                <XMarkIcon className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </div>
+            <button type="button" onClick={onClose} className={`inline-flex rounded-md p-1.5 ${isSuccess ? 'text-green-500 hover:bg-green-100' : 'text-red-500 hover:bg-red-100'}`}>
+              <span className="sr-only">Dismiss</span><XMarkSolidIcon className="h-5 w-5" />
+            </button>
           </div>
         </div>
       </div>
@@ -93,8 +75,6 @@ const NotificationToast = ({ message, type, onClose }: { message: string; type: 
   );
 };
 
-
-// --- Image Dropzone Component ---
 const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }: { file: File | null; onFileSelect: (file: File) => void; onClear: () => void; onZoom: () => void; disabled?: boolean; }) => {
   const [isDragging, setIsDragging] = useState(false);
   const preview = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
@@ -119,9 +99,7 @@ const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }
   };
 
   useEffect(() => {
-    return () => {
-      if (preview) URL.revokeObjectURL(preview);
-    };
+    return () => { if (preview) URL.revokeObjectURL(preview); };
   }, [preview]);
 
   return (
@@ -172,10 +150,10 @@ const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }
   );
 };
 
+
 // --- Main EB Upload Page Component ---
 export default function EBUploadPage() {
   const { data: session } = useSession();
-  const [type, setType] = useState<'morning' | 'evening'>('morning');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(false);
@@ -187,7 +165,6 @@ export default function EBUploadPage() {
   const handleClearForm = () => {
     setImageFile(null);
     setDate(new Date().toISOString().split('T')[0]);
-    setType('morning');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -199,14 +176,13 @@ export default function EBUploadPage() {
 
     setIsLoading(true);
     const formData = new FormData();
-    formData.append('type', type);
     formData.append('image', imageFile);
     formData.append('date', date);
 
     try {
       const response = await fetch('/api/eb', { method: 'POST', body: formData });
       if (response.ok) {
-        setNotification({ show: true, message: `${type.charAt(0).toUpperCase() + type.slice(1)} reading uploaded successfully!`, type: 'success' });
+        setNotification({ show: true, message: `Morning reading uploaded successfully!`, type: 'success' });
         handleClearForm();
       } else {
         const errorData = await response.json();
@@ -242,11 +218,11 @@ export default function EBUploadPage() {
         />
       )}
 
-      <main className=" bg-slate-100">
+      <main className="bg-slate-100 p-4 sm:p-6 lg:p-8 min-h-screen">
         <div className="max-w-7xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">EB Reading Upload</h1>
-                <p className="text-slate-500 mt-1">Upload morning or evening meter images with the correct date.</p>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Upload Morning Reading</h1>
+                <p className="text-slate-500 mt-1">Upload the meter image for the morning of the selected date.</p>
             </div>
 
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200/80">
@@ -254,10 +230,10 @@ export default function EBUploadPage() {
                     {/* Left side: Form Fields */}
                     <div className="px-6 py-8 sm:p-10 lg:col-span-2">
                         <h2 className="text-xl font-semibold text-slate-800">Reading Details</h2>
-                        <p className="text-sm text-slate-500 mt-1">Select the date and type for this reading.</p>
+                        <p className="text-sm text-slate-500 mt-1">Select the date for this reading.</p>
                         <div className="mt-8 space-y-8">
                             <div>
-                                <label htmlFor="date" className="block text-sm font-medium text-slate-700">Date</label>
+                                <label htmlFor="date" className="block text-sm font-medium text-slate-700">Date of Morning Reading</label>
                                 <div className="relative mt-2">
                                     <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                                         <CalendarDaysIcon className="h-5 w-5 text-slate-400" />
@@ -267,22 +243,6 @@ export default function EBUploadPage() {
                                         className="block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-10 p-2.5 disabled:cursor-not-allowed disabled:bg-slate-50"
                                         disabled={isLoading}
                                     />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700">Reading Type</label>
-                                <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1.5">
-                                    {['morning', 'evening'].map((option) => (
-                                        <button
-                                            key={option} type="button" onClick={() => setType(option as 'morning' | 'evening')} disabled={isLoading}
-                                            className={`flex items-center justify-center rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed ${
-                                                type === option ? 'bg-white shadow-md text-indigo-700' : 'text-slate-600 hover:bg-slate-200/70'
-                                            }`}
-                                        >
-                                            {option === 'morning' ? <SunIcon className="h-5 w-5 mr-2"/> : <MoonIcon className="h-5 w-5 mr-2"/>}
-                                            {option.charAt(0).toUpperCase() + option.slice(1)}
-                                        </button>
-                                    ))}
                                 </div>
                             </div>
                         </div>

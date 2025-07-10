@@ -32,7 +32,7 @@ interface CustomerFromAPI {
 
 interface StylistFromAPI {
   _id: string;
-  id: string;
+  id:string;
   name: string;
   isAvailable?: boolean;
 }
@@ -166,7 +166,7 @@ export default function AppointmentPage() {
       } else {
         fetchAppointments();
       }
-    } catch (err: any) {
+    } catch (err: any)      {
       toast.error(err.message);
       throw err;
     }
