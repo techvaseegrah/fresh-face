@@ -1,33 +1,63 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, Model, models } from 'mongoose';
 
-export interface IEBReading extends Document {
-  date: Date;
-  startUnits?: number;
-  endUnits?: number;
-  unitsConsumed?: number;
-  costPerUnit?: number;
-  totalCost?: number;
-  startImageUrl?: string;
-  endImageUrl?: string;
-  createdBy: string;
-  updatedBy?: string;
-  createdAt: Date;
-  updatedAt: Date;
+// Interface for the History sub-document to track changes
+export interface IHistoryEntry {
+  timestamp: Date;
+  user: {
+    id: string;
+    name: string;
+  };
+  changes: {
+    field: string;
+    oldValue?: number;
+    newValue?: number;
+  }[];
 }
 
-const EBReadingSchema = new Schema<IEBReading>({
-  date: { type: Date, required: true, default: Date.now },
-  startUnits: { type: Number, required: false },
-  endUnits: { type: Number, required: false },
-  unitsConsumed: { type: Number, required: false },
-  costPerUnit: { type: Number, required: false },
-  totalCost: { type: Number, required: false },
-  startImageUrl: { type: String, required: false },
-  endImageUrl: { type: String, required: false },
-  createdBy: { type: String, required: true },
-  updatedBy: { type: String, required: false },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+// The main, simplified EBReading Interface
+export interface IEBReading extends Document {
+  date: Date;
+  morningUnits?: number;
+  unitsConsumed?: number; // The result of (next day's morning - this day's morning)
+  costPerUnit?: number;
+  totalCost?: number;
+  morningImageUrl?: string;
+  history: IHistoryEntry[];
+  createdBy: string;
+  updatedBy?: string;
+}
+
+const HistorySchema = new Schema<IHistoryEntry>({
+  timestamp: { type: Date, default: Date.now },
+  user: {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+  },
+  changes: [{
+    field: { type: String, required: true },
+    oldValue: Schema.Types.Mixed,
+    newValue: Schema.Types.Mixed,
+  }],
 });
 
-export default mongoose.models.EBReading || mongoose.model<IEBReading>('EBReading', EBReadingSchema);
+const EBReadingSchema = new Schema<IEBReading>({
+  date: { 
+    type: Date, 
+    required: true, 
+    unique: true // Ensures only one record per day
+  },
+  morningUnits: { type: Number, required: false },
+  unitsConsumed: { type: Number, required: false },
+  costPerUnit: { type: Number, required: false, default: 8 }, // A sensible default
+  totalCost: { type: Number, required: false },
+  morningImageUrl: { type: String, required: false },
+  history: [HistorySchema],
+  createdBy: { type: String, required: true },
+  updatedBy: { type: String, required: false },
+}, {
+  timestamps: true // Adds createdAt and updatedAt automatically
+});
+
+const EBReading: Model<IEBReading> = models.EBReading || mongoose.model<IEBReading>('EBReading', EBReadingSchema);
+
+export default EBReading;

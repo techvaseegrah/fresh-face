@@ -35,7 +35,7 @@ interface CustomerFromAPI {
 
 interface StylistFromAPI {
   _id: string;
-  id: string;
+  id:string;
   name: string;
   isAvailable?: boolean;
 }
@@ -157,7 +157,7 @@ export default function AppointmentPage() {
       } else {
         fetchAppointments();
       }
-    } catch (err: any) {
+    } catch (err: any)      {
       toast.error(err.message);
       throw err;
     }
@@ -225,7 +225,7 @@ export default function AppointmentPage() {
                   const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map((s) => s.name).join(', ') : 'N/A';
                   const billingStaffName = appointment.billingStaffId?.name || 'N/A';
                   const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join('<br />') || 'No payment' : '';
-
+                  
                   const isEditable = !['Paid', 'Cancelled', 'No-Show'].includes(appointment.status);
 
                   return (
@@ -246,12 +246,11 @@ export default function AppointmentPage() {
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.createdAt)}</div>
                       </td>
                       <td className="px-6 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${appointment.appointmentType === 'Online' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{appointment.appointmentType}</span></td>
-
+                      
                       <td className="px-2 py-4 text-center">
-                        {/* FIX: Added 'whitespace-nowrap' to prevent text wrapping in the status badge */}
                         <span className={`px-2 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(appointment.status)}`}>{appointment.status}</span>
                       </td>
-
+                      
                       <td className="px-6 py-4">
                         {appointment.finalAmount ? (
                           <div
@@ -273,7 +272,7 @@ export default function AppointmentPage() {
                       </td>
 
                       <td className="px-6 py-4">{billingStaffName}</td>
-
+                      
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
                           {canUpdateAppointments ? (
@@ -286,10 +285,19 @@ export default function AppointmentPage() {
                                 Edit
                               </button>
                             ) : (
-                              <span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
-                                <CheckCircleIcon className="w-4 h-4" />
-                                Completed
-                              </span>
+                              <>
+                                <span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
+                                  <CheckCircleIcon className="w-4 h-4" />
+                                  Completed
+                                </span>
+                                <button
+                                  onClick={() => handleEditAppointment(appointment)}
+                                  className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"
+                                >
+                                  <PencilIcon className="w-3 h-3" />
+                                  Edit
+                                </button>
+                              </>
                             )
                           ) : null}
                         </div>
