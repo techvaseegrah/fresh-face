@@ -240,7 +240,7 @@ export default function ServiceManager() {
       <ServiceImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        onImportSuccess={handleImportSuccess} audience={"Unisex"}      />
+        onImportSuccess={handleImportSuccess} audience={audienceFilter}      />
 
       {/* Header */}
       <div className="border-b border-slate-200 p-6">

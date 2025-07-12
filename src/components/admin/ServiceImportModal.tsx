@@ -60,7 +60,7 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess, a
         throw new Error(`File is missing required columns: ${missingHeaders.join(', ')}`);
       }
 
-      const response = await fetch(`/api/services/import?audience=${audience}`, {
+      const response = await fetch(`/api/service-items/import?audience=${audience}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jsonData),

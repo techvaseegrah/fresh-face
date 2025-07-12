@@ -54,36 +54,53 @@ export async function GET(req: Request) {
       if (normalizedPhone) {
         query.phoneHash = createSearchHash(normalizedPhone);
       } else {
+        // If search is present but invalid, return no results.
         query._id = new mongoose.Types.ObjectId();
       }
     }
 
-    // Fetch full Mongoose documents to allow post-find hooks (decryption) to run.
+    // Fetch customers and total count concurrently
     const [customersFromDb, totalCustomers] = await Promise.all([
-      Customer.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Customer.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       Customer.countDocuments(query)
     ]);
     
-    // =================================================================
-    // DEBUGGING STEP 1: See the raw data from the database
-    console.log("--- RAW DATA FROM DB (customersFromDb) ---");
-    customersFromDb.forEach(c => {
-      console.log(`Customer: ${c.name}, isMembership: ${c.isMembership}`);
-    });
-    // =================================================================
-    
     const customerIds = customersFromDb.map(c => c._id);
 
+    // Fetch related data (appointments and loyalty) concurrently
     const [latestAppointments, loyaltyPointsData] = await Promise.all([
+      // --- FINAL FIX: This aggregation now correctly fetches service names ---
       Appointment.aggregate([
+        // Stage 1: Find all appointments for the customers on the current page
         { $match: { customerId: { $in: customerIds } } },
+        // Stage 2: Standardize the date field for reliable sorting
         { $addFields: { unifiedDate: { $ifNull: ["$appointmentDateTime", "$date"] } } },
+        // Stage 3: Sort all appointments by date to find the most recent ones
         { $sort: { unifiedDate: -1 } },
-        { $group: { _id: '$customerId', lastAppointmentDate: { $first: '$unifiedDate' } } }
+        // Stage 4: JOIN with the 'serviceitems' collection to get service details
+        {
+          $lookup: {
+            from: 'serviceitems',      // The name of the services collection in MongoDB
+            localField: 'serviceIds',  // The field from the Appointment document
+            foreignField: '_id',       // The field from the 'serviceitems' collection
+            as: 'populatedServices'    // The name of the new array to add to each appointment
+          }
+        },
+        // Stage 5: Group by customer to get only their single latest appointment
+        { 
+          $group: { 
+            _id: '$customerId', 
+            lastAppointmentDate: { $first: '$unifiedDate' },
+            // Get the array of populated service documents from that latest appointment
+            lastServicesDetails: { $first: '$populatedServices' }
+          } 
+        }
       ]),
+      // Loyalty transaction aggregation remains the same
       LoyaltyTransaction.aggregate([
         { $match: { customerId: { $in: customerIds } } },
-        { $group: { 
+        { 
+          $group: { 
             _id: '$customerId', 
             totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } }
           }
@@ -91,36 +108,39 @@ export async function GET(req: Request) {
       ])
     ]);
 
-    const appointmentMap = new Map(latestAppointments.map(a => [a._id.toString(), a.lastAppointmentDate]));
+    // Create maps for quick data lookup
+    const appointmentMap = new Map(latestAppointments.map(a => [a._id.toString(), a]));
     const loyaltyMap = new Map(loyaltyPointsData.map(l => [l._id.toString(), l.totalPoints]));
     
     const twoMonthsAgo = new Date();
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
+    // Combine all data into the final customer objects for the frontend
     const customersWithDetails = customersFromDb.map((customer: any) => {
-      const lastAppointmentDate = appointmentMap.get(customer._id.toString());
+      const latestAppointmentDetails = appointmentMap.get(customer._id.toString());
       const loyaltyPoints = loyaltyMap.get(customer._id.toString()) || 0;
       let status: 'Active' | 'Inactive' | 'New';
 
-      if (lastAppointmentDate) {
-        status = new Date(lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
+      if (latestAppointmentDetails) {
+        status = new Date(latestAppointmentDetails.lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
       } else {
         status = (customer.createdAt && new Date(customer.createdAt) < twoMonthsAgo) ? 'Inactive' : 'New';
       }
       
       const finalCustomerObject = {
-        ...customer.toObject(),
+        ...customer,
         id: customer._id.toString(),
         status: status,
         loyaltyPoints: loyaltyPoints,
-        isMembership: customer.isMembership,
+        // --- FINAL FIX: Construct the appointmentHistory object correctly ---
+        appointmentHistory: latestAppointmentDetails ? [{
+            date: latestAppointmentDetails.lastAppointmentDate,
+            // Map over the populated service objects and extract just the 'name'
+            services: latestAppointmentDetails.lastServicesDetails?.map((s: any) => s.name) || [],
+            // Provide default values to match the frontend type, ensuring no errors
+            _id: '', id: '', status: '', totalAmount: 0, stylistName: ''
+        }] : [], // Send an empty array if no history exists
       };
-
-      // =================================================================
-      // DEBUGGING STEP 2: See the final object before it's sent
-      console.log("--- FINAL OBJECT FOR FRONTEND ---");
-      console.log(`Customer: ${finalCustomerObject.name}, isMembership: ${finalCustomerObject.isMembership}`);
-      // =================================================================
       
       return finalCustomerObject;
     });
@@ -138,6 +158,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: false, message: "Failed to fetch customers" }, { status: 500 });
   }
 }
+
+
 
 // ===================================================================================
 //  POST: Handler for creating a customer

@@ -1,3 +1,4 @@
+// components/ReportDownloadModal.tsx
 "use client"
 
 import { useState, useEffect, FormEvent } from "react"
@@ -38,6 +39,7 @@ export default function ReportDownloadModal({
       const today = new Date()
       setStartDate(today)
       setEndDate(today)
+      setFormat("excel")
       setError("")
     }
   }, [isOpen])
@@ -53,9 +55,9 @@ export default function ReportDownloadModal({
       `}</style>
 
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
-        <div className="relative w-full max-w-md bg-white rounded-lg shadow-xl overflow-visible">
+        <div className="relative w-full max-w-md bg-white rounded-lg shadow-xl">
           <div className="flex items-center justify-between p-5 border-b bg-gray-50">
-            <h2 className="text-xl font-semibold text-gray-800">Download Excel Report</h2>
+            <h2 className="text-xl font-semibold text-gray-800">Download EB Report</h2>
             <button
               onClick={onClose}
               className="p-1 text-gray-400 rounded-full hover:bg-gray-200 hover:text-gray-600"
@@ -69,47 +71,57 @@ export default function ReportDownloadModal({
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select Date Range</label>
                 <div className="flex items-center gap-2">
-                  <div className="relative w-full">
-                    <DatePicker
-                      selected={startDate}
-                      onChange={(date: Date | null) => date && setStartDate(date)}
-                      selectsStart
-                      startDate={startDate}
-                      endDate={endDate}
-                      maxDate={new Date()}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      dateFormat="dd/MM/yyyy"
-                      popperClassName="react-datepicker-high-z"
-                      popperPlacement="bottom-start"
-                      portalId="root-portal"
-                    />
-                  </div>
+                  <DatePicker
+                    selected={startDate}
+                    onChange={(date: Date | null) => date && setStartDate(date)}
+                    selectsStart
+                    startDate={startDate}
+                    endDate={endDate}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    dateFormat="dd/MM/yyyy"
+                    popperClassName="react-datepicker-high-z"
+                    popperPlacement="bottom-start"
+                  />
                   <span className="text-gray-500">to</span>
-                  <div className="relative w-full">
-                    <DatePicker
-                      selected={endDate}
-                      onChange={(date: Date | null) => date && setEndDate(date)}
-                      selectsEnd
-                      startDate={startDate}
-                      endDate={endDate}
-                      
-                      className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      dateFormat="dd/MM/yyyy"
-                      popperClassName="react-datepicker-high-z"
-                      popperPlacement="bottom-start"
-                      portalId="root-portal"
-                    />
-                  </div>
+                  <DatePicker
+                    selected={endDate}
+                    onChange={(date: Date | null) => date && setEndDate(date)}
+                    selectsEnd
+                    startDate={startDate}
+                    endDate={endDate}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    dateFormat="dd/MM/yyyy"
+                    popperClassName="react-datepicker-high-z"
+                    popperPlacement="bottom-start"
+                  />
                 </div>
                 {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
               </div>
 
-              {/* Format selection (still hidden for now) */}
-              <div className="hidden">
-                <label className="flex items-center">
-                  <input type="radio" name="format" value="excel" checked readOnly />
-                  <span className="ml-2">Excel (XLSX)</span>
-                </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Format</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="format"
+                      value="excel"
+                      checked={format === "excel"}
+                      onChange={() => setFormat("excel")}
+                    />
+                    <span>Excel (XLSX)</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="format"
+                      value="pdf"
+                      checked={format === "pdf"}
+                      onChange={() => setFormat("pdf")}
+                    />
+                    <span>PDF</span>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -118,14 +130,14 @@ export default function ReportDownloadModal({
                 type="button"
                 onClick={onClose}
                 disabled={isDownloading}
-                className="px-4 py-2 mr-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50"
+                className="px-4 py-2 mr-3 text-sm text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={!startDate || !endDate || isDownloading}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                disabled={isDownloading}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-500 hover:bg-green-600 rounded-lg"
               >
                 <DocumentArrowDownIcon className="w-5 h-5" />
                 {isDownloading ? "Generating..." : "Generate & Download"}

@@ -1,11 +1,12 @@
-// lib/reportGenerator.ts
-
 import ExcelJS from "exceljs";
-import { chromium } from "playwright";
+// --- NEW IMPORTS ---
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+// --- END NEW IMPORTS ---
 import { ReportStylistData } from "./data/reportData";
 
 // ===================================================================================
-// Helper Function: Format Duration
+// Helper Function: Format Duration (No changes needed)
 // ===================================================================================
 
 /**
@@ -21,7 +22,7 @@ function formatDuration(totalMinutes: number | null | undefined): string {
 }
 
 // ===================================================================================
-// Excel Report Generator
+// Excel Report Generator (No changes needed)
 // ===================================================================================
 
 export async function createExcelReport(data: ReportStylistData[]): Promise<Buffer> {
@@ -51,7 +52,7 @@ export async function createExcelReport(data: ReportStylistData[]): Promise<Buff
 }
 
 // ===================================================================================
-// PDF Report Generator (Using Playwright)
+// PDF Report Generator (Using jsPDF and jspdf-autotable)
 // ===================================================================================
 
 export async function createPdfReport(
@@ -59,100 +60,75 @@ export async function createPdfReport(
   startDate: Date,
   endDate: Date
 ): Promise<Buffer> {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <title>Stylist Performance Report</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 40px;
-            color: #333;
-          }
-          .report-container {
-            width: 100%;
-            max-width: 800px;
-            margin: auto;
-          }
-          .report-header {
-            text-align: center;
-            margin-bottom: 30px;
-          }
-          h1 {
-            font-size: 24px;
-            margin-bottom: 5px;
-          }
-          p {
-            font-size: 14px;
-            color: #666;
-            margin: 0;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-          }
-          th, td {
-            border: 1px solid #e0e0e0;
-            padding: 10px 12px;
-            text-align: left;
-          }
-          thead th {
-            background-color: #f7f7f7;
-            font-weight: 600;
-          }
-          tbody tr:nth-child(even) {
-            background-color: #fafafa;
-          }
-          .text-right {
-            text-align: right;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="report-container">
-          <div class="report-header">
-            <h1>Stylist Performance Report</h1>
-            <p>For the period: ${startDate.toLocaleDateString('en-IN')} - ${endDate.toLocaleDateString('en-IN')}</p>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Stylist Name</th>
-                <th class="text-right">Total Appointments</th>
-                <th class="text-right">Total Revenue (₹)</th>
-                <th class="text-right">Total Time Worked</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.map(item => `
-                <tr>
-                  <td>${item.stylistName || 'N/A'}</td>
-                  <td class="text-right">${item.totalAppointments || 0}</td>
-                  <td class="text-right">₹${(item.totalRevenue || 0).toFixed(2)}</td>
-                  <td class="text-right">${formatDuration(item.totalDuration)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </body>
-    </html>
-  `;
-
-  await page.setContent(htmlContent, { waitUntil: "domcontentloaded" });
-
-  const pdfBuffer = await page.pdf({
-    format: "A4",
-    printBackground: true,
-    margin: { top: "40px", right: "40px", bottom: "40px", left: "40px" },
+  // 1. Initialize a new jsPDF document
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
   });
 
-  await browser.close();
+  // 2. Add the main title and date range
+  doc.setFontSize(18);
+  doc.text("Stylist Performance Report", 14, 22); // (text, x, y)
+  doc.setFontSize(11);
+  doc.setTextColor(100); // Set color to a light grey
+  doc.text(
+    `For the period: ${startDate.toLocaleDateString('en-IN')} - ${endDate.toLocaleDateString('en-IN')}`,
+    14,
+    30
+  );
+
+  // 3. Define the table headers
+  const tableHeaders = [
+    "Stylist Name",
+    "Total Appointments",
+    "Total Revenue",
+    "Total Time Worked",
+  ];
+
+  // 4. Map your data to the format required by autoTable
+  const tableBody = data.map(item => [
+    item.stylistName || "N/A",
+    item.totalAppointments || 0,
+    `₹${(item.totalRevenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    formatDuration(item.totalDuration),
+  ]);
+
+  // 5. Generate the table using autoTable
+  autoTable(doc, {
+    startY: 40, // Y position to start the table
+    head: [tableHeaders],
+    body: tableBody,
+    theme: 'grid', // 'striped', 'grid', or 'plain'
+    headStyles: {
+      fillColor: [22, 160, 133], // A nice teal color for the header
+      textColor: 255, // White text
+      fontStyle: 'bold',
+    },
+    styles: {
+      font: 'helvetica',
+      fontSize: 10,
+    },
+    columnStyles: {
+      0: { cellWidth: 'auto' }, // Stylist Name
+      1: { halign: 'right' }, // Total Appointments
+      2: { halign: 'right' }, // Total Revenue
+      3: { halign: 'right' }, // Total Time Worked
+    },
+    didDrawPage: (data) => {
+      // Add a footer to each page
+      const pageCount = doc.getNumberOfPages();
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text(
+        `Page ${data.pageNumber} of ${pageCount}`,
+        data.settings.margin.left,
+        doc.internal.pageSize.getHeight() - 10
+      );
+    },
+  });
+
+  // 6. Convert the PDF document to a Buffer
+  const pdfBuffer = doc.output('arraybuffer');
   return Buffer.from(pdfBuffer);
 }
