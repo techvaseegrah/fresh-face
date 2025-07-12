@@ -1,5 +1,3 @@
-// src/app/(main)/appointment/billingmodal.tsx
-
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -22,16 +20,16 @@ export interface BillLineItem {
    isRemovable?: boolean;
 }
 
-// MODIFICATION 1: Update SearchableItem to receive the new data from the API
 interface SearchableItem {
   id: string;
   name: string;
   price: number;
   membershipRate?: number;
   type: 'service' | 'product' | 'fee';
+  categoryName?: string; // For product category display
+  unit?: string; // For product unit display
 }
 
-// ... (Rest of the interfaces and the CustomerHistoryModal component remain the same)
 interface AppointmentForModal {
   _id: string;
   id: string;
@@ -259,18 +257,14 @@ const BillingModal: React.FC<BillingModalProps> = ({
   const [discount, setDiscount] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
   
-  // --- STATE FOR DYNAMIC MEMBERSHIP FEE ---
   const [membershipFee, setMembershipFee] = useState<number | null>(null);
   const [isLoadingFee, setIsLoadingFee] = useState<boolean>(true);
 
-  // --- FUNCTION TO FETCH FEE FROM SETTINGS API ---
   const fetchMembershipFee = useCallback(async () => {
     setIsLoadingFee(true);
     try {
       const res = await fetch('/api/settings/membership');
-      if (!res.ok) {
-        throw new Error('Could not fetch membership fee setting.');
-      }
+      if (!res.ok) throw new Error('Could not fetch membership fee setting.');
       const data = await res.json();
       if (data.success && typeof data.price === 'number') {
         setMembershipFee(data.price);
@@ -329,7 +323,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      // Reset all state on open
       setError(null);
       setNotes('');
       setSearchQuery('');
@@ -342,7 +335,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
       setDiscount(0);
       setDiscountType('fixed');
       
-      // Fetch dynamic data
       fetchStaffMembers();
       fetchMembershipFee();
       
@@ -424,7 +416,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
     return () => clearTimeout(handler);
   }, [membershipBarcode]);
 
-  // MODIFICATION 2: Update this function to correctly format the product name with its category.
   const handleAddItemToBill = (item: SearchableItem) => {
     if (billItems.some(bi => bi.itemId === item.id)) {
       toast.info(`${item.name} is already in the bill.`);
@@ -434,13 +425,10 @@ const BillingModal: React.FC<BillingModalProps> = ({
       ? item.membershipRate : item.price;
 
     let displayName = item.name;
-    // Format the name only for products
     if (item.type === 'product') {
-      // Prepend the category name (which is the brand name) if it exists
       if (item.categoryName) {
         displayName = `${item.categoryName} - ${displayName}`;
       }
-      // Append the unit for clarity
       if (item.unit) {
         displayName = `${displayName} (${item.unit})`;
       }
@@ -449,11 +437,12 @@ const BillingModal: React.FC<BillingModalProps> = ({
     const newItem: BillLineItem = {
       itemType: item.type,
       itemId: item.id,
-      name: displayName, // Use the newly formatted display name
+      name: displayName,
       unitPrice: item.price,
       membershipRate: item.membershipRate,
       quantity: 1,
-      finalPrice: finalPrice
+      finalPrice: finalPrice,
+      isRemovable: true,
     };
     const updatedBillItems = [...billItems, newItem];
     setBillItems(updatedBillItems);
@@ -463,7 +452,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
     searchInputRef.current?.focus();
   };
 
-  // ... (Rest of the functions handleRemoveItem, handleQuantityChange, handleGrantMembership, handlePaymentChange, etc. are unchanged)
   const handleRemoveItem = (indexToRemove: number) => {
     const updatedBillItems = billItems.filter((_, idx) => idx !== indexToRemove);
     setBillItems(updatedBillItems);
@@ -562,6 +550,8 @@ const BillingModal: React.FC<BillingModalProps> = ({
     const totalPaid = Object.values(paymentDetails).reduce((sum, amount) => sum + amount, 0);
     const balance = grandTotal - totalPaid;
     
+    const changeDue = balance < 0 ? Math.abs(balance) : 0;
+    
     return { 
         serviceTotal, 
         productTotal, 
@@ -570,7 +560,8 @@ const BillingModal: React.FC<BillingModalProps> = ({
         membershipSavings, 
         calculatedDiscount, 
         totalPaid, 
-        balance 
+        balance,
+        changeDue
     };
   }, [billItems, customerIsMember, paymentDetails, discount, discountType]);
 
@@ -583,14 +574,25 @@ const BillingModal: React.FC<BillingModalProps> = ({
       setError('Please select a billing staff member.');
       return;
     }
-    if (Math.abs(totals.balance) > 0.01) {
-      setError(`Payment amount (₹${totals.totalPaid.toFixed(2)}) does not match bill total (₹${totals.grandTotal.toFixed(2)}).`);
+
+    if (totals.balance > 0.01) { 
+      setError(`Payment amount (₹${totals.totalPaid.toFixed(2)}) is less than the bill total (₹${totals.grandTotal.toFixed(2)}).`);
       return;
     }
 
     setIsLoading(true);
     setError(null);
     try {
+      let adjustedPaymentDetails = { ...paymentDetails };
+
+      if (totals.changeDue > 0) {
+          const cashPaidForBill = paymentDetails.cash - totals.changeDue;
+          adjustedPaymentDetails = {
+              ...paymentDetails,
+              cash: Math.max(0, cashPaidForBill)
+          };
+      }
+
       const finalPayload: FinalizeBillingPayload = {
         appointmentId: appointment._id,
         customerId: customer._id,
@@ -602,7 +604,7 @@ const BillingModal: React.FC<BillingModalProps> = ({
         subtotal: totals.subtotalBeforeDiscount,
         membershipDiscount: totals.membershipSavings,
         grandTotal: totals.grandTotal,
-        paymentDetails,
+        paymentDetails: adjustedPaymentDetails,
         notes,
         customerWasMember: customer?.isMembership || false,
         membershipGrantedDuringBilling: membershipGranted,
@@ -653,7 +655,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
             </div>
           </div>
           
-          {/* ... error and membership grant JSX are unchanged ... */}
           {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
           
           {isGrantingMembership && (
@@ -723,7 +724,6 @@ const BillingModal: React.FC<BillingModalProps> = ({
                 </div>}
             </div>
             
-            {/* ... inventory impact is unchanged ... */}
             {isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
             {inventoryImpact?.inventoryImpact?.length > 0 && (
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -741,21 +741,18 @@ const BillingModal: React.FC<BillingModalProps> = ({
               </div>
             )}
 
-            {/* ... search input section ... */}
             <div className="border-t pt-4">
               <label htmlFor="itemSearch" className="block text-sm font-medium text-gray-700 mb-1">Add Additional Items</label>
               <div className="relative"><input ref={searchInputRef} id="itemSearch" type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search services or products..." className="w-full px-3 py-2 border rounded-md" autoComplete="off" />
                 {(isSearching || searchResults.length > 0) && (
                   <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-48 overflow-y-auto shadow-lg">
                     {isSearching && <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>}
-                    {/* MODIFICATION 3: Update the search results display to include the category name for products. */}
                     {!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span className="font-medium">{item.type === 'product' && item.categoryName ? `${item.categoryName} - ${item.name}` : item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}
                     {!isSearching && searchResults.length === 0 && searchQuery.length >= 2 && <li className="px-3 py-2 text-sm text-gray-500">No items found.</li>}
                   </ul>)}
               </div>
             </div>
 
-            {/* ... rest of the modal body (staff, payment, notes) is unchanged ... */}
             <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingStaff}><option value="">{isLoadingStaff ? 'Loading staff...' : 'Select billing staff'}</option>{availableStaff.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
 
             <div className="pt-4 border-t">
@@ -789,13 +786,33 @@ const BillingModal: React.FC<BillingModalProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Payment Details</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={paymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total Paid:</span><span className="font-semibold">₹{totals.totalPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>Bill Total:</span><span className="font-semibold">₹{totals.grandTotal.toFixed(2)}</span></div><div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div></div></div></div>
+            <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Payment Details</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={paymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2">
+              <div className="flex justify-between">
+                <span>Total Paid:</span>
+                <span className="font-semibold">₹{totals.totalPaid.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between mt-1">
+                <span>Bill Total:</span>
+                <span className="font-semibold">₹{totals.grandTotal.toFixed(2)}</span>
+              </div>
+              {totals.changeDue > 0 ? (
+                <div className="flex justify-between mt-1 text-blue-600 font-bold">
+                  <span>Change Due:</span>
+                  <span>₹{totals.changeDue.toFixed(2)}</span>
+                </div>
+              ) : (
+                <div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
+                  <span>Balance:</span>
+                  <span className="font-bold">₹{totals.balance.toFixed(2)}</span>
+                </div>
+              )}
+            </div></div></div>
             <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>
           </div>
 
 
           <div className="mt-auto pt-4 border-t">
-            {/* ... footer JSX is unchanged ... */}
             <div className="grid grid-cols-2 gap-8 items-end">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">
@@ -819,7 +836,11 @@ const BillingModal: React.FC<BillingModalProps> = ({
             </div>
             <div className="mt-6 flex justify-end space-x-3">
               <button onClick={onClose} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300" disabled={isLoading}>Cancel</button>
-              <button onClick={handleFinalizeClick} className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isLoading || billItems.length === 0 || !selectedStaffId || Math.abs(totals.balance) > 0.01}>
+              <button 
+                onClick={handleFinalizeClick} 
+                className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" 
+                disabled={isLoading || billItems.length === 0 || !selectedStaffId || totals.balance > 0.01}
+              >
                 {isLoading ? <div className="flex items-center justify-center"><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />Processing...</div> : `Complete Payment`}
               </button>
             </div>
