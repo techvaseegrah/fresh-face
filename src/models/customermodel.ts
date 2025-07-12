@@ -42,7 +42,7 @@ const customerSchema = new Schema({
 
   // --- Search & Index Fields ---
   phoneHash: { type: String, required: true, unique: true, index: true },
-  searchableName: { type: String, required: true, index: true, lowercase: true },
+  searchableName: { type: String, required: true,index: true, lowercase: true },
   last4PhoneNumber: { type: String, index: true },
 
   // --- Other Existing Fields ---

@@ -1,54 +1,59 @@
-// FILE: /models/DayEndReport.ts
+import mongoose, { Schema, model, models, Document } from 'mongoose';
 
-import mongoose, { Schema, model, models } from 'mongoose';
-
-// Structure for the counted cash denominations
-const cashDenominationsSchema = new Schema({
-  d2000: { type: Number, default: 0 },
-  d500: { type: Number, default: 0 },
-  d200: { type: Number, default: 0 },
-  d100: { type: Number, default: 0 },
-  d50: { type: Number, default: 0 },
-  d20: { type: Number, default: 0 },
-  d10: { type: Number, default: 0 },
-  d1: { type: Number, default: 0 }, // For coins
-}, { _id: false });
-
-const totalsSchema = new Schema({
+// A flexible schema for payment totals (used for expected, actual, and discrepancies)
+// We'll add 'other' to match your invoice logic and make it more flexible.
+const TotalsSchema = new Schema({
   cash: { type: Number, default: 0 },
   card: { type: Number, default: 0 },
   upi: { type: Number, default: 0 },
+  other: { type: Number, default: 0 }, // Added for consistency
   total: { type: Number, default: 0 },
-  unknown: { type: Number, default: 0 },
 }, { _id: false });
 
-const dayEndReportSchema = new Schema({
+
+// Main DayEndReport schema
+const DayEndReportSchema = new Schema({
   closingDate: {
     type: Date,
     required: true,
-    unique: true, // You should only have one report per day
+    unique: true,
     index: true,
   },
   
-  // Data from the system (calculated from invoices)
-  expected: totalsSchema,
-  
-  // Data from physical count (submitted by manager)
-  actual: {
-    card: { type: Number, default: 0 },
-    upi: { type: Number, default: 0 },
-    cashDenominations: cashDenominationsSchema,
-    totalCountedCash: { type: Number, required: true },
+  // --- NEW FIELDS FOR COMPLETE CASH FLOW ---
+  openingBalance: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
+  isOpeningBalanceManual: {
+    type: Boolean,
+    default: false, // Tracks if the user overrode the automated value
   },
   
-  // Calculated discrepancies
-  discrepancy: {
-    cash: { type: Number, required: true },
-    card: { type: Number, required: true },
-    upi: { type: Number, required: true },
-    total: { type: Number, required: true },
+  pettyCash: {
+    total: { type: Number, default: 0 },
+    // This stores an array of IDs that link directly to your 'Expense' collection.
+    // This is the correct way to handle relationships in MongoDB.
+    expenseIds: [{ 
+      type: Schema.Types.ObjectId, 
+      ref: 'Expense' // This 'ref' tells Mongoose to link to the 'Expense' model
+    }], 
   },
+  // --- END OF NEW FIELDS ---
 
+  // Renamed for clarity and consistency. Using the same TotalsSchema for all.
+  expectedTotals: TotalsSchema, // Totals from system (sales)
+  actualTotals: TotalsSchema,   // Totals from physical count/verification
+  discrepancies: TotalsSchema,  // Calculated differences
+
+  // Using a Map is more flexible than a rigid schema for denominations.
+  // It allows you to store keys like 'd500', 'd200', etc., without defining them all.
+  cashDenominations: {
+    type: Map,
+    of: Number,
+  },
+  
   notes: {
     type: String,
     trim: true,
@@ -62,6 +67,24 @@ const dayEndReportSchema = new Schema({
 
 }, { timestamps: true });
 
-const DayEndReport = models.DayEndReport || model('DayEndReport', dayEndReportSchema);
+
+// Optional: Define a TypeScript interface for better type safety in your app
+export interface IDayEndReport extends Document {
+  closingDate: Date;
+  openingBalance: number;
+  isOpeningBalanceManual: boolean;
+  pettyCash: {
+    total: number;
+    expenseIds: mongoose.Types.ObjectId[];
+  };
+  expectedTotals: { cash: number; card: number; upi: number; other: number; total: number };
+  actualTotals: { cash: number; card: number; upi: number; other: number; total: number };
+  discrepancies: { cash: number; card: number; upi: number; other: number; total: number };
+  cashDenominations: Map<string, number>;
+  notes?: string;
+  closedBy: mongoose.Types.ObjectId;
+}
+
+const DayEndReport = models.DayEndReport || model<IDayEndReport>('DayEndReport', DayEndReportSchema);
 
 export default DayEndReport;
