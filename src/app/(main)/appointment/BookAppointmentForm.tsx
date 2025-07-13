@@ -30,12 +30,24 @@ export interface NewBookingData {
   email: string;
   gender?: string;
   // REPLACED `serviceIds` and `stylistId` with the array below
-  serviceAssignments: Omit<ServiceAssignment, '_tempId' | 'guestName'> & { guestName?: string }[];
+  serviceAssignments: { serviceId: string; stylistId: string; guestName?: string }[];
   date: string;
   time: string;
   notes?: string;
   status: 'Appointment' | 'Checked-In';
   appointmentType?: 'Online' | 'Offline';
+}
+
+interface AppointmentFormData {
+  customerId?: string; // This now correctly allows string or undefined
+  phoneNumber: string;
+  customerName: string;
+  email: string;
+  gender: string;
+  date: string;
+  time: string;
+  notes: string;
+  status: 'Appointment' | 'Checked-In';
 }
 
 interface ServiceFromAPI {
@@ -375,19 +387,19 @@ export default function BookAppointmentForm({
   onBookAppointment
 }: BookAppointmentFormProps) {
   // Use a temporary data structure for the form state
-  const initialFormData = {
-    customerId: undefined,
-    phoneNumber: '',
-    customerName: '',
-    email: '',
-    gender: '',
-    date: '',
-    time: '',
-    notes: '',
-    status: 'Appointment' as 'Appointment' | 'Checked-In'
-  };
-
-  const [formData, setFormData] = useState(initialFormData);
+const initialFormData: AppointmentFormData = {
+  customerId: undefined,
+  phoneNumber: '',
+  customerName: '',
+  email: '',
+  gender: '', // The empty string is valid for the initial state
+  date: '',
+  time: '',
+  notes: '',
+  status: 'Appointment' as 'Appointment' | 'Checked-In'
+};
+  
+  const [formData, setFormData] = useState<AppointmentFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -409,6 +421,8 @@ export default function BookAppointmentForm({
   const [barcodeQuery, setBarcodeQuery] = useState<string>('');
   const [isSearchingByBarcode, setIsSearchingByBarcode] = useState<boolean>(false);
   const [searchMode, setSearchMode] = useState<'phone' | 'barcode'>('phone');
+
+  const [stockIssues, setStockIssues] = useState<any[] | null>(null);
 
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -448,6 +462,7 @@ export default function BookAppointmentForm({
       setFormData(initialFormData);
       setServiceAssignments([]); // Reset assignments
       setFormError(null);
+      setStockIssues(null);
       setIsSubmitting(false);
       setIsCustomerSelected(false);
       setSelectedCustomerDetails(null);
@@ -497,7 +512,8 @@ export default function BookAppointmentForm({
     handleUpdateAssignment(_tempId, { isLoadingStylists: true, availableStylists: [] });
     try {
       const res = await fetch(`/api/stylists/available?date=${formData.date}&time=${formData.time}&serviceIds=${serviceId}`);
-      const data = await res.json();
+     
+       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'Could not fetch stylists.');
       handleUpdateAssignment(_tempId, { availableStylists: data.stylists, isLoadingStylists: false });
     } catch (err: any) {
@@ -506,6 +522,7 @@ export default function BookAppointmentForm({
     }
   }, [formData.date, formData.time]);
 
+  
   // NEW: useEffect to trigger stylist fetch when date/time or assignments change
   useEffect(() => {
     if(formData.date && formData.time){
@@ -647,15 +664,18 @@ export default function BookAppointmentForm({
 
 
   // MODIFIED: Submit handler to construct the new data payload
-  const handleSubmit = async (e: FormEvent) => {
+  // The NEW handleSubmit function
+const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setStockIssues(null); // Clear previous stock issues
 
     const { phoneNumber, customerName, date, time, status, gender } = formData;
 
+    // --- Step 1: Initial Form Validation (same as before) ---
     if (!phoneNumber || !customerName || !date || !time || !status || !gender) {
-      setFormError('Please fill in all customer and schedule details.');
-      return;
+        setFormError('Please fill in all customer and schedule details.');
+        return;
     }
     if (serviceAssignments.length === 0) {
         setFormError('Please add at least one service.');
@@ -668,26 +688,55 @@ export default function BookAppointmentForm({
 
     setIsSubmitting(true);
     try {
-      const finalAssignments = serviceAssignments.map(a => ({
-        serviceId: a.serviceId,
-        stylistId: a.stylistId,
-        guestName: a.guestName || undefined,
-      }));
+        // --- Step 2: PRE-CHECK CONSUMABLE STOCK ---
+        const checkPayload = {
+            serviceIds: serviceAssignments.map(a => a.serviceId),
+            customerGender: formData.gender as 'male' | 'female' | 'other',
+        };
 
-      const appointmentData: NewBookingData = {
-        ...formData,
-        serviceAssignments: finalAssignments,
-        appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online'
-      };
-      
-      await onBookAppointment(appointmentData);
+        const checkRes = await fetch('/api/appointment/check-consumables', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(checkPayload),
+        });
+
+        const checkData = await checkRes.json();
+
+        if (!checkRes.ok || !checkData.success) {
+            throw new Error(checkData.message || "Failed to check stock availability.");
+        }
+
+        // If booking is not possible, show the specific issues and stop.
+if (checkData.canBook === false) {
+    // --- THIS IS THE NEW LINE ---
+      toast.error("Cannot book: Required items are out of stock. See details below.");
+            setStockIssues(checkData.issues);
+            setIsSubmitting(false);
+            return;
+        }
+
+        // --- Step 3: PROCEED WITH ACTUAL BOOKING (if check passed) ---
+        const finalAssignments = serviceAssignments.map(a => ({
+            serviceId: a.serviceId,
+            stylistId: a.stylistId,
+            guestName: a.guestName || undefined,
+        }));
+
+        const appointmentData: NewBookingData = {
+            ...formData,
+            serviceAssignments: finalAssignments,
+            appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online'
+        };
+        
+        await onBookAppointment(appointmentData);
+        // The `onBookAppointment` function should handle success toasts and closing the modal.
 
     } catch (error: any) {
-      setFormError(error.message || 'An unexpected error occurred.');
+        setFormError(error.message || 'An unexpected error occurred.');
     } finally {
-      setIsSubmitting(false);
+        setIsSubmitting(false);
     }
-  };
+};
 
   if (!isOpen) return null;
 
@@ -708,7 +757,19 @@ export default function BookAppointmentForm({
             <form onSubmit={handleSubmit} className="space-y-6 lg:col-span-2 flex flex-col">
               <div className="space-y-6 flex-grow">
                 {formError && (<div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{formError}</div>)}
-
+  {stockIssues && stockIssues.length > 0 && (
+  <div className="my-4 p-4 border-l-4 border-orange-500 bg-orange-50 text-orange-800 rounded-r-lg">
+    <h4 className="font-bold">Cannot Book: Insufficient Consumables</h4>
+    <p className="text-sm mt-1">The following items are required for the selected services but are low on stock:</p>
+    <ul className="list-disc pl-5 mt-2 text-sm space-y-1">
+      {stockIssues.map((issue, index) => (
+        <li key={index}>
+          <strong>{issue.productName}</strong>: Requires {issue.required}{issue.unit}, but only {issue.available}{issue.unit} available.
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
                 <fieldset className={fieldsetClasses}>
                   <legend className={legendClasses}>Customer Information</legend>
                   <div className="flex items-center gap-4 mb-4">
@@ -793,6 +854,8 @@ export default function BookAppointmentForm({
                 <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm bg-white border rounded-lg hover:bg-gray-50" disabled={isSubmitting}>Cancel</button>
                 <button type="submit" className="px-5 py-2.5 text-sm text-white bg-gray-800 rounded-lg hover:bg-black flex items-center justify-center min-w-[150px]" disabled={isSubmitting}>{isSubmitting ? (<div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />) : ('Book Appointment')}</button>
               </div>
+
+              
             </form>
 
             <div className="lg:col-span-1 lg:border-l lg:pl-8 mt-8 lg:mt-0">

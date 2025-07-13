@@ -72,24 +72,36 @@ export default function ProductFormModal({ isOpen, onClose, onSave, entityType, 
     }))
   }
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    if (!entityType) return
+const handleSubmit = (e: FormEvent) => {
+  e.preventDefault();
+  if (!entityType) return;
 
-    const payload = { ...formData }
-    if (entityToEdit) {
-      payload._id = entityToEdit._id
-    }
-    if (!entityToEdit) {
-      payload.type = context.productType
-      if (entityType === "subcategory") payload.brand = context.brandId
-      if (entityType === "product") {
-        payload.brand = context.brandId
-        payload.subCategory = context.subCategoryId
-      }
-    }
-    onSave(entityType, payload)
+  // Create a mutable copy of the form data
+  const dataToSave = { ...formData };
+
+  // --- THIS IS THE FIX ---
+  // If we are saving a product, we explicitly remove the totalQuantity field.
+  // This allows the Mongoose pre-save hook on the server to correctly calculate it.
+  if (entityType === 'product') {
+    delete dataToSave.totalQuantity;
   }
+  // --- END OF FIX ---
+
+  // The rest of your logic remains the same, just using 'dataToSave'
+  if (entityToEdit) {
+    dataToSave._id = entityToEdit._id;
+  }
+  if (!entityToEdit) {
+    dataToSave.type = context.productType;
+    if (entityType === "subcategory") dataToSave.brand = context.brandId;
+    if (entityType === "product") {
+      dataToSave.brand = context.brandId;
+      dataToSave.subCategory = context.subCategoryId;
+    }
+  }
+  
+  onSave(entityType, dataToSave);
+};
 
   if (!isOpen) return null
 

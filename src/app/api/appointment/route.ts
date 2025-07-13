@@ -11,6 +11,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { createSearchHash, encrypt } from '@/lib/crypto';
+import { InventoryManager } from '@/lib/inventoryManager'; 
 
 // ===================================================================================
 //  GET: Handler with Upgraded Search and Date Filter
@@ -121,6 +122,10 @@ export async function GET(req: Request) {
 //  POST: Handler with the "Bulletproof" fix for creating customers
 // ===================================================================================
 export async function POST(req: Request) {
+  
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
   try {
     await connectToDatabase();
     const body = await req.json();
@@ -148,7 +153,7 @@ export async function POST(req: Request) {
     // --- Find or Create Customer (This logic remains the same) ---
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
     const phoneHashToFind = createSearchHash(normalizedPhone);
-    let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind });
+    let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind }).session(session);
 
     if (!customerDoc) {
       const customerDataForCreation = {
@@ -160,11 +165,30 @@ export async function POST(req: Request) {
         email: email ? encrypt(email) : undefined,
         gender: gender || 'other'
       };
-      customerDoc = await Customer.create(customerDataForCreation);
+      const newCustomers = await Customer.create([customerDataForCreation], { session });
+      customerDoc = newCustomers[0];
       if (!customerDoc) {
         throw new Error("Customer creation failed unexpectedly.");
       }
     }
+
+    const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
+
+// Use our manager to get the total inventory required for ALL services combined.
+const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
+  serviceIdsForInventoryCheck,
+  gender
+);
+
+// If there are consumables to deduct, apply the updates.
+if (totalUpdates.length > 0) {
+  console.log('Applying inventory updates for new appointment(s)...');
+  // Pass the session to ensure this is part of our transaction.
+  // If applyInventoryUpdates fails, it will throw an error and abort the transaction.
+  await InventoryManager.applyInventoryUpdates(totalUpdates, session);
+  console.log('Inventory updates applied successfully.');
+}
+
     // Now `customerDoc` holds the definitive customer document, either found or newly created.
 
     // --- Date/Time Handling (This logic remains the same) ---
@@ -225,12 +249,12 @@ export async function POST(req: Request) {
     const newAppointmentsData = await Promise.all(newAppointmentsDataPromises);
     
     // NEW: Use `insertMany` to create all appointment documents in a single, efficient database operation.
-    const createdAppointments = await Appointment.insertMany(newAppointmentsData);
+   const createdAppointments = await Appointment.insertMany(newAppointmentsData, { session });
 
     if (!createdAppointments || createdAppointments.length === 0) {
       throw new Error("Failed to create appointment records in the database.");
     }
-    
+    await session.commitTransaction();
     // You can choose to return the first created appointment for a success message,
     // or return the whole array. Returning the array might be more informative.
     return NextResponse.json({ 
@@ -240,7 +264,13 @@ export async function POST(req: Request) {
     }, { status: 201 });
 
   } catch (err: any) {
+    // --- THIS ENTIRE 'catch' BLOCK WAS ADDED ---
+    await session.abortTransaction(); // Abort on any error
     console.error("API Error creating appointment:", err);
     return NextResponse.json({ success: false, message: err.message || "Failed to create appointment." }, { status: 500 });
+  
+  } finally {
+    // --- THIS ENTIRE 'finally' BLOCK WAS ADDED ---
+    session.endSession(); // Always close the session
   }
 }

@@ -37,7 +37,7 @@ export async function GET(req: Request) {
       .populate('brand', 'name')
       .populate('subCategory', 'name')
       // Ensure 'brand' is selected so we can access it
-      .select('name price sku unit brand')
+      .select('name price sku unit brand numberOfItems') 
       .limit(5)
       .lean()
     ]);
@@ -60,7 +60,8 @@ export async function GET(req: Request) {
         sku: product.sku,
         unit: product.unit, // Send the unit separately
         // Use the populated brand name, with a fallback
-        categoryName: (product.brand as any)?.name || 'Product' 
+        categoryName: (product.brand as any)?.name || 'Product', 
+        stock: (product as any).numberOfItems
       }))
     ];
 

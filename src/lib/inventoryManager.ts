@@ -1,9 +1,10 @@
-// FILE: src/lib/inventoryManager.ts - WITH DEBUGGING LOGS
+// FILE: src/lib/inventoryManager.ts
 
+import mongoose from 'mongoose';
 import Product, { IProduct } from '@/models/Product';
 import ServiceItem from '@/models/ServiceItem';
 import Setting from '@/models/Setting';
-import { Gender } from '@/types/gender'; // Assuming you have this type definition
+import { Gender } from '@/types/gender';
 
 export interface InventoryUpdate {
   productId: string;
@@ -31,7 +32,7 @@ export class InventoryManager {
     if (!service || !service.consumables?.length) return [];
 
     return service.consumables.map(consumable => {
-      const product = consumable.product;
+      const product = consumable.product as IProduct;
       let quantityToUse = consumable.quantity.default || 0;
       if (customerGender === Gender.Male && typeof consumable.quantity.male === 'number') {
         quantityToUse = consumable.quantity.male;
@@ -48,89 +49,79 @@ export class InventoryManager {
     });
   }
 
-  static async applyInventoryUpdates(updates: InventoryUpdate[]): Promise<{
+  // --- THIS IS THE FULLY CORRECTED FUNCTION ---
+  static async applyInventoryUpdates(
+    updates: InventoryUpdate[],
+    session?: mongoose.ClientSession
+  ): Promise<{
     success: boolean;
     errors: string[];
     lowStockProducts: IProduct[];
   }> {
-    const errors: string[] = [];
-    const lowStockProducts: IProduct[] = [];
-
-    const thresholdSetting = await Setting.findOne({ key: 'globalLowStockThreshold' }).lean();
-    let globalThreshold = thresholdSetting ? parseInt(thresholdSetting.value, 10) : 10;
-    if (isNaN(globalThreshold)) {
-        globalThreshold = 10;
+    
+    // Create a list of all database update "promises"
+   const updatePromises = updates.map(async (update) => { // LINE 1: Added 'async'
+  
+  // LINE 2: Added this IF statement to handle retail items differently
+  if (update.unit === 'piece') {
+    // LINE 3 (NEW): First, we must fetch the product to get its properties
+    const product = await Product.findById(update.productId).session(session);
+    if (!product) {
+      throw new Error(`Product with ID ${update.productId} not found during inventory update.`);
     }
-    // +++ DEBUG LOG 1 +++
-    console.log(`[InventoryManager] Using Global Low Stock Threshold: ${globalThreshold}`);
 
-    for (const update of updates) {
-      try {
-        const product = await Product.findById(update.productId);
-        if (!product) {
-          errors.push(`Product with ID ${update.productId} not found.`);
-          continue;
-        }
-        // --- DEBUG LOG 2: Log the state BEFORE any changes ---
-        console.log(`\n--- Processing Product: ${product.name} ---`);
-        console.log(`[BEFORE] Number of Items: ${product.numberOfItems}`);
-        console.log(`[BEFORE] Total Quantity: ${product.totalQuantity}`);
-        
-        const oldNumberOfItems = product.numberOfItems;
+    // LINE 4 (NEW): We calculate the new values for BOTH fields
+    const newNumberOfItems = product.numberOfItems - update.quantityToDeduct;
+    const newTotalQuantity = newNumberOfItems * product.quantityPerItem;
 
-        // --- Stock Deduction Logic ---
-        if (update.unit === 'piece') {
-          if (product.numberOfItems < update.quantityToDeduct) {
-            errors.push(`Insufficient stock for ${product.name}.`); continue;
-          }
-          product.numberOfItems -= update.quantityToDeduct;
-          product.totalQuantity = product.numberOfItems * product.quantityPerItem;
-        } else {
-          if (product.totalQuantity < update.quantityToDeduct) {
-            errors.push(`Insufficient stock for ${product.name}.`); continue;
-          }
-          product.totalQuantity -= update.quantityToDeduct;
-          if (product.quantityPerItem > 0) {
-            product.numberOfItems = Math.floor(product.totalQuantity / product.quantityPerItem);
-          }
-        }
-        
-        // --- DEBUG LOG 3: Log the state AFTER any changes ---
-        console.log(`[AFTER] Number of Items: ${product.numberOfItems}`);
-        console.log(`[AFTER] Total Quantity: ${product.totalQuantity}`);
-        
-        await product.save();
+    // LINE 5 (NEW): We use '$set' to update both fields to their new, correct values
+    return Product.updateOne(
+      { _id: update.productId },
+      { 
+        $set: { 
+          numberOfItems: newNumberOfItems, 
+          totalQuantity: newTotalQuantity 
+        } 
+      },
+      { session }
+    );
+  } 
+  // LINE 6: Added this ELSE to handle the other cases
+  else {
+    // This is the original logic, now only used for in-house items (ml, g, etc.)
+    return Product.updateOne(
+      { _id: update.productId },
+      { $inc: { totalQuantity: -update.quantityToDeduct } },
+      { session }
+    );
+  }
+});
 
-        // --- DEBUG LOG 4: The final alert check ---
-        const wasLowBefore = oldNumberOfItems <= globalThreshold;
-        const isNowLow = product.numberOfItems <= globalThreshold;
-        
-        console.log(`[ALERT CHECK] Was Low Before? ${wasLowBefore} (Old Stock: ${oldNumberOfItems})`);
-        console.log(`[ALERT CHECK] Is Now Low? ${isNowLow} (New Stock: ${product.numberOfItems})`);
+// We now await the new 'updatePromises' array
+await Promise.all(updatePromises);
 
-        if (isNowLow) {
-          console.log(`[SUCCESS] => ${product.name} is low on stock (${product.numberOfItems} <= ${globalThreshold}). Adding to alert list.`);
-          // To prevent adding the same product multiple times in one transaction
-          if (!lowStockProducts.find(p => p._id.toString() === product._id.toString())) {
-            lowStockProducts.push(product);
-          }
-        } else {
-            console.log(`[INFO] => ${product.name} stock is OK (${product.numberOfItems} > ${globalThreshold}). Not adding to alert list.`);
-        }
+    // If we get here, all updates were successful. Now check for low stock.
+    const lowStockProducts: IProduct[] = [];
+    const productIds = updates.map(u => u.productId);
 
-      } catch (error: any) {
-        errors.push(`Failed to update product ${update.productName}: ${error.message}`);
+    const updatedProducts = await Product.find({ _id: { $in: productIds } })
+      .select('name numberOfItems lowStockThreshold')
+      .session(session);
+
+    for (const product of updatedProducts) {
+      if (product.numberOfItems > 0 && product.numberOfItems <= product.lowStockThreshold) {
+        lowStockProducts.push(product);
       }
     }
-    
-    // --- DEBUG LOG 5: Log the final array before returning ---
-    console.log(`\n[InventoryManager] Finished processing. Returning ${lowStockProducts.length} product(s) in the alert list.`);
-    return { 
-        success: errors.length === 0, 
-        errors, 
-        lowStockProducts
+
+    return {
+      success: true,
+      errors: [],
+      lowStockProducts
     };
   }
+  // --- END OF THE FULLY CORRECTED FUNCTION ---
+
 
   static async calculateMultipleServicesInventoryImpact(
     serviceIds: string[],
@@ -158,7 +149,7 @@ export class InventoryManager {
       const current = isPiece ? product.numberOfItems : product.totalQuantity;
       const remaining = current - update.quantityToDeduct;
       const initialCapacity = product.numberOfItems * product.quantityPerItem;
-      const percentageRemaining = initialCapacity > 0 ? ((isPiece ? remaining * product.quantityPerItem : remaining) / initialCapacity) * 100 : 0;
+      const percentageRemaining = initialCapacity > 0 ? ((isPiece ? remaining * product.quantityPeritem : remaining) / initialCapacity) * 100 : 0;
 
       let alertLevel: 'ok' | 'low' | 'critical' | 'insufficient' = 'ok';
       if (remaining < 0) alertLevel = 'insufficient';
