@@ -7,7 +7,7 @@ export interface ICustomer extends Document {
   name: string;
   phoneNumber: string;
   email?: string;
-  
+     
   // --- Search & Index Fields ---
   phoneHash: string;
   searchableName: string;
@@ -38,7 +38,16 @@ const customerSchema = new Schema({
   // --- Sensitive Fields ---
   name: { type: String, required: true },
   phoneNumber: { type: String, required: true },
-  email: { type: String, required: false },
+  
+  // --- THIS IS THE FIX ---
+  // The 'sparse' option tells the unique index to ignore documents where 'email' is null.
+  // This allows multiple customers to be created without an email address.
+  email: { 
+    type: String, 
+    required: false,
+    unique: true,
+    sparse: true
+  },
 
   // --- Search & Index Fields ---
   phoneHash: { type: String, required: true, unique: true, index: true },
@@ -56,27 +65,23 @@ const customerSchema = new Schema({
   gender: { type: String, enum: ['male', 'female', 'other'], required: false, lowercase: true },
 }, { timestamps: true });
 
-// --- REMOVED ---
-// The pre('save') hook was the source of validation errors due to dev server caching.
-// This logic is now handled explicitly in the API route.
-
 // --- Mongoose Middleware for Decryption (CORRECT) ---
 const decryptFields = (doc: any) => {
   if (doc) {
-    const decryptedDoc = doc.toObject ? doc.toObject() : { ...doc };
-    if (decryptedDoc.name) doc.name = decrypt(decryptedDoc.name);
-    if (decryptedDoc.email) doc.email = decrypt(decryptedDoc.email);
-    if (decryptedDoc.phoneNumber) doc.phoneNumber = decrypt(decryptedDoc.phoneNumber);
+    if (doc.name) doc.name = decrypt(doc.name);
+    if (doc.email) doc.email = decrypt(doc.email);
+    if (doc.phoneNumber) doc.phoneNumber = decrypt(doc.phoneNumber);
   }
 };
 
-// These hooks correctly handle all "read" operations.
 customerSchema.post('findOne', decryptFields);
 customerSchema.post('find', (docs) => docs.forEach(decryptFields));
 customerSchema.post('findOneAndUpdate', decryptFields);
 
-// --- REMOVED ---
-// The post('save') hook was causing the "_id of null" error.
+customerSchema.post('save', (doc, next) => {
+  decryptFields(doc);
+  next();
+});
 
 // --- Existing Methods & Statics (Unchanged) ---
 customerSchema.methods.toggleMembership = function (this: ICustomer, status = true, customBarcode?: string): Promise<ICustomer> {

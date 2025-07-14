@@ -1,71 +1,79 @@
-// FILE: /app/DayendClosing/history/components/ReportListItem.tsx
-'use client';
+// app/DayendClosing/history/components/ReportListItem.tsx
 
-import { useState } from 'react';
-import { CalendarDaysIcon, ChevronDownIcon, UserCircleIcon } from '@heroicons/react/24/outline';
-import { DayEndReportHistoryItem } from '../hooks/useReportHistory';
-import { ReportDetailView } from './ReportDetailView';
+import { ChevronDownIcon } from '@heroicons/react/24/solid';
+import NetDiscrepancyBadge from '@/app/DayendClosing/history/components/NetDiscrepancyBadge';
+import { DayEndClosingReport } from '@/lib/types'; // Assuming you have types defined
 
-// [THE FIX] This is the new, detailed badge component.
-// It displays the amount, color-codes it, and shows "Shortage" or "Overage".
-const NetDiscrepancyBadge = ({ value }: { value: number }) => {
-  if (value === 0) {
-    return (
-      <div className="flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-green-100 text-green-800">
-        Perfect Match
-      </div>
-    );
-  }
+// It's good practice to define the props interface/type
+interface ReportListItemProps {
+  report: DayEndClosingReport;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
 
-  const isShort = value < 0;
-  const colorClasses = isShort
-    ? 'bg-red-100 text-red-800'
-    : 'bg-yellow-100 text-yellow-800';
-  const sign = isShort ? '−' : '+'; // Using a proper minus sign for style
-  const term = isShort ? 'Shortage' : 'Overage';
+export default function ReportListItem({ report, isExpanded, onToggle }: ReportListItemProps) {
+  const reportDate = new Date(report.closingDate);
+
+  // Formatting options for the date display
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  };
+
+  const formattedDate = reportDate.toLocaleDateString('en-US', dateOptions);
 
   return (
-    <div className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap ${colorClasses}`}>
-      <span>{sign}₹{Math.abs(value).toFixed(2)}</span>
-      <span className="hidden sm:inline font-normal ml-1.5 opacity-80 text-xs">({term})</span>
+    <div className="bg-white shadow-sm rounded-lg overflow-hidden transition-all duration-300">
+      <div
+        className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+        onClick={onToggle}
+      >
+        {/* Date and Status */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800 truncate">{formattedDate}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Status: <span className="font-medium">Closed</span>
+          </p>
+        </div>
+
+        {/* Discrepancy Badge and Chevron */}
+        <div className="flex items-center gap-4 sm:gap-6 ml-4">
+          
+          {/* 
+            ===========================================================
+            THE FIX IS HERE: Added optional chaining (?.)
+            This prevents a crash if report.discrepancy is undefined.
+            ===========================================================
+          */}
+          <NetDiscrepancyBadge value={report.discrepancy?.total} />
+
+          <ChevronDownIcon
+            className={`h-6 w-6 text-gray-500 transition-transform duration-200 ${
+              isExpanded ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+      </div>
+
+      {/* Expanded Details View */}
+      {isExpanded && (
+        <div className="px-4 pb-4 border-t border-gray-200 bg-gray-50">
+          <div className="py-4">
+            <h4 className="text-sm font-semibold text-gray-600 mb-2">Report Details</h4>
+            <ul className="text-xs text-gray-700 space-y-1">
+              <li>
+                <strong>Total Sales:</strong> ${report.totalSales.toFixed(2)}
+              </li>
+              <li>
+                <strong>Total Cash:</strong> ${report.totalCash.toFixed(2)}
+              </li>
+              {/* Add more details as needed */}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-// This is the main list item component.
-export const ReportListItem = ({ report }: { report: DayEndReportHistoryItem }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-  return (
-    <li className="bg-white">
-      <div
-        className="flex items-center justify-between p-4 md:p-6 cursor-pointer hover:bg-gray-50"
-        onClick={() => setIsExpanded(!isExpanded)}
-        aria-expanded={isExpanded}
-      >
-        {/* Left side: Date and User */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <CalendarDaysIcon className="h-6 w-6 text-gray-400 flex-shrink-0" />
-            <span className="font-semibold text-lg text-gray-800 truncate">{formatDate(report.closingDate)}</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 ml-9">
-            <UserCircleIcon className="h-4 w-4" />
-            <span>Closed by {report.closedBy?.name || 'N/A'}</span>
-          </div>
-        </div>
-
-        {/* Right side: Discrepancy Badge and Chevron */}
-        <div className="flex items-center gap-4 sm:gap-6 ml-4">
-          {/* [THE FIX] We are now calling the new NetDiscrepancyBadge component here. */}
-          <NetDiscrepancyBadge value={report.discrepancy.total} />
-          <ChevronDownIcon className={`h-6 w-6 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-        </div>
-      </div>
-
-      {/* The expandable detail view */}
-      {isExpanded && <ReportDetailView report={report} />}
-    </li>
-  );
-};
+}

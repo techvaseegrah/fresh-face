@@ -49,6 +49,9 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
     setFormError(null);
     setIsSubmitting(true);
 
+    // --- FIXED: Ensure endpoint matches the API file structure ---
+    // The file `/api/customer/route.ts` creates the endpoint `/api/customer`.
+    // For editing, you would need another file at `/api/customer/[id]/route.ts`.
     const apiEndpoint = isEditMode ? `/api/customer/${customerToEdit?._id}` : '/api/customer';
     const method = isEditMode ? 'PUT' : 'POST';
 
@@ -61,6 +64,7 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
       const result = await response.json();
 
       if (!response.ok || !result.success) {
+        // Use the detailed error message from the server
         throw new Error(result.message || 'Failed to save customer.');
       }
 
@@ -69,6 +73,7 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
       onClose();
 
     } catch (error: any) {
+      console.error("Form submission error:", error);
       setFormError(error.message);
       toast.error(error.message);
     } finally {

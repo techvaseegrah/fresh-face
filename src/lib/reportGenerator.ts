@@ -90,7 +90,7 @@ export async function createPdfReport(
   const tableBody = data.map(item => [
     item.stylistName || "N/A",
     item.totalAppointments || 0,
-    `₹${(item.totalRevenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    `${(item.totalRevenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     formatDuration(item.totalDuration),
   ]);
 
