@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { XMarkIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 
-// --- TYPE DEFINITIONS TO MATCH THE ENHANCED API RESPONSE ---
+// --- TYPE DEFINITIONS ---
 interface PettyCashEntry {
   _id: string;
   description: string;
@@ -41,7 +41,6 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
   const [error, setError] = useState<string | null>(null);
   const [summaryData, setSummaryData] = useState<DailySummaryData | null>(null);
 
-  // States for user-editable fields
   const [openingBalance, setOpeningBalance] = useState<number>(0);
   const [isOpeningBalanceOverridden, setIsOpeningBalanceOverridden] = useState(false);
   const [denominationCounts, setDenominationCounts] = useState<DenominationCounts>({});
@@ -53,7 +52,6 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
   // --- DATA FETCHING ---
   useEffect(() => {
     if (isOpen) {
-      // Reset all states for a clean slate every time the modal opens
       setIsLoading(true);
       setError(null);
       setSummaryData(null);
@@ -61,21 +59,17 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
       setIsOpeningBalanceOverridden(false);
       setDenominationCounts({});
       setNotes('');
+      setActualCardTotal('');
+      setActualUpiTotal('');
+      setActualOtherTotal('');
       
-      // Fetch all necessary data from the single, enhanced API endpoint
       fetch(`/api/reports/daily-summary?date=${closingDate}`)
         .then(res => res.json())
         .then(data => {
           if (!data.success) throw new Error(data.message || 'Failed to fetch daily summary.');
-          
           const responseData: DailySummaryData = data.data;
           setSummaryData(responseData);
-          setOpeningBalance(responseData.openingBalance); // Auto-fill opening balance
-          
-          //Pre-fill other payment methods to guide the user
-          // setActualCardTotal(responseData.expectedTotals.card.toString());
-          // setActualUpiTotal(responseData.expectedTotals.upi.toString());
-          // setActualOtherTotal((responseData.expectedTotals.other || 0).toString());
+          setOpeningBalance(responseData.openingBalance);
         })
         .catch(e => {
           setError(e.message);
@@ -102,7 +96,9 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
   const cashDiscrepancy = useMemo(() => calculatedActualCash - expectedInCashTotal, [calculatedActualCash, expectedInCashTotal]);
   const cardDiscrepancy = useMemo(() => (summaryData ? (parseFloat(actualCardTotal) || 0) - summaryData.expectedTotals.card : 0), [actualCardTotal, summaryData]);
   const upiDiscrepancy = useMemo(() => (summaryData ? (parseFloat(actualUpiTotal) || 0) - summaryData.expectedTotals.upi : 0), [actualUpiTotal, summaryData]);
-  const otherDiscrepancy = useMemo(() => (summaryData ? (parseFloat(actualOtherTotal) || 0) - summaryData.expectedTotals.other : 0), [actualOtherTotal, summaryData]);
+  const otherDiscrepancy = useMemo(() => (summaryData ? (parseFloat(actualOtherTotal) || 0) - (summaryData.expectedTotals.other || 0) : 0), [actualOtherTotal, summaryData]);
+  const totalDiscrepancy = useMemo(() => cashDiscrepancy + cardDiscrepancy + upiDiscrepancy + otherDiscrepancy, [cashDiscrepancy, cardDiscrepancy, upiDiscrepancy, otherDiscrepancy]);
+
 
   // --- FORM SUBMISSION ---
   const handleSubmit = async () => {
@@ -110,16 +106,37 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
     setIsSubmitting(true);
     setError(null);
     try {
+        // --- THE FIX: Create a corrected expectedTotals object for the payload ---
+        // This ensures the 'total' reflects the complete financial picture for the day.
+        const correctedExpectedTotal = 
+            (openingBalance || 0) + 
+            (summaryData.expectedTotals.total || 0) - 
+            (summaryData.pettyCash.total || 0);
+
         const payload = {
-            closingDate, openingBalance, isOpeningBalanceManual: isOpeningBalanceOverridden,
+            closingDate, 
+            openingBalance, 
+            isOpeningBalanceManual: isOpeningBalanceOverridden,
             pettyCash: summaryData.pettyCash,
-            expectedTotals: summaryData.expectedTotals,
-            actualTotals: {
-                cash: calculatedActualCash, card: parseFloat(actualCardTotal) || 0,
-                upi: parseFloat(actualUpiTotal) || 0, other: parseFloat(actualOtherTotal) || 0,
+            expectedTotals: {
+                ...summaryData.expectedTotals,
+                total: correctedExpectedTotal, // Overwrite the total with the corrected, comparable value
             },
-            discrepancies: { cash: cashDiscrepancy, card: cardDiscrepancy, upi: upiDiscrepancy, other: otherDiscrepancy },
-            cashDenominations: denominationCounts, notes,
+            actualTotals: {
+                cash: calculatedActualCash, 
+                card: parseFloat(actualCardTotal) || 0,
+                upi: parseFloat(actualUpiTotal) || 0, 
+                other: parseFloat(actualOtherTotal) || 0,
+            },
+            discrepancies: { 
+                cash: cashDiscrepancy, 
+                card: cardDiscrepancy, 
+                upi: upiDiscrepancy, 
+                other: otherDiscrepancy,
+                total: totalDiscrepancy,
+            },
+            cashDenominations: denominationCounts, 
+            notes,
         };
         const response = await fetch('/api/reports/day-end-closing', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
         const result = await response.json();
@@ -143,10 +160,10 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
     return <span className={color}>₹{Math.abs(amount).toFixed(2)} ({label})</span>
   };
 
-  // --- JSX RENDER ---
   if (!isOpen) return null;
 
   return (
+    // ... JSX for the modal remains unchanged ...
     <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-start p-4 overflow-y-auto">
       <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl my-8">
         <div className="flex justify-between items-center mb-4 border-b pb-3">
@@ -231,7 +248,7 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
                   <label className="block text-sm font-medium text-gray-700">Actual "Other" Total</label>
                   <input type="number" value={actualOtherTotal} onChange={e => setActualOtherTotal(e.target.value)} className="mt-1 w-full px-2 py-1.5 border-gray-300 rounded-md"/>
                   <div className="bg-gray-50 p-3 mt-3 rounded-md space-y-2 text-sm">
-                      <div className="flex justify-between"><span>Expected:</span> <span className="font-semibold">₹{summaryData.expectedTotals.other.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span>Expected:</span> <span className="font-semibold">₹{(summaryData.expectedTotals.other || 0).toFixed(2)}</span></div>
                       <div className="flex justify-between border-t pt-2 mt-2"><span className="font-medium">Discrepancy:</span> <span className="font-bold">{renderDiscrepancy(otherDiscrepancy)}</span></div>
                   </div>
               </div>

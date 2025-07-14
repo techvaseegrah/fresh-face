@@ -27,14 +27,12 @@ export async function GET(request: NextRequest) {
     const endDate = new Date(date);
     endDate.setUTCHours(23, 59, 59, 999);
 
-    // Fetch all data sources concurrently for maximum performance
     const [paidInvoices, lastClosingReport, dailyExpenses] = await Promise.all([
       Invoice.find({ paymentStatus: 'Paid', createdAt: { $gte: startDate, $lte: endDate } }).lean(),
       DayEndReport.findOne({ closingDate: { $lt: startDate } }).sort({ closingDate: -1 }).lean(),
       Expense.find({ date: { $gte: startDate, $lte: endDate } }).lean()
     ]);
 
-    // Calculate expected sales totals from today's invoices
     const expectedTotals = paidInvoices.reduce((acc, inv) => {
       acc.total += inv.grandTotal || 0;
       if (inv.paymentDetails && typeof inv.paymentDetails === 'object') {
@@ -47,13 +45,11 @@ export async function GET(request: NextRequest) {
       return acc;
     }, { cash: 0, card: 0, upi: 0, other: 0, total: 0 } as any);
 
-    // Determine the opening balance from the most recent previous report
-    const openingBalance = lastClosingReport?.actualTotals?.cash || 0;
+    // <-- THE FIX: Read the opening balance from the new, correct field name.
+    const openingBalance = lastClosingReport?.actualTotals?.totalCountedCash || 0;
     
-    // Sum up all petty cash expenses for the day
     const totalCashExpenses = dailyExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
     
-    // Return the complete, structured data object to the frontend
     return NextResponse.json({
       success: true,
       data: {
@@ -61,10 +57,9 @@ export async function GET(request: NextRequest) {
         expectedTotals,
         pettyCash: {
           total: totalCashExpenses,
-          // Provide a clean list of expense entries for display in the modal
           entries: dailyExpenses.map(e => ({ 
             _id: e._id.toString(), 
-            description: e.description || e.type, // Use description or type as a fallback
+            description: e.description || e.type,
             amount: e.amount 
           })),
         },
