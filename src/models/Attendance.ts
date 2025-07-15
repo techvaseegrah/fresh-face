@@ -1,6 +1,3 @@
-// models/Attendance.ts
-// This is the corrected model file.
-
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
 export interface IAttendance extends Document {
@@ -43,6 +40,8 @@ const AttendanceSchema: Schema<IAttendance> = new Schema(
   { timestamps: true }
 );
 
+// This ensures a staff member can only have one attendance record per day.
+// It's important to keep this.
 AttendanceSchema.index({ staffId: 1, date: 1 }, { unique: true });
 
 const Attendance: Model<IAttendance> =

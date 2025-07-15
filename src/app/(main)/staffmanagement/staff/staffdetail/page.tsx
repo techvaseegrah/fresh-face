@@ -6,20 +6,37 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Edit, Phone, Mail, MapPin, Calendar as CalendarIcon, DollarSign,
-  CheckCircle, XCircle, BarChart3, CalendarClock, AlertTriangle,
-  Badge // --- (MODIFIED) --- Import the Badge icon
+  CheckCircle, XCircle, BarChart3, CalendarClock, AlertTriangle, Badge,
+  FileText, Banknote, ShieldCheck, Eye
 } from 'lucide-react';
 import {
   useStaff,
   StaffMember,
   AttendanceRecordTypeFE as AttendanceRecord,
   PerformanceRecordType as PerformanceRecord
-} from '@/context/StaffContext'; // Using robust path alias
+} from '@/context/StaffContext'; 
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { format, parseISO, isWeekend, startOfDay, isEqual } from 'date-fns';
 
 const DEFAULT_STAFF_AVATAR = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
+
+const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
+        </div>
+        <div className="p-4">
+          <img src={src} alt={title} className="w-full h-auto object-contain" />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const StaffDetailsContent: React.FC = () => {
   const searchParams = useSearchParams();
@@ -37,7 +54,8 @@ const StaffDetailsContent: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [staffAttendance, setStaffAttendance] = useState<AttendanceRecord[]>([]);
-
+  const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
+  
   useEffect(() => {
     const fetchStaffDetails = async () => {
       if (!staffIdFromQuery) {
@@ -54,7 +72,6 @@ const StaffDetailsContent: React.FC = () => {
             setStaff(staffData);
             await fetchPerformanceRecords({ month: '', year: new Date().getFullYear(), staffId: staffIdFromQuery });
         } else {
-             // Attempt to fetch from API if not in context (optional fallback)
              const response = await fetch(`/api/staff?id=${staffIdFromQuery}`);
              if (!response.ok) throw new Error('Failed to fetch staff details from server.');
              const result = await response.json();
@@ -110,6 +127,12 @@ const StaffDetailsContent: React.FC = () => {
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
+      <DocumentViewerModal 
+        src={viewingDocument.src}
+        title={viewingDocument.title}
+        onClose={() => setViewingDocument({ src: null, title: '' })}
+      />
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div className="flex items-center">
           <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => router.push('/staffmanagement/staff/stafflist')} className="mr-4">Back</Button>
@@ -129,7 +152,6 @@ const StaffDetailsContent: React.FC = () => {
             <p className="text-gray-600 mb-4">{staff.position}</p>
             <div className="w-full border-t border-gray-200 my-4"></div>
             <div className="w-full space-y-3 text-left px-4 text-sm">
-              {/* --- (MODIFIED) --- Added Staff ID display */}
               <div className="flex items-start">
                 <Badge className="h-5 w-5 text-gray-500 mr-3 mt-0.5 shrink-0" />
                 <span className="text-gray-700 font-medium">ID: {staff.staffIdNumber}</span>
@@ -191,6 +213,44 @@ const StaffDetailsContent: React.FC = () => {
                 <Link href={`/staffmanagement/attendance?staffId=${staff.id}`} className="text-sm text-black hover:text-gray-700 font-medium">View Full History</Link>
               </div>
             </div>
+          </Card>
+          
+          <Card title="Documents">
+             <div className="space-y-3">
+               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                 <div className="flex items-center gap-3">
+                   <ShieldCheck className="h-6 w-6 text-gray-500" />
+                   <span className="font-medium text-gray-700">Aadhar Card</span>
+                 </div>
+                 {staff.aadharImage ? (
+                   <Button variant="outline" size="sm" icon={<Eye size={14}/>} onClick={() => setViewingDocument({ src: staff.aadharImage!, title: 'Aadhar Card' })}>
+                     View
+                   </Button>
+                 ) : <span className="text-sm text-gray-400">Not Uploaded</span>}
+               </div>
+               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                 <div className="flex items-center gap-3">
+                   <Banknote className="h-6 w-6 text-gray-500" />
+                   <span className="font-medium text-gray-700">Bank Passbook</span>
+                 </div>
+                 {staff.passbookImage ? (
+                   <Button variant="outline" size="sm" icon={<Eye size={14}/>} onClick={() => setViewingDocument({ src: staff.passbookImage!, title: 'Bank Passbook' })}>
+                     View
+                   </Button>
+                 ) : <span className="text-sm text-gray-400">Not Uploaded</span>}
+               </div>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                 <div className="flex items-center gap-3">
+                   <FileText className="h-6 w-6 text-gray-500" />
+                   <span className="font-medium text-gray-700">Agreement</span>
+                 </div>
+                 {staff.agreementImage ? (
+                   <Button variant="outline" size="sm" icon={<Eye size={14}/>} onClick={() => setViewingDocument({ src: staff.agreementImage!, title: 'Agreement' })}>
+                     View
+                   </Button>
+                 ) : <span className="text-sm text-gray-400">Not Uploaded</span>}
+               </div>
+             </div>
           </Card>
 
           <Card title="Performance Overview">

@@ -1,17 +1,34 @@
+// src/app/staffmanagement/staff/stafflist/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Plus, Edit, Trash, Search, Eye, Filter, RefreshCw, X,
-  Users, UserCheck, UserX, Mail, Phone, Home, CreditCard, Calendar, Briefcase, AtSign,
-  Badge // --- (NEW) --- Import Badge icon for Staff ID
+  Plus, Edit, Trash, Search, Eye, Filter, RefreshCw, X, Users, UserCheck, UserX,
+  Mail, Phone, Home, CreditCard, Calendar, Briefcase, AtSign, Badge,
+  FileText, Banknote, ShieldCheck, XCircle 
 } from 'lucide-react';
 import { useStaff, StaffMember } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
-// --- Helper Component for Sidebar Details (Unchanged) ---
+const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
+        </div>
+        <div className="p-4">
+          <img src={src} alt={title} className="w-full h-auto object-contain" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
   <div className="flex items-start gap-4 py-3">
     <div className="flex-shrink-0 w-6 text-slate-400">{icon}</div>
@@ -22,16 +39,15 @@ const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value: React.
   </div>
 );
 
-
-// --- Staff Detail Sidebar Component (Unchanged) ---
 interface StaffDetailSidebarProps {
   staff: StaffMember | null;
   onClose: () => void;
   onDelete: (staff: StaffMember) => void;
+  onViewDocument: (src: string, title: string) => void;
   isDeleting: string | null;
 }
 
-const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose, onDelete, isDeleting }) => {
+const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose, onDelete, onViewDocument, isDeleting }) => {
   const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
 
@@ -57,21 +73,18 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
         onClick={handleClose}
         aria-hidden="true"
       ></div>
 
-      {/* Sidebar Panel */}
       <div
         className={`fixed top-0 right-0 h-full w-full max-w-lg bg-slate-50 shadow-xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${isVisible ? 'translate-x-0' : 'translate-x-full'}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="sidebar-title"
       >
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
           <h2 id="sidebar-title" className="text-lg font-semibold text-slate-800 flex items-center gap-2">
             <Briefcase size={20} className="text-indigo-600" />
@@ -82,9 +95,7 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
           </Button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 p-6 space-y-8 overflow-y-auto">
-          {/* Profile Header */}
           <div className="flex flex-col items-center text-center">
             <img
               className="h-28 w-28 rounded-full object-cover ring-4 ring-white shadow-md"
@@ -100,7 +111,6 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
             </span>
           </div>
 
-          {/* Details Section */}
           <div className="bg-white p-4 rounded-lg border border-slate-200">
             <h4 className="text-md font-semibold text-slate-800 mb-2">Contact & Personal Information</h4>
             <dl className="divide-y divide-slate-200">
@@ -113,7 +123,6 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
           <div className="bg-white p-4 rounded-lg border border-slate-200">
             <h4 className="text-md font-semibold text-slate-800 mb-2">Employment Details</h4>
             <dl className="divide-y divide-slate-200">
-              {/* --- (NEW) Staff ID Detail Item --- */}
               <DetailItem icon={<Badge size={20}/>} label="Staff ID" value={staff.staffIdNumber || 'N/A'} />
               <DetailItem icon={<CreditCard size={20}/>} label="Aadhar Number" value={staff.aadharNumber || 'N/A'} />
               <DetailItem 
@@ -125,9 +134,46 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
             </dl>
           </div>
           
+          <div className="bg-white p-4 rounded-lg border border-slate-200">
+            <h4 className="text-md font-semibold text-slate-800 mb-2">Uploaded Documents</h4>
+            <dl className="divide-y divide-slate-200">
+              <DetailItem 
+                icon={<ShieldCheck size={20}/>} 
+                label="Aadhar Card" 
+                value={
+                  staff.aadharImage ? (
+                    <Button variant="link" size="sm" onClick={() => onViewDocument(staff.aadharImage!, 'Aadhar Card')}>View Document</Button>
+                  ) : (
+                    'Not Uploaded'
+                  )
+                }
+              />
+              <DetailItem 
+                icon={<Banknote size={20}/>} 
+                label="Bank Passbook" 
+                value={
+                  staff.passbookImage ? (
+                    <Button variant="link" size="sm" onClick={() => onViewDocument(staff.passbookImage!, 'Bank Passbook')}>View Document</Button>
+                  ) : (
+                    'Not Uploaded'
+                  )
+                }
+              />
+              <DetailItem 
+                icon={<FileText size={20}/>} 
+                label="Agreement" 
+                value={
+                  staff.agreementImage ? (
+                    <Button variant="link" size="sm" onClick={() => onViewDocument(staff.agreementImage!, 'Agreement')}>View Document</Button>
+                  ) : (
+                    'Not Uploaded'
+                  )
+                }
+              />
+            </dl>
+          </div>
         </div>
 
-        {/* Footer with actions */}
         <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
             <Button
                 variant="outline"
@@ -152,7 +198,6 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
   );
 };
 
-// --- Stat Card Component (Unchanged) ---
 const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number; color: string }> = ({ icon, title, value, color }) => (
   <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
     <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${color}`}>
@@ -165,7 +210,6 @@ const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string |
   </div>
 );
 
-// --- (MODIFIED) Staff Card Component ---
 const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) => void }> = ({ staff, onSelect }) => (
   <div 
     className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
@@ -177,10 +221,9 @@ const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) =
         src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
         alt={staff.name}
       />
-      <div className="flex-1 min-w-0"> {/* Added min-w-0 to help with truncation */}
+      <div className="flex-1 min-w-0">
         <h3 className="font-bold text-slate-800 text-md truncate">{staff.name}</h3>
         <p className="text-sm text-slate-500 truncate">{staff.position}</p>
-        {/* --- (NEW) Staff ID on Card --- */}
         <p className="text-xs text-slate-400 mt-1 truncate">ID: {staff.staffIdNumber || 'N/A'}</p>
       </div>
     </div>
@@ -210,6 +253,8 @@ const StaffList: React.FC = () => {
   const [tempFilters, setTempFilters] = useState({ position: '', status: '' });
   const filterRef = useRef<HTMLDivElement>(null);
 
+  const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
+  
   useEffect(() => {
     if (fetchStaffMembers) fetchStaffMembers();
   }, [fetchStaffMembers]);
@@ -229,14 +274,13 @@ const StaffList: React.FC = () => {
     return [...new Set(staffMembers.map(s => s.position).filter((p): p is string => !!p))].sort();
   }, [staffMembers]);
 
-  // --- (MODIFIED) Filtered Staff Logic to include searching by Staff ID ---
   const filteredStaff = useMemo(() => {
     return (staffMembers || [])
       .filter(staff => 
         ((staff.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
          (staff.position?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
          (staff.email?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-         (String(staff.staffIdNumber || '').toLowerCase()).includes(searchTerm.toLowerCase())) && // Search by ID
+         (String(staff.staffIdNumber || '').toLowerCase()).includes(searchTerm.toLowerCase())) &&
         (filters.status ? staff.status === filters.status : true) &&
         (filters.position ? staff.position === filters.position : true)
       )
@@ -276,10 +320,15 @@ const StaffList: React.FC = () => {
 
   return (
     <div className="relative">
+      <DocumentViewerModal 
+        src={viewingDocument.src}
+        title={viewingDocument.title}
+        onClose={() => setViewingDocument({ src: null, title: '' })}
+      />
+
       <div className="bg-slate-50 min-h-screen">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
           
-          {/* --- HEADER & ACTIONS --- */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-slate-800">Staff Management</h1>
@@ -310,14 +359,12 @@ const StaffList: React.FC = () => {
             </div>
           )}
 
-          {/* --- STATS CARDS --- */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <StatCard icon={<Users size={24} className="text-indigo-600"/>} title="Total Staff" value={staffMembers?.length || 0} color="bg-indigo-100" />
             <StatCard icon={<UserCheck size={24} className="text-green-600"/>} title="Active" value={staffMembers?.filter(s => s.status === 'active').length || 0} color="bg-green-100" />
             <StatCard icon={<UserX size={24} className="text-red-600"/>} title="Inactive" value={staffMembers?.filter(s => s.status === 'inactive').length || 0} color="bg-red-100" />
           </div>
 
-          {/* --- TOOLBAR: SEARCH & FILTER --- */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center gap-4">
             <div className="relative flex-1">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -325,7 +372,6 @@ const StaffList: React.FC = () => {
               </div>
               <input
                 type="text"
-                // --- (MODIFIED) Placeholder text ---
                 placeholder="Search by name, ID, position..."
                 className="pl-10 pr-4 py-2 w-full border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-900 placeholder:text-slate-400"
                 value={searchTerm}
@@ -367,7 +413,6 @@ const StaffList: React.FC = () => {
             </div>
           </div>
           
-          {/* --- STAFF LIST AREA --- */}
           {loadingStaff && !staffMembers?.length ? (
               <div className="text-center py-20">
                 <RefreshCw className="h-10 w-10 text-slate-400 mx-auto animate-spin mb-3" />
@@ -395,6 +440,7 @@ const StaffList: React.FC = () => {
         onClose={() => setSelectedStaff(null)}
         onDelete={handleDeleteStaff}
         isDeleting={isDeleting}
+        onViewDocument={(src, title) => setViewingDocument({ src, title })}
       />
     </div>
   );

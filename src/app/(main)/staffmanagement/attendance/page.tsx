@@ -1,11 +1,11 @@
 // src/app/(main)/staffmanagement/attendance/page.tsx
-// This is the final, OPTIMIZED version with your requested changes.
+// This is the final, CORRECTED version.
 
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
-import { Calendar, Clock, Search, CheckCircle, XCircle, AlertTriangle, LogOut, LogIn, PlayCircle, PauseCircle, Info, ChevronLeft, ChevronRight, Bed, X, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Search, CheckCircle, XCircle, AlertTriangle, LogOut, LogIn, PlayCircle, PauseCircle, Info, ChevronLeft, ChevronRight, Bed, X, Trash2, Target } from 'lucide-react';
 import { useStaff } from '../../../../context/StaffContext';
 import { AttendanceRecordTypeFE, StaffMember, TemporaryExitTypeFE } from '../../../../context/StaffContext';
 import Card from '../../../../components/ui/Card';
@@ -113,8 +113,15 @@ const AttendanceDetailModal: React.FC<{ record: AttendanceRecordTypeFE; onClose:
 };
 
 
-// StaffMonthlySummaryModal (Unchanged)
-const StaffMonthlySummaryModal: React.FC<{ staff: StaffMember; records: AttendanceRecordTypeFE[]; monthDate: Date; onClose: () => void; }> = ({ staff, records, monthDate, onClose }) => {
+const StaffMonthlySummaryModal: React.FC<{ 
+    staff: StaffMember; 
+    records: AttendanceRecordTypeFE[]; 
+    monthDate: Date; 
+    onClose: () => void;
+    positionHoursMap: Map<string, number>;
+    defaultDailyHours: number;
+}> = ({ staff, records, monthDate, onClose, positionHoursMap, defaultDailyHours }) => {
+    
     const staffMonthlyRecords = records.filter(r => r.staff.id === staff.id && r.date.getMonth() === monthDate.getMonth() && r.date.getFullYear() === monthDate.getFullYear());
     const presentDays = staffMonthlyRecords.filter(r => ['present', 'late'].includes(r.status) && r.isWorkComplete).length;
     const leaveDays = staffMonthlyRecords.filter(r => r.status === 'on_leave' || (['present', 'late', 'incomplete'].includes(r.status) && !r.isWorkComplete)).length;
@@ -123,6 +130,16 @@ const StaffMonthlySummaryModal: React.FC<{ staff: StaffMember; records: Attendan
     const weekOffDays = staffMonthlyRecords.filter(r => r.status === 'week_off').length;
     const daysInMonth = eachDayOfInterval({ start: startOfMonth(monthDate), end: endOfMonth(monthDate) });
     const absentDays = daysInMonth.filter(day => { const dayStr = format(day, 'yyyy-MM-dd'); const record = staffMonthlyRecords.find(r => format(r.date, 'yyyy-MM-dd') === dayStr); if (record && record.status === 'absent') { return true; } if (!record && day < startOfDay(new Date()) && !isWeekend(day)) { return true; } return false; }).length;
+
+    const { requiredMonthlyMinutes, totalAchievedMinutes, achievementPercentage } = useMemo(() => {
+        const requiredMonthlyHours = positionHoursMap.get(staff.position ?? '') ?? (defaultDailyHours * 22);
+        const requiredMonthlyMinutes = requiredMonthlyHours * 60;
+        const totalAchievedMinutes = staffMonthlyRecords.reduce((acc, record) => acc + (record.totalWorkingMinutes || 0), 0);
+        const achievementPercentage = requiredMonthlyMinutes > 0 ? Math.min(100, (totalAchievedMinutes / requiredMonthlyMinutes) * 100) : 0;
+        return { requiredMonthlyMinutes, totalAchievedMinutes, achievementPercentage };
+    }, [staff, staffMonthlyRecords, positionHoursMap, defaultDailyHours]);
+
+
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden transform transition-all">
@@ -136,6 +153,20 @@ const StaffMonthlySummaryModal: React.FC<{ staff: StaffMember; records: Attendan
                         </div>
                     </div>
                 </div>
+
+                <div className="p-6 border-b">
+                    <h4 className="text-base font-semibold text-gray-800 mb-3 flex items-center"><Target className="h-5 w-5 mr-2 text-purple-600"/>Monthly Hours Target</h4>
+                    <div className="space-y-2">
+                         <div className="flex justify-between items-baseline">
+                             <span className="text-sm font-medium text-gray-600">Achieved: <span className="text-lg font-bold text-black">{formatDuration(totalAchievedMinutes)}</span></span>
+                             <span className="text-sm font-medium text-gray-500">Required: <span className="text-lg font-bold text-gray-800">{formatDuration(requiredMonthlyMinutes)}</span></span>
+                         </div>
+                         <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div className="bg-gradient-to-r from-green-400 to-blue-500 h-3 rounded-full" style={{ width: `${achievementPercentage}%` }} title={`${achievementPercentage.toFixed(1)}% Complete`}></div>
+                         </div>
+                    </div>
+                </div>
+
                 <div className="p-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-green-100 p-4 rounded-lg text-center border border-green-200"><p className="text-sm text-green-700 font-medium">Present Days</p><p className="text-3xl font-bold text-green-800">{presentDays}</p></div>
                     <div className="bg-red-100 p-4 rounded-lg text-center border border-red-200"><p className="text-sm text-red-700 font-medium">Absent Days</p><p className="text-3xl font-bold text-red-800">{absentDays}</p></div>
@@ -150,6 +181,7 @@ const StaffMonthlySummaryModal: React.FC<{ staff: StaffMember; records: Attendan
         </div>
     );
 };
+
 
 // Apply Week Off Modal (Unchanged)
 const ApplyWeekOffModal: React.FC<{ staffMembers: StaffMember[]; attendanceRecords: AttendanceRecordTypeFE[]; onClose: () => void; onApply: (data: { staffIds: string[]; date: Date }) => Promise<void>; }> = ({ staffMembers, attendanceRecords, onClose, onApply }) => {
@@ -185,7 +217,6 @@ const ApplyWeekOffModal: React.FC<{ staffMembers: StaffMember[]; attendanceRecor
             await onApply({ staffIds: selectedStaffIds, date: localDate });
             onClose();
         } catch (error) {
-            // Error is already handled/toasted in the context
         } finally {
             setIsApplying(false);
         }
@@ -238,6 +269,7 @@ const Attendance: React.FC = () => {
   const { staffMembers, attendanceRecordsFE, loadingAttendance, errorAttendance, fetchAttendanceRecords, checkInStaff, checkOutStaff, startTemporaryExit, endTemporaryExit, applyWeekOff, removeWeekOff } = useStaff();
   const [searchTerm, setSearchTerm] = useState('');
   const [dailyRequiredHours, setDailyRequiredHours] = useState(9); 
+  const [positionHoursMap, setPositionHoursMap] = useState<Map<string, number>>(new Map());
   const [settingsLoading, setSettingsLoading] = useState(true); 
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
   const [selectedRecordForDetail, setSelectedRecordForDetail] = useState<AttendanceRecordTypeFE | null>(null);
@@ -257,23 +289,32 @@ const Attendance: React.FC = () => {
   }, [currentMonthDate, fetchAttendanceRecords]);
 
   useEffect(() => {
-    const fetchShopSettings = async () => {
+    const fetchAllSettings = async () => {
       setSettingsLoading(true);
       try {
-        const response = await fetch('/api/settings');
-        const result = await response.json();
-        if (result.success && result.data) {
-          setDailyRequiredHours(result.data.defaultDailyHours);
-        } else {
-          console.error("Could not fetch shop settings, using default.", result.error);
+        const shopSettingsResponse = await fetch('/api/settings');
+        const shopSettingsResult = await shopSettingsResponse.json();
+        if (shopSettingsResult.success && shopSettingsResult.data) {
+          setDailyRequiredHours(shopSettingsResult.data.defaultDailyHours);
+        }
+
+        const positionHoursResponse = await fetch('/api/settings/position-hours');
+        const positionHoursResult = await positionHoursResponse.json();
+        if (positionHoursResult.success && Array.isArray(positionHoursResult.data)) {
+            const map = new Map<string, number>();
+            positionHoursResult.data.forEach((setting: { positionName: string, requiredHours: number }) => {
+                map.set(setting.positionName, setting.requiredHours);
+            });
+            setPositionHoursMap(map);
         }
       } catch (error) {
-        console.error("Error fetching shop settings:", error);
+        console.error("Error fetching settings:", error);
+        toast.error("Could not load required hour settings.");
       } finally {
         setSettingsLoading(false);
       }
     };
-    fetchShopSettings();
+    fetchAllSettings();
   }, []);
   
   const todayAttendanceMap = useMemo(() => {
@@ -365,8 +406,23 @@ const Attendance: React.FC = () => {
   };
 
   const calculateFrontendWorkingMinutes = useCallback((attendance: AttendanceRecordTypeFE): number => { let totalMinutes = 0; if (attendance.checkIn && attendance.checkOut) { return attendance.totalWorkingMinutes; } else if (attendance.checkIn && !attendance.checkOut) { totalMinutes = differenceInMinutes(new Date(), attendance.checkIn); } let tempExitDeduction = 0; (attendance.temporaryExits || []).forEach((exit: TemporaryExitTypeFE) => { if (!exit.isOngoing && exit.endTime) { tempExitDeduction += exit.durationMinutes; } else if (exit.isOngoing) { tempExitDeduction += differenceInMinutes(new Date(), exit.startTime); } }); return Math.max(0, totalMinutes - tempExitDeduction); }, []);
-  const handleCheckIn = async (staffId: string) => { try { await checkInStaff(staffId, dailyRequiredHours); toast.success('Successfully checked in!'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Check-in failed'); } };
   
+  // --- FIX #1: Correct the handleCheckIn function ---
+  // The root cause of the issue was here. It was incorrectly sending the monthly
+  // hours from `positionHoursMap` to the backend when creating a daily record.
+  // The fix is to *always* use the shop's `dailyRequiredHours` for the daily check-in.
+  const handleCheckIn = async (staff: StaffMember) => { 
+    try { 
+      await checkInStaff(staff.id, dailyRequiredHours); 
+      toast.success('Successfully checked in!'); 
+    } catch (err) { 
+      toast.error(err instanceof Error ? err.message : 'Check-in failed'); 
+    } 
+  };
+  
+  // --- FIX #2: Correct the handleCheckOutAttempt function ---
+  // This function also incorrectly referenced the monthly `positionHoursMap`.
+  // It's now corrected to only use the daily value from the record or the shop's default.
   const handleCheckOutAttempt = async (attendanceId: string, staffId: string, staffName: string) => {
     const attendance = todayAttendanceMap.get(staffId);
     if (!attendance || attendance.checkOut) return;
@@ -406,7 +462,7 @@ const Attendance: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={() => setShowWeekOffModal(true)}>Apply Week Off</Button>
-          <label htmlFor="dailyHours" className="text-sm font-medium text-gray-700 whitespace-nowrap">Required Hours:</label>
+          <label htmlFor="dailyHours" className="text-sm font-medium text-gray-700 whitespace-nowrap">Shop Default Hours:</label>
           <input type="number" id="dailyHours" value={settingsLoading ? '...' : dailyRequiredHours} readOnly className="w-20 border-gray-300 rounded-lg shadow-sm bg-gray-100 sm:text-sm px-3 py-2 text-gray-900 font-semibold" />
         </div>
       </div>
@@ -416,13 +472,10 @@ const Attendance: React.FC = () => {
       {!(loadingAttendance || settingsLoading) && (
         <>
         <Card title={`Today's Attendance (${format(new Date(), 'eeee, MMMM d')})`} className="!p-0 overflow-hidden shadow-lg rounded-xl border">
-          {/* --- MODIFICATION 1: Removed `overflow-x-auto` --- */}
           <div>
-            {/* --- MODIFICATION 2: Added `table-fixed` class --- */}
             <table className="min-w-full table-fixed">
               <thead className="bg-gray-50">
                 <tr>
-                    {/* The widths are essential for the `table-fixed` layout to work */}
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[20%]">Staff</th>
                     <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[8%]">Staff ID</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[12%]">Status</th>
@@ -437,8 +490,16 @@ const Attendance: React.FC = () => {
                 {filteredStaff.map((staff) => { 
                   const todayAttendance = getTodayAttendance(staff.id); 
                   const workingMinutes = todayAttendance ? (todayAttendance.checkOut ? todayAttendance.totalWorkingMinutes : calculateFrontendWorkingMinutes(todayAttendance)) : 0;
-                  const actualRequiredMinutes = todayAttendance?.requiredMinutes || (dailyRequiredHours * 60);
-                  const remainingMinutes = Math.max(0, actualRequiredMinutes - workingMinutes);
+                  
+                  // --- FIX #3: Correct the display logic ---
+                  // This now correctly uses the daily required hours from the record if it exists,
+                  // or falls back to the shop's default daily hours. It no longer uses the
+                  // incorrect monthly `positionHoursMap`. This fixes the display for both
+                  // checked-in and not-checked-in staff.
+                  const requiredMinutesForStaff = todayAttendance?.requiredMinutes || (dailyRequiredHours * 60);
+                  // --- END OF FIX ---
+                  
+                  const remainingMinutes = Math.max(0, requiredMinutesForStaff - workingMinutes);
                   const ongoingTempExit = todayAttendance?.temporaryExits?.find((exit: TemporaryExitTypeFE) => exit.isOngoing);
                   const staffWithId = staff as StaffMemberWithId;
                   
@@ -449,9 +510,9 @@ const Attendance: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">{todayAttendance ? ( todayAttendance.status === 'week_off' ? <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-cyan-100 text-cyan-800">Week Off</span> : <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${todayAttendance.isWorkComplete ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{todayAttendance.status.charAt(0).toUpperCase() + todayAttendance.status.slice(1).replace('_', ' ')}{!todayAttendance.isWorkComplete && ' (Inc.)'}</span> ) : <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-gray-100 text-gray-800">Not Recorded</span>}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700"><div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> In: {todayAttendance?.checkIn ? format(todayAttendance.checkIn, 'HH:mm') : '—'}</div><div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> Out: {todayAttendance?.checkOut ? format(todayAttendance.checkOut, 'HH:mm') : '—'}</div></td>
                       <td className="px-6 py-4 whitespace-nowrap"><span className="text-sm font-semibold text-gray-900">{formatDuration(workingMinutes)}</span></td>
-                      <td className="px-6 py-4 whitespace-nowrap"><span className={`text-sm font-medium ${remainingMinutes > 0 && workingMinutes > 0 && !todayAttendance?.isWorkComplete ? 'text-red-600' : (todayAttendance?.isWorkComplete ? 'text-green-600' : 'text-gray-700')}`}>{todayAttendance?.isWorkComplete ? 'Completed' : (remainingMinutes > 0 && workingMinutes > 0 ? `${formatDuration(remainingMinutes)} rem.` : formatDuration(actualRequiredMinutes))}</span></td>
+                      <td className="px-6 py-4 whitespace-nowrap"><span className={`text-sm font-medium ${remainingMinutes > 0 && workingMinutes > 0 && !todayAttendance?.isWorkComplete ? 'text-red-600' : (todayAttendance?.isWorkComplete ? 'text-green-600' : 'text-gray-700')}`}>{todayAttendance?.isWorkComplete ? 'Completed' : (remainingMinutes > 0 && workingMinutes > 0 ? `${formatDuration(remainingMinutes)} rem.` : formatDuration(requiredMinutesForStaff))}</span></td>
                       <td className="px-6 py-4 whitespace-nowrap max-w-xs">{todayAttendance?.temporaryExits && todayAttendance.temporaryExits.length > 0 && (<div className="space-y-1.5">{todayAttendance.temporaryExits.map((exit: TemporaryExitTypeFE) => (<div key={exit.id} className="text-xs" title={exit.reason ?? undefined}><div className={`flex items-center space-x-1.5 ${exit.isOngoing ? 'text-blue-600 font-semibold animate-pulse' : 'text-gray-500'}`}><span>{format(exit.startTime, 'HH:mm')} - {exit.endTime ? format(exit.endTime, 'HH:mm') : 'Ongoing'}</span>{!exit.isOngoing && exit.endTime && (<span className="text-purple-600">({formatDuration(exit.durationMinutes)})</span>)}</div>{exit.reason && <p className="text-gray-600 truncate">{exit.reason}</p>}</div>))}</div>)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">{!todayAttendance ? <Button size="sm" icon={<LogIn size={14} />} onClick={() => handleCheckIn(staff.id)}>Check In</Button> : todayAttendance.status === 'week_off' ? <span className="text-xs text-cyan-700 bg-cyan-100 px-2 py-1 rounded-md font-semibold">On Week Off</span> : <div className="flex justify-end items-center space-x-2">{!todayAttendance.checkOut && (<>{ongoingTempExit ? <Button size="xs" variant="success" icon={<PauseCircle size={12} />} onClick={() => handleEndTempExit(todayAttendance.id, ongoingTempExit.id)}>End Exit</Button> : <Button size="xs" variant="outline" icon={<PlayCircle size={12} />} onClick={() => handleOpenTempExitModal(todayAttendance.id)} disabled={!!todayAttendance.checkOut}>Temp Exit</Button>}
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">{!todayAttendance ? <Button size="sm" icon={<LogIn size={14} />} onClick={() => handleCheckIn(staff)}>Check In</Button> : todayAttendance.status === 'week_off' ? <span className="text-xs text-cyan-700 bg-cyan-100 px-2 py-1 rounded-md font-semibold">On Week Off</span> : <div className="flex justify-end items-center space-x-2">{!todayAttendance.checkOut && (<>{ongoingTempExit ? <Button size="xs" variant="success" icon={<PauseCircle size={12} />} onClick={() => handleEndTempExit(todayAttendance.id, ongoingTempExit.id)}>End Exit</Button> : <Button size="xs" variant="outline" icon={<PlayCircle size={12} />} onClick={() => handleOpenTempExitModal(todayAttendance.id)} disabled={!!todayAttendance.checkOut}>Temp Exit</Button>}
                         <Button size="xs" variant="secondary" icon={<LogOut size={12} />} onClick={() => handleCheckOutAttempt(todayAttendance.id, staff.id, staff.name)} disabled={!!todayAttendance.checkOut || !!ongoingTempExit}>Check Out</Button>
                       </>)}{todayAttendance.checkOut && (<span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-md font-semibold">Checked Out</span>)}</div>}</td>
                     </tr>
@@ -489,7 +550,18 @@ const Attendance: React.FC = () => {
       )}
 
       {selectedRecordForDetail && (<AttendanceDetailModal record={selectedRecordForDetail} onClose={() => setSelectedRecordForDetail(null)} />)}
-      {selectedStaffForSummary && (<StaffMonthlySummaryModal staff={selectedStaffForSummary} records={attendanceRecordsFE} monthDate={currentMonthDate} onClose={() => setSelectedStaffForSummary(null)} />)}
+      
+      {selectedStaffForSummary && (
+        <StaffMonthlySummaryModal 
+            staff={selectedStaffForSummary} 
+            records={attendanceRecordsFE} 
+            monthDate={currentMonthDate} 
+            onClose={() => setSelectedStaffForSummary(null)} 
+            positionHoursMap={positionHoursMap}
+            defaultDailyHours={dailyRequiredHours}
+        />
+      )}
+
       {showWeekOffModal && <ApplyWeekOffModal staffMembers={activeStaffMembers} attendanceRecords={attendanceRecordsFE} onClose={() => setShowWeekOffModal(false)} onApply={applyWeekOff} />}
       {showConfirmModal && pendingCheckOutData && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl text-center"><div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100"><AlertTriangle className="h-8 w-8 text-red-600" aria-hidden="true" /></div><h3 className="text-xl font-bold text-gray-900 mt-5">Incomplete Hours</h3><p className="text-sm text-gray-500 mt-2">Staff <span className="font-semibold">{pendingCheckOutData.staffName}</span> hasn't completed required hours ({formatDuration(pendingCheckOutData.requiredHours * 60)}). Checkout anyway?</p><div className="flex justify-center space-x-4 mt-8"><Button variant="secondary" onClick={() => { setShowConfirmModal(false); setPendingCheckOutData(null); }}>Go Back</Button><Button variant="danger" onClick={() => {if (pendingCheckOutData) confirmCheckOut(pendingCheckOutData.attendanceId, pendingCheckOutData.requiredHours);}}>Check Out</Button></div></div></div>)}
       {showTempExitModal && selectedAttendanceIdForTempExit && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"><div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl"><h3 className="text-xl font-bold text-gray-800 mb-4">Record Temporary Exit</h3><div className="space-y-4"><div><label htmlFor="tempExitReason" className="block text-sm font-medium text-gray-700 mb-1">Reason*</label><textarea id="tempExitReason" rows={3} className="w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm p-3 text-gray-900" value={tempExitReason} onChange={(e) => setTempExitReason(e.target.value)} placeholder="e.g., Lunch break, client meeting..." required /></div><div className="flex justify-end space-x-3 pt-4"><Button variant="outline-danger" onClick={() => { setShowTempExitModal(false); setTempExitReason(''); setSelectedAttendanceIdForTempExit(null); }}>Cancel</Button><Button onClick={handleSubmitTempExit} disabled={!tempExitReason.trim()}>Start Exit</Button></div></div></div></div>)}

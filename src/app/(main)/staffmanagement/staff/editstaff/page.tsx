@@ -6,14 +6,13 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { 
     ArrowLeft, Save, Upload, PlusCircle, XCircle, User, Mail, Phone, 
     Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Activity,
-    Badge // --- (NEW) --- Import Badge icon for Staff ID
+    Badge, Eye, Trash2, FileText, Banknote, ShieldCheck
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { useStaff, StaffMember, UpdateStaffPayload, PositionOption } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
-// --- (MODIFIED) --- Add staffIdNumber to the form data interface
 interface EditStaffFormData {
   staffIdNumber: string;
   name: string;
@@ -26,9 +25,82 @@ interface EditStaffFormData {
   image: string | null;
   status: 'active' | 'inactive';
   aadharNumber: string;
+  // New document fields
+  aadharImage: string | null;
+  passbookImage: string | null;
+  agreementImage: string | null;
 }
 
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
+
+const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center p-4 border-b">
+          <h3 className="text-lg font-semibold">{title}</h3>
+          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
+        </div>
+        <div className="p-4">
+          <img src={src} alt={title} className="w-full h-auto object-contain" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FileUploadInput: React.FC<{
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  fileData: string | null;
+  onFileChange: (file: string | null) => void;
+  onView: () => void;
+  isSubmitting: boolean;
+}> = ({ id, label, icon, fileData, onFileChange, onView, isSubmitting }) => {
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        alert("File size should not exceed 5MB.");
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onFileChange(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="flex items-center gap-2">{icon}<span>{label}</span></div>
+      </label>
+      <div className="mt-1 flex items-center gap-3 p-3 border border-gray-300 rounded-md">
+        <input type="file" id={id} accept="image/*,application/pdf" onChange={handleFileSelect} className="hidden" disabled={isSubmitting} />
+        {fileData ? (
+          <>
+            <FileText className="h-8 w-8 text-indigo-500 flex-shrink-0" />
+            <div className="flex-grow text-sm text-gray-700">File uploaded.</div>
+            <Button type="button" variant="outline" size="sm" icon={<Eye size={14}/>} onClick={onView} disabled={isSubmitting}>View</Button>
+            <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={14}/>} onClick={() => onFileChange(null)} className="text-red-500" title="Remove File" disabled={isSubmitting} />
+          </>
+        ) : (
+          <>
+            <Button type="button" variant="outline" icon={<Upload size={16}/>} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting}>
+              Upload File
+            </Button>
+            <p className="text-xs text-gray-500">Max 5MB</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const EditStaffContent: React.FC = () => {
   const searchParams = useSearchParams();
@@ -41,19 +113,11 @@ const EditStaffContent: React.FC = () => {
     addPositionOption
   } = useStaff();
 
-  // --- (MODIFIED) --- Add staffIdNumber to the initial state
   const [formData, setFormData] = useState<EditStaffFormData>({
-    staffIdNumber: '',
-    name: '',
-    email: '',
-    phone: '',
-    position: '',
-    joinDate: '',
-    salary: '',
-    address: '',
-    image: DEFAULT_STAFF_IMAGE,
-    status: 'active',
-    aadharNumber: '',
+    staffIdNumber: '', name: '', email: '', phone: '', position: '',
+    joinDate: '', salary: '', address: '', image: DEFAULT_STAFF_IMAGE,
+    status: 'active', aadharNumber: '', aadharImage: null,
+    passbookImage: null, agreementImage: null,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,6 +128,8 @@ const EditStaffContent: React.FC = () => {
   const [showAddPositionForm, setShowAddPositionForm] = useState(false);
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
+
+  const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
 
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
@@ -84,7 +150,6 @@ const EditStaffContent: React.FC = () => {
           if (result.success && result.data) {
             const fetchedStaffData = result.data as StaffMember;
 
-            // --- (MODIFIED) --- Populate all form fields from fetched data
             setFormData({
               staffIdNumber: fetchedStaffData.staffIdNumber || '',
               name: fetchedStaffData.name,
@@ -97,6 +162,9 @@ const EditStaffContent: React.FC = () => {
               image: fetchedStaffData.image || DEFAULT_STAFF_IMAGE,
               status: fetchedStaffData.status,
               aadharNumber: fetchedStaffData.aadharNumber || '',
+              aadharImage: fetchedStaffData.aadharImage || null,
+              passbookImage: fetchedStaffData.passbookImage || null,
+              agreementImage: fetchedStaffData.agreementImage || null,
             });
 
             if (fetchedStaffData.position && !contextPositionOptions.some(p => p.value.toLowerCase() === fetchedStaffData.position.toLowerCase())) {
@@ -125,58 +193,42 @@ const EditStaffContent: React.FC = () => {
 
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prevFormData => ({
-      ...prevFormData,
-      [name]: value,
-    }));
+      const { name, value } = e.target;
+      setFormData(prevFormData => ({ ...prevFormData, [name]: value, }));
   };
 
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 2 * 1024 * 1024) {
-          setError("Image size should not exceed 2MB.");
-          e.target.value = '';
-          return;
+      if (e.target.files && e.target.files[0]) {
+          const file = e.target.files[0];
+          if (file.size > 2 * 1024 * 1024) { setError("Image size should not exceed 2MB."); e.target.value = ''; return; }
+          const reader = new FileReader();
+          reader.onloadend = () => { setFormData((prev) => ({ ...prev, image: reader.result as string })); };
+          reader.readAsDataURL(file);
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev) => ({ ...prev, image: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   const handleAddNewPosition = () => {
-    setNewPositionError(null);
-    if (!newPositionName.trim()) {
-      setNewPositionError("Position name cannot be empty.");
-      return;
-    }
-    const formattedNewPosition = newPositionName.trim();
-    if (positionOptions.some(option => option.value.toLowerCase() === formattedNewPosition.toLowerCase())) {
-      setNewPositionError("This position already exists.");
-      return;
-    }
-
-    const newOption = { value: formattedNewPosition, label: formattedNewPosition };
-    addPositionOption(newOption);
-    setFormData(prevData => ({ ...prevData, position: newOption.value }));
-    setNewPositionName("");
-    setShowAddPositionForm(false);
+      setNewPositionError(null);
+      if (!newPositionName.trim()) { setNewPositionError("Position name cannot be empty."); return; }
+      const formattedNewPosition = newPositionName.trim();
+      if (positionOptions.some(option => option.value.toLowerCase() === formattedNewPosition.toLowerCase())) { setNewPositionError("This position already exists."); return; }
+      const newOption = { value: formattedNewPosition, label: formattedNewPosition };
+      addPositionOption(newOption);
+      setFormData(prevData => ({ ...prevData, position: newOption.value }));
+      setNewPositionName("");
+      setShowAddPositionForm(false);
   };
+
+  const handleFileChange = (fieldName: keyof EditStaffFormData, fileData: string | null) => {
+    setFormData(prev => ({...prev, [fieldName]: fileData}));
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!staffId) {
-      setError("Cannot save, Staff ID is missing.");
-      return;
-    }
+    if (!staffId) { setError("Cannot save, Staff ID is missing."); return; }
     setIsSubmitting(true);
     setError(null);
 
-    // --- (MODIFIED) --- Add staffIdNumber to validation
     if (!formData.staffIdNumber.trim() || !formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.joinDate.trim() || !formData.salary.trim()) {
         setError("Please fill in all required fields marked with *.");
         setIsSubmitting(false);
@@ -194,24 +246,26 @@ const EditStaffContent: React.FC = () => {
         return;
     }
     
-    // --- (MODIFIED) --- Add staffIdNumber to the API payload
     const apiData: UpdateStaffPayload = {
         staffIdNumber: formData.staffIdNumber,
-        name: formData.name,
-        email: formData.email,
+        name: formData.name, 
+        email: formData.email, 
         phone: formData.phone,
-        position: formData.position,
+        position: formData.position, 
         joinDate: formData.joinDate,
-        salary: salaryValue,
+        salary: salaryValue, 
         address: formData.address || undefined,
         image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
-        status: formData.status,
+        status: formData.status, 
         aadharNumber: formData.aadharNumber || undefined,
+        aadharImage: formData.aadharImage,
+        passbookImage: formData.passbookImage,
+        agreementImage: formData.agreementImage,
     };
 
     try {
       await updateStaffMember(staffId, apiData);
-      router.push('/staffmanagement/staff/stafflist'); // Navigate to list to see updated card
+      router.push('/staffmanagement/staff/stafflist');
     } catch (apiError: any) {
       console.error('Failed to update staff member:', apiError);
       setError(apiError.message || 'Failed to update staff. Please try again.');
@@ -220,10 +274,8 @@ const EditStaffContent: React.FC = () => {
     }
   };
 
-  if (isLoadingData) {
-    return <div className="p-6 text-center">Loading staff data...</div>;
-  }
-
+  if (isLoadingData) return <div className="p-6 text-center">Loading staff data...</div>;
+  
   if (error && !formData.name && !isLoadingData) {
       return (
           <div className="p-6 text-center">
@@ -237,19 +289,17 @@ const EditStaffContent: React.FC = () => {
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
+      <DocumentViewerModal
+        src={viewingDocument.src}
+        title={viewingDocument.title}
+        onClose={() => setViewingDocument({ src: null, title: '' })}
+      />
+
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <Button
-            variant="outline"
-            icon={<ArrowLeft size={16} />}
-            onClick={() => router.back()} // Changed to router.back() for better UX
-            className="mr-4"
-            disabled={isSubmitting}
-          >
-            Back
-          </Button>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">Edit Staff Member</h1>
-        </div>
+          <div className="flex items-center">
+              <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => router.back()} className="mr-4" disabled={isSubmitting}>Back</Button>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-800">Edit Staff Member</h1>
+          </div>
       </div>
 
       {error && (
@@ -314,7 +364,6 @@ const EditStaffContent: React.FC = () => {
             </div>
           </div>
 
-          {/* --- (NEW) Staff ID Input Field --- */}
           <div>
             <label htmlFor="staffIdNumber" className="block text-sm font-medium text-gray-700 mb-1">Staff ID*</label>
             <div className="relative">
@@ -477,12 +526,45 @@ const EditStaffContent: React.FC = () => {
               </select>
             </div>
           </div>
+          
+           <div className="md:col-span-2 border-t pt-5 mt-3 space-y-4">
+            <h3 className="text-lg font-medium text-gray-900">Documents</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FileUploadInput 
+                    id="aadhar-upload-edit"
+                    label="Aadhar Card"
+                    icon={<ShieldCheck size={16} className="text-gray-500"/>}
+                    fileData={formData.aadharImage}
+                    onFileChange={(data) => handleFileChange('aadharImage', data)}
+                    onView={() => setViewingDocument({ src: formData.aadharImage, title: "Aadhar Card" })}
+                    isSubmitting={isSubmitting || isLoadingData}
+                />
+                 <FileUploadInput 
+                    id="passbook-upload-edit"
+                    label="Bank Passbook"
+                    icon={<Banknote size={16} className="text-gray-500"/>}
+                    fileData={formData.passbookImage}
+                    onFileChange={(data) => handleFileChange('passbookImage', data)}
+                    onView={() => setViewingDocument({ src: formData.passbookImage, title: "Bank Passbook" })}
+                    isSubmitting={isSubmitting || isLoadingData}
+                />
+                 <FileUploadInput 
+                    id="agreement-upload-edit"
+                    label="Agreement"
+                    icon={<FileText size={16} className="text-gray-500"/>}
+                    fileData={formData.agreementImage}
+                    onFileChange={(data) => handleFileChange('agreementImage', data)}
+                    onView={() => setViewingDocument({ src: formData.agreementImage, title: "Agreement" })}
+                    isSubmitting={isSubmitting || isLoadingData}
+                />
+            </div>
+          </div>
         </div>
         <div className="mt-8 flex justify-end space-x-3">
           <Button
             type="button"
             variant="outline-danger"
-            onClick={() => router.back()} // Changed to router.back()
+            onClick={() => router.back()}
             disabled={isSubmitting || isLoadingData}
           >
             Cancel

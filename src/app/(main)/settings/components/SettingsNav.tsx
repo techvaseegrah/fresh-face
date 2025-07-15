@@ -17,6 +17,13 @@ const settingsNavigation = [
     href: '/settings/attendancesetting',
     permission: PERMISSIONS.ATTENDANCE_SETTINGS_READ 
   },
+  // --- (NEW) ADD THIS OBJECT FOR THE NEW SETTINGS PAGE ---
+  { 
+    name: 'Position Hours', 
+    href: '/settings/position-hours', 
+    permission: PERMISSIONS.POSITION_HOURS_SETTINGS_MANAGE 
+  },
+  // --------------------------------------------------------
   { 
     name: 'Loyalty Points', 
     href: '/settings/loyalty', 

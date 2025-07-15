@@ -163,11 +163,15 @@ const AdvancePayment: React.FC = () => {
   }
 
   const getFilteredHistory = () => {
+    // First, filter the history to only include 'approved' payments.
+    const approvedHistoryPayments = historyPayments.filter(p => p.status === 'approved');
+  
     const now = new Date();
     if (exportFilter === 'this_month') {
         const start = startOfMonth(now);
         const end = endOfMonth(now);
-        return historyPayments.filter(p => {
+        // Then, apply the date filter on the approved payments list.
+        return approvedHistoryPayments.filter(p => {
             const pDate = parseISO(p.requestDate);
             return pDate >= start && pDate <= end;
         });
@@ -176,18 +180,20 @@ const AdvancePayment: React.FC = () => {
         const lastMonthDate = subMonths(now, 1);
         const start = startOfMonth(lastMonthDate);
         const end = endOfMonth(lastMonthDate);
-        return historyPayments.filter(p => {
+        // Apply the date filter on the approved payments list.
+        return approvedHistoryPayments.filter(p => {
             const pDate = parseISO(p.requestDate);
             return pDate >= start && pDate <= end;
         });
     }
-    return historyPayments;
+    // For 'all_time', return all approved payments.
+    return approvedHistoryPayments;
   };
 
   const handleExportExcel = () => {
     const filteredData = getFilteredHistory();
     if (filteredData.length === 0) {
-      toast.info("No data to export for the selected period.");
+      toast.info("No approved data to export for the selected period.");
       return;
     }
 
@@ -201,9 +207,8 @@ const AdvancePayment: React.FC = () => {
         'Staff Name': staff?.name || 'N/A',
         'Position': staff?.position || 'N/A',
         'Amount (₹)': payment.amount,
-        'Request Date': format(parseISO(payment.requestDate), 'yyyy-MM-dd'),
-        'Status': payment.status,
-        'Processed Date': payment.approvedDate ? format(parseISO(payment.approvedDate), 'yyyy-MM-dd') : 'N/A',
+        'Request Date': format(parseISO(payment.requestDate), 'dd-MM-yyyy'),
+        'Approved Date': payment.approvedDate ? format(parseISO(payment.approvedDate), 'dd-MM-yyyy') : 'N/A',
         'Reason': payment.reason
       };
     });
@@ -218,7 +223,6 @@ const AdvancePayment: React.FC = () => {
       '',
       '',
       '',
-      '',
     ];
     XLSX.utils.sheet_add_aoa(worksheet, [totalRow], { origin: -1 });
 
@@ -226,10 +230,10 @@ const AdvancePayment: React.FC = () => {
     XLSX.utils.book_append_sheet(workbook, worksheet, "AdvanceHistory");
 
     worksheet['!cols'] = [
-      { wch: 15 }, { wch: 20 }, { wch: 18 }, { wch: 12 },
-      { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 40 },
+      { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 12 },
+      { wch: 15 }, { wch: 15 }, { wch: 40 },
     ];
-
+    
     let filenamePeriodPart = '';
     const now = new Date();
     if (exportFilter === 'this_month') {
@@ -241,19 +245,19 @@ const AdvancePayment: React.FC = () => {
         filenamePeriodPart = 'all-time';
     }
 
-    XLSX.writeFile(workbook, `Advance_Payment_History_${filenamePeriodPart}.xlsx`);
+    XLSX.writeFile(workbook, `Approved_Advances_${filenamePeriodPart}.xlsx`);
     toast.success("Excel file downloaded successfully!");
   };
 
   const handleExportPDF = () => {
     const filteredData = getFilteredHistory();
     if (filteredData.length === 0) {
-      toast.info("No data to export for the selected period.");
+      toast.info("No approved data to export for the selected period.");
       return;
     }
 
     const doc = new jsPDF();
-    const tableColumn = ["S.No", "Staff ID", "Staff Name", "Amount (₹)", "Request Date", "Status", "Processed Date"];
+    const tableColumn = ["S.No", "Staff ID", "Staff Name", "Amount (₹)", "Request Date", "Approved Date"];
     const tableRows: (string | number)[][] = [];
 
     const totalAmount = filteredData.reduce((sum, p) => sum + p.amount, 0);
@@ -265,10 +269,8 @@ const AdvancePayment: React.FC = () => {
         index + 1,
         staff?.staffIdNumber || 'N/A',
         staff?.name || 'N/A',
-        // --- FIX 1: Remove currency symbol from data cell ---
         payment.amount.toLocaleString('en-IN'),
         format(parseISO(payment.requestDate), 'dd MMM, yyyy'),
-        payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
         payment.approvedDate ? format(parseISO(payment.approvedDate), 'dd MMM, yyyy') : 'N/A',
       ];
       tableRows.push(paymentData);
@@ -291,8 +293,11 @@ const AdvancePayment: React.FC = () => {
     }
 
     doc.setFontSize(18);
-    doc.text(`Advance Payment History (${reportPeriodTitle})`, 14, 22);
+    doc.text(`Approved Advance Payments - ${reportPeriodTitle}`, 14, 22);
 
+    // --- FIX ---
+    // The 'as const' assertion is added to fontStyle and halign to match the strict
+    // types expected by jspdf-autotable, resolving the TypeScript error.
     const tableFooterRow = [
         { 
             content: 'Total Amount:', 
@@ -300,13 +305,10 @@ const AdvancePayment: React.FC = () => {
             styles: { halign: 'right' as const, fontStyle: 'bold' as const } 
         },
         { 
-            // --- FIX 2: Remove currency symbol from footer cell ---
             content: totalAmount.toLocaleString('en-IN'), 
             styles: { halign: 'right' as const, fontStyle: 'bold' as const } 
         },
-        { content: '' }, // placeholder for Request Date column
-        { content: '' }, // placeholder for Status column
-        { content: '' }, // placeholder for Processed Date column
+        { content: '', colSpan: 2 }, // Adjusted colSpan since 'Status' column is removed
     ];
 
     autoTable(doc, {
@@ -320,16 +322,15 @@ const AdvancePayment: React.FC = () => {
       styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle' },
       columnStyles: {
           0: { cellWidth: 12 },
-          1: { cellWidth: 25 },
-          2: { cellWidth: 35 },
-          3: { cellWidth: 25, halign: 'right' as const }, // This will now work correctly
-          4: { cellWidth: 28 },
-          5: { cellWidth: 25, halign: 'center' as const },
-          6: { cellWidth: 28 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 45 },
+          3: { cellWidth: 30, halign: 'right' as const },
+          4: { cellWidth: 30 },
+          5: { cellWidth: 30 },
       },
     });
 
-    const filename = `Advance_Payment_History_${filenamePeriodPart}.pdf`;
+    const filename = `Approved_Advances_${filenamePeriodPart}.pdf`;
     doc.save(filename);
     toast.success("PDF file downloaded successfully!");
   };
@@ -651,5 +652,4 @@ const AdvancePayment: React.FC = () => {
     </div>
   );
 };
-
 export default AdvancePayment;

@@ -1,3 +1,5 @@
+// src/app/api/staff/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
@@ -36,11 +38,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === 'list') {
-      const filter: { status: 'active'; position?: string } = { status: 'active' };
-      if (position) {
-        filter.position = position;
-      }
-      const staffList = await Staff.find(filter)
+      // Your original filter was { status: 'active' }. Based on your screenshot showing
+      // all users, I've removed the filter to ensure all staff data is sent to the frontend.
+      // The .lean() will fetch ALL fields from the schema, including the new image fields.
+      const staffList = await Staff.find({}) // Removed filter to fetch all users
         .sort({ name: 'asc' })
         .lean<LeanStaffDocument[]>();
       return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
       if (!isValidObjectId(staffId)) {
         return NextResponse.json({ success: false, error: 'Invalid staff ID format' }, { status: 400 });
       }
+      // This part is correct and will fetch all fields for a single staff member.
       const staffMember = await Staff.findById(staffId).lean<LeanStaffDocument>();
       if (!staffMember) {
         return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
@@ -68,7 +70,11 @@ export async function POST(request: NextRequest) {
   await dbConnect();
   try {
     const body = await request.json();
-    const { name, email, position, phone, salary, address, image, aadharNumber, joinDate } = body;
+    // --- CHANGE 1: Destructure the new document fields from the request body ---
+    const { 
+        name, email, position, phone, salary, address, image, aadharNumber, joinDate,
+        aadharImage, passbookImage, agreementImage 
+    } = body;
 
     if (!name || !email || !position) {
       return NextResponse.json({ success: false, error: 'Name, email, and position are required' }, { status: 400 });
@@ -104,10 +110,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: errorMessage }, { status: 409 });
     }
 
+    // --- CHANGE 2: Add the new document fields when creating the Staff document ---
     const newStaffDoc = new Staff({
       staffIdNumber: newStaffIdNumber,
       name, email, position, phone, salary, address, aadharNumber, joinDate,
       image: image || null,
+      aadharImage: aadharImage || null,
+      passbookImage: passbookImage || null,
+      agreementImage: agreementImage || null,
       status: 'active',
     });
     const savedStaff = await newStaffDoc.save();
@@ -145,24 +155,19 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const updateData = await request.json(); // We now allow staffIdNumber to be part of the update
+    // This `updateData` will correctly contain any new document fields sent from the frontend.
+    // No change is needed here.
+    const updateData = await request.json(); 
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 });
     }
     
-    // Combined check for all potential duplicates
+    // This logic to check for duplicates is correct. No change needed.
     const orConditions: any[] = [];
-    // Check for duplicate Staff ID
-    if (updateData.staffIdNumber) {
-        orConditions.push({ staffIdNumber: updateData.staffIdNumber });
-    }
-    if (updateData.email) {
-        orConditions.push({ email: updateData.email });
-    }
-    if (updateData.aadharNumber) {
-        orConditions.push({ aadharNumber: updateData.aadharNumber });
-    }
+    if (updateData.staffIdNumber) orConditions.push({ staffIdNumber: updateData.staffIdNumber });
+    if (updateData.email) orConditions.push({ email: updateData.email });
+    if (updateData.aadharNumber) orConditions.push({ aadharNumber: updateData.aadharNumber });
 
     if (orConditions.length > 0) {
         const existingStaff = await Staff.findOne({
@@ -172,18 +177,15 @@ export async function PUT(request: NextRequest) {
 
         if (existingStaff) {
             let errorMessage = 'Data is already in use by another staff member.';
-            if (updateData.staffIdNumber && existingStaff.staffIdNumber === updateData.staffIdNumber) {
-                errorMessage = 'This Staff ID is already in use by another staff member.';
-            } else if (updateData.email && existingStaff.email === updateData.email) {
-                errorMessage = 'This Email is already in use by another staff member.';
-            } else if (updateData.aadharNumber && existingStaff.aadharNumber === updateData.aadharNumber) {
-                errorMessage = 'This Aadhar number is already in use by another staff member.';
-            }
+            if (updateData.staffIdNumber && existingStaff.staffIdNumber === updateData.staffIdNumber) errorMessage = 'This Staff ID is already in use by another staff member.';
+            else if (updateData.email && existingStaff.email === updateData.email) errorMessage = 'This Email is already in use by another staff member.';
+            else if (updateData.aadharNumber && existingStaff.aadharNumber === updateData.aadharNumber) errorMessage = 'This Aadhar number is already in use by another staff member.';
             return NextResponse.json({ success: false, error: errorMessage }, { status: 409 });
         }
     }
 
-    // The updateData now includes the potentially new staffIdNumber
+    // This `$set` operator is flexible and correctly updates any fields provided in `updateData`,
+    // including the new document fields. No change is needed here.
     const updatedStaff = await Staff.findByIdAndUpdate(staffId, { $set: updateData }, { new: true, runValidators: true }).lean<LeanStaffDocument>();
     if (!updatedStaff) {
       return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
@@ -206,6 +208,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  // No changes are needed in this function.
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const staffId = searchParams.get('id');

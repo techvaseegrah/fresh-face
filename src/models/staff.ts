@@ -1,10 +1,10 @@
 // src/models/Staff.ts
+
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-// --- (MODIFIED) --- Added staffIdNumber to the interface
 export interface IStaff extends Document {
   _id: Types.ObjectId;
-  staffIdNumber: string; // The unique identifier for the staff member
+  staffIdNumber: string; 
   name: string;
   email: string;
   phone?: string;
@@ -15,10 +15,13 @@ export interface IStaff extends Document {
   address?: string;
   image?: string;
   status: 'active' | 'inactive';
+  // VERIFY THESE FIELDS EXIST
+  aadharImage?: string;
+  passbookImage?: string;
+  agreementImage?: string;
 }
 
 const staffSchema = new Schema<IStaff>({
-  // --- (NEW) --- Added staffIdNumber to the schema with constraints
   staffIdNumber: {
     type: String,
     required: [true, 'Staff ID number is required.'],
@@ -35,13 +38,14 @@ const staffSchema = new Schema<IStaff>({
   address: { type: String, trim: true },
   image: { type: String, trim: true },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+  // ADD THESE FIELDS TO THE SCHEMA DEFINITION
+  aadharImage: { type: String, default: null },
+  passbookImage: { type: String, default: null },
+  agreementImage: { type: String, default: null },
 }, { timestamps: true });
 
-// --- (MODIFIED) --- Mongoose automatically creates an index for unique fields.
-// No new index is strictly needed, but it's good to be aware.
 staffSchema.index({ email: 1 });
 staffSchema.index({ status: 1, name: 1 });
-// The `unique: true` on `staffIdNumber` already creates an index for it.
 
 const Staff: Model<IStaff> = mongoose.models.Staff || mongoose.model<IStaff>('Staff', staffSchema);
 export default Staff;

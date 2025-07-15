@@ -1,5 +1,3 @@
-// app/api/attendance/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Attendance, { IAttendance } from '../../../models/Attendance';
@@ -23,7 +21,6 @@ export async function GET(request: NextRequest) {
       const todayStartBoundary = startOfDay(todayDate);
       const todayEndBoundary = endOfDay(todayDate);
 
-      // --- MODIFICATION: Added 'staffIdNumber' to the populate select string ---
       const records = await Attendance.find({
         date: { $gte: todayStartBoundary, $lte: todayEndBoundary },
       })
@@ -51,10 +48,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Invalid year or month parameters' }, { status: 400 });
       }
       
-      const startDate = new Date(Date.UTC(parsedYear, parsedMonth - 1, 1));
-      const endDate = endOfMonth(startDate);
+      // --- THE TIMEZONE FIX ---
+      // This creates the date range based on the SERVER's local timezone, making it consistent with check-in logic.
+      const localMonthDate = new Date(parsedYear, parsedMonth - 1, 1);
+      const startDate = startOfMonth(localMonthDate);
+      const endDate = endOfMonth(localMonthDate);
+      // --- END OF FIX ---
 
-      // --- MODIFICATION: Added 'staffIdNumber' to the populate select string ---
       const records = await Attendance.find({ date: { $gte: startDate, $lte: endDate } })
         .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
         .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })

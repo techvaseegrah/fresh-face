@@ -110,6 +110,7 @@ export const PERMISSIONS = {
   LOYALTY_SETTINGS_UPDATE: 'loyalty_settings:update',
   ATTENDANCE_SETTINGS_READ: 'attendance_settings:read',
   SETTINGS_STAFF_ID_MANAGE: 'settings:staff_id:manage', // --- (1. NEW) --- Added the new permission constant
+    POSITION_HOURS_SETTINGS_MANAGE: 'position_hours_settings:manage',
 
   ALL: '*'
 } as const;
