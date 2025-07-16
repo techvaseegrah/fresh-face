@@ -86,7 +86,7 @@ export async function GET(req: Request) {
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
-        .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 })
+        .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : 1 })
         .skip(skip)
         .limit(limit),
       Appointment.countDocuments(matchStage)

@@ -78,10 +78,10 @@ customerSchema.post('findOne', decryptFields);
 customerSchema.post('find', (docs) => docs.forEach(decryptFields));
 customerSchema.post('findOneAndUpdate', decryptFields);
 
-customerSchema.post('save', (doc, next) => {
-  decryptFields(doc);
-  next();
-});
+// customerSchema.post('save', (doc, next) => {
+//   decryptFields(doc);
+//   next();
+// });
 
 // --- Existing Methods & Statics (Unchanged) ---
 customerSchema.methods.toggleMembership = function (this: ICustomer, status = true, customBarcode?: string): Promise<ICustomer> {

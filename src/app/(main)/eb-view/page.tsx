@@ -16,15 +16,11 @@ import Link from 'next/link';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// --- Import Reusable Components ---
 import ReportDownloadModal from '@/components/ReportDownloadModal';
-// We will no longer use the generic downloadReport service
-// import { downloadReport } from '@/lib/reportService'; 
 import CostModal from '@/components/CostModal';
 import HistoryModal from '@/components/HistoryModal';
 import ReadingsSummaryModal from '@/components/ReadingsSummaryModal';
 import ImageZoomModal from '@/components/ImageZoomModal';
-
 
 // --- TYPE DEFINITIONS & INTERFACES ---
 interface CustomSession extends Session {
@@ -52,8 +48,6 @@ interface IEBReadingWithAppointments extends IEBReading {
   appointmentCount?: number;
 }
 
-// ** NEW **: Type definition for the data used specifically by the report generator.
-// This ensures the generator is decoupled from the page's display logic.
 type EbReportData = { 
   date: string; 
   startUnits: number | null; 
@@ -64,7 +58,6 @@ type EbReportData = {
   totalCost: number | null; 
 };
 
-
 interface EBReadingCardProps {
   reading: IEBReading;
   nextDayMorningUnits?: number;
@@ -73,7 +66,7 @@ interface EBReadingCardProps {
   onHistoryOpen: (history: IHistoryEntry[]) => void;
 }
 
-// --- CLIENT-SIDE PDF GENERATOR (Keep in lib/reportGeneratorEb.ts in a real app) ---
+// --- CLIENT-SIDE PDF GENERATOR ---
 function createEbPdfReportClient(data: EbReportData[], startDate: Date, endDate: Date): jsPDF {
   const doc = new jsPDF();
   doc.setFontSize(16);
@@ -94,10 +87,8 @@ function createEbPdfReportClient(data: EbReportData[], startDate: Date, endDate:
   return doc;
 }
 
-
-// --- EBReadingCard COMPONENT (No changes needed) ---
+// --- EBReadingCard COMPONENT ---
 const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, onUpdate, onImageZoom, onHistoryOpen }) => {
-    // ... This component's code is correct and remains unchanged.
     const { data: session } = useSession() as { data: CustomSession | null };
     const [isEditing, setIsEditing] = useState<boolean>(false);
     const [editMorningUnits, setEditMorningUnits] = useState<number | undefined>();
@@ -107,8 +98,7 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
     return (<div className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl border-t-4 border-indigo-500"><div className="px-6 py-4 flex items-center justify-between"><h3 className="text-lg font-semibold text-slate-800">{new Date(reading.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>{session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE) && (<button onClick={isEditing ? handleCancelEdit : handleEnterEditMode} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-1 rounded-md hover:bg-indigo-50 transition-colors">{isEditing ? 'Cancel' : 'Update Units'}</button>)}</div><div className="px-6 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6"><div className="bg-slate-50/80 rounded-lg p-4 space-y-4"><div><div className="flex items-center text-slate-600 mb-2"><SunIcon className="h-5 w-5 mr-2 text-yellow-500" /><p className="text-sm font-medium">Morning Reading (Today)</p></div>{isEditing ? (<input type="number" value={editMorningUnits ?? ''} onChange={(e: ChangeEvent<HTMLInputElement>) => { const val = e.target.value; setEditMorningUnits(val === '' ? undefined : parseFloat(val)); }} className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" step="0.01" placeholder="Enter reading" />) : (<div><p className="text-2xl font-semibold text-slate-900">{(reading.morningUnits !== undefined) ? `${reading.morningUnits.toFixed(2)}` : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>{reading.morningImageUrl && (<div onClick={() => onImageZoom(reading.morningImageUrl as string)} className="mt-3 cursor-pointer group"><Image src={reading.morningImageUrl} alt="Morning Meter Reading" width={200} height={120} className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" /></div>)}</div>)}</div><hr className="border-slate-200" /><div><div className="flex items-center text-slate-600 mb-2"><CalendarDaysIcon className="h-5 w-5 mr-2 text-sky-600" /><p className="text-sm font-medium">Morning Reading (Next Day)</p></div><p className="text-2xl font-semibold text-slate-900">{nextDayMorningUnits !== undefined ? `${nextDayMorningUnits.toFixed(2)}` : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p></div></div><div className="space-y-4"><div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full"><div className="flex-shrink-0 bg-teal-100 text-teal-700 rounded-lg p-3"><ArrowUpRightIcon className="h-6 w-6" /></div><div className="ml-4"><p className="text-sm text-slate-600">Units Consumed (for this day)</p><p className="text-lg font-bold text-slate-800">{reading.unitsConsumed !== undefined ? `${reading.unitsConsumed.toFixed(2)} units` : 'N/A'}</p></div></div><div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full"><div className="flex-shrink-0 bg-amber-100 text-amber-700 rounded-lg p-3"><CurrencyRupeeIcon className="h-6 w-6" /></div><div className="ml-4"><p className="text-sm text-slate-600">Total Cost</p><p className="text-lg font-bold text-slate-800">{reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}</p></div></div></div></div><div className="px-6 py-4 flex items-center justify-between bg-slate-50 border-t border-slate-200">{isEditing ? (<button onClick={handleUpdate} className="px-5 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 w-full sm:w-auto font-semibold shadow-sm">Save Changes</button>) : <div />}{reading.history && reading.history.length > 0 && (<button onClick={() => onHistoryOpen(reading.history)} className="flex items-center text-sm text-slate-500 hover:text-slate-800 font-medium p-2 rounded-md hover:bg-slate-100 transition-colors"><ClockIcon className="h-4 w-4 mr-1.5"/>View History</button>)}</div></div>);
 };
 
-
-// --- MAIN PAGE COMPONENT (TypeScript) ---
+// --- MAIN PAGE COMPONENT ---
 export default function EBViewPage(): JSX.Element {
     const { data: session } = useSession() as { data: CustomSession | null };
     const [readings, setReadings] = useState<IEBReadingWithAppointments[]>([]);
@@ -130,7 +120,11 @@ export default function EBViewPage(): JSX.Element {
     const fetchPageData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [ebRes, appointmentsRes] = await Promise.all([ fetch('/api/eb'), fetch('/api/appointment/summary') ]);
+            const [ebRes, appointmentsRes, costRes] = await Promise.all([
+                fetch('/api/eb'), 
+                fetch('/api/appointment/summary'),
+                fetch('/api/settings/ebCostPerUnit')
+            ]);
             const ebData = await ebRes.json();
             const appointmentsData = await appointmentsRes.json();
             if (!ebData.success) { throw new Error(ebData.message || 'Failed to fetch EB readings.'); }
@@ -140,6 +134,11 @@ export default function EBViewPage(): JSX.Element {
                 return { ...reading, appointmentCount: appointmentCounts[dateKey] || 0 };
             });
             setReadings(combinedData);
+
+            const costData = await costRes.json();
+            if (costData.success && costData.setting.value !== null) {
+                setGlobalCost(costData.setting.value);
+            }
         } catch (error) { console.error('Error fetching page data:', error); alert('An error occurred while fetching data.'); } finally { setIsLoading(false); }
     }, []);
 
@@ -158,10 +157,26 @@ export default function EBViewPage(): JSX.Element {
     const handleSetGlobalCost = async (newCost: number) => {
         setIsSavingCost(true);
         try {
-            const updatePromises = readings.map(reading => fetch('/api/eb', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ readingId: reading._id, morningUnits: reading.morningUnits, costPerUnit: newCost }) }));
-            await Promise.all(updatePromises);
-            await fetchPageData();
-        } catch (error) { console.error('Failed to apply global cost', error); alert(`An error occurred while setting the new cost.`); } finally { setIsSavingCost(false); setIsCostModalOpen(false); }
+            const res = await fetch('/api/settings/ebCostPerUnit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: newCost }),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.message || 'Failed to update cost setting.');
+            }
+            
+            setGlobalCost(newCost);
+            setIsCostModalOpen(false);
+            alert('Global cost per unit has been updated for all future readings.');
+        } catch (error) {
+            console.error('Failed to apply global cost', error);
+            alert(`An error occurred while setting the new cost.`);
+        } finally {
+            setIsSavingCost(false);
+        }
     };
 
     const handleHistoryOpen = (history: IHistoryEntry[]) => {
@@ -169,22 +184,18 @@ export default function EBViewPage(): JSX.Element {
         setIsHistoryModalOpen(true);
     };
 
-    // =======================================================================
-    //  ** NEW & IMPROVED DOWNLOAD HANDLER **
-    // =======================================================================
     const handleDownloadEbReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }) => {
         setIsDownloading(true);
         try {
             const response = await fetch('/api/eb/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    startDate: params.startDate,
-                    endDate: params.endDate,
-                    format: params.format
-                }),
+                body: JSON.stringify({ 
+    startDate: params.startDate, 
+    endDate: params.endDate, 
+    format: params.format 
+}),
             });
-            console.log('[DEBUG] Response received from API. Status:', response.status);
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -192,7 +203,6 @@ export default function EBViewPage(): JSX.Element {
             }
 
             if (params.format === 'pdf') {
-                // Handle PDF: parse JSON, generate PDF client-side
                 const { data: reportData } = await response.json();
                 if (!reportData || reportData.length === 0) {
                     alert('No data available for the selected date range.');
@@ -201,35 +211,19 @@ export default function EBViewPage(): JSX.Element {
                 const pdfDoc = createEbPdfReportClient(reportData, params.startDate, params.endDate);
                 const filename = `eb_report_${params.startDate.toISOString().split('T')[0]}_to_${params.endDate.toISOString().split('T')[0]}.pdf`;
                 pdfDoc.save(filename);
-
             } else {
-                // Handle Excel: download blob from server
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                
                 const contentDisposition = response.headers.get('content-disposition');
-
-                // Use a fallback filename in case something goes wrong
                 let filename = 'eb-report-download.xlsx'; 
-
                 if (contentDisposition) {
-                    console.log('[DEBUG] Found content-disposition header:', contentDisposition);
-
-                    // This regex is specifically designed to find `filename="..."` and capture the part inside the quotes.
                     const filenameRegex = /filename="([^"]+)"/;
                     const matches = filenameRegex.exec(contentDisposition);
-
                     if (matches && matches[1]) {
                         filename = matches[1];
-                        console.log('[DEBUG] Successfully extracted filename:', filename);
-                    } else {
-                        console.warn('[DEBUG] Could not extract filename from header. Using fallback.');
                     }
-                } else {
-                    console.error('[DEBUG] FATAL: content-disposition header was not found by .get() despite being in network tab.');
                 }
-
                 a.href = url;
                 a.download = filename; 
                 document.body.appendChild(a);
@@ -239,14 +233,12 @@ export default function EBViewPage(): JSX.Element {
             }
             
             setIsReportModalOpen(false);
-
         } catch (error: any) {
             alert(`Download failed: ${error.message}`);
         } finally {
             setIsDownloading(false);
         }
     };
-
 
     if (isLoading) {
         return <div className="p-4 sm:p-6 lg:p-8 bg-slate-100"><div className="animate-pulse"><div className="h-10 bg-slate-200 rounded w-80 mb-8"></div><div className="space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-80 bg-slate-200 rounded-2xl"></div>)}</div></div></div>;
@@ -258,11 +250,10 @@ export default function EBViewPage(): JSX.Element {
 
     return (
         <>
-            <CostModal isOpen={isCostModalOpen} onClose={() => setIsCostModalOpen(false)} onSave={handleSetGlobalCost} cost={globalCost} setCost={setGlobalCost} isLoading={isSavingCost} />
+            <CostModal isOpen={isCostModalOpen} onClose={() => setIsCostModalOpen(false)} onSave={handleSetGlobalCost} cost={globalCost} isLoading={isSavingCost} />
             <ReadingsSummaryModal isOpen={isSummaryModalOpen} onClose={() => setIsSummaryModalOpen(false)} readings={readings} />
             <HistoryModal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} history={currentHistory} />
             {zoomedImageUrl && <ImageZoomModal src={zoomedImageUrl} onClose={() => setZoomedImageUrl(null)} />}
-            {/* The modal now correctly uses our new handler */}
             <ReportDownloadModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} onDownload={handleDownloadEbReport} isDownloading={isDownloading} />
 
             <main className=" bg-slate-100 min-h-screen">

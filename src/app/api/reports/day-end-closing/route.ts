@@ -1,63 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth'; 
+import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import DayEndReport from '@/models/DayEndReport';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-  
-    if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ)) {
+    if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const {
+      closingDate,
+      openingBalance,
+      isOpeningBalanceManual,
+      pettyCash,
+      expectedTotals,
+      actualTotals,
+      discrepancies,
+      cashDenominations,
+      notes,
+    } = body;
+
+    if (!closingDate) {
+      return NextResponse.json({ success: false, message: "Closing date is required" }, { status: 400 });
     }
     
     await dbConnect();
     
-    const { searchParams } = request.nextUrl;
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-
-    const query: any = {};
-
-    if (startDate && endDate) {
-        const startDateObj = new Date(startDate);
-        startDateObj.setUTCHours(0, 0, 0, 0);
-
-        const endDateObj = new Date(endDate);
-        endDateObj.setUTCHours(23, 59, 59, 999);
-
-        query.closingDate = {
-            $gte: startDateObj,
-            $lte: endDateObj,
-        };
+    const existingReport = await DayEndReport.findOne({ closingDate: new Date(closingDate) });
+    if (existingReport) {
+      return NextResponse.json({ success: false, message: `A report for ${closingDate} already exists.` }, { status: 409 });
     }
-    
-    const reports = await DayEndReport.find(query)
-      .sort({ closingDate: -1 })
-      .populate('closedBy', 'name')
-      .lean();
-      
-    // --- THE FIX: Add a data transformation layer for backward compatibility ---
-    // This ensures that reports saved before the schema fix are also displayed correctly.
-    const cleanedReports = reports.map(report => {
-      const newReport = { ...report };
-      // Check if this is an old report with the 'cash' field
-      if (newReport.actualTotals && newReport.actualTotals.cash !== undefined) {
-          // If so, create the 'totalCountedCash' field that the frontend expects
-          newReport.actualTotals.totalCountedCash = newReport.actualTotals.cash;
-      }
-      return newReport;
+
+    const newReport = new DayEndReport({
+      closingDate: new Date(closingDate),
+      openingBalance,
+      isOpeningBalanceManual,
+      pettyCash: {
+        total: pettyCash.total,
+        expenseIds: pettyCash.entries.map((entry: any) => entry._id),
+      },
+      expectedTotals,
+      // --- THE FIX: Map the incoming frontend data to the correct schema structure ---
+      actualTotals: {
+        totalCountedCash: actualTotals.cash, // Map 'cash' from modal to 'totalCountedCash'
+        card: actualTotals.card,
+        upi: actualTotals.upi,
+        other: actualTotals.other,
+        total: (actualTotals.cash || 0) + (actualTotals.card || 0) + (actualTotals.upi || 0) + (actualTotals.other || 0),
+      },
+      discrepancies,
+      cashDenominations,
+      notes,
+      closedBy: session.user.id,
     });
-            
-    return NextResponse.json({ success: true, data: cleanedReports }, { status: 200 });
+
+    await newReport.save();
+
+    return NextResponse.json({
+      success: true,
+      message: `Day-end report for ${closingDate} submitted successfully.`,
+      reportId: newReport._id,
+    }, { status: 201 });
 
   } catch (error: any) {
-    console.error("API Error fetching day-end history:", error);
-    return NextResponse.json(
-      { success: false, message: "An internal server error occurred.", errorDetails: error.message },
-      { status: 500 }
-    );
+    console.error("API Error in /api/reports/day-end-closing:", error);
+    return NextResponse.json({ success: false, message: "An internal server error occurred." }, { status: 500 });
   }
 }

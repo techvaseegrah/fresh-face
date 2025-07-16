@@ -6,7 +6,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import Customer from '@/models/customermodel';
-import { createSearchHash } from '@/lib/crypto';
+import { createSearchHash, encrypt } from '@/lib/crypto';
 
 interface CustomerImportRow {
   Name: string;
@@ -68,25 +68,49 @@ export async function POST(req: NextRequest) {
         // --- FIX: Explicitly handle optional fields ---
         // If a field from the Excel/CSV is empty, set it to `undefined` so Mongoose omits it.
         const customerData: any = {
-          name: row.Name,
-          phoneNumber: row.PhoneNumber,
-          email: row.Email || undefined,
-          gender: row.Gender || undefined,
+          name: encrypt(row.Name),
+          phoneNumber: encrypt(row.PhoneNumber),
+          email: row.Email,
           dob: row.DOB ? new Date(row.DOB) : undefined,
           survey: row.Survey || undefined,
           phoneHash: phoneHash,
+          searchableName: row.Name,
+          last4PhoneNumber: normalizedPhoneNumber.slice(-4),
           isMembership: isMember,
           membershipBarcode: isMember ? barcode : undefined,
           membershipPurchaseDate: isMember ? new Date() : undefined,
         };
         // --- END OF FIX ---
 
-        if (existingCustomer) {
-          Object.assign(existingCustomer, customerData);
+              if (existingCustomer) {
+          // When updating an existing customer
+          existingCustomer.name = encrypt(row.Name);
+          existingCustomer.phoneNumber = encrypt(row.PhoneNumber);
+          existingCustomer.email = row.Email ? encrypt(row.Email) : undefined;
+          // ... assign other fields from customerData ...
+          Object.assign(existingCustomer, customerData); // This is not ideal after manual assignment. Let's rewrite it.
+
+          // A cleaner way to update:
+          const updateData = { ...customerData }; // Copy the data
+          // Overwrite the encrypted fields in the update data
+          updateData.name = encrypt(row.Name);
+          updateData.phoneNumber = encrypt(row.PhoneNumber);
+          updateData.email = row.Email ? encrypt(row.Email) : undefined;
+          
+          Object.assign(existingCustomer, updateData);
           await existingCustomer.save();
+
         } else {
-          await Customer.create(customerData);
+          // When creating a new customer
+          const createData = { ...customerData }; // Copy the data
+          // Encrypt fields for the new customer
+          createData.name = encrypt(row.Name);
+          createData.phoneNumber = encrypt(row.PhoneNumber);
+          createData.email = row.Email ? encrypt(row.Email) : undefined;
+
+          await Customer.create(createData);
         }
+
 
         report.successfulImports++;
       } catch (error: any) {

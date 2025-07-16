@@ -4,8 +4,9 @@ import { v2 as cloudinary } from 'cloudinary';
 
 import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
-import EBReading, { IHistoryEntry } from '@/models/ebReadings'; // Using your model
+import EBReading, { IHistoryEntry } from '@/models/ebReadings'; // Ensure path is correct
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import Setting from '@/models/Setting'; // Ensure path is correct
 
 // --- CLOUDINARY CONFIGURATION ---
 cloudinary.config({
@@ -15,6 +16,7 @@ cloudinary.config({
   secure: true,
 });
 
+// --- UTILITY FUNCTION ---
 async function uploadImage(file: File): Promise<string> {
   const fileBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(fileBuffer);
@@ -33,7 +35,7 @@ async function uploadImage(file: File): Promise<string> {
 
 /**
  * GET /api/eb
- * Fetches recent EB readings. This logic remains the same.
+ * Fetches recent EB readings. This function is correct.
  */
 export async function GET() {
   try {
@@ -52,8 +54,7 @@ export async function GET() {
 
 /**
  * POST /api/eb
- * Handles the upload of a MORNING meter reading image.
- * This is now simplified as there is no 'evening' type.
+ * Creates a new reading and stamps it with the current master cost. This function is correct.
  */
 export async function POST(request: Request) {
   try {
@@ -72,13 +73,16 @@ export async function POST(request: Request) {
 
     const imageUrl = await uploadImage(image);
     
-    // Normalize date to the start of the day in UTC to avoid timezone issues.
     const recordDate = new Date(dateString);
     recordDate.setUTCHours(0, 0, 0, 0);
 
     await connectToDatabase();
 
-    // Find a record for the specific day and update it, or create a new one if it doesn't exist.
+    // Fetch the master cost from settings to stamp the new record
+    const costSetting = await Setting.findOne({ key: 'ebCostPerUnit' });
+    const costToStamp = costSetting ? costSetting.value : 8; // Default of 8
+
+    // Find or create the reading, stamping the cost ONLY on creation
     const reading = await EBReading.findOneAndUpdate(
       { date: recordDate },
       {
@@ -86,14 +90,15 @@ export async function POST(request: Request) {
           morningImageUrl: imageUrl,
           updatedBy: session.user.id,
         },
-        $setOnInsert: { // These fields are only set when a new document is created
+        $setOnInsert: {
           date: recordDate,
           createdBy: session.user.id,
+          costPerUnit: costToStamp,
         }
       },
       {
-        upsert: true, // Creates the document if it doesn't exist
-        new: true,    // Returns the modified document
+        upsert: true,
+        new: true,
         setDefaultsOnInsert: true
       }
     );
@@ -107,8 +112,7 @@ export async function POST(request: Request) {
 
 /**
  * PUT /api/eb
- * Updates a reading with a new morning unit value and triggers recalculations.
- * This is the core of the new logic.
+ * Updates a reading's units and recalculates costs correctly. THIS FUNCTION CONTAINS THE FIX.
  */
 export async function PUT(request: Request) {
   try {
@@ -117,7 +121,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { readingId, morningUnits, costPerUnit } = await request.json();
+    const { readingId, morningUnits } = await request.json();
 
     if (!readingId) {
       return NextResponse.json({ success: false, message: 'Reading ID is required' }, { status: 400 });
@@ -150,7 +154,11 @@ export async function PUT(request: Request) {
     if (previousReading && typeof previousReading.morningUnits === 'number' && typeof currentReading.morningUnits === 'number') {
       if (currentReading.morningUnits >= previousReading.morningUnits) {
           previousReading.unitsConsumed = currentReading.morningUnits - previousReading.morningUnits;
-          previousReading.totalCost = previousReading.unitsConsumed * (previousReading.costPerUnit || 8);
+          
+          // ▼▼▼ THE ONLY FIX NEEDED IS ON THIS LINE ▼▼▼
+          // Use the cost from the CURRENT day's reading to calculate the PREVIOUS day's total.
+          previousReading.totalCost = previousReading.unitsConsumed * (currentReading.costPerUnit || 8);
+          
           previousReading.updatedBy = session.user.id;
           await previousReading.save();
       }
@@ -164,9 +172,8 @@ export async function PUT(request: Request) {
     if (nextReading && typeof nextReading.morningUnits === 'number' && typeof currentReading.morningUnits === 'number') {
        if (nextReading.morningUnits >= currentReading.morningUnits) {
           currentReading.unitsConsumed = nextReading.morningUnits - currentReading.morningUnits;
-          const currentCostPerUnit = costPerUnit !== undefined ? costPerUnit : currentReading.costPerUnit;
-          currentReading.costPerUnit = currentCostPerUnit;
-          currentReading.totalCost = currentReading.unitsConsumed * (currentCostPerUnit || 8);
+          // This part was already correct: use the NEXT day's cost for the CURRENT day's total.
+          currentReading.totalCost = currentReading.unitsConsumed * (nextReading.costPerUnit || 8);
        } else {
           currentReading.unitsConsumed = undefined;
           currentReading.totalCost = undefined;
