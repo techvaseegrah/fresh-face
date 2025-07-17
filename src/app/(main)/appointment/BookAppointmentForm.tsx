@@ -1,5 +1,5 @@
 // src/app/(main)/appointment/BookAppointmentForm.tsx
-'use client';
+'use-client';
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
 import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesIcon, TagIcon, GiftIcon, ClockIcon, EyeIcon, QrCodeIcon } from '@heroicons/react/24/solid';
@@ -101,7 +101,7 @@ interface BookAppointmentFormProps {
 }
 
 // ===================================================================================
-//  CUSTOMER HISTORY MODAL & CUSTOMER DETAIL PANEL (No Changes Needed Here)
+//  CUSTOMER HISTORY MODAL & CUSTOMER DETAIL PANEL
 // ===================================================================================
 
 const CustomerHistoryModal: React.FC<{
@@ -346,20 +346,62 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
       </div>
       <div className="space-y-3 text-sm mb-6">
         <div className="flex items-center gap-3"><SparklesIcon className="w-5 h-5 text-yellow-500" /><span className="font-medium text-gray-600">Membership:</span>{customer.isMember && customer.membershipDetails ? (<span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getMembershipStatusClasses(customer.membershipDetails.status)}`}>{customer.membershipDetails.planName} - {customer.membershipDetails.status}</span>) : (<span className="text-gray-500">Not a Member</span>)}</div>
+        
+        <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
+            {!customer.isMember && !showBarcodeInput && (
+                <div className="flex items-center justify-between gap-4">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <GiftIcon className="w-5 h-5 text-yellow-600" />
+                            <span className="font-semibold text-yellow-800">Membership Status</span>
+                        </div>
+                        <p className="text-sm text-yellow-700">
+                            Grant membership for special pricing and barcode access
+                        </p>
+                    </div>
+                    <button 
+                        onClick={handleGrantMembership} 
+                        className="px-3 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 transition-colors text-center w-28 shrink-0"
+                    >
+                        Grant Membership
+                    </button>
+                </div>
+            )}
+            {showBarcodeInput && !customer.isMember && (
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-sm font-medium text-yellow-800 mb-1">Membership Barcode <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                            <input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} placeholder="Enter barcode (e.g., MEMBER001, ABC123)" className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 transition-colors uppercase ${barcodeError ? 'border-red-300 focus:ring-red-500' : isBarcodeValid && membershipBarcode.trim() ? 'border-green-300 focus:ring-green-500' : 'border-gray-300 focus:ring-blue-500'}`} maxLength={20} />
+                            <QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        </div>
+                        {isCheckingBarcode && (<div className="flex items-center gap-1 text-xs text-gray-500 mt-1"><div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full" />Checking barcode availability...</div>)}
+                        {barcodeError && (<p className="text-xs text-red-600 mt-1">{barcodeError}</p>)}
+                        {isBarcodeValid && membershipBarcode.trim() && !isCheckingBarcode && !barcodeError && (<p className="text-xs text-green-600 mt-1 flex items-center gap-1"><span className="inline-block w-3 h-3 bg-green-500 rounded-full text-white text-center leading-3 text-[8px]">✓</span>Barcode is available</p>)}
+                        <p className="text-xs text-gray-500 mt-1">3-20 characters, letters and numbers only</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode || !!barcodeError} className="px-3 py-1.5 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{isCheckingBarcode ? 'Validating...' : 'Grant Membership'}</button>
+                        <button onClick={handleCancelBarcodeInput} className="px-3 py-1.5 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 transition-colors">Cancel</button>
+                    </div>
+                </div>
+            )}
+            {customer.isMember && (
+                <div className="flex items-center justify-between">
+                    <div className="text-sm">
+                        <span className="font-medium text-yellow-800">Active Member</span>
+                        {customer.membershipBarcode && (<div className="text-xs text-yellow-700 mt-1">Barcode: <span className="font-mono">{customer.membershipBarcode}</span></div>)}
+                    </div>
+                    <button onClick={() => onToggleMembership()} className="px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-md hover:bg-red-600 transition-colors">Remove Membership</button>
+                </div>
+            )}
+        </div>
+
         {customer.membershipBarcode && (<div className="flex items-center gap-3"><QrCodeIcon className="w-5 h-5 text-blue-500" /><span className="font-medium text-gray-600">Barcode:</span><div className="flex items-center gap-2"><span className="text-blue-600 font-mono text-xs bg-blue-50 px-2 py-1 rounded">{customer.membershipBarcode}</span><button onClick={() => navigator.clipboard.writeText(customer.membershipBarcode!)} className="text-xs text-blue-500 hover:text-blue-700" title="Copy barcode">Copy</button></div></div>)}
         <div className="flex items-center gap-3"><CalendarDaysIcon className="w-5 h-5 text-gray-400" /><span className="font-medium text-gray-600">Last Visit:</span><span>{customer.lastVisit ? new Date(customer.lastVisit).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</span></div>
         <div className="flex items-center gap-3 pt-3 border-t border-gray-200"><GiftIcon className="w-5 h-5 text-indigo-500" /><span className="font-medium text-gray-600">Loyalty Points:</span><span className="font-bold text-lg text-indigo-600">{customer.loyaltyPoints ?? 0}</span></div>
       </div>
-      <div className="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div><div className="flex items-center gap-2 mb-1"><GiftIcon className="w-5 h-5 text-yellow-600" /><span className="font-semibold text-yellow-800">Membership Status</span></div><p className="text-sm text-yellow-700">{customer.isMember ? 'Customer gets discounted rates on all services' : 'Grant membership for special pricing and barcode access'}</p></div>
-            {!customer.isMember && !showBarcodeInput && (<button onClick={handleGrantMembership} className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 transition-colors">Grant Membership</button>)}
-          </div>
-          {showBarcodeInput && !customer.isMember && (<div className="space-y-3 pt-3 border-t border-yellow-300"><div><label className="block text-sm font-medium text-yellow-800 mb-1">Membership Barcode <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} placeholder="Enter barcode (e.g., MEMBER001, ABC123)" className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 transition-colors uppercase ${barcodeError ? 'border-red-300 focus:ring-red-500' : isBarcodeValid && membershipBarcode.trim() ? 'border-green-300 focus:ring-green-500' : 'border-gray-300 focus:ring-blue-500'}`} maxLength={20} /><QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" /></div>{isCheckingBarcode && (<div className="flex items-center gap-1 text-xs text-gray-500 mt-1"><div className="animate-spin h-3 w-3 border border-gray-400 border-t-transparent rounded-full" />Checking barcode availability...</div>)}{barcodeError && (<p className="text-xs text-red-600 mt-1">{barcodeError}</p>)}{isBarcodeValid && membershipBarcode.trim() && !isCheckingBarcode && !barcodeError && (<p className="text-xs text-green-600 mt-1 flex items-center gap-1"><span className="inline-block w-3 h-3 bg-green-500 rounded-full text-white text-center leading-3 text-[8px]">✓</span>Barcode is available</p>)}<p className="text-xs text-gray-500 mt-1">3-20 characters, letters and numbers only</p></div><div className="flex gap-2"><button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode || !!barcodeError} className="px-3 py-1.5 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{isCheckingBarcode ? 'Validating...' : 'Grant Membership'}</button><button onClick={handleCancelBarcodeInput} className="px-3 py-1.5 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 transition-colors">Cancel</button></div></div>)}
-          {customer.isMember && (<div className="pt-3 border-t border-yellow-300"><div className="flex items-center justify-between"><div className="text-sm"><span className="font-medium text-yellow-800">Active Member</span>{customer.membershipBarcode && (<div className="text-xs text-yellow-700 mt-1">Barcode: <span className="font-mono">{customer.membershipBarcode}</span></div>)}</div><button onClick={() => onToggleMembership()} className="px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-md hover:bg-red-600 transition-colors">Remove Membership</button></div></div>)}
-        </div>
-      </div>
+
       <div className="flex-1">
         <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-gray-800">Recent Visits</h4><button onClick={onViewFullHistory} className="text-xs text-blue-600 hover:text-blue-800 transition-colors">View All ({customer.appointmentHistory.length})</button></div>
         <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-2">
@@ -418,6 +460,8 @@ const initialFormData: AppointmentFormData = {
   const [isLoadingCustomerDetails, setIsLoadingCustomerDetails] = useState(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState(false);
 
+  const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+
   const [barcodeQuery, setBarcodeQuery] = useState<string>('');
   const [isSearchingByBarcode, setIsSearchingByBarcode] = useState<boolean>(false);
   const [searchMode, setSearchMode] = useState<'phone' | 'barcode'>('phone');
@@ -472,6 +516,7 @@ const initialFormData: AppointmentFormData = {
       setSearchMode('phone');
       setServiceSearch('');
       setFilteredServices([]);
+      setCustomerLookupStatus('idle'); // Reset on open
     }
   }, [isOpen]);
 
@@ -536,7 +581,7 @@ const initialFormData: AppointmentFormData = {
   useEffect(() => {
     if (searchMode !== 'phone') return;
     const query = formData.phoneNumber.trim();
-    if (isCustomerSelected || query.length < 3) {
+    if (isCustomerSelected || query.length < 3 || query.length >= 10) { // Don't show dropdown for full number
       setCustomerSearchResults([]); return;
     }
     const handler = setTimeout(async () => {
@@ -551,17 +596,34 @@ const initialFormData: AppointmentFormData = {
     return () => clearTimeout(handler);
   }, [formData.phoneNumber, isCustomerSelected, searchMode]);
 
+  // START: MODIFIED handleChange
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    if (isCustomerSelected && ['customerName', 'phoneNumber', 'email'].includes(name)) {
+    let { name, value } = e.target;
+    
+    if (name === 'phoneNumber') {
+        value = value.replace(/[^\d]/g, '');
+        setCustomerLookupStatus('idle');
+    }
+
+    if (name === 'customerName') {
+        // Allow only letters and spaces, remove everything else
+        value = value.replace(/[^a-zA-Z\s]/g, '');
+    }
+    
+    if (isCustomerSelected && ['customerName', 'phoneNumber', 'email', 'gender'].includes(name)) {
       handleClearSelection(false);
     }
+    
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
+  // END: MODIFIED handleChange
 
   const fetchAndSetCustomerDetails = async (phone: string) => {
-    if (phone.trim().length < 10) { setSelectedCustomerDetails(null); return; }
+    // This check is important to prevent re-fetching if a search is already in progress
+    if (isLoadingCustomerDetails) return;
+
     setIsLoadingCustomerDetails(true);
+    setCustomerLookupStatus('searching');
     setCustomerSearchResults([]);
     try {
       const res = await fetch(`/api/customer/search?query=${encodeURIComponent(phone.trim())}&details=true`);
@@ -571,13 +633,37 @@ const initialFormData: AppointmentFormData = {
         setFormData((prev) => ({ ...prev, customerId: cust._id, customerName: cust.name, phoneNumber: cust.phoneNumber, email: cust.email || '', gender: cust.gender || 'other' }));
         setSelectedCustomerDetails(cust);
         setIsCustomerSelected(true);
+        setCustomerLookupStatus('found');
       } else {
-        setSelectedCustomerDetails(null); setIsCustomerSelected(false);
+        setSelectedCustomerDetails(null);
+        setIsCustomerSelected(false);
+        setCustomerLookupStatus('not_found');
+        // Focus on the name field for a new customer
         if (nameInputRef.current) nameInputRef.current.focus();
       }
-    } catch (err) { setSelectedCustomerDetails(null); setIsCustomerSelected(false); }
-    finally { setIsLoadingCustomerDetails(false); }
+    } catch (err) {
+      setSelectedCustomerDetails(null);
+      setIsCustomerSelected(false);
+      setCustomerLookupStatus('not_found');
+    } finally {
+      setIsLoadingCustomerDetails(false);
+    }
   };
+
+  useEffect(() => {
+    const phone = formData.phoneNumber.trim();
+
+    // Automatically trigger search when a 10-digit number is entered
+    if (phone.length === 10 && !isCustomerSelected) {
+      fetchAndSetCustomerDetails(phone);
+    } 
+    // If the user deletes characters, reset the lookup status
+    else if (phone.length < 10 && customerLookupStatus !== 'idle') {
+      setCustomerLookupStatus('idle');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.phoneNumber, isCustomerSelected]);
+
 
   const handleBarcodeSearch = async () => {
     if (!barcodeQuery.trim()) return;
@@ -601,15 +687,10 @@ const initialFormData: AppointmentFormData = {
     fetchAndSetCustomerDetails(customer.phoneNumber);
   };
 
-  const handlePhoneBlur = () => {
-    if (!isCustomerSelected && formData.phoneNumber.trim().length >= 10) {
-      fetchAndSetCustomerDetails(formData.phoneNumber);
-    }
-  };
-
   const handleClearSelection = (clearPhone = true) => {
     setIsCustomerSelected(false);
     setSelectedCustomerDetails(null);
+    setCustomerLookupStatus('idle'); // Reset the lookup status
     const resetData: Partial<typeof formData> = { customerId: undefined, customerName: '', email: '', gender: '' };
     if (clearPhone) {
       resetData.phoneNumber = ''; setBarcodeQuery('');
@@ -781,7 +862,40 @@ if (checkData.canBook === false) {
                   </div>
                   <div className="grid md:grid-cols-2 gap-x-6 gap-y-5 mt-3">
                     {searchMode === 'phone' ? (
-                      <div className="md:col-span-2 relative"><label htmlFor="phoneNumber" className="block text-sm font-medium mb-1.5">Phone Number <span className="text-red-500">*</span></label><input ref={phoneInputRef} id="phoneNumber" type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} onBlur={handlePhoneBlur} required placeholder="Enter phone to find or create..." className={inputBaseClasses} autoComplete="off" />{(isSearchingCustomers || customerSearchResults.length > 0) && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{isSearchingCustomers ? (<li className="px-3 py-2 text-sm text-gray-500">Searching...</li>) : (customerSearchResults.map((cust) => (<li key={cust._id} onClick={() => handleSelectCustomer(cust)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer">{cust.name} - <span className="text-gray-500">{cust.phoneNumber}</span></li>)))}</ul>)}</div>
+                      <div className="md:col-span-2 relative">
+                        <label htmlFor="phoneNumber" className="block text-sm font-medium mb-1.5">Phone Number <span className="text-red-500">*</span></label>
+                        <input 
+                          ref={phoneInputRef} 
+                          id="phoneNumber" 
+                          type="tel" 
+                          name="phoneNumber" 
+                          value={formData.phoneNumber} 
+                          onChange={handleChange} 
+                          required 
+                          placeholder="Enter 10-digit phone to find or create..." 
+                          className={inputBaseClasses} 
+                          autoComplete="off"
+                          maxLength={10}
+                        />
+                        
+                        {(isSearchingCustomers || customerSearchResults.length > 0) ? (
+                            <ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                {isSearchingCustomers ? (
+                                    <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>
+                                ) : (
+                                    customerSearchResults.map((cust) => (
+                                        <li key={cust._id} onClick={() => handleSelectCustomer(cust)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer">{cust.name} - <span className="text-gray-500">{cust.phoneNumber}</span></li>
+                                    ))
+                                )}
+                            </ul>
+                        ) : (
+                             <div className="h-5 mt-1 text-xs">
+                                {customerLookupStatus === 'searching' && <span className="text-gray-500 flex items-center gap-1.5"><div className="animate-spin h-3 w-3 border-2 border-gray-400 border-t-transparent rounded-full" />Checking for existing customer...</span>}
+                                {customerLookupStatus === 'found' && <span className="font-semibold text-green-600">✓ Customer Found. Details loaded below.</span>}
+                                {customerLookupStatus === 'not_found' && <span className="font-medium text-blue-600">Customer not found. Please fill in their details.</span>}
+                             </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="md:col-span-2 relative"><label htmlFor="barcodeQuery" className="block text-sm font-medium mb-1.5">Membership Barcode <span className="text-red-500">*</span></label><div className="flex gap-2"><div className="relative flex-grow"><input ref={barcodeInputRef} id="barcodeQuery" type="text" value={barcodeQuery} onChange={(e) => setBarcodeQuery(e.target.value.toUpperCase())} onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleBarcodeSearch(); } }} placeholder="Scan or enter membership barcode..." className={`${inputBaseClasses} uppercase`} autoComplete="off" /><QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" /></div><button type="button" onClick={handleBarcodeSearch} disabled={isSearchingByBarcode || !barcodeQuery.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">{isSearchingByBarcode ? (<><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />Searching...</>) : ('Search')}</button></div><p className="text-xs text-gray-500 mt-1">Members can scan their barcode to quickly load their information</p></div>
                     )}
