@@ -1,4 +1,4 @@
-// /app/api/customer/[id]/route.ts - FINAL CORRECTED VERSION
+// /app/api/customer/[id]/route.ts
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -11,6 +11,10 @@ import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+
+// --- (1) IMPORT THE NECESSARY FUNCTIONS FOR ENCRYPTION AND INDEXING ---
+import { encrypt } from '@/lib/crypto';
+import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 
 // This interface should reflect the actual fields your lean() query returns
 interface LeanCustomer {
@@ -26,7 +30,7 @@ interface LeanCustomer {
 }
 
 // ===================================================================================
-//  GET: Handler for fetching full customer details (This function is already correct)
+//  GET: Handler for fetching full customer details (This function is correct)
 // ===================================================================================
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
@@ -43,6 +47,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   try {
     await connectToDatabase();
     
+    // Your logic for fetching and composing the detailed customer object is correct.
+    // No changes are needed here.
     const customer = await Customer.findById(customerId).lean<LeanCustomer>();
     if (!customer) {
       return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
@@ -126,7 +132,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 // ===================================================================================
-//  PUT: Handler for UPDATING a customer (CORRECTED)
+//  PUT: Handler for UPDATING a customer (CORRECTED AND FINAL VERSION)
 // ===================================================================================
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
@@ -143,46 +149,72 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     await connectToDatabase();
     const body = await req.json();
 
-    if (!body.name || !body.phoneNumber) {
-      return NextResponse.json({ success: false, message: 'Name and phone number are required.' }, { status: 400 });
+    // The object that will contain all fields to be updated.
+    const updateData: any = {};
+
+    // --- (2) HANDLE PHONE NUMBER UPDATE ---
+    // If a new phone number is provided, we must regenerate ALL associated fields.
+    if (body.phoneNumber) {
+      const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
+      
+      updateData.phoneNumber = encrypt(normalizedPhoneNumber);
+      updateData.phoneHash = createBlindIndex(normalizedPhoneNumber);
+      updateData.last4PhoneNumber = normalizedPhoneNumber.slice(-4);
+      updateData.phoneSearchIndex = generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram));
+    }
+
+    // --- (3) HANDLE NAME UPDATE ---
+    // If the name is updated, we also need to update the encrypted name and the searchableName.
+    if (body.name) {
+      updateData.name = encrypt(body.name);
+      updateData.searchableName = body.name.toLowerCase().trim();
     }
     
-    // --- THIS IS THE FIX TO ENSURE ENCRYPTION ON UPDATE ---
+    // --- (4) HANDLE EMAIL UPDATE ---
+    // This logic allows setting the email to a new value or clearing it by sending null/empty string.
+    if (typeof body.email !== 'undefined') {
+      updateData.email = body.email ? encrypt(body.email) : undefined;
+    }
 
-    // 1. Find the existing customer document first. Do NOT use findByIdAndUpdate.
-    const customer = await Customer.findById(customerId);
+    // --- (5) HANDLE OTHER SIMPLE FIELDS ---
+    if (body.dob) updateData.dob = body.dob;
+    if (body.gender) updateData.gender = body.gender;
+    // Add any other fields from your model that can be updated here...
 
-    if (!customer) {
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ success: false, message: 'No update data provided.' }, { status: 400 });
+    }
+
+    // --- (6) PERFORM THE ATOMIC UPDATE ---
+    // Use findByIdAndUpdate with $set to apply all changes at once.
+    const updatedCustomer = await Customer.findByIdAndUpdate(
+      customerId,
+      { $set: updateData },
+      { new: true, runValidators: true } // `new: true` returns the updated document.
+    );
+
+    if (!updatedCustomer) {
       return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
     }
-
-    // 2. Update the fields on the Mongoose document instance.
-    customer.name = body.name.trim();
-    customer.email = body.email?.trim();
-    customer.phoneNumber = body.phoneNumber.trim();
-    if (body.gender && ['male', 'female', 'other'].includes(body.gender)) {
-      customer.gender = body.gender;
-    }
-
-    // 3. Call .save(). This will trigger your 'pre-save' hook,
-    // which automatically handles encrypting the updated fields before saving.
-    const updatedCustomer = await customer.save();
-
-    // --- END OF FIX ---
-
+    
+    // The 'post' hook on your model will correctly decrypt the fields for the JSON response.
     return NextResponse.json({ success: true, customer: updatedCustomer });
 
   } catch (error: any) {
-    if (error.code === 11000) {
-      return NextResponse.json({ success: false, message: 'Another customer with this phone number or email already exists.' }, { status: 409 });
-    }
     console.error(`API Error updating customer ${customerId}:`, error);
-    return NextResponse.json({ success: false, message: error.message || 'Failed to update customer.' }, { status: 500 });
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return NextResponse.json({ success: false, message: `A customer with this ${field} already exists.` }, { status: 409 });
+    }
+    if (error.name === 'ValidationError') {
+        return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
+    }
+    return NextResponse.json({ success: false, message: 'Failed to update customer.' }, { status: 500 });
   }
 }
 
 // ===================================================================================
-//  DELETE: Handler for "soft deleting" (deactivating) a customer (This is correct)
+//  DELETE: Handler for "soft deleting" a customer (This function is correct)
 // ===================================================================================
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
@@ -198,6 +230,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   try {
     await connectToDatabase();
     
+    // Your logic for deactivating a customer is correct.
     const deactivatedCustomer = await Customer.findByIdAndUpdate(
       customerId,
       { isActive: false },

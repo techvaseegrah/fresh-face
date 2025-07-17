@@ -1,4 +1,4 @@
-// /app/api/appointment/route.ts - FINAL VERSION
+// /app/api/appointment/route.ts - FINAL CORRECTED VERSION
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -10,8 +10,11 @@ import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { createSearchHash, encrypt } from '@/lib/crypto';
 import { InventoryManager } from '@/lib/inventoryManager'; 
+
+// --- (1) IMPORT ALL THE NECESSARY FUNCTIONS ---
+import { encrypt } from '@/lib/crypto';
+import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 
 // ===================================================================================
 //  GET: Handler with Upgraded Search and Date Filter
@@ -51,18 +54,21 @@ export async function GET(req: Request) {
         matchStage.appointmentDateTime = { $gte: startOfTodayUTC, $lte: endOfTodayUTC };
     }
 
+    // --- UPGRADED SEARCH LOGIC FOR CUSTOMERS ---
     if (searchQuery) {
         const searchStr = searchQuery.trim();
-        const customerSearchOrConditions = [];
-        customerSearchOrConditions.push({ searchableName: { $regex: searchStr, $options: 'i' } });
-        
-        const normalizedPhone = searchStr.replace(/\D/g, '');
-        if (normalizedPhone) {
-            customerSearchOrConditions.push({ phoneHash: createSearchHash(normalizedPhone) });
-            customerSearchOrConditions.push({ last4PhoneNumber: { $regex: normalizedPhone } });
+        let customerFindConditions: any = {};
+
+        const isNumeric = /^\d+$/.test(searchStr);
+        if (isNumeric) {
+            // Use the new fast index for phone numbers
+            customerFindConditions.phoneSearchIndex = createBlindIndex(searchStr);
+        } else {
+            // Use regex for names (customers and stylists)
+            customerFindConditions.searchableName = { $regex: searchStr, $options: 'i' };
         }
         
-        const matchingCustomers = await Customer.find({ $or: customerSearchOrConditions }).select('_id').lean();
+        const matchingCustomers = await Customer.find(customerFindConditions).select('_id').lean();
         const customerIds = matchingCustomers.map(c => c._id);
 
         const stylistQuery = { name: { $regex: searchStr, $options: 'i' } };
@@ -130,41 +136,36 @@ export async function POST(req: Request) {
     await connectToDatabase();
     const body = await req.json();
 
-    // MODIFIED: Destructure `serviceAssignments` instead of `serviceIds` and `stylistId`
     const { 
-      // customerId, // We will get this from the found/created customer document
-      customerName, 
-      phoneNumber, 
-      email, 
-      gender, 
-      date, 
-      time, 
-      notes, 
-      status, 
-      appointmentType = 'Online',
-      serviceAssignments // <-- The new, important array
+      customerName, phoneNumber, email, gender, date, time, notes, status, 
+      appointmentType = 'Online', serviceAssignments
     } = body;
 
-    // MODIFIED: Update validation to check for the new `serviceAssignments` array
     if (!phoneNumber || !customerName || !date || !time || !serviceAssignments || !Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
       return NextResponse.json({ success: false, message: "Missing required fields or services." }, { status: 400 });
     }
 
-    // --- Find or Create Customer (This logic remains the same) ---
+    // --- Find or Create Customer (with corrected logic) ---
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
-    const phoneHashToFind = createSearchHash(normalizedPhone);
+    const phoneHashToFind = createBlindIndex(normalizedPhone); // Use the new blind index function
     let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind }).session(session);
 
     if (!customerDoc) {
+      // --- (2) THIS IS THE DEFINITIVE FIX ---
+      // The old code was missing phoneSearchIndex and using the wrong hash function.
       const customerDataForCreation = {
-        searchableName: customerName,
-        phoneHash: createSearchHash(normalizedPhone),
-        last4PhoneNumber: normalizedPhone.length >= 4 ? normalizedPhone.slice(-4) : undefined,
-        name: encrypt(customerName),
-        phoneNumber: encrypt(phoneNumber),
-        email: email ? encrypt(email) : undefined,
-        gender: gender || 'other'
+        name: encrypt(customerName.trim()),
+        phoneNumber: encrypt(normalizedPhone),
+        email: email ? encrypt(email.trim()) : undefined,
+        gender: gender || 'other',
+
+        // Generate ALL required search and index fields
+        phoneHash: phoneHashToFind,
+        searchableName: customerName.trim().toLowerCase(),
+        last4PhoneNumber: normalizedPhone.slice(-4),
+        phoneSearchIndex: generateNgrams(normalizedPhone).map(ngram => createBlindIndex(ngram)), // <-- The crucial field
       };
+      
       const newCustomers = await Customer.create([customerDataForCreation], { session });
       customerDoc = newCustomers[0];
       if (!customerDoc) {
@@ -173,90 +174,59 @@ export async function POST(req: Request) {
     }
 
     const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
+    const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
+      serviceIdsForInventoryCheck,
+      gender
+    );
+    if (totalUpdates.length > 0) {
+      await InventoryManager.applyInventoryUpdates(totalUpdates, session);
+    }
 
-// Use our manager to get the total inventory required for ALL services combined.
-const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
-  serviceIdsForInventoryCheck,
-  gender
-);
-
-// If there are consumables to deduct, apply the updates.
-if (totalUpdates.length > 0) {
-  console.log('Applying inventory updates for new appointment(s)...');
-  // Pass the session to ensure this is part of our transaction.
-  // If applyInventoryUpdates fails, it will throw an error and abort the transaction.
-  await InventoryManager.applyInventoryUpdates(totalUpdates, session);
-  console.log('Inventory updates applied successfully.');
-}
-
-    // Now `customerDoc` holds the definitive customer document, either found or newly created.
-
-    // --- Date/Time Handling (This logic remains the same) ---
-    // This correctly converts the incoming local time from the form into a UTC timestamp for DB storage.
     const assumedUtcDate = new Date(`${date}T${time}:00.000Z`);
     const istOffsetInMinutes = 330;
-    const assumedUtcTimestamp = assumedUtcDate.getTime();
-    const correctUtcTimestamp = assumedUtcTimestamp - (istOffsetInMinutes * 60 * 1000);
+    const correctUtcTimestamp = assumedUtcDate.getTime() - (istOffsetInMinutes * 60 * 1000);
     const appointmentDateUTC = new Date(correctUtcTimestamp);
 
-    // ===============================================================================
-    //  CORE LOGIC CHANGE: Handle Multiple Service Assignments
-    // ===============================================================================
-
-    // NEW: Generate a single ID to group all these individual appointments together.
-    // This is like a "receipt number" for the entire booking.
     const groupBookingId = new mongoose.Types.ObjectId();
-
-    // NEW: Map over the `serviceAssignments` array to create an array of appointment documents.
     const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
-      // For each assignment, fetch its full service details.
       const service = await ServiceItem.findById(assignment.serviceId).select('duration price membershipRate').lean();
       if (!service) {
         throw new Error(`Service with ID ${assignment.serviceId} not found.`);
       }
 
-      // Create a temporary Appointment instance to use the `calculateTotal` method.
-      // Note: We're passing only ONE serviceId here to calculate per-service costs.
       const tempAppointmentForCalc = new Appointment({
-        customerId: customerDoc._id,
-        serviceIds: [assignment.serviceId] // IMPORTANT: Calculate cost for this single service
+        customerId: customerDoc!._id,
+        serviceIds: [assignment.serviceId]
       });
       const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
 
       return {
-        customerId: customerDoc._id,
+        customerId: customerDoc!._id,
         stylistId: assignment.stylistId,
-        serviceIds: [assignment.serviceId], // The appointment holds the single service it's for.
-        guestName: assignment.guestName,   // Optional name for who is receiving the service.
+        serviceIds: [assignment.serviceId],
+        guestName: assignment.guestName,
         notes,
         status,
         appointmentType,
         estimatedDuration: service.duration,
         appointmentDateTime: appointmentDateUTC,
-        groupBookingId: groupBookingId, // Assign the same group ID to all.
-
-        // Per-service financial details
+        groupBookingId: groupBookingId,
         finalAmount: grandTotal,
         amount: grandTotal + membershipSavings,
         membershipDiscount: membershipSavings,
-
-        // Set check-in time if applicable
         checkInTime: status === 'Checked-In' ? new Date() : undefined,
       };
     });
     
-    // NEW: Wait for all the individual appointment data objects to be prepared.
     const newAppointmentsData = await Promise.all(newAppointmentsDataPromises);
-    
-    // NEW: Use `insertMany` to create all appointment documents in a single, efficient database operation.
-   const createdAppointments = await Appointment.insertMany(newAppointmentsData, { session });
+    const createdAppointments = await Appointment.insertMany(newAppointmentsData, { session });
 
     if (!createdAppointments || createdAppointments.length === 0) {
       throw new Error("Failed to create appointment records in the database.");
     }
+    
     await session.commitTransaction();
-    // You can choose to return the first created appointment for a success message,
-    // or return the whole array. Returning the array might be more informative.
+    
     return NextResponse.json({ 
       success: true, 
       message: `${createdAppointments.length} service(s) booked successfully!`,
@@ -264,13 +234,11 @@ if (totalUpdates.length > 0) {
     }, { status: 201 });
 
   } catch (err: any) {
-    // --- THIS ENTIRE 'catch' BLOCK WAS ADDED ---
-    await session.abortTransaction(); // Abort on any error
+    await session.abortTransaction();
     console.error("API Error creating appointment:", err);
     return NextResponse.json({ success: false, message: err.message || "Failed to create appointment." }, { status: 500 });
   
   } finally {
-    // --- THIS ENTIRE 'finally' BLOCK WAS ADDED ---
-    session.endSession(); // Always close the session
+    session.endSession();
   }
 }

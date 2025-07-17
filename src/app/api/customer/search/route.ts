@@ -1,4 +1,4 @@
-// app/api/customer/search/route.ts - CORRECTED
+// /app/api/customer/search/route.ts - FINAL CORRECTED VERSION
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -7,8 +7,10 @@ import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
 import Stylist from '@/models/Stylist';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
-import mongoose from 'mongoose';
-import { createSearchHash } from '@/lib/crypto';
+
+// --- IMPORT THE CORRECT FUNCTIONS ---
+import { createSearchHash } from '@/lib/crypto'; // This might still be needed if you use it elsewhere.
+import { createBlindIndex } from '@/lib/search-indexing'; // This is the one we must use for lookups.
 
 export async function GET(req: Request) {
   try {
@@ -22,11 +24,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'A search query is required.' }, { status: 400 });
     }
     
-    // --- FETCH FULL DETAILS FOR SIDE PANEL ---
+    // --- FETCH FULL DETAILS FOR SIDE PANEL (CORRECTED) ---
     if (fetchDetails) {
-      // This part remains the same, as it's for an exact lookup
       const normalizedPhone = String(query).replace(/\D/g, '');
-      const phoneHash = createSearchHash(normalizedPhone);
+      
+      // THIS IS THE FIX: Use the same hashing function that you use when creating the customer.
+      const phoneHash = createBlindIndex(normalizedPhone); 
+      
       const customer = await Customer.findOne({ phoneHash }); 
 
       if (!customer) {
@@ -59,36 +63,27 @@ export async function GET(req: Request) {
       };
       return NextResponse.json({ success: true, customer: customerDetails });
     }
-    // --- GENERAL SEARCH FOR DROPDOWN (UPGRADED) ---
+    // --- GENERAL SEARCH FOR DROPDOWN (This part is already correct) ---
     else {
-      if (query.trim().length < 2) { // Changed to 2 for better usability
+      if (query.trim().length < 2) {
         return NextResponse.json({ success: true, customers: [] });
       }
 
       const searchStr = query.trim();
-      const searchOrConditions = [];
+      let findConditions: any = { isActive: true };
+      const isNumeric = /^\d+$/.test(searchStr);
 
-      // 1. Search by partial name using the 'searchableName' field
-      searchOrConditions.push({ searchableName: { $regex: searchStr, $options: 'i' } });
-
-      // 2. Search by phone number (partial or full)
-      const normalizedPhone = searchStr.replace(/\D/g, '');
-      if (normalizedPhone) {
-          // For full number, match the hash
-          searchOrConditions.push({ phoneHash: createSearchHash(normalizedPhone) });
-          // For partial number, match the last 4 digits
-          searchOrConditions.push({ last4PhoneNumber: { $regex: normalizedPhone } });
+      if (isNumeric) {
+        const searchHash = createBlindIndex(searchStr);
+        findConditions.phoneSearchIndex = searchHash;
+      } else {
+        findConditions.searchableName = { $regex: searchStr, $options: 'i' };
       }
       
-      // Find all customers that match ANY of the conditions
-      const customers = await Customer.find({ 
-        $or: searchOrConditions,
-        isActive: true 
-      })
-      .select('name phoneNumber email isMembership gender') // Added gender
-      .limit(10); // Limit results for a dropdown
+      const customers = await Customer.find(findConditions)
+        .select('name phoneNumber email isMembership gender')
+        .limit(10);
       
-      // The post-find hook decrypts the fields automatically
       return NextResponse.json({ success: true, customers });
     }
   } catch (error: any) {

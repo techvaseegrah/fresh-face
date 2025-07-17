@@ -139,7 +139,7 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.APPOINTMENTS_READ, description: 'View appointment information', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
   { permission: PERMISSIONS.APPOINTMENTS_UPDATE, description: 'Update appointment information', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
   { permission: PERMISSIONS.APPOINTMENTS_DELETE, description: 'Delete appointments', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
-  { permission: PERMISSIONS.APPOINTMENTS_MANAGE, description: 'Full appointment management access', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
+  //{ permission: PERMISSIONS.APPOINTMENTS_MANAGE, description: 'Full appointment management access', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
 
 
 
@@ -186,8 +186,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SETTINGS_READ, description: 'Access settings section', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_READ, description: 'View loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_UPDATE, description: 'Update loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
-  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_READ,description: 'view membership settings', name: 'Read Membership Settings' },
-  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_WRITE,description: 'Update membership settings', name: 'Update Membership Settings' },
+  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_READ,description: 'view membership settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT   },
+  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_WRITE,description: 'Update membership settings', category:  PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT  },
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },

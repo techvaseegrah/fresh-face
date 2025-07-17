@@ -12,6 +12,7 @@ export interface ICustomer extends Document {
   phoneHash: string;
   searchableName: string;
   last4PhoneNumber?: string;
+  phoneSearchIndex: string[]; // --- ADD THIS --- For type safety
 
   // --- Other Existing Fields ---
   dob?: Date;
@@ -38,10 +39,6 @@ const customerSchema = new Schema({
   // --- Sensitive Fields ---
   name: { type: String, required: true },
   phoneNumber: { type: String, required: true },
-  
-  // --- THIS IS THE FIX ---
-  // The 'sparse' option tells the unique index to ignore documents where 'email' is null.
-  // This allows multiple customers to be created without an email address.
   email: { 
     type: String, 
     required: false,
@@ -54,6 +51,14 @@ const customerSchema = new Schema({
   searchableName: { type: String, required: true,index: true, lowercase: true },
   last4PhoneNumber: { type: String, index: true },
 
+  // --- ADD THIS ---
+  // This new field will store the array of searchable hashes.
+  // The 'index: true' is critical for making searches fast.
+  phoneSearchIndex: {
+    type: [String],
+    index: true,
+  },
+
   // --- Other Existing Fields ---
   dob: { type: Date, required: false },
   survey: { type: String, required: false, trim: true },
@@ -65,7 +70,9 @@ const customerSchema = new Schema({
   gender: { type: String, enum: ['male', 'female', 'other'], required: false, lowercase: true },
 }, { timestamps: true });
 
-// --- Mongoose Middleware for Decryption (CORRECT) ---
+// --- Mongoose Middleware for Decryption (NO CHANGES NEEDED HERE) ---
+// The phoneSearchIndex field contains hashes, not encrypted data,
+// so it does NOT need to be added to this decryption logic.
 const decryptFields = (doc: any) => {
   if (doc) {
     if (doc.name) doc.name = decrypt(doc.name);
@@ -78,13 +85,9 @@ customerSchema.post('findOne', decryptFields);
 customerSchema.post('find', (docs) => docs.forEach(decryptFields));
 customerSchema.post('findOneAndUpdate', decryptFields);
 
-// customerSchema.post('save', (doc, next) => {
-//   decryptFields(doc);
-//   next();
-// });
-
 // --- Existing Methods & Statics (Unchanged) ---
 customerSchema.methods.toggleMembership = function (this: ICustomer, status = true, customBarcode?: string): Promise<ICustomer> {
+  // ... (no changes here)
   this.isMembership = status;
   if (status) {
     this.membershipPurchaseDate = new Date();
@@ -98,6 +101,7 @@ customerSchema.methods.toggleMembership = function (this: ICustomer, status = tr
 };
 
 customerSchema.statics.findByBarcode = function (this: ICustomerModel, barcode: string): Promise<ICustomer | null> {
+  // ... (no changes here)
   return this.findOne({
     membershipBarcode: barcode.trim().toUpperCase(),
     isMembership: true,
@@ -106,6 +110,7 @@ customerSchema.statics.findByBarcode = function (this: ICustomerModel, barcode: 
 };
 
 customerSchema.statics.checkBarcodeExists = function (this: ICustomerModel, barcode: string): Promise<boolean> {
+  // ... (no changes here)
   return this.exists({
     membershipBarcode: barcode.trim().toUpperCase(),
     isActive: true

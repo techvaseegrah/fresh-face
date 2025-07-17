@@ -192,8 +192,15 @@ export default function AppointmentPage() {
 
   const handleCloseBillingModal = () => { setIsBillingModalOpen(false); setSelectedAppointmentForBilling(null); fetchAppointments(); };
   const handleFilterChange = (newStatus: string) => { setCurrentPage(1); setStatusFilter(newStatus); };
-  const canCreateAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE);
-  const canUpdateAppointments = session && hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE);
+  const canCreateAppointments = session && (
+  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) ||
+  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE)
+);
+
+const canUpdateAppointments = session && (
+  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) ||
+  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE)
+);
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
   return (
