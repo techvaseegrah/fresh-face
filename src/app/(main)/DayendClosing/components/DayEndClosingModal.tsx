@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { XMarkIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import {useSession } from 'next-auth/react';
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // --- TYPE DEFINITIONS ---
 interface PettyCashEntry {
@@ -35,6 +37,7 @@ const denominations = [
 ];
 
 const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose, onSuccess, closingDate }) => {
+  const { data: session } = useSession();
   // --- STATE MANAGEMENT ---
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -48,7 +51,13 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
   const [actualUpiTotal, setActualUpiTotal] = useState('');
   const [actualOtherTotal, setActualOtherTotal] = useState('');
   const [notes, setNotes] = useState('');
+ 
+   // Permission checks
+    const canReadDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ)|| hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
+    const canCreateDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)|| hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
+  
 
+ 
   // --- DATA FETCHING ---
   useEffect(() => {
     if (isOpen) {
@@ -164,6 +173,7 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
 
   return (
     // ... JSX for the modal remains unchanged ...
+    canReadDayEnd && (
     <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-start p-4 overflow-y-auto">
       <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl my-8">
         <div className="flex justify-between items-center mb-4 border-b pb-3">
@@ -268,7 +278,8 @@ const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose
         )}
       </div>
     </div>
-  );
+  )
+  )
 };
 
 export default DayEndClosingModal;

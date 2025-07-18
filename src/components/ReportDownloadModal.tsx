@@ -57,7 +57,7 @@ export default function ReportDownloadModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm">
         <div className="relative w-full max-w-md bg-white rounded-lg shadow-xl">
           <div className="flex items-center justify-between p-5 border-b bg-gray-50">
-            <h2 className="text-xl font-semibold text-gray-800">Download EB Report</h2>
+            <h2 className="text-xl font-semibold text-gray-800">Download Report</h2>
             <button
               onClick={onClose}
               className="p-1 text-gray-400 rounded-full hover:bg-gray-200 hover:text-gray-600"

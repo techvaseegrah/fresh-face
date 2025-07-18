@@ -22,8 +22,8 @@ export default function DayEndClosingPage() {
   const [closingDate, setClosingDate] = useState(formatDateForInput(new Date()));
 
   // Permission checks
-  const canReadDayEnd = session && hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ);
-  const canCreateDayEnd = session && hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE);
+  const canReadDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ)|| hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
+  const canCreateDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)|| hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
 
   // Check for read permission
   if (!canReadDayEnd) {
