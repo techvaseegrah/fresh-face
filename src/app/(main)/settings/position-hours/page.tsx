@@ -2,14 +2,29 @@
 
 import React, { useState, useEffect, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Briefcase, Clock, AlertCircle } from 'lucide-react';
-import Button from '../../../../components/ui/Button';
+import { ArrowLeft, Save, Briefcase, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import Button from '../../../../components/ui/Button'; // Assuming this is your custom button
 
 interface PositionHourSetting {
   positionName: string;
   requiredHours: number;
 }
 
+// --- Reusable UI Components (inspired by your reference) ---
+const InputField = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
+  <input
+    {...props}
+    className="w-28 rounded-md border-gray-300 bg-white px-3 py-2 text-right text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-black disabled:bg-gray-100 disabled:cursor-not-allowed"
+  />
+);
+
+const InfoCard = ({ children }: { children: React.ReactNode }) => (
+  <div className="bg-white rounded-lg shadow-sm p-8 text-center border">
+    {children}
+  </div>
+);
+
+// --- Main Page Component ---
 const PositionHoursSettingsPage: React.FC = () => {
   const router = useRouter();
   const [settings, setSettings] = useState<PositionHourSetting[]>([]);
@@ -24,6 +39,8 @@ const PositionHoursSettingsPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
       try {
+        // Simulate a slightly longer fetch for demo purposes
+        await new Promise(resolve => setTimeout(resolve, 500)); 
         const response = await fetch('/api/settings/position-hours');
         if (!response.ok) {
           throw new Error('Failed to fetch settings from the server.');
@@ -84,81 +101,114 @@ const PositionHoursSettingsPage: React.FC = () => {
     }
   };
 
-  return (
-    <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => router.back()} className="mr-4">Back</Button>
-          {/* --- MODIFICATION: Updated Title --- */}
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">Monthly Position Hours</h1>
-        </div>
-        <Button 
-          variant="black" 
-          icon={<Save size={16} />} 
-          onClick={handleSave}
-          disabled={isSaving || !hasChanges || isLoading}
-          isLoading={isSaving}
-        >
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </div>
-      
-      {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md" role="alert">
-          <p className="font-bold">Error</p>
-          <p>{error}</p>
-        </div>
-      )}
-      {successMessage && (
-         <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md" role="alert">
-          <p>{successMessage}</p>
-        </div>
-      )}
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <InfoCard>
+          <Loader2 className="mx-auto h-10 w-10 text-gray-400 animate-spin" />
+          <p className="mt-4 text-sm font-medium text-gray-700">Loading Position Settings...</p>
+        </InfoCard>
+      );
+    }
 
-      <div className="bg-white rounded-lg shadow-md p-6 md:p-8">
-        <div className="max-w-2xl mx-auto">
-          <div className="border-b pb-4 mb-4">
-            {/* --- MODIFICATION: Updated Header & Description --- */}
-            <h2 className="text-lg font-semibold text-gray-900">Manage Monthly Hours by Position</h2>
-            <p className="text-sm text-gray-500 mt-1">Set the default required **monthly** working hours for each staff position. This will be used in attendance calculations.</p>
-          </div>
+    if (settings.length === 0) {
+      return (
+        <InfoCard>
+          <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-4 text-lg font-semibold text-gray-900">No Positions Found</h3>
+          <p className="mt-2 text-sm text-gray-500">
+            You can add new positions by creating a new staff member in the staff management section.
+          </p>
+        </InfoCard>
+      );
+    }
 
-          {isLoading ? (
-            <p className="text-center text-gray-500 py-8">Loading positions...</p>
-          ) : settings.length === 0 ? (
-            <div className="text-center py-10 px-6 bg-gray-50 rounded-lg">
-                <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No Positions Found</h3>
-                <p className="mt-1 text-sm text-gray-500">Add a new staff member to create a position.</p>
+    return (
+      <div className="space-y-4">
+        {settings.map(({ positionName, requiredHours }) => (
+          <div 
+            key={positionName} 
+            className="bg-white p-4 rounded-lg shadow-sm border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-shadow hover:shadow-md"
+          >
+            {/* Left Side: Position Info */}
+            <div className="flex items-center gap-4">
+              <div className="flex-shrink-0 bg-gray-100 p-3 rounded-full">
+                <Briefcase className="h-6 w-6 text-gray-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-base text-gray-800">{positionName}</p>
+                <p className="text-sm text-gray-500">Required monthly work hours</p>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-5">
-              {settings.map(({ positionName, requiredHours }) => (
-                <div key={positionName} className="flex items-center justify-between gap-4 p-3 rounded-md border">
-                  <div className="flex items-center gap-3">
-                    <Briefcase className="h-5 w-5 text-gray-500" />
-                    <span className="font-medium text-gray-800">{positionName}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                     <Clock className="h-4 w-4 text-gray-400" />
-                     <input
-                      type="number"
-                      value={requiredHours}
-                      onChange={(e) => handleHourChange(e, positionName)}
-                      min="0"
-                      // --- MODIFICATION: Changed step for larger numbers ---
-                      step="1"
-                      className="w-28 rounded-md border border-gray-300 px-2 py-1.5 text-right text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-                      disabled={isSaving}
-                    />
-                    {/* --- MODIFICATION: Updated Label --- */}
-                    <span className="text-sm text-gray-600">hours/month</span>
-                  </div>
-                </div>
-              ))}
+
+            {/* Right Side: Input Control */}
+            <div className="flex items-center gap-3 justify-end sm:justify-center">
+              <Clock className="h-5 w-5 text-gray-400" />
+              <InputField
+                type="number"
+                value={requiredHours}
+                onChange={(e) => handleHourChange(e, positionName)}
+                min="0"
+                step="1"
+                disabled={isSaving}
+              />
+              <span className="text-sm text-gray-600 font-medium">hours/month</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+
+  return (
+    <div className="bg-gray-50 min-h-screen">
+      <div className="max-w-5xl mx-auto p-4 md:p-8">
+        {/* --- Header Bar --- */}
+        <header className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between mb-8">
+          <div className="flex items-center mb-4 sm:mb-0">
+            <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => router.back()} className="mr-4">
+              Back
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Monthly Position Hours</h1>
+              <p className="text-sm text-gray-500 mt-1">Set the default required hours for each position.</p>
+            </div>
+          </div>
+          <Button 
+            variant="black" 
+            icon={<Save size={16} />} 
+            onClick={handleSave}
+            disabled={isSaving || !hasChanges || isLoading}
+            isLoading={isSaving}
+            className="w-full sm:w-auto"
+          >
+            {isSaving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </header>
+        
+        {/* --- Alerts --- */}
+        <div className="space-y-4 mb-6">
+          {error && (
+            <div className="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-r-md flex items-start gap-3" role="alert">
+              <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Error Occurred</p>
+                <p>{error}</p>
+              </div>
+            </div>
+          )}
+          {successMessage && (
+            <div className="bg-green-100 border-l-4 border-green-500 text-green-800 p-4 rounded-r-md" role="alert">
+              <p>{successMessage}</p>
             </div>
           )}
         </div>
+
+        {/* --- Main Content Area --- */}
+        <main>
+          {renderContent()}
+        </main>
       </div>
     </div>
   );

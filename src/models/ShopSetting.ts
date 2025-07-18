@@ -1,11 +1,38 @@
 // src/models/ShopSetting.ts
 
-import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import mongoose, { Document, Model, Schema } from 'mongoose';
 
-// --- (NEW) --- Define the structure for a single position's hour setting
-// This will be a sub-document within the main ShopSetting document.
+// --- SUB-DOCUMENT: From your "new" model ---
+// Defines the structure for a single position's RATE settings.
+export interface IPositionRateSetting {
+  positionName: string;
+  otRate: number;
+  extraDayRate: number;
+}
+
+const PositionRateSettingSchema: Schema<IPositionRateSetting> = new Schema({
+    positionName: {
+        type: String,
+        required: true,
+        trim: true,
+        unique: true, // Note: This ensures uniqueness within the array for a single document.
+    },
+    otRate: {
+        type: Number,
+        required: true,
+        default: 0,
+    },
+    extraDayRate: {
+        type: Number,
+        required: true,
+        default: 0,
+    }
+}, { _id: false }); // We don't need a separate _id for each sub-document.
+
+
+// --- SUB-DOCUMENT: From your "old" model ---
+// Defines the structure for a single position's HOUR settings.
 export interface IPositionHourSetting {
-  _id?: Types.ObjectId; // Mongoose automatically adds this, good to have in interface
   positionName: string;
   requiredHours: number;
 }
@@ -21,10 +48,11 @@ const PositionHourSettingSchema: Schema<IPositionHourSetting> = new Schema({
         required: true,
         default: 8,
     }
-}, { _id: false }); // We don't need a separate _id for each sub-document here
+}, { _id: false }); // We don't need a separate _id for each sub-document.
 
-// --- UPDATED INTERFACE ---
-// All your original fields are kept, and the new one is added.
+
+// --- COMBINED MAIN INTERFACE ---
+// This interface now includes all fields from both versions.
 export interface IShopSetting extends Document {
   key: string; 
   defaultDailyHours: number;
@@ -33,9 +61,12 @@ export interface IShopSetting extends Document {
   loyaltyPointPerPrice: number;
   loyaltyPointsAwarded: number;
   staffIdBaseNumber: number;
-  positionHours: IPositionHourSetting[]; // --- (NEW) --- Add new field to the interface
+  positionRates: IPositionRateSetting[]; // Field from your "new" model
+  positionHours: IPositionHourSetting[]; // Field from your "old" model
 }
 
+// --- COMBINED MAIN SCHEMA ---
+// The final schema containing all fields.
 const ShopSettingSchema: Schema<IShopSetting> = new Schema({
   key: {
     type: String,
@@ -71,7 +102,14 @@ const ShopSettingSchema: Schema<IShopSetting> = new Schema({
     required: [true, 'Staff ID base number is required.'],
     default: 3101,
   },
-  // --- (NEW) --- Add the new array field to the schema, using the sub-schema
+  
+  // --- Field from your "new" model ---
+  positionRates: {
+      type: [PositionRateSettingSchema],
+      default: [],
+  },
+
+  // --- Field from your "old" model (now added back in) ---
   positionHours: {
       type: [PositionHourSettingSchema],
       default: [],

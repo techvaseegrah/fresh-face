@@ -20,13 +20,19 @@ import * as XLSX from 'xlsx';
 interface SalaryInputs {
   otHours: string;
   extraDays: string;
-  foodDeduction: string;
-  recurExpense: string;
+  foodDeduction: string; // Will be used for "Addition"
+  recurExpense: string;  // Will be used for "Deduction"
 }
 
+// Updated to include the new positionRates array for type safety
 interface ShopSettings {
   defaultOtRate: number;
   defaultExtraDayRate: number;
+  positionRates?: {
+    positionName: string;
+    otRate: number;
+    extraDayRate: number;
+  }[];
 }
 
 // --- Payment Detail Sidebar Component ---
@@ -93,11 +99,13 @@ const PaymentDetailSidebar: React.FC<PaymentDetailSidebarProps> = ({ record, all
           <div className="space-y-4">
             <div>
               <h4 className="flex items-center gap-2 text-md font-semibold text-slate-800 border-b pb-2 mb-2"><ArrowUpCircle size={20} className="text-green-500" /> Earnings</h4>
-              <div className="space-y-1 text-sm"><div className="flex justify-between"><span>Base Salary</span><span className="font-medium text-slate-900">₹{record.baseSalary.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>OT Amount ({record.otHours} hrs)</span><span className="text-green-600 font-medium">+ ₹{record.otAmount.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>Extra Day Pay ({record.extraDays} days)</span><span className="text-green-600 font-medium">+ ₹{record.extraDayPay.toLocaleString('en-IN')}</span></div><div className="flex justify-between pt-2 border-t mt-2 font-bold"><span>Total Earnings</span><span className="text-slate-900">₹{record.totalEarnings.toLocaleString('en-IN')}</span></div></div>
+              {/* MODIFIED: "Addition" is now an earning */}
+              <div className="space-y-1 text-sm"><div className="flex justify-between"><span>Base Salary</span><span className="font-medium text-slate-900">₹{record.baseSalary.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>OT Amount ({record.otHours} hrs)</span><span className="text-green-600 font-medium">+ ₹{record.otAmount.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>Extra Day Pay ({record.extraDays} days)</span><span className="text-green-600 font-medium">+ ₹{record.extraDayPay.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>Addition</span><span className="text-green-600 font-medium">+ ₹{record.foodDeduction.toLocaleString('en-IN')}</span></div><div className="flex justify-between pt-2 border-t mt-2 font-bold"><span>Total Earnings</span><span className="text-slate-900">₹{record.totalEarnings.toLocaleString('en-IN')}</span></div></div>
             </div>
             <div>
               <h4 className="flex items-center gap-2 text-md font-semibold text-slate-800 border-b pb-2 mb-2"><ArrowDownCircle size={20} className="text-red-500" /> Deductions</h4>
-              <div className="space-y-1 text-sm"><div className="flex justify-between"><span>Food Deduction</span><span className="text-red-600 font-medium">- ₹{record.foodDeduction.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>Recurring Expense</span><span className="text-red-600 font-medium">- ₹{record.recurExpense.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>Advance Deduction</span><span className="text-red-600 font-medium">- ₹{record.advanceDeducted.toLocaleString('en-IN')}</span></div><div className="flex justify-between pt-2 border-t mt-2 font-bold"><span>Total Deductions</span><span className="text-slate-900">₹{record.totalDeductions.toLocaleString('en-IN')}</span></div></div>
+              {/* MODIFIED: "Food Deduction" removed, "Recurring Expense" renamed */}
+              <div className="space-y-1 text-sm"><div className="flex justify-between"><span>Deduction</span><span className="text-red-600 font-medium">- ₹{record.recurExpense.toLocaleString('en-IN')}</span></div><div className="flex justify-between"><span>Advance Deduction</span><span className="text-red-600 font-medium">- ₹{record.advanceDeducted.toLocaleString('en-IN')}</span></div><div className="flex justify-between pt-2 border-t mt-2 font-bold"><span>Total Deductions</span><span className="text-slate-900">₹{record.totalDeductions.toLocaleString('en-IN')}</span></div></div>
             </div>
           </div>
           
@@ -243,7 +251,7 @@ const Salary: React.FC = () => {
       const settingsRes = await fetch('/api/settings');
       const settingsResult = await settingsRes.json();
       if (!settingsResult.success) throw new Error(settingsResult.error || "Failed to fetch shop settings.");
-      setShopSettings(settingsResult.data);
+      setShopSettings(settingsResult.data.settings); 
 
       if (recordToEdit) {
         setSalaryInputs({
@@ -259,7 +267,8 @@ const Salary: React.FC = () => {
         if (attendanceResult.success && attendanceResult.data.totalOtHours > 0) {
           otHours = attendanceResult.data.totalOtHours.toFixed(2);
         }
-        setSalaryInputs({ otHours, extraDays: '0', foodDeduction: '2500', recurExpense: '0' });
+        // MODIFIED: Default for 'foodDeduction' (Addition) is now 0.
+        setSalaryInputs({ otHours, extraDays: '0', foodDeduction: '0', recurExpense: '0' });
       }
     } catch (error) {
       console.error("Failed to fetch initial salary data:", error);
@@ -292,27 +301,47 @@ const Salary: React.FC = () => {
     const inputs = {
       otHours: parseFloat(salaryInputs.otHours) || 0,
       extraDays: parseFloat(salaryInputs.extraDays) || 0,
-      foodDeduction: parseFloat(salaryInputs.foodDeduction) || 0,
-      recurExpense: parseFloat(salaryInputs.recurExpense) || 0,
+      foodDeduction: parseFloat(salaryInputs.foodDeduction) || 0, // This is now the "Addition"
+      recurExpense: parseFloat(salaryInputs.recurExpense) || 0,   // This is now the "Deduction"
     };
     
-    const baseSalary = Number(processingStaff.salary) || 0;
-    const otRate = shopSettings.defaultOtRate; 
-    const extraDayRate = shopSettings.defaultExtraDayRate;
+    const positionRate = shopSettings.positionRates?.find(
+        (p) => p.positionName === processingStaff.position
+    );
 
+    const otRate = positionRate?.otRate ?? shopSettings.defaultOtRate; 
+    const extraDayRate = positionRate?.extraDayRate ?? shopSettings.defaultExtraDayRate;
+    
+    const baseSalary = Number(processingStaff.salary) || 0;
+    
+    // --- *** MODIFIED CALCULATION LOGIC *** ---
     const otAmount = inputs.otHours * otRate;
     const extraDayPay = inputs.extraDays * extraDayRate;
-    const totalEarnings = baseSalary + otAmount + extraDayPay;
-    const totalDeductions = inputs.foodDeduction + inputs.recurExpense + advanceToDeduct;
+    // 'foodDeduction' (labeled as Addition) is now an earning.
+    const totalEarnings = baseSalary + otAmount + extraDayPay + inputs.foodDeduction;
+    // 'recurExpense' (labeled as Deduction) and advance are the deductions.
+    const totalDeductions = inputs.recurExpense + advanceToDeduct;
     const netSalary = totalEarnings - totalDeductions;
+    // --- *** END OF MODIFIED LOGIC *** ---
 
     const payload = {
         ...(editingRecord && { id: editingRecord.id }),
         staffId: processingStaff.id, month: months[currentMonthIndex], year: currentYear,
-        baseSalary, otHours: inputs.otHours, otAmount, extraDays: inputs.extraDays, extraDayPay,
-        foodDeduction: inputs.foodDeduction, recurExpense: inputs.recurExpense,
-        totalEarnings, totalDeductions, advanceDeducted: advanceToDeduct, netSalary,
-        isPaid: false, paidDate: null
+        baseSalary, 
+        otHours: inputs.otHours, 
+        otAmount, 
+        extraDays: inputs.extraDays, 
+        extraDayPay,
+        // The value from the "Addition" input is stored in the `foodDeduction` field
+        foodDeduction: inputs.foodDeduction,
+        // The value from the "Deduction" input is stored in the `recurExpense` field
+        recurExpense: inputs.recurExpense,
+        totalEarnings, 
+        totalDeductions, 
+        advanceDeducted: advanceToDeduct, 
+        netSalary,
+        isPaid: false, 
+        paidDate: null
     };
 
     const isUpdating = !!editingRecord;
@@ -369,7 +398,6 @@ const Salary: React.FC = () => {
     }
   };
 
-  // --- UPDATED: handleExportPDF Function ---
   const handleExportPDF = () => {
     if (currentMonthPaidRecords.length === 0) {
       toast.info("No paid salary data to export for this month.");
@@ -413,9 +441,10 @@ const Salary: React.FC = () => {
         ],
       });
 
+      // MODIFIED: Headers changed
       const tableHead = [
         '#', 'Staff ID', 'Staff Name', 'Position', 'Base Salary', 'OT Hrs', 'OT Amt',
-        'Extra Days', 'Extra Day Pay', 'Total Earnings', 'Food Ded', 'Recur Ded',
+        'Extra Days', 'Extra Day Pay', 'Total Earnings', 'Addition', 'Deduction',
         'Adv Ded', 'Total Ded', 'Net Salary', 'Paid Date'
       ];
       
@@ -425,6 +454,7 @@ const Salary: React.FC = () => {
           index + 1, staff?.staffIdNumber || 'N/A', staff?.name || 'Unknown', staff?.position || 'N/A',
           record.baseSalary.toLocaleString('en-IN'), record.otHours, record.otAmount.toLocaleString('en-IN'),
           record.extraDays, record.extraDayPay.toLocaleString('en-IN'), record.totalEarnings.toLocaleString('en-IN'),
+          // The data fields are correct, just the headers above were changed
           record.foodDeduction.toLocaleString('en-IN'), record.recurExpense.toLocaleString('en-IN'),
           record.advanceDeducted.toLocaleString('en-IN'), record.totalDeductions.toLocaleString('en-IN'),
           record.netSalary.toLocaleString('en-IN'),
@@ -451,7 +481,6 @@ const Salary: React.FC = () => {
     }
   };
 
-  // --- UPDATED: handleExportExcel Function ---
   const handleExportExcel = () => {
     if (currentMonthPaidRecords.length === 0) {
       toast.info("No paid salary data to export for this month.");
@@ -476,10 +505,11 @@ const Salary: React.FC = () => {
         ['Pending Payments', pendingPaymentsCount],
         [],
       ];
-
+      
+      // MODIFIED: Headers changed
       const headers = [
         'Staff ID', 'Staff Name', 'Position', 'Base Salary', 'OT Hours', 'OT Amount',
-        'Extra Days', 'Extra Day Pay', 'Total Earnings', 'Food Deduction', 'Recurring Expense',
+        'Extra Days', 'Extra Day Pay', 'Total Earnings', 'Addition', 'Deduction',
         'Advance Deducted', 'Total Deductions', 'Net Salary', 'Paid Date'
       ];
       
@@ -557,9 +587,10 @@ const Salary: React.FC = () => {
                     <div><label className="block text-sm font-medium text-slate-700">OT Hours</label><div className="relative"><input type="number" value={salaryInputs.otHours} onChange={e => setSalaryInputs({...salaryInputs, otHours: e.target.value})} disabled={isModalLoading} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/>{isModalLoading && !editingRecord && <span className="absolute right-2 top-3 text-xs text-slate-500">Fetching...</span>}</div><p className="text-xs text-slate-500 mt-1">Auto-calculated on 'Process', editable here.</p></div>
                     <div><label className="block text-sm font-medium text-slate-700">Extra Days</label><input type="number" value={salaryInputs.extraDays} onChange={e => setSalaryInputs({...salaryInputs, extraDays: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
                     
-                    <h4 className="col-span-full font-bold text-slate-800 border-b pb-2 mt-4">Deductions</h4>
-                    <div><label className="block text-sm font-medium text-slate-700">Food Money (₹)</label><input type="number" value={salaryInputs.foodDeduction} onChange={e => setSalaryInputs({...salaryInputs, foodDeduction: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
-                    <div><label className="block text-sm font-medium text-slate-700">Recurring Expense (₹)</label><input type="number" value={salaryInputs.recurExpense} onChange={e => setSalaryInputs({...salaryInputs, recurExpense: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
+                    <h4 className="col-span-full font-bold text-slate-800 border-b pb-2 mt-4">Additions & Deductions</h4>
+                    {/* MODIFIED: Input labels changed */}
+                    <div><label className="block text-sm font-medium text-slate-700">Addition (₹)</label><input type="number" value={salaryInputs.foodDeduction} onChange={e => setSalaryInputs({...salaryInputs, foodDeduction: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
+                    <div><label className="block text-sm font-medium text-slate-700">Deduction (₹)</label><input type="number" value={salaryInputs.recurExpense} onChange={e => setSalaryInputs({...salaryInputs, recurExpense: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-slate-900 focus:border-slate-900 text-slate-900"/></div>
                 </div>
                 <div className="mt-8 flex justify-end space-x-3">
                   <Button variant="outline-danger" onClick={() => setIsModalOpen(false)}>Cancel</Button>
@@ -619,8 +650,9 @@ const Salary: React.FC = () => {
                                     <DataField label="Base" value={staff.salary} type="base" />
                                     <DataField label="OT Amt" value={record ? record.otAmount : '—'} type="earning" />
                                     <DataField label="Extra Day" value={record ? record.extraDayPay : '—'} type="earning" />
-                                    <DataField label="Food Ded" value={record ? record.foodDeduction : '—'} type="deduction" />
-                                    <DataField label="Recur Ded" value={record ? record.recurExpense : '—'} type="deduction" />
+                                    {/* MODIFIED: DataField labels and types updated */}
+                                    <DataField label="Addition" value={record ? record.foodDeduction : '—'} type="earning" />
+                                    <DataField label="Deduction" value={record ? record.recurExpense : '—'} type="deduction" />
                                     <DataField label="Adv Ded" value={record ? record.advanceDeducted : '—'} type="deduction" />
                                 </div>
                                 <div className="flex items-center justify-between lg:justify-end lg:col-span-3 border-t lg:border-t-0 pt-3 lg:pt-0 gap-4">

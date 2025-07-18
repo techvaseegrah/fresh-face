@@ -1,3 +1,5 @@
+// This is the complete SettingsNav component with the new link added.
+
 'use client';
 
 import Link from 'next/link';
@@ -17,13 +19,18 @@ const settingsNavigation = [
     href: '/settings/attendancesetting',
     permission: PERMISSIONS.ATTENDANCE_SETTINGS_READ 
   },
-  // --- (NEW) ADD THIS OBJECT FOR THE NEW SETTINGS PAGE ---
   { 
     name: 'Position Hours', 
     href: '/settings/position-hours', 
     permission: PERMISSIONS.POSITION_HOURS_SETTINGS_MANAGE 
   },
-  // --------------------------------------------------------
+  // --- (NEW) ADDED THIS OBJECT FOR THE SHIFT MANAGEMENT PAGE ---
+  // { 
+  //   name: 'Shift Management', 
+  //   href: '/settings/shifts', 
+  //   permission: PERMISSIONS.SHIFT_MANAGEMENT_MANAGE // Assumes you created this permission
+  // },
+  // -----------------------------------------------------------
   { 
     name: 'Loyalty Points', 
     href: '/settings/loyalty', 

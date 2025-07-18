@@ -111,6 +111,7 @@ export const PERMISSIONS = {
   ATTENDANCE_SETTINGS_READ: 'attendance_settings:read',
   SETTINGS_STAFF_ID_MANAGE: 'settings:staff_id:manage', // --- (1. NEW) --- Added the new permission constant
     POSITION_HOURS_SETTINGS_MANAGE: 'position_hours_settings:manage',
+     SHIFT_MANAGEMENT_MANAGE: 'settings:shifts:manage', 
 
   ALL: '*'
 } as const;

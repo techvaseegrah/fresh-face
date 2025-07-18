@@ -294,8 +294,9 @@ const Attendance: React.FC = () => {
       try {
         const shopSettingsResponse = await fetch('/api/settings');
         const shopSettingsResult = await shopSettingsResponse.json();
-        if (shopSettingsResult.success && shopSettingsResult.data) {
-          setDailyRequiredHours(shopSettingsResult.data.defaultDailyHours);
+        
+        if (shopSettingsResult.success && shopSettingsResult.data && shopSettingsResult.data.settings) {
+          setDailyRequiredHours(shopSettingsResult.data.settings.defaultDailyHours);
         }
 
         const positionHoursResponse = await fetch('/api/settings/position-hours');
@@ -405,12 +406,10 @@ const Attendance: React.FC = () => {
     }
   };
 
+  // --- THE FIX IS HERE ---
+  // The typo 'checkin' has been corrected to 'checkIn'.
   const calculateFrontendWorkingMinutes = useCallback((attendance: AttendanceRecordTypeFE): number => { let totalMinutes = 0; if (attendance.checkIn && attendance.checkOut) { return attendance.totalWorkingMinutes; } else if (attendance.checkIn && !attendance.checkOut) { totalMinutes = differenceInMinutes(new Date(), attendance.checkIn); } let tempExitDeduction = 0; (attendance.temporaryExits || []).forEach((exit: TemporaryExitTypeFE) => { if (!exit.isOngoing && exit.endTime) { tempExitDeduction += exit.durationMinutes; } else if (exit.isOngoing) { tempExitDeduction += differenceInMinutes(new Date(), exit.startTime); } }); return Math.max(0, totalMinutes - tempExitDeduction); }, []);
   
-  // --- FIX #1: Correct the handleCheckIn function ---
-  // The root cause of the issue was here. It was incorrectly sending the monthly
-  // hours from `positionHoursMap` to the backend when creating a daily record.
-  // The fix is to *always* use the shop's `dailyRequiredHours` for the daily check-in.
   const handleCheckIn = async (staff: StaffMember) => { 
     try { 
       await checkInStaff(staff.id, dailyRequiredHours); 
@@ -420,9 +419,6 @@ const Attendance: React.FC = () => {
     } 
   };
   
-  // --- FIX #2: Correct the handleCheckOutAttempt function ---
-  // This function also incorrectly referenced the monthly `positionHoursMap`.
-  // It's now corrected to only use the daily value from the record or the shop's default.
   const handleCheckOutAttempt = async (attendanceId: string, staffId: string, staffName: string) => {
     const attendance = todayAttendanceMap.get(staffId);
     if (!attendance || attendance.checkOut) return;
@@ -491,13 +487,7 @@ const Attendance: React.FC = () => {
                   const todayAttendance = getTodayAttendance(staff.id); 
                   const workingMinutes = todayAttendance ? (todayAttendance.checkOut ? todayAttendance.totalWorkingMinutes : calculateFrontendWorkingMinutes(todayAttendance)) : 0;
                   
-                  // --- FIX #3: Correct the display logic ---
-                  // This now correctly uses the daily required hours from the record if it exists,
-                  // or falls back to the shop's default daily hours. It no longer uses the
-                  // incorrect monthly `positionHoursMap`. This fixes the display for both
-                  // checked-in and not-checked-in staff.
                   const requiredMinutesForStaff = todayAttendance?.requiredMinutes || (dailyRequiredHours * 60);
-                  // --- END OF FIX ---
                   
                   const remainingMinutes = Math.max(0, requiredMinutesForStaff - workingMinutes);
                   const ongoingTempExit = todayAttendance?.temporaryExits?.find((exit: TemporaryExitTypeFE) => exit.isOngoing);

@@ -1,204 +1,279 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
+import { PlusCircle, Edit, Trash2 } from 'lucide-react';
 
 // --- Types ---
-interface ShopInfo {
-  shopName: string;
-  email: string;
-  phone: string;
-  flatDoorNo: string;
-  street: string;
-  district: string;
-  state: string;
-  country: string;
-  pincode: string;
-  mobileNumber: string;
-  landlineNumber: string;
-  website: string;
-  gstNumber: string;
-  companySize: string;
+interface IPositionRateSetting {
+    positionName: string;
+    otRate: number;
+    extraDayRate: number;
 }
-
 interface AttendanceSettings {
-  dailyHours: number;
-  otRate: number;
-  extraDayRate: number;
+    defaultDailyHours: number;
+    positionRates: IPositionRateSetting[];
 }
 
-const initialShopInfo: ShopInfo = {
-  shopName: 'FF Project',
-  email: 'contact@ffproject.com',
-  phone: '9876543210',
-  flatDoorNo: '',
-  street: '',
-  district: '',
-  state: '',
-  country: 'India',
-  pincode: '',
-  mobileNumber: '9876543210',
-  landlineNumber: '',
-  website: '',
-  gstNumber: '',
-  companySize: '1-10 employees',
-};
-
-// --- Reusable Button Component ---
+// --- Reusable UI Components ---
 const Button = ({ children, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button
-        className={`inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${className}`}
+        className={`inline-flex items-center justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
         {...props}
     >
         {children}
     </button>
 );
 
+const InputField = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input
+        {...props}
+        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900 disabled:bg-gray-100"
+    />
+);
 
-// --- Sub-component for Shop Information Form ---
-const ShopInformationForm: React.FC = () => {
-    const [info, setInfo] = useState<ShopInfo>(initialShopInfo);
-    const [isSaving, setIsSaving] = useState(false);
+// --- MODAL for Adding/Editing Position Rates ---
+const PositionRateModal = ({
+    isOpen,
+    onClose,
+    onSave,
+    positions,
+    existingRates,
+    editingRate,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (rate: IPositionRateSetting) => void;
+    positions: string[];
+    existingRates: IPositionRateSetting[];
+    editingRate: IPositionRateSetting | null;
+}) => {
+    const [rateData, setRateData] = useState<IPositionRateSetting>({ positionName: '', otRate: 0, extraDayRate: 0 });
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setInfo({ ...info, [e.target.name]: e.target.value });
-    };
+    useEffect(() => {
+        if (editingRate) {
+            setRateData(editingRate);
+        } else {
+            const availablePosition = positions.find(p => !existingRates.some(r => r.positionName === p));
+            setRateData({ positionName: availablePosition || '', otRate: 0, extraDayRate: 0 });
+        }
+    }, [isOpen, editingRate, positions, existingRates]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    if (!isOpen) return null;
+
+    const handleSave = (e: FormEvent) => {
         e.preventDefault();
-        setIsSaving(true);
-        console.log("Saving Shop Information:", info);
-        // This is a mock save. In a real app, you'd have an API for this too.
-        setTimeout(() => {
-            setIsSaving(false);
-            alert("Shop information saved! (Mocked)");
-        }, 1000);
+        onSave(rateData);
     };
 
-    const InputField = ({ label, name, value, optional = false }: { label: string; name: string; value: string; optional?: boolean }) => (
-        <div>
-            <label htmlFor={name} className="block text-sm font-medium text-gray-700">
-                {label} {optional && <span className="text-gray-500">(Optional)</span>}
-            </label>
-            <input
-                type="text" id={name} name={name} value={value} onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900"
-            />
-        </div>
+    const availablePositions = positions.filter(p => 
+        !existingRates.some(r => r.positionName === p) || p === editingRate?.positionName
     );
 
     return (
-        <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Shop Information</h2>
-            <form onSubmit={handleSubmit}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                    <InputField label="Shop Name" name="shopName" value={info.shopName} />
-                    <InputField label="Email" name="email" value={info.email} />
-                    {/* Add other fields here as needed */}
-                </div>
-                <div className="mt-8 flex justify-end">
-                    <Button type="submit" disabled={isSaving} className="bg-black hover:bg-gray-800 focus:ring-gray-500">
-                        {isSaving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                </div>
-            </form>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                <form onSubmit={handleSave}>
+                    <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-900">{editingRate ? 'Edit' : 'Add'} Position Rate</h3>
+                        <div className="mt-4 space-y-4">
+                            <div>
+                                <label htmlFor="positionName" className="block text-sm font-medium text-gray-700">Position</label>
+                                <select
+                                    id="positionName"
+                                    value={rateData.positionName}
+                                    onChange={(e) => setRateData({ ...rateData, positionName: e.target.value })}
+                                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900"
+                                    disabled={!!editingRate}
+                                >
+                                    <option value="">Select a position</option>
+                                    {availablePositions.map(p => <option key={p} value={p}>{p}</option>)}
+                                    {editingRate && !availablePositions.includes(editingRate.positionName) && <option value={editingRate.positionName}>{editingRate.positionName}</option>}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="modalOtRate" className="block text-sm font-medium text-gray-700">OT Rate per Hour (₹)</label>
+                                <InputField type="number" id="modalOtRate" value={rateData.otRate} onChange={(e) => setRateData({ ...rateData, otRate: e.target.valueAsNumber || 0 })} min="0" />
+                            </div>
+                            <div>
+                                <label htmlFor="modalExtraDayRate" className="block text-sm font-medium text-gray-700">Extra Day Rate (₹)</label>
+                                <InputField type="number" id="modalExtraDayRate" value={rateData.extraDayRate} onChange={(e) => setRateData({ ...rateData, extraDayRate: e.target.valueAsNumber || 0 })} min="0" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-gray-50 px-6 py-3 flex justify-end space-x-3">
+                        <Button type="button" className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50" onClick={onClose}>Cancel</Button>
+                        <Button type="submit" className="bg-black hover:bg-gray-800 focus:ring-gray-500" disabled={!rateData.positionName}>Save</Button>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 };
 
 
-// --- Sub-component for Attendance Settings Form ---
 const AttendanceSettingsForm: React.FC = () => {
-    const [settings, setSettings] = useState<AttendanceSettings>({ dailyHours: 8, otRate: 0, extraDayRate: 0 });
+    const [settings, setSettings] = useState<AttendanceSettings | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [allPositions, setAllPositions] = useState<string[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingRate, setEditingRate] = useState<IPositionRateSetting | null>(null);
 
     useEffect(() => {
-        const fetchSettings = async () => {
+        const fetchData = async () => {
             setIsLoading(true);
             try {
-                // In a real app, this API would fetch your settings
                 const response = await fetch('/api/settings');
                 const result = await response.json();
-                if (result.success && result.data) {
+                
+                if (result.success) {
                     setSettings({
-                        dailyHours: result.data.defaultDailyHours,
-                        otRate: result.data.defaultOtRate,
-                        extraDayRate: result.data.defaultExtraDayRate,
+                        defaultDailyHours: result.data.settings.defaultDailyHours || 8,
+                        positionRates: result.data.settings.positionRates || [],
                     });
+                    setAllPositions(result.data.positions || []);
                 } else {
-                    console.error("Failed to fetch settings:", result.error);
+                     throw new Error(result.error || "Failed to fetch settings");
                 }
             } catch (error) {
-                console.error("An error occurred while fetching settings:", error);
+                console.error("An error occurred while fetching initial data:", error);
+                 alert(`Error: ${error instanceof Error ? error.message : "Could not load settings from server."}`);
             } finally {
                 setIsLoading(false);
             }
         };
-
-        fetchSettings();
+        fetchData();
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSettings({ ...settings, [e.target.name]: e.target.valueAsNumber || 0 });
+        if (settings) {
+            setSettings({ ...settings, [e.target.name]: e.target.valueAsNumber || 0 });
+        }
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSavePositionRate = (rateToSave: IPositionRateSetting) => {
+        if (!settings) return;
+        
+        let updatedRates;
+        const existingIndex = settings.positionRates.findIndex(r => r.positionName === rateToSave.positionName);
+
+        if (existingIndex > -1) {
+            updatedRates = [...settings.positionRates];
+            updatedRates[existingIndex] = rateToSave;
+        } else {
+            updatedRates = [...settings.positionRates, rateToSave];
+        }
+
+        setSettings({ ...settings, positionRates: updatedRates });
+        setIsModalOpen(false);
+        setEditingRate(null);
+    };
+
+    const handleDeletePositionRate = (positionNameToDelete: string) => {
+        if (settings && window.confirm(`Are you sure you want to remove the specific rate for ${positionNameToDelete}?`)) {
+            const updatedRates = settings.positionRates.filter(r => r.positionName !== positionNameToDelete);
+            setSettings({ ...settings, positionRates: updatedRates });
+        }
+    };
+    
+    const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
+        if (!settings) return;
         setIsSaving(true);
         try {
-            const payload = {
-                defaultDailyHours: settings.dailyHours,
-                defaultOtRate: settings.otRate,
-                defaultExtraDayRate: settings.extraDayRate,
-            };
             const response = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify(settings),
             });
             const result = await response.json();
             if (result.success) {
                 alert("Attendance settings saved successfully!");
             } else {
-                alert(`Failed to save settings: ${result.error}`);
+                throw new Error(result.error || "Failed to save settings");
             }
         } catch (error) {
             console.error("Error saving settings:", error);
-            alert("An unexpected error occurred while saving.");
+            alert(`Error: ${error instanceof Error ? error.message : "An unexpected error occurred."}`);
         } finally {
             setIsSaving(false);
         }
     };
 
-    if (isLoading) {
+    if (isLoading || !settings) {
         return <div className="text-center p-8">Loading settings...</div>;
     }
 
     return (
         <div>
+            <PositionRateModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSave={handleSavePositionRate}
+                positions={allPositions}
+                existingRates={settings.positionRates}
+                editingRate={editingRate}
+            />
+
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Attendance Requirements</h2>
-            <p className="text-sm text-gray-600 mb-8">Set defaults for salary calculations. Only admins can modify these.</p>
-            <form onSubmit={handleSubmit} className="max-w-md">
-                <div className="space-y-6">
-                    <div>
-                        <label htmlFor="dailyHours" className="block text-sm font-medium text-gray-700">Default Daily Working Hours</label>
-                        <input type="number" id="dailyHours" name="dailyHours" value={settings.dailyHours} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900" />
-                        <p className="text-xs text-gray-500 mt-1">Used to calculate overtime from total clocked-in time.</p>
-                    </div>
-                    <div>
-                        <label htmlFor="otRate" className="block text-sm font-medium text-gray-700">Default OT Rate per Hour (₹)</label>
-                        <input type="number" id="otRate" name="otRate" value={settings.otRate} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900" />
-                        <p className="text-xs text-gray-500 mt-1">Used to calculate the overtime amount for staff.</p>
-                    </div>
-                    <div>
-                        <label htmlFor="extraDayRate" className="block text-sm font-medium text-gray-700">Default Extra Day Rate (₹)</label>
-                        <input type="number" id="extraDayRate" name="extraDayRate" value={settings.extraDayRate} onChange={handleChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900" />
-                        <p className="text-xs text-gray-500 mt-1">Used to calculate the payment for working on an extra day/holiday.</p>
+            <p className="text-sm text-gray-600 mb-8">Set defaults and position-specific rates for salary calculations.</p>
+            
+            <form onSubmit={handleSubmit} className="space-y-12">
+                <div>
+                    <h3 className="text-lg font-medium text-gray-900">Default Settings</h3>
+                    <p className="text-xs text-gray-500 mt-1 mb-4">This value is used as the standard working hours for all positions.</p>
+                    <div className="max-w-md space-y-6">
+                        <div>
+                            <label htmlFor="defaultDailyHours" className="block text-sm font-medium text-gray-700">Default Daily Working Hours</label>
+                            <InputField type="number" id="defaultDailyHours" name="defaultDailyHours" value={settings.defaultDailyHours} onChange={handleChange} min="0" />
+                        </div>
                     </div>
                 </div>
-                <div className="mt-8 flex justify-start">
+
+                <div>
+                    <div className="flex justify-between items-center">
+                        <div>
+                           <h3 className="text-lg font-medium text-gray-900">Position-Specific Rates</h3>
+                           <p className="text-xs text-gray-500 mt-1">Set specific OT and Extra Day rates for different job roles.</p>
+                        </div>
+                        <Button
+                            type="button"
+                            className="bg-gray-700 hover:bg-gray-800 focus:ring-gray-600 text-xs"
+                            onClick={() => { setEditingRate(null); setIsModalOpen(true); }}
+                        >
+                            <PlusCircle size={16} className="mr-2" />
+                            Add Position Rate
+                        </Button>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                        {settings.positionRates.length === 0 ? (
+                            <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-md">
+                                <p className="text-sm text-gray-500">No position-specific rates have been set.</p>
+                            </div>
+                        ) : (
+                            settings.positionRates.map((rate) => (
+                                <div key={rate.positionName} className="p-4 bg-gray-50 rounded-md border border-gray-200 flex items-center justify-between">
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800">{rate.positionName}</p>
+                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                            <span>OT: ₹{rate.otRate}/hr</span>
+                                            <span>Extra Day: ₹{rate.extraDayRate}/day</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <button type="button" onClick={() => { setEditingRate(rate); setIsModalOpen(true); }} className="p-2 text-gray-500 hover:text-blue-600 transition-colors" title="Edit Rate"><Edit size={16} /></button>
+                                        <button type="button" onClick={() => handleDeletePositionRate(rate.positionName)} className="p-2 text-gray-500 hover:text-red-600 transition-colors" title="Delete Rate"><Trash2 size={16} /></button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+                
+                <div className="mt-8 pt-5 border-t border-gray-200 flex justify-end">
                     <Button type="submit" disabled={isSaving || isLoading} className="bg-black hover:bg-gray-800 focus:ring-gray-500">
-                        {isSaving ? 'Saving...' : 'Save Settings'}
+                        {isSaving ? 'Saving...' : 'Save All Settings'}
                     </Button>
                 </div>
             </form>
@@ -206,33 +281,19 @@ const AttendanceSettingsForm: React.FC = () => {
     );
 };
 
-
 // --- Main Page Component ---
 const SettingsPage = () => {
-    // Defaulting to 'shop' as 'attendance' was the default before
-    const [activeTab, setActiveTab] = useState('shop');
-
-    // --- MODIFIED ---
-    // Removed the 'loyalty' tab
+    const [activeTab, setActiveTab] = useState('attendance');
     const settingsTabs = [
-        { id: 'shop', label: 'Shop Information' },
-        { id: 'attendance', label: 'Attendance' },
+        { id: 'attendance', label: 'Attendance & Salary' },
         { id: 'billing', label: 'Billing', disabled: true },
         { id: 'integrations', label: 'Integrations', disabled: true },
     ];
 
     const renderContent = () => {
-        // --- MODIFIED ---
-        // Removed the 'loyalty' case
         switch (activeTab) {
-            case 'shop': return <ShopInformationForm />;
             case 'attendance': return <AttendanceSettingsForm />;
-            default: return (
-                <div>
-                    <h2 className="text-xl font-semibold text-gray-900">Coming Soon</h2>
-                    <p className="mt-2 text-gray-600">This settings section is not yet available.</p>
-                </div>
-            );
+            default: return <div>Coming Soon</div>;
         }
     };
 
