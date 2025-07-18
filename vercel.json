@@ -1,8 +1,0 @@
-{
-    "crons": [
-      {
-        "path": "/api/reports/low-stock-cron",
-        "schedule": "0 9 * * *"
-      }
-    ]
-  }

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import DayEndReport from '@/models/DayEndReport';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { sendClosingReportEmail } from '@/lib/mail';
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +62,8 @@ export async function POST(request: NextRequest) {
 
     await newReport.save();
 
+    sendClosingReportEmail(body);
+    
     return NextResponse.json({
       success: true,
       message: `Day-end report for ${closingDate} submitted successfully.`,

@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { hasPermission } from '@/lib/permissions';
 import { Chart } from 'chart.js/auto';
 import { Toaster, toast } from 'react-hot-toast';
-import { Package, Warehouse, History, X, Search, AlertTriangle, Building, Tag } from 'lucide-react';
+import { Package, Warehouse, History, X, Search, AlertTriangle, Building, Tag, FileDown } from 'lucide-react';
 
 // --- Interface Definitions (Unchanged) ---
 interface PopulatedRef { _id: string; name: string; }
@@ -71,7 +71,7 @@ export default function InventoryCheckerPage() {
   const [history, setHistory] = useState<InventoryCheck[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyModalProduct, setHistoryModalProduct] = useState<Product | null>(null);
-
+  const [isExporting, setIsExporting] = useState(false);
   const canCheckInventory = session && hasPermission(session.user.role.permissions, 'inventory-checker:create');
   const canReadInventory = session && hasPermission(session.user.role.permissions, 'inventory-checker:read');
   
@@ -112,6 +112,43 @@ export default function InventoryCheckerPage() {
       toast.error('Failed to fetch history.');
     } finally {
       setIsHistoryLoading(false);
+    }
+  };
+
+   // --- NEW: Function to handle the export ---
+  const handleExport = async () => {
+    setIsExporting(true);
+    toast.loading('Generating your report...', { id: 'export-toast' });
+    try {
+      const response = await fetch('/api/inventory-check/export');
+      if (!response.ok) {
+        throw new Error('Failed to generate report. Please try again.');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      const contentDisposition = response.headers.get('content-disposition');
+      let fileName = 'InventoryCheckReport.xlsx';
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (fileNameMatch && fileNameMatch.length === 2) {
+          fileName = fileNameMatch[1];
+        }
+      }
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Report downloaded successfully!', { id: 'export-toast' });
+    } catch (error: any) {
+      toast.error(error.message || 'An unexpected error occurred.', { id: 'export-toast' });
+    } finally {
+      setIsExporting(false);
     }
   };
   
@@ -259,19 +296,30 @@ export default function InventoryCheckerPage() {
     <>
       <div className="p-4 sm:p-6 md:p-8">
         <Toaster position="top-right" reverseOrder={false} />
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Inventory Checker</h1>
           <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input type="text" placeholder="Search by Name, SKU, Brand..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 w-full sm:w-64 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" />
           </div>
+                      <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:bg-gray-400"
+            >
+              {isExporting ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <FileDown className="h-4 w-4" />
+              )}
+              <span>{isExporting ? 'Exporting...' : 'Export All'}</span>
+            </button>
         </div>
         
         {renderProductTable('Retail Products', <Package className="h-7 w-7 mr-3 text-blue-600" />, retailProducts)}
         {renderProductTable('In-House Stock', <Warehouse className="h-7 w-7 mr-3 text-green-600" />, inHouseProducts)}
       </div>
 
-      {historyModalProduct && (<HistoryModal onClose={() => setHistoryModalProduct(null)} history={history} productName={historyModalProduct.name} />)}
-    </>
+        {historyModalProduct && (<HistoryModal onClose={() => setHistoryModalProduct(null)} history={history} productName={historyModalProduct.name} />)}    </>
   );
 }
