@@ -47,7 +47,6 @@ export const PERMISSIONS = {
   SERVICES_UPDATE: 'services:update',
   SERVICES_DELETE: 'services:delete',
 
-
   // Dashboard access
   DASHBOARD_READ: 'dashboard:read',
   DASHBOARD_MANAGE: 'dashboard:manage',
@@ -59,19 +58,25 @@ export const PERMISSIONS = {
   DAYEND_DELETE: 'dayend:delete',
   DAYEND_MANAGE: 'dayend:manage',
 
-
   // EB (Electricity Bill) management
   EB_UPLOAD: 'eb:upload',
   EB_VIEW_CALCULATE: 'eb:view_calculate',
 
   // Procurement management
-  PROCUREMENT_CREATE: 'procurement:create', // Create procurement records
-  PROCUREMENT_READ: 'procurement:read',   // View procurement records
-  PROCUREMENT_UPDATE: 'procurement:update', // Update procurement records
-  PROCUREMENT_DELETE: 'procurement:delete', // Delete procurement records
+  PROCUREMENT_CREATE: 'procurement:create',
+  PROCUREMENT_READ: 'procurement:read',
+  PROCUREMENT_UPDATE: 'procurement:update',
+  PROCUREMENT_DELETE: 'procurement:delete',
+
+  // Settings management
   SETTINGS_READ: 'settings:read',
   LOYALTY_SETTINGS_READ: 'loyalty_settings:read',
   LOYALTY_SETTINGS_UPDATE: 'loyalty_settings:update',
+  MEMBERSHIP_SETTINGS_READ: 'membership_settings:read',
+  MEMBERSHIP_SETTINGS_WRITE: 'membership_settings:write',
+  ATTENDANCE_SETTINGS_READ: 'attendance_settings:read',
+  SETTINGS_STAFF_ID_MANAGE: 'settings:staff_id:manage',
+  POSITION_HOURS_SETTINGS_MANAGE: 'position_hours_settings:manage',
 
   // Inventory Checker management
   INVENTORY_CHECKER_CREATE: 'inventory-checker:create',
@@ -79,12 +84,37 @@ export const PERMISSIONS = {
   INVENTORY_CHECKER_UPDATE: 'inventory-checker:update',
   INVENTORY_CHECKER_DELETE: 'inventory-checker:delete',
 
+  // Alerts Management
   ALERTS_CREATE: 'alerts:create',
   ALERTS_READ: 'alerts:read',
   ALERTS_DELETE: 'alerts:delete',
 
-  MEMBERSHIP_SETTINGS_READ: 'membership_settings:read',
-  MEMBERSHIP_SETTINGS_WRITE: 'membership_settings:write',
+ 
+  // Staff Management Permissions
+  STAFF_LIST_READ: 'staff-list:read',
+  STAFF_LIST_CREATE: 'staff-list:create',
+  STAFF_LIST_UPDATE: 'staff-list:update',
+  STAFF_LIST_DELETE: 'staff-list:delete',
+  STAFF_ATTENDANCE_READ: 'staff-attendance:read',
+  STAFF_ATTENDANCE_MANAGE: 'staff-attendance:manage',
+  STAFF_ADVANCE_READ: 'staff-advance:read',
+  STAFF_ADVANCE_MANAGE: 'staff-advance:manage',
+  STAFF_PERFORMANCE_READ: 'staff-performance:read',
+  STAFF_PERFORMANCE_MANAGE: 'staff-performance:manage',
+  STAFF_TARGET_READ: 'staff-target:read',
+  STAFF_TARGET_MANAGE: 'staff-target:manage',
+  STAFF_INCENTIVES_READ: 'staff-incentives:read',
+  STAFF_INCENTIVES_MANAGE: 'staff-incentives:manage',
+  STAFF_SALARY_READ: 'staff-salary:read',
+  STAFF_SALARY_MANAGE: 'staff-salary:manage',
+  STAFF_SWIFT_MANAGE: 'staff-swift:manage',
+
+  // Expenses Management Permissions
+  EXPENSES_CREATE: 'expenses:create',
+  EXPENSES_READ: 'expenses:read',
+  EXPENSES_UPDATE: 'expenses:update',
+  EXPENSES_DELETE: 'expenses:delete',
+  EXPENSES_MANAGE: 'expenses:manage',
 
   ALL: '*'
 } as const;
@@ -105,11 +135,11 @@ export const PERMISSION_CATEGORIES = {
   SETTINGS_MANAGEMENT: 'Settings Management',
   REPORTS_ACCESS: 'Reports Access',
   EB_MANAGEMENT: 'EB Management',
-  PROCUREMENT_MANAGEMENT: 'Procurement Management', // New category
+  PROCUREMENT_MANAGEMENT: 'Procurement Management',
   DAYEND_MANAGEMENT: 'Day-end Closing Management',
   INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
   ALERTS_MANAGEMENT: 'Alerts Management',
-
+  EXPENSES_MANAGEMENT: 'Expenses Management',
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -186,8 +216,11 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SETTINGS_READ, description: 'Access settings section', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_READ, description: 'View loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.LOYALTY_SETTINGS_UPDATE, description: 'Update loyalty settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
-  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_READ,description: 'view membership settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT   },
+  { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_READ,description: 'View membership settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT   },
   { permission: PERMISSIONS.MEMBERSHIP_SETTINGS_WRITE,description: 'Update membership settings', category:  PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT  },
+  { permission: PERMISSIONS.ATTENDANCE_SETTINGS_READ, description: 'Read attendance settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, description: 'Manage staff ID settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.POSITION_HOURS_SETTINGS_MANAGE, description: 'Manage position hours settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
@@ -199,8 +232,33 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.INVENTORY_CHECKER_READ, description: 'Read inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
   { permission: PERMISSIONS.INVENTORY_CHECKER_UPDATE, description: 'Update inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
   { permission: PERMISSIONS.INVENTORY_CHECKER_DELETE, description: 'Delete inventory check', category: PERMISSION_CATEGORIES.INVENTORY_CHECKER_MANAGEMENT },
+ 
+  // Staff Management
+  { permission: PERMISSIONS.STAFF_LIST_READ, description: 'Read staff list', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_LIST_CREATE, description: 'Create staff members', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_LIST_UPDATE, description: 'Update staff members', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_LIST_DELETE, description: 'Delete staff members', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_ATTENDANCE_READ, description: 'Read staff attendance', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_ATTENDANCE_MANAGE, description: 'Manage staff attendance', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_ADVANCE_READ, description: 'Read staff advance payments', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_ADVANCE_MANAGE, description: 'Manage staff advance payments', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_PERFORMANCE_READ, description: 'Read staff performance', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_PERFORMANCE_MANAGE, description: 'Manage staff performance', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_TARGET_READ, description: 'Read staff targets', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_TARGET_MANAGE, description: 'Manage staff targets', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_INCENTIVES_READ, description: 'Read staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_INCENTIVES_MANAGE, description: 'Manage staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_SWIFT_MANAGE, description: 'Manage staff swift', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
 
-
+  // Expenses Management
+  { permission: PERMISSIONS.EXPENSES_CREATE, description: 'Create expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+  { permission: PERMISSIONS.EXPENSES_READ, description: 'Read expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+  { permission: PERMISSIONS.EXPENSES_UPDATE, description: 'Update expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+  { permission: PERMISSIONS.EXPENSES_DELETE, description: 'Delete expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+  { permission: PERMISSIONS.EXPENSES_MANAGE, description: 'Manage all expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+  
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];

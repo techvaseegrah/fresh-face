@@ -16,7 +16,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`{${inter.className} bg-gray-50}`}>
+      <body className={`${inter.className} bg-gray-50`}>
         <SessionProvider>
           <Sidebar />
           <main className="ml-0 p-8">
