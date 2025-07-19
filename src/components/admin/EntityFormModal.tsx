@@ -15,7 +15,7 @@ interface Props {
   onClose: () => void
   onSave: (entityType: EntityType, data: any) => void
   entityType: EntityType | null
-  entityToEdit: IProduct | { _id: string; name: string } | null
+  entityToEdit: IProduct | { _id: string; name:string } | null
   context?: {
     productType?: ProductType
     brandId?: string
@@ -85,7 +85,10 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
   }, [formData.numberOfItems, formData.quantityPerItem, entityType])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
+    let { name, value } = e.target
+    if (name === "sku") {
+      value = value.toUpperCase()
+    }
     setFormData((prev: any) => ({ ...prev, [name]: value }))
   }
 
@@ -109,11 +112,9 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
         subCategory: context?.subCategoryId,
       }
 
-      // Handle expiry date - if empty, explicitly set to null to remove it
       if (formData.expiryDate && formData.expiryDate.trim() !== "") {
         dataToSave.expiryDate = new Date(formData.expiryDate)
       } else {
-        // Explicitly set to null when editing to remove existing expiry date
         if (entityToEdit) {
           dataToSave.expiryDate = null
         }
@@ -136,6 +137,8 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
 
   if (!isOpen) return null
 
+  // --- FIX APPLIED HERE ---
+  // Wrapped the return strings in backticks (`) to create valid template literals.
   const getTitle = () => {
     const action = entityToEdit ? "Edit" : "Add New"
     switch (entityType) {

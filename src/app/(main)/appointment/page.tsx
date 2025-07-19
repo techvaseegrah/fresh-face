@@ -211,7 +211,7 @@ const canUpdateAppointments = session && (
       </div>
       {/* MODIFIED: Added Date Filter buttons and adjusted layout */}
       <div className="mb-6 flex flex-col md:flex-row items-center gap-4">
-        <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10" /></div>
+        <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10" /></div>
         
         {/* NEW: Date filter button group */}
         <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">

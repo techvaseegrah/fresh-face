@@ -21,6 +21,7 @@ export async function GET() {
     // Recent appointments
     const recentAppointments = await Appointment.find({})
       .populate('customerId', 'name')
+      .populate('stylistId','name')
       .sort({ createdAt: -1 })
       .limit(3)
       .lean();
@@ -30,7 +31,7 @@ export async function GET() {
         id: appointment._id.toString(),
         type: 'appointment',
         title: 'New Appointment Booked',
-        description: `${appointment.customerId?.name || 'Customer'} - ${appointment.style}`,
+        description: `${appointment.customerId?.name || 'Customer'} - ${appointment.stylistId?.name}`,
         time: new Date(appointment.createdAt).toLocaleDateString()
       });
     });

@@ -437,7 +437,7 @@ const LowStockStatCard = ({ data }: { data: LowStockData }) => {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-medium text-gray-900">{formatTime(appointment.time)}</p>
+                        <p className="font-medium text-gray-900">{appointment.time}</p>
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                           appointment.status === 'Scheduled' 
                             ? 'bg-blue-100 text-blue-800'
