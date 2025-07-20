@@ -2,9 +2,28 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
 import Staff from '@/models/staff';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+
+async function checkPermissions(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role?.permissions) {
+    return { error: 'Authentication required.', status: 401 };
+  }
+  const userPermissions = session.user.role.permissions;
+  if (!hasPermission(userPermissions, permission)) {
+    return { error: 'You do not have permission to perform this action.', status: 403 };
+  }
+  return null; 
+}
 
 // This route handles POST requests to reset (delete) a daily sales record.
 export async function POST(request: Request) {
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_INCENTIVES_MANAGE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
   try {
     await dbConnect();
     

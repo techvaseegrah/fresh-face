@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 // --- LIBRARY IMPORTS ---
 import * as XLSX from 'xlsx';
@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 // Ensure these types are imported from your actual model file
 import type { TargetSheetData, SummaryMetrics } from '@/models/TargetSheet'; 
+import { useSession } from 'next-auth/react';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
 // --- HELPER COMPONENTS (Unchanged) ---
 // ProgressBar and MetricCard components are unchanged...
@@ -92,6 +94,13 @@ interface TargetViewProps {
 }
 
 export default function TargetView({ initialData }: TargetViewProps) {
+        // NEW: Get session data to check for permissions
+    const { data: session } = useSession();
+    const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
+    // NEW: Create a specific permission variable for managing targets
+    const canManageTarget = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_TARGET_MANAGE), [userPermissions]);
+
     const router = useRouter();
     const [data, setData] = useState<TargetSheetData | null>(initialData);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -258,10 +267,13 @@ export default function TargetView({ initialData }: TargetViewProps) {
                         <FileText size={18} className="text-red-600" />
                         Export PDF
                     </button>
-                    <button onClick={openModal} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-black text-white font-bold py-2 px-4 rounded-lg shadow hover:shadow-md transition-all">
-                        <Target size={18} />
-                        Set Target
-                    </button>
+                    {/* MODIFIED: Conditionally render the "Set Target" button */}
+                    {canManageTarget && (
+                        <button onClick={openModal} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-black text-white font-bold py-2 px-4 rounded-lg shadow hover:shadow-md transition-all">
+                            <Target size={18} />
+                            Set Target
+                        </button>
+                    )}
                 </div>
             </header>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

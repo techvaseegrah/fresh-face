@@ -16,6 +16,9 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
+import { useSession } from 'next-auth/react';
+import { PERMISSIONS, hasPermission } from '../../../../lib/permissions';
+
 // --- Interface Definitions ---
 interface SalaryInputs {
   otHours: string;
@@ -138,6 +141,12 @@ const PaymentDetailSidebar: React.FC<PaymentDetailSidebarProps> = ({ record, all
 
 // --- Main Salary Component ---
 const Salary: React.FC = () => {
+
+  const { data: session } = useSession();
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
+  const canManageSalary = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_SALARY_MANAGE), [userPermissions]);
+  
   const {
     staffMembers,
     salaryRecords,
@@ -660,20 +669,26 @@ const Salary: React.FC = () => {
                                       <p className="text-xs text-slate-500">Net Payout</p>
                                       <p className="text-lg font-bold text-slate-900">{record ? `₹${(record.netSalary ?? 0).toLocaleString('en-IN')}` : '—'}</p>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    {record ? (
-                                      record.isPaid ? (
-                                        <Button variant="success" size="sm" disabled icon={<CheckCircle size={14}/>} onClick={() => setSelectedPaymentRecord(record)}>Paid</Button>
+                                 <div className="flex items-center gap-2">
+                                  {record ? (
+                                    record.isPaid ? (
+                                  <Button variant="success" size="sm" disabled icon={<CheckCircle size={14}/>} onClick={() => setSelectedPaymentRecord(record)}>Paid</Button>
                                       ) : (
-                                        <>
-                                          <Button variant="outline" size="sm" onClick={() => openProcessingModal(staff, record)} disabled={isPaying} icon={<Edit size={14}/>}>Edit</Button>
-                                          <Button variant="black" size="sm" onClick={() => handlePayNow(record, staff)} isLoading={isPaying}>Pay Now</Button>
-                                        </>
-                                      )
-                                    ) : (
-                                      <Button variant="black" size="sm" onClick={() => openProcessingModal(staff, null)} isLoading={isProcessing}>Process</Button>
-                                    )}
-                                  </div>
+      // For unpaid records, only show actions if user has permission
+      canManageSalary ? (
+        <>
+          <Button variant="outline" size="sm" onClick={() => openProcessingModal(staff, record)} disabled={isPaying} icon={<Edit size={14}/>}>Edit</Button>
+          <Button variant="black" size="sm" onClick={() => handlePayNow(record, staff)} isLoading={isPaying}>Pay Now</Button>
+        </>
+      ) : null // If no permission, show nothing
+    )
+  ) : (
+    // For unprocessed records, only show actions if user has permission
+    canManageSalary ? (
+      <Button variant="black" size="sm" onClick={() => openProcessingModal(staff, null)} isLoading={isProcessing}>Process</Button>
+    ) : null // If no permission, show nothing
+  )}
+</div>
                                 </div>
                             </div>
                         </Card>

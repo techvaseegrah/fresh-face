@@ -11,6 +11,8 @@ import { AttendanceRecordTypeFE, StaffMember, TemporaryExitTypeFE } from '../../
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWeekend, differenceInMinutes, addMonths, subMonths, isEqual, startOfDay } from 'date-fns';
+import { useSession } from 'next-auth/react';
+import { PERMISSIONS, hasPermission } from '../../../../lib/permissions';
 
 // Helper function to get initials from a name (Original Function)
 const getInitials = (name: string = ''): string => {
@@ -266,6 +268,14 @@ const ApplyWeekOffModal: React.FC<{ staffMembers: StaffMember[]; attendanceRecor
 };
 
 const Attendance: React.FC = () => {
+    // NEW: Get session data to check for permissions
+  const { data: session } = useSession();
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
+    // NEW: Create a specific permission variable for managing attendance
+  const canManageAttendance = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_ATTENDANCE_MANAGE), [userPermissions]);
+
+
   const { staffMembers, attendanceRecordsFE, loadingAttendance, errorAttendance, fetchAttendanceRecords, checkInStaff, checkOutStaff, startTemporaryExit, endTemporaryExit, applyWeekOff, removeWeekOff } = useStaff();
   const [searchTerm, setSearchTerm] = useState('');
   const [dailyRequiredHours, setDailyRequiredHours] = useState(9); 
@@ -457,7 +467,10 @@ const Attendance: React.FC = () => {
           <input type="text" placeholder="Search by staff name or ID..." className="pl-12 pr-4 py-2.5 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={() => setShowWeekOffModal(true)}>Apply Week Off</Button>
+                   {/* MODIFIED: Conditionally render the "Apply Week Off" button */}
+          {canManageAttendance && (
+            <Button onClick={() => setShowWeekOffModal(true)}>Apply Week Off</Button>
+          )}
           <label htmlFor="dailyHours" className="text-sm font-medium text-gray-700 whitespace-nowrap">Shop Default Hours:</label>
           <input type="number" id="dailyHours" value={settingsLoading ? '...' : dailyRequiredHours} readOnly className="w-20 border-gray-300 rounded-lg shadow-sm bg-gray-100 sm:text-sm px-3 py-2 text-gray-900 font-semibold" />
         </div>
@@ -479,8 +492,10 @@ const Attendance: React.FC = () => {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[10%]">Working Time</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[10%]">Required</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[13%]">Temp Exits</th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-[15%]">Actions</th>
-                </tr>
+                    {canManageAttendance && (
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-[15%]">Actions</th>
+                    )}                
+                    </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredStaff.map((staff) => { 
@@ -494,18 +509,91 @@ const Attendance: React.FC = () => {
                   const staffWithId = staff as StaffMemberWithId;
                   
                   return (
-                    <tr key={staff.id} className="hover:bg-violet-50/70 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center"><Avatar src={staff.image} name={staff.name} className="h-11 w-11" /><div className="ml-4"><div className="text-sm font-medium text-gray-900 truncate">{staff.name}</div><div className="text-xs text-gray-500">{staff.position}</div></div></div></td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">{staffWithId.staffIdNumber || 'N/A'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{todayAttendance ? ( todayAttendance.status === 'week_off' ? <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-cyan-100 text-cyan-800">Week Off</span> : <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${todayAttendance.isWorkComplete ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{todayAttendance.status.charAt(0).toUpperCase() + todayAttendance.status.slice(1).replace('_', ' ')}{!todayAttendance.isWorkComplete && ' (Inc.)'}</span> ) : <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-gray-100 text-gray-800">Not Recorded</span>}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700"><div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> In: {todayAttendance?.checkIn ? format(todayAttendance.checkIn, 'HH:mm') : '—'}</div><div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> Out: {todayAttendance?.checkOut ? format(todayAttendance.checkOut, 'HH:mm') : '—'}</div></td>
-                      <td className="px-6 py-4 whitespace-nowrap"><span className="text-sm font-semibold text-gray-900">{formatDuration(workingMinutes)}</span></td>
-                      <td className="px-6 py-4 whitespace-nowrap"><span className={`text-sm font-medium ${remainingMinutes > 0 && workingMinutes > 0 && !todayAttendance?.isWorkComplete ? 'text-red-600' : (todayAttendance?.isWorkComplete ? 'text-green-600' : 'text-gray-700')}`}>{todayAttendance?.isWorkComplete ? 'Completed' : (remainingMinutes > 0 && workingMinutes > 0 ? `${formatDuration(remainingMinutes)} rem.` : formatDuration(requiredMinutesForStaff))}</span></td>
-                      <td className="px-6 py-4 whitespace-nowrap max-w-xs">{todayAttendance?.temporaryExits && todayAttendance.temporaryExits.length > 0 && (<div className="space-y-1.5">{todayAttendance.temporaryExits.map((exit: TemporaryExitTypeFE) => (<div key={exit.id} className="text-xs" title={exit.reason ?? undefined}><div className={`flex items-center space-x-1.5 ${exit.isOngoing ? 'text-blue-600 font-semibold animate-pulse' : 'text-gray-500'}`}><span>{format(exit.startTime, 'HH:mm')} - {exit.endTime ? format(exit.endTime, 'HH:mm') : 'Ongoing'}</span>{!exit.isOngoing && exit.endTime && (<span className="text-purple-600">({formatDuration(exit.durationMinutes)})</span>)}</div>{exit.reason && <p className="text-gray-600 truncate">{exit.reason}</p>}</div>))}</div>)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">{!todayAttendance ? <Button size="sm" icon={<LogIn size={14} />} onClick={() => handleCheckIn(staff)}>Check In</Button> : todayAttendance.status === 'week_off' ? <span className="text-xs text-cyan-700 bg-cyan-100 px-2 py-1 rounded-md font-semibold">On Week Off</span> : <div className="flex justify-end items-center space-x-2">{!todayAttendance.checkOut && (<>{ongoingTempExit ? <Button size="xs" variant="success" icon={<PauseCircle size={12} />} onClick={() => handleEndTempExit(todayAttendance.id, ongoingTempExit.id)}>End Exit</Button> : <Button size="xs" variant="outline" icon={<PlayCircle size={12} />} onClick={() => handleOpenTempExitModal(todayAttendance.id)} disabled={!!todayAttendance.checkOut}>Temp Exit</Button>}
-                        <Button size="xs" variant="secondary" icon={<LogOut size={12} />} onClick={() => handleCheckOutAttempt(todayAttendance.id, staff.id, staff.name)} disabled={!!todayAttendance.checkOut || !!ongoingTempExit}>Check Out</Button>
-                      </>)}{todayAttendance.checkOut && (<span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-md font-semibold">Checked Out</span>)}</div>}</td>
-                    </tr>
+                   <tr key={staff.id} className="hover:bg-violet-50/70 transition-colors">
+  {/* Column 1: Staff */}
+  <td className="px-6 py-4 whitespace-nowrap">
+    <div className="flex items-center">
+      <Avatar src={staff.image} name={staff.name} className="h-11 w-11" />
+      <div className="ml-4">
+        <div className="text-sm font-medium text-gray-900 truncate">{staff.name}</div>
+        <div className="text-xs text-gray-500">{staff.position}</div>
+      </div>
+    </div>
+  </td>
+  
+  {/* Column 2: Staff ID */}
+  <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">{staffWithId.staffIdNumber || 'N/A'}</td>
+  
+  {/* Column 3: Status */}
+  <td className="px-6 py-4 whitespace-nowrap">
+    {todayAttendance ? ( 
+      todayAttendance.status === 'week_off' ? 
+      <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-cyan-100 text-cyan-800">Week Off</span> : 
+      <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${todayAttendance.isWorkComplete ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
+        {todayAttendance.status.charAt(0).toUpperCase() + todayAttendance.status.slice(1).replace('_', ' ')}
+        {!todayAttendance.isWorkComplete && ' (Inc.)'}
+      </span> 
+    ) : <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-gray-100 text-gray-800">Not Recorded</span>}
+  </td>
+
+  {/* Column 4: Check In/Out */}
+  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+    <div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> In: {todayAttendance?.checkIn ? format(todayAttendance.checkIn, 'HH:mm') : '—'}</div>
+    <div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> Out: {todayAttendance?.checkOut ? format(todayAttendance.checkOut, 'HH:mm') : '—'}</div>
+  </td>
+  
+  {/* Column 5: Working Time */}
+  <td className="px-6 py-4 whitespace-nowrap"><span className="text-sm font-semibold text-gray-900">{formatDuration(workingMinutes)}</span></td>
+
+  {/* Column 6: Required */}
+  <td className="px-6 py-4 whitespace-nowrap">
+    <span className={`text-sm font-medium ${remainingMinutes > 0 && workingMinutes > 0 && !todayAttendance?.isWorkComplete ? 'text-red-600' : (todayAttendance?.isWorkComplete ? 'text-green-600' : 'text-gray-700')}`}>
+      {todayAttendance?.isWorkComplete ? 'Completed' : (remainingMinutes > 0 && workingMinutes > 0 ? `${formatDuration(remainingMinutes)} rem.` : formatDuration(requiredMinutesForStaff))}
+    </span>
+  </td>
+  
+  {/* Column 7: Temp Exits */}
+  <td className="px-6 py-4 whitespace-nowrap max-w-xs">
+    {todayAttendance?.temporaryExits && todayAttendance.temporaryExits.length > 0 && (
+      <div className="space-y-1.5">
+        {todayAttendance.temporaryExits.map((exit: TemporaryExitTypeFE) => (
+          <div key={exit.id} className="text-xs" title={exit.reason ?? undefined}>
+            <div className={`flex items-center space-x-1.5 ${exit.isOngoing ? 'text-blue-600 font-semibold animate-pulse' : 'text-gray-500'}`}>
+              <span>{format(exit.startTime, 'HH:mm')} - {exit.endTime ? format(exit.endTime, 'HH:mm') : 'Ongoing'}</span>
+              {!exit.isOngoing && exit.endTime && (<span className="text-purple-600">({formatDuration(exit.durationMinutes)})</span>)}
+            </div>
+            {exit.reason && <p className="text-gray-600 truncate">{exit.reason}</p>}
+          </div>
+        ))}
+      </div>
+    )}
+  </td>
+
+  {/* Column 8: Actions (Conditional) */}
+  {canManageAttendance && (
+    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+      {!todayAttendance ? 
+        <Button size="sm" icon={<LogIn size={14} />} onClick={() => handleCheckIn(staff)}>Check In</Button> : 
+      todayAttendance.status === 'week_off' ? 
+        <span className="text-xs text-cyan-700 bg-cyan-100 px-2 py-1 rounded-md font-semibold">On Week Off</span> : 
+      <div className="flex justify-end items-center space-x-2">
+        {!todayAttendance.checkOut && (
+          <>
+            {ongoingTempExit ? 
+              <Button size="xs" variant="success" icon={<PauseCircle size={12} />} onClick={() => handleEndTempExit(todayAttendance.id, ongoingTempExit.id)}>End Exit</Button> : 
+              <Button size="xs" variant="outline" icon={<PlayCircle size={12} />} onClick={() => handleOpenTempExitModal(todayAttendance.id)} disabled={!!todayAttendance.checkOut}>Temp Exit</Button>
+            }
+            <Button size="xs" variant="secondary" icon={<LogOut size={12} />} onClick={() => handleCheckOutAttempt(todayAttendance.id, staff.id, staff.name)} disabled={!!todayAttendance.checkOut || !!ongoingTempExit}>Check Out</Button>
+          </>
+        )}
+        {todayAttendance.checkOut && (
+          <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-md font-semibold">Checked Out</span>
+        )}
+      </div>
+      }
+    </td>
+  )}
+</tr>
                   );
                 })}
               </tbody>

@@ -13,6 +13,9 @@ import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 
+import { useSession } from 'next-auth/react';
+import { PERMISSIONS, hasPermission } from '../../../../lib/permissions';
+
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -30,7 +33,10 @@ const StatCard = ({ icon, title, value, description }: { icon: React.ReactNode, 
 );
 
 const AdvancePayment: React.FC = () => {
-  const {
+   const { data: session } = useSession();
+    const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+    const canManageAdvance = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_ADVANCE_MANAGE), [userPermissions]);
+    const {
     staffMembers,
     advancePayments,
     loadingAdvancePayments,
@@ -439,14 +445,17 @@ const AdvancePayment: React.FC = () => {
                       <p className="text-sm text-gray-700 bg-gray-100 p-2 rounded-md h-16 overflow-y-auto">{payment.reason}</p>
                     </div>
                   </div>
-                  <div className="p-4 bg-gray-50/50 flex gap-3 rounded-b-xl">
-                    <button onClick={() => handleApprove(payment.id)} className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-all">
-                      <CheckCircle2 size={16} /> Approve
-                    </button>
-                    <button onClick={() => handleReject(payment.id)} className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-all">
-                       <XCircle size={16} /> Reject
-                    </button>
-                  </div>
+                 {/* MODIFIED: Conditionally render the Approve/Reject button container */}
+                  {canManageAdvance && (
+                    <div className="p-4 bg-gray-50/50 flex gap-3 rounded-b-xl">
+                      <button onClick={() => handleApprove(payment.id)} className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-all">
+                        <CheckCircle2 size={16} /> Approve
+                      </button>
+                      <button onClick={() => handleReject(payment.id)} className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-all">
+                        <XCircle size={16} /> Reject
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

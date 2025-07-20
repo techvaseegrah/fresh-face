@@ -2,8 +2,30 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
 import Staff from '@/models/staff';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+
+async function checkPermissions(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role?.permissions) {
+    return { error: 'Authentication required.', status: 401 };
+  }
+  const userPermissions = session.user.role.permissions;
+  if (!hasPermission(userPermissions, permission)) {
+    return { error: 'You do not have permission to perform this action.', status: 403 };
+  }
+  return null; 
+}
 
 export async function POST(request: Request) {
+  
+  // NEW: Add permission check at the top
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_INCENTIVES_MANAGE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+
   try {
     await dbConnect();
     
@@ -28,14 +50,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'Staff not found.' }, { status: 404 });
     }
     
-    // ====================================================================
-    // THE FIX IS HERE: Parse the date string manually to avoid timezone issues.
-    // ====================================================================
-    // OLD, BUGGY CODE:
-    // const targetDate = new Date(date);
-    // targetDate.setHours(0, 0, 0, 0);
-
-    // NEW, CORRECTED CODE:
     const [year, month, day] = date.split('-').map(Number);
     // We create a UTC date to ensure it's timezone-agnostic. 
     // MongoDB stores dates in UTC, so this is the most reliable way.

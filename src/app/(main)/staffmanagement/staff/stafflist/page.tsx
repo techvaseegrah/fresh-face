@@ -12,6 +12,10 @@ import {
 import { useStaff, StaffMember } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
+import { useSession } from 'next-auth/react';
+import Role from '@/models/role'; 
+import { PERMISSIONS, hasPermission } from '@/lib/permissions'; 
+
 const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
   if (!src) return null;
   return (
@@ -45,9 +49,11 @@ interface StaffDetailSidebarProps {
   onDelete: (staff: StaffMember) => void;
   onViewDocument: (src: string, title: string) => void;
   isDeleting: string | null;
+  canUpdate: boolean;
+  canDelete:boolean;
 }
 
-const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose, onDelete, onViewDocument, isDeleting }) => {
+const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose, onDelete, onViewDocument, isDeleting, canUpdate, canDelete }) => {
   const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
 
@@ -175,23 +181,27 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose,
         </div>
 
         <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
-            <Button
-                variant="outline"
-                className="flex-1"
-                icon={<Edit size={16} />}
-                onClick={() => router.push(`/staffmanagement/staff/editstaff?staffId=${staff.id}`)}
-            >
-                Edit Profile
-            </Button>
-            <Button
-                variant="danger"
-                className="flex-1"
-                icon={isCurrentlyDeleting ? <RefreshCw className="animate-spin" size={16} /> : <Trash size={16} />}
-                onClick={() => onDelete(staff)}
-                disabled={isCurrentlyDeleting || staff.status === 'inactive'}
-            >
-                {isCurrentlyDeleting ? 'Deactivating...' : 'Deactivate'}
-            </Button>
+            {canUpdate && (
+              <Button
+                  variant="outline"
+                  className="flex-1"
+                  icon={<Edit size={16} />}
+                  onClick={() => router.push(`/staffmanagement/staff/editstaff?staffId=${staff.id}`)}
+              >
+                  Edit Profile
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                  variant="danger"
+                  className="flex-1"
+                  icon={isCurrentlyDeleting ? <RefreshCw className="animate-spin" size={16} /> : <Trash size={16} />}
+                  onClick={() => onDelete(staff)}
+                  disabled={isCurrentlyDeleting || staff.status === 'inactive'}
+              >
+                  {isCurrentlyDeleting ? 'Deactivating...' : 'Deactivate'}
+              </Button>
+            )}
         </div>
       </div>
     </>
@@ -243,6 +253,7 @@ const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) =
 
 
 const StaffList: React.FC = () => {
+  const { data: session } = useSession();
   const { staffMembers, loadingStaff, errorStaff, fetchStaffMembers, deleteStaffMember } = useStaff();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -254,6 +265,12 @@ const StaffList: React.FC = () => {
   const filterRef = useRef<HTMLDivElement>(null);
 
   const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
+
+    // NEW: Define permission variables based on the user's session
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+  const canCreate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_CREATE), [userPermissions]);
+  const canUpdate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_UPDATE), [userPermissions]);
+  const canDelete = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_DELETE), [userPermissions]);
   
   useEffect(() => {
     if (fetchStaffMembers) fetchStaffMembers();
@@ -342,13 +359,15 @@ const StaffList: React.FC = () => {
                 disabled={loadingStaff}
                 title="Refresh List"
               />
-              <Button
-                variant="black"
-                icon={<Plus size={16} />}
-                onClick={() => router.push('/staffmanagement/staff/add')}
-              >
-                Add Staff
-              </Button>
+              {canCreate && (
+                <Button
+                  variant="black"
+                  icon={<Plus size={16} />}
+                  onClick={() => router.push('/staffmanagement/staff/add')}
+                >
+                  Add Staff
+                </Button>
+              )}
             </div>
           </div>
 
@@ -441,6 +460,8 @@ const StaffList: React.FC = () => {
         onDelete={handleDeleteStaff}
         isDeleting={isDeleting}
         onViewDocument={(src, title) => setViewingDocument({ src, title })}
+        canUpdate={canUpdate}
+        canDelete={canDelete}
       />
     </div>
   );

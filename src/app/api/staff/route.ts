@@ -1,11 +1,13 @@
 // src/app/api/staff/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
 import Stylist from '../../../models/Stylist';
 import ShopSetting from '../../../models/ShopSetting';
 import mongoose, { Types } from 'mongoose';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
 // Helper function to validate MongoDB ObjectId string
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
@@ -24,7 +26,25 @@ async function getNextStaffId(): Promise<string> {
     return startNumber.toString();
 }
 
+
+async function checkPermissions(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role?.permissions) {
+    return { error: 'Authentication required.', status: 401 };
+  }
+  const userPermissions = session.user.role.permissions;
+  if (!hasPermission(userPermissions, permission)) {
+    return { error: 'You do not have permission to perform this action.', status: 403 };
+  }
+  return null; 
+}
+
 export async function GET(request: NextRequest) {
+    
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_READ);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const action = searchParams.get('action');
@@ -67,6 +87,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_CREATE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+
   await dbConnect();
   try {
     const body = await request.json();
@@ -146,6 +172,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+   
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_UPDATE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const staffId = searchParams.get('id'); // This is the unique MongoDB _id
@@ -208,6 +240,12 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_DELETE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+
   // No changes are needed in this function.
   await dbConnect();
   const { searchParams } = request.nextUrl;

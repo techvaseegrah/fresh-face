@@ -1,47 +1,44 @@
-// src/app/api/advance-payments/[id]/route.ts
+// src/app/api/advancepayment/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { formatISO } from 'date-fns';
 import mongoose, { Types } from 'mongoose';
 import dbConnect from '../../../../lib/mongodb';
 import AdvancePayment from '../../../../models/advance';
-import Staff from '../../../../models/staff'; // The Staff model is needed for population
+import Staff from '../../../../models/staff';
+// NEW: Import permission tools
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
 // --- Type Definitions (Consistent with the main route file) ---
-interface PopulatedStaffDetails {
-  _id: Types.ObjectId;
-  name: string;
-  image?: string;
-  position?: string;
-}
-
-interface LeanAdvancePaymentDocument {
-  _id: Types.ObjectId;
-  // FIX: staffId can now be null after a failed populate
-  staffId: PopulatedStaffDetails | null;
-  requestDate: Date;
-  amount: number;
-  reason: string;
-  repaymentPlan: string;
-  status: 'pending' | 'approved' | 'rejected';
-  approvedDate: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
+interface PopulatedStaffDetails { /* ... */ }
+interface LeanAdvancePaymentDocument { /* ... */ }
 interface UpdateAdvanceStatusPayload {
     status: 'approved' | 'rejected';
 }
 
+// NEW: A reusable function to check permissions
+async function checkPermissions(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role?.permissions) {
+    return { error: 'Authentication required.', status: 401 };
+  }
+  const userPermissions = session.user.role.permissions;
+  if (!hasPermission(userPermissions, permission)) {
+    return { error: 'You do not have permission to perform this action.', status: 403 };
+  }
+  return null; 
+}
+
 // --- Helper Function (To format the response consistently) ---
-// FIX: This function now safely handles cases where payment.staffId is null.
-const formatPaymentResponse = (payment: LeanAdvancePaymentDocument) => ({
+const formatPaymentResponse = (payment: any) => ({
   id: payment._id.toString(),
-  staffId: payment.staffId ? { // Check if staffId exists
+  staffId: payment.staffId ? {
     id: payment.staffId._id.toString(),
     name: payment.staffId.name,
     image: payment.staffId.image,
     position: payment.staffId.position,
-  } : null, // If not, return null
+  } : null,
   requestDate: formatISO(payment.requestDate),
   amount: payment.amount,
   reason: payment.reason,
@@ -60,6 +57,12 @@ const formatPaymentResponse = (payment: LeanAdvancePaymentDocument) => ({
  * @description Update the status of a specific advance payment (e.g., approve or reject it).
  */
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+  // NEW: Add permission check at the top
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ADVANCE_MANAGE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+
   const { id: paymentId } = params;
 
   if (!mongoose.Types.ObjectId.isValid(paymentId)) {
@@ -70,12 +73,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     await dbConnect();
     const body = (await request.json()) as UpdateAdvanceStatusPayload;
     
-    // Validate the incoming status
     if (!body.status || !['approved', 'rejected'].includes(body.status)) {
         return NextResponse.json({ success: false, error: 'Invalid status. Must be "approved" or "rejected".' }, { status: 400 });
     }
 
-    // Prepare the fields to be updated
     const updateFields: { status: 'approved' | 'rejected', approvedDate?: Date | null } = {
         status: body.status,
     };
@@ -86,11 +87,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         updateFields.approvedDate = null;
     }
 
-    // Find the document, update it, and return the new version
     const updatedPayment = await AdvancePayment.findByIdAndUpdate(
         paymentId,
         { $set: updateFields },
-        { new: true, runValidators: true } // `new: true` returns the modified document
+        { new: true, runValidators: true }
     )
     .populate<{ staffId: PopulatedStaffDetails }>({ path: 'staffId', select: 'name image position', model: Staff })
     .lean<LeanAdvancePaymentDocument>();
@@ -99,7 +99,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ success: false, error: 'Advance payment not found.' }, { status: 404 });
     }
 
-    // Return the fully populated and formatted updated payment
     return NextResponse.json({ success: true, data: formatPaymentResponse(updatedPayment) });
 
   } catch (error: any) {
@@ -113,6 +112,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
  * @description Delete a specific advance payment record.
  */
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+    // NEW: Add permission check at the top
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ADVANCE_MANAGE);
+    if (permissionCheck) {
+      return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+    }
+
     const { id: paymentId } = params;
 
     if (!mongoose.Types.ObjectId.isValid(paymentId)) {
@@ -127,7 +132,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
         return NextResponse.json({ success: false, error: 'Advance payment not found.' }, { status: 404 });
       }
   
-      // Return a success message and the ID of the deleted item for the client to use
       return NextResponse.json({ success: true, message: 'Advance payment deleted successfully.', data: { id: paymentId } });
   
     } catch (error: any) {

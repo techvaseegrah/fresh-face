@@ -5,6 +5,10 @@ import SalaryRecord, { ISalaryRecord } from '../../../models/SalaryRecord';
 import Staff, { IStaff } from '../../../models/staff';
 import mongoose from 'mongoose';
 
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+
 // --- Interfaces for Payloads and Responses ---
 
 // Interface updated to match the new schema and frontend payload
@@ -111,8 +115,26 @@ function formatRecordForResponse(
   };
 }
 
+async function checkPermissions(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role?.permissions) {
+    return { error: 'Authentication required.', status: 401 };
+  }
+  const userPermissions = session.user.role.permissions;
+  if (!hasPermission(userPermissions, permission)) {
+    return { error: 'You do not have permission to perform this action.', status: 403 };
+  }
+  return null; 
+}
+
 // --- POST Handler (No changes needed here, as it's flexible) ---
 export async function POST(req: NextRequest) {
+
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_SALARY_MANAGE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+
   try {
     await dbConnect();
     const payload = (await req.json()) as ProcessSalaryPayloadFE;
@@ -157,6 +179,12 @@ export async function POST(req: NextRequest) {
 
 // --- GET Handler (No changes needed here, as formatRecordForResponse is updated) ---
 export async function GET(req: NextRequest) {
+
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_SALARY_READ);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+                              
   // This function remains the same as your original, as the heavy lifting is done in the updated `formatRecordForResponse` helper.
   try {
     await dbConnect();

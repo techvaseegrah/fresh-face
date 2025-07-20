@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import IncentiveRule from '@/models/IncentiveRule';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
 // The interface for our Rule object, ensuring type safety.
 interface IRule {
@@ -19,8 +22,27 @@ interface IRule {
   };
 }
 
+
+// NEW: A reusable function to check permissions
+async function checkPermissions(permission: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.role?.permissions) {
+    return { error: 'Authentication required.', status: 401 };
+  }
+  const userPermissions = session.user.role.permissions;
+  if (!hasPermission(userPermissions, permission)) {
+    return { error: 'You do not have permission to perform this action.', status: 403 };
+  }
+  return null; 
+}
+
 // GET: Fetch the current rules from /api/incentives/rules
 export async function GET() {
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_INCENTIVES_READ);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+  
   await dbConnect();
   try {
     // Fetch rules from the database as plain JavaScript objects.
@@ -41,10 +63,6 @@ export async function GET() {
       incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'serviceSaleOnly' }
     };
 
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // !!   THIS IS THE NEW, CORRECTED LOGIC     !!
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // It correctly merges the nested 'incentive' object.
     const daily: IRule = {
         ...defaultDaily,
         ...dailyRuleDb,
@@ -73,6 +91,12 @@ export async function GET() {
 
 // POST: Create or Update rules (This part was already correct and needs no changes)
 export async function POST(request: Request) {
+
+    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_INCENTIVES_MANAGE);
+  if (permissionCheck) {
+    return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+  }
+  
   await dbConnect();
   try {
     const { daily, monthly } = await request.json();

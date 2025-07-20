@@ -7,10 +7,6 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // --- MODIFIED: Add 'Membership' to the navigation array ---
 const settingsNavigation = [
-<<<<<<< HEAD
-  { name: 'Loyalty Points', href: '/settings/loyalty', permission: PERMISSIONS.LOYALTY_SETTINGS_READ },
-  { name: 'Membership', href: '/settings/membership', permission: PERMISSIONS.MEMBERSHIP_SETTINGS_READ }, // <-- ADD THIS LINE
-=======
   { 
     name: 'Attendance Settings', 
     href: '/settings/attendancesetting',
@@ -31,7 +27,6 @@ const settingsNavigation = [
   },
 
 
->>>>>>> c6df4e51e34b50743c8514444a260799b7f2b67d
 ];
 // --- END MODIFICATION ---
 

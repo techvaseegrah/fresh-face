@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, ReactNode } from 'react';
+import React, { useState, useEffect, ReactNode, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { IndianRupee, Calendar, CheckCircle, XCircle, RefreshCcw, Users, Star, Gift, BarChartBig, Settings, ShoppingBag, Truck, PlusCircle, Download } from 'lucide-react';
 import Card from '@/components/ui/Card';
@@ -9,10 +9,11 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
+import { useSession } from 'next-auth/react';
+import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
-// ===================================================================
 //  Interfaces and Helper Components (NO CHANGES NEEDED HERE)
-// ===================================================================
+
 interface StaffMember { id: string; name: string; }
 interface Rule { target: { multiplier: number; }; sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; }; incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };}
 interface SettingsProps { onClose: () => void; }
@@ -215,11 +216,15 @@ const IncentiveResultsModal = ({ isOpen, onClose, data }: IncentiveResultsModalP
     );
 };
 
-
-// ===================================================================
 // MAIN PAGE COMPONENT
-// ===================================================================
+
 export default function IncentivesPage() {
+   //  Get session data to check for permissions
+  const { data: session } = useSession();
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+  
+  // Create a specific permission variable for managing incentives
+  const canManageIncentives = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_INCENTIVES_MANAGE), [userPermissions]);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState('');
@@ -502,9 +507,11 @@ export default function IncentivesPage() {
             <h1 className="text-3xl font-bold text-gray-800">Incentives Dashboard</h1>
             <p className="text-gray-500 mt-1">Log daily performance and calculate staff incentives.</p>
           </div>
-          <Button onClick={() => setIsSettingsModalOpen(true)} variant="outline" className="flex items-center gap-2">
-            <Settings size={16} /> Manage Rules
-          </Button>
+          {canManageIncentives && (
+            <Button onClick={() => setIsSettingsModalOpen(true)} variant="outline" className="flex items-center gap-2">
+              <Settings size={16} /> Manage Rules
+            </Button>
+          )}
         </div>
         
         <Card className="mb-8">
@@ -533,10 +540,12 @@ export default function IncentivesPage() {
                   <InputWithIcon icon={<ShoppingBag size={18} />} placeholder="Product Sale (₹)" value={productSale} onChange={e => setProductSale(e.target.value)} />
                   <InputWithIcon icon={<Star size={18} />} placeholder="Reviews (Name Only)" value={reviewsWithName} onChange={e => setReviewsWithName(e.target.value)} />
                   <InputWithIcon icon={<Gift size={18} />} placeholder="Reviews (with Photo)" value={reviewsWithPhoto} onChange={e => setReviewsWithPhoto(e.target.value)} />
-                  <Button type="submit" disabled={loading || !selectedStaffId} className="w-full flex items-center justify-center gap-2" variant="black">
-                      <PlusCircle size={18} />
-                      {loading ? 'Logging...' : 'Log Data'}
-                  </Button>
+                 {canManageIncentives && (
+                    <Button type="submit" disabled={loading || !selectedStaffId} className="w-full flex items-center justify-center gap-2" variant="black">
+                        <PlusCircle size={18} />
+                        {loading ? 'Logging...' : 'Log Data'}
+                    </Button>
+                  )}
               </form>
           </Card>
           
@@ -547,10 +556,12 @@ export default function IncentivesPage() {
                     <Button onClick={handleCalculateIncentive} disabled={loading || !selectedStaffId} className="w-full" variant="black">
                         {loading ? 'Calculating...' : 'Calculate Individual'}
                     </Button>
-                    <Button onClick={handleResetData} disabled={loading || !selectedStaffId} className="w-full flex items-center justify-center gap-2" variant="danger">
-                        <RefreshCcw size={16} />
-                        {loading ? 'Resetting...' : "Reset Day's Data"}
-                    </Button>
+                    {canManageIncentives && (
+                      <Button onClick={handleResetData} disabled={loading || !selectedStaffId} className="w-full flex items-center justify-center gap-2" variant="danger">
+                          <RefreshCcw size={16} />
+                          {loading ? 'Resetting...' : "Reset Day's Data"}
+                      </Button>
+                    )}
                 </div>
                 <div className="mt-6 bg-gray-100 p-6 rounded-lg min-h-[150px] flex flex-col justify-center">
                     <div className="text-center text-gray-400">
