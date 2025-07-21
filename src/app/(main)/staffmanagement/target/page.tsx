@@ -1,28 +1,33 @@
-// src/app/(main)/staffmanagement/target/page.tsx
-
 // Make the page dynamic for API fetches
 export const dynamic = 'force-dynamic';
 
 import TargetView from './TargetView';
 import type { TargetSheetData } from '@/models/TargetSheet';
 
-// Data fetching function that calls your internal API
+// Function to fetch target data from your internal API
 async function getTargetPageData(): Promise<TargetSheetData | null> {
   try {
+    // Use the base URL from env variable (configured in Vercel)
+    const baseUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
     const cacheBuster = `?time=${Date.now()}`;
-    const res = await fetch(`/api/target${cacheBuster}`, { cache: 'no-store' });
+
+    const res = await fetch(`${baseUrl}/api/target${cacheBuster}`, {
+      cache: 'no-store',
+    });
 
     if (!res.ok) {
-      console.error("Failed to fetch target data. Status:", res.status);
+      console.error('Failed to fetch target data. Status:', res.status);
       return null;
     }
+
     return res.json();
   } catch (error) {
-    console.error("Error in getTargetPageData:", error);
+    console.error('Error in getTargetPageData:', error);
     return null;
   }
 }
 
+// The page component
 export default async function TargetPage() {
   const data = await getTargetPageData();
 
