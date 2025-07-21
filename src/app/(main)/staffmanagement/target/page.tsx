@@ -9,7 +9,7 @@ import type { TargetSheetData } from '@/models/TargetSheet';
 // Data fetching function (using the cache-busting technique for max reliability)
 async function getTargetPageData(): Promise<TargetSheetData | null> {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
     const cacheBuster = `?time=${new Date().getTime()}`;
     const url = `${apiUrl}/api/target${cacheBuster}`;
     
