@@ -1,39 +1,43 @@
-// src/app/(main)/staffmanagement/target/page.tsx
+// Make the page dynamic for API fetches
+export const dynamic = 'force-dynamic';
 
-// Import the Client Component
 import TargetView from './TargetView';
-
-// --- THE FIX: Import types directly from the model, the single source of truth ---
 import type { TargetSheetData } from '@/models/TargetSheet';
 
-// Data fetching function (using the cache-busting technique for max reliability)
+// Function to fetch target data from your internal API
 async function getTargetPageData(): Promise<TargetSheetData | null> {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-    const cacheBuster = `?time=${new Date().getTime()}`;
-    const url = `${apiUrl}/api/target${cacheBuster}`;
-    
-    const res = await fetch(url, { cache: 'no-store' });
+    // Use the base URL from env variable (configured in Vercel)
+    const baseUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
+    const cacheBuster = `?time=${Date.now()}`;
+
+    const res = await fetch(`${baseUrl}/api/target${cacheBuster}`, {
+      cache: 'no-store',
+    });
 
     if (!res.ok) {
-      console.error("Failed to fetch target data. Status:", res.status);
-      throw new Error('Failed to fetch data from server.');
+      console.error('Failed to fetch target data. Status:', res.status);
+      return null;
     }
+
     return res.json();
   } catch (error) {
-    console.error("Error in getTargetPageData:", error);
+    console.error('Error in getTargetPageData:', error);
     return null;
   }
 }
 
-// The main Server Component for the page
+// The page component
 export default async function TargetPage() {
   const data = await getTargetPageData();
 
   if (!data) {
-    return <div className="p-8 text-center text-red-500">Failed to load target data. Please try refreshing the page.</div>;
+    return (
+      <div className="p-8 text-center text-red-500">
+        Failed to load target data. Please try refreshing the page.
+      </div>
+    );
   }
-  
-  // Pass the correctly typed data to the Client Component
+
   return <TargetView initialData={data} />;
 }

@@ -11,7 +11,7 @@ import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import Setting from '@/models/Setting';
 import Product, { IProduct } from '@/models/Product'; // Import Product model
 import { InventoryManager, InventoryUpdate } from '@/lib/inventoryManager';
-import { sendLowStockAlertEmail } from '@/lib/mail';
+//import { sendLowStockAlertEmail } from '@/lib/mail';
 
 const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 

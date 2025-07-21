@@ -3,259 +3,263 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // --- MODIFICATION: Added useSearchParams ---
 import {
   Plus, Edit, Trash, Search, Eye, Filter, RefreshCw, X, Users, UserCheck, UserX,
   Mail, Phone, Home, CreditCard, Calendar, Briefcase, AtSign, Badge,
   FileText, Banknote, ShieldCheck, XCircle 
 } from 'lucide-react';
+
+// --- NEW: Import react-toastify ---
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 import { useStaff, StaffMember } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
-
 import { useSession } from 'next-auth/react';
-import Role from '@/models/role'; 
 import { PERMISSIONS, hasPermission } from '@/lib/permissions'; 
 
+// ... (DocumentViewerModal, DetailItem, StaffDetailSidebar, StatCard, StaffCard components remain unchanged) ...
 const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
-  if (!src) return null;
-  return (
-    <div className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
-        </div>
-        <div className="p-4">
-          <img src={src} alt={title} className="w-full h-auto object-contain" />
+    if (!src) return null;
+    return (
+      <div className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-between items-center p-4 border-b">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <Button variant="ghost" onClick={onClose}><XCircle /></Button>
+          </div>
+          <div className="p-4">
+            <img src={src} alt={title} className="w-full h-auto object-contain" />
+          </div>
         </div>
       </div>
-    </div>
-  );
-};
-
-const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
-  <div className="flex items-start gap-4 py-3">
-    <div className="flex-shrink-0 w-6 text-slate-400">{icon}</div>
-    <div className="flex-1">
-      <dt className="text-sm font-medium text-slate-500">{label}</dt>
-      <dd className="mt-1 text-sm text-slate-900 break-words">{value}</dd>
-    </div>
-  </div>
-);
-
-interface StaffDetailSidebarProps {
-  staff: StaffMember | null;
-  onClose: () => void;
-  onDelete: (staff: StaffMember) => void;
-  onViewDocument: (src: string, title: string) => void;
-  isDeleting: string | null;
-  canUpdate: boolean;
-  canDelete:boolean;
-}
-
-const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose, onDelete, onViewDocument, isDeleting, canUpdate, canDelete }) => {
-  const router = useRouter();
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    if (staff) {
-      const timer = setTimeout(() => setIsVisible(true), 10);
-      return () => clearTimeout(timer);
-    } else {
-      setIsVisible(false);
-    }
-  }, [staff]);
-
-  if (!staff) {
-    return null;
-  }
-
-  const handleClose = () => {
-    setIsVisible(false);
-    setTimeout(onClose, 300);
+    );
   };
   
-  const isCurrentlyDeleting = isDeleting === staff.id;
-
-  return (
-    <>
-      <div
-        className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
-        onClick={handleClose}
-        aria-hidden="true"
-      ></div>
-
-      <div
-        className={`fixed top-0 right-0 h-full w-full max-w-lg bg-slate-50 shadow-xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${isVisible ? 'translate-x-0' : 'translate-x-full'}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sidebar-title"
-      >
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
-          <h2 id="sidebar-title" className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <Briefcase size={20} className="text-indigo-600" />
-            Staff Profile
-          </h2>
-          <Button variant="ghost" onClick={handleClose} aria-label="Close panel">
-            <X size={24} />
-          </Button>
-        </div>
-
-        <div className="flex-1 p-6 space-y-8 overflow-y-auto">
-          <div className="flex flex-col items-center text-center">
-            <img
-              className="h-28 w-28 rounded-full object-cover ring-4 ring-white shadow-md"
-              src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
-              alt={staff.name}
-            />
-            <h3 className="mt-4 text-2xl font-bold text-slate-900">{staff.name}</h3>
-            <p className="text-md text-slate-500">{staff.position}</p>
-            <span className={`mt-2 px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-            }`}>
-                {staff.status.charAt(0).toUpperCase() + staff.status.slice(1)}
-            </span>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg border border-slate-200">
-            <h4 className="text-md font-semibold text-slate-800 mb-2">Contact & Personal Information</h4>
-            <dl className="divide-y divide-slate-200">
-              <DetailItem icon={<AtSign size={20}/>} label="Email" value={<a href={`mailto:${staff.email}`} className="text-indigo-600 hover:underline">{staff.email || 'N/A'}</a>} />
-              <DetailItem icon={<Phone size={20}/>} label="Phone" value={staff.phone || 'N/A'} />
-              <DetailItem icon={<Home size={20}/>} label="Address" value={staff.address || 'N/A'} />
-            </dl>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg border border-slate-200">
-            <h4 className="text-md font-semibold text-slate-800 mb-2">Employment Details</h4>
-            <dl className="divide-y divide-slate-200">
-              <DetailItem icon={<Badge size={20}/>} label="Staff ID" value={staff.staffIdNumber || 'N/A'} />
-              <DetailItem icon={<CreditCard size={20}/>} label="Aadhar Number" value={staff.aadharNumber || 'N/A'} />
-              <DetailItem 
-                icon={<span className="font-bold text-lg">₹</span>} 
-                label="Salary" 
-                value={staff.salary ? `₹${Number(staff.salary).toLocaleString('en-IN')}` : 'N/A'} 
-              />
-              <DetailItem icon={<Calendar size={20}/>} label="Joined Date" value={new Date(staff.joinDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} />
-            </dl>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg border border-slate-200">
-            <h4 className="text-md font-semibold text-slate-800 mb-2">Uploaded Documents</h4>
-            <dl className="divide-y divide-slate-200">
-              <DetailItem 
-                icon={<ShieldCheck size={20}/>} 
-                label="Aadhar Card" 
-                value={
-                  staff.aadharImage ? (
-                    <Button variant="link" size="sm" onClick={() => onViewDocument(staff.aadharImage!, 'Aadhar Card')}>View Document</Button>
-                  ) : (
-                    'Not Uploaded'
-                  )
-                }
-              />
-              <DetailItem 
-                icon={<Banknote size={20}/>} 
-                label="Bank Passbook" 
-                value={
-                  staff.passbookImage ? (
-                    <Button variant="link" size="sm" onClick={() => onViewDocument(staff.passbookImage!, 'Bank Passbook')}>View Document</Button>
-                  ) : (
-                    'Not Uploaded'
-                  )
-                }
-              />
-              <DetailItem 
-                icon={<FileText size={20}/>} 
-                label="Agreement" 
-                value={
-                  staff.agreementImage ? (
-                    <Button variant="link" size="sm" onClick={() => onViewDocument(staff.agreementImage!, 'Agreement')}>View Document</Button>
-                  ) : (
-                    'Not Uploaded'
-                  )
-                }
-              />
-            </dl>
-          </div>
-        </div>
-
-        <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
-            {canUpdate && (
-              <Button
-                  variant="outline"
-                  className="flex-1"
-                  icon={<Edit size={16} />}
-                  onClick={() => router.push(`/staffmanagement/staff/editstaff?staffId=${staff.id}`)}
-              >
-                  Edit Profile
-              </Button>
-            )}
-            {canDelete && (
-              <Button
-                  variant="danger"
-                  className="flex-1"
-                  icon={isCurrentlyDeleting ? <RefreshCw className="animate-spin" size={16} /> : <Trash size={16} />}
-                  onClick={() => onDelete(staff)}
-                  disabled={isCurrentlyDeleting || staff.status === 'inactive'}
-              >
-                  {isCurrentlyDeleting ? 'Deactivating...' : 'Deactivate'}
-              </Button>
-            )}
-        </div>
+  const DetailItem: React.FC<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = ({ icon, label, value }) => (
+    <div className="flex items-start gap-4 py-3">
+      <div className="flex-shrink-0 w-6 text-slate-400">{icon}</div>
+      <div className="flex-1">
+        <dt className="text-sm font-medium text-slate-500">{label}</dt>
+        <dd className="mt-1 text-sm text-slate-900 break-words">{value}</dd>
       </div>
-    </>
+    </div>
   );
-};
-
-const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number; color: string }> = ({ icon, title, value, color }) => (
-  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-    <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${color}`}>
-      {icon}
-    </div>
-    <div>
-      <p className="text-sm text-slate-500 font-medium">{title}</p>
-      <p className="text-2xl font-bold text-slate-800">{value}</p>
-    </div>
-  </div>
-);
-
-const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) => void }> = ({ staff, onSelect }) => (
-  <div 
-    className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
-    onClick={() => onSelect(staff)}
-  >
-    <div className="flex items-center gap-4">
-      <img
-        className="h-14 w-14 rounded-full object-cover ring-2 ring-slate-100"
-        src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
-        alt={staff.name}
-      />
-      <div className="flex-1 min-w-0">
-        <h3 className="font-bold text-slate-800 text-md truncate">{staff.name}</h3>
-        <p className="text-sm text-slate-500 truncate">{staff.position}</p>
-        <p className="text-xs text-slate-400 mt-1 truncate">ID: {staff.staffIdNumber || 'N/A'}</p>
+  
+  interface StaffDetailSidebarProps {
+    staff: StaffMember | null;
+    onClose: () => void;
+    onDelete: (staff: StaffMember) => void;
+    onViewDocument: (src: string, title: string) => void;
+    isDeleting: string | null;
+    canUpdate: boolean;
+    canDelete:boolean;
+  }
+  
+  const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({ staff, onClose, onDelete, onViewDocument, isDeleting, canUpdate, canDelete }) => {
+    const router = useRouter();
+    const [isVisible, setIsVisible] = useState(false);
+  
+    useEffect(() => {
+      if (staff) {
+        const timer = setTimeout(() => setIsVisible(true), 10);
+        return () => clearTimeout(timer);
+      } else {
+        setIsVisible(false);
+      }
+    }, [staff]);
+  
+    if (!staff) {
+      return null;
+    }
+  
+    const handleClose = () => {
+      setIsVisible(false);
+      setTimeout(onClose, 300);
+    };
+    
+    const isCurrentlyDeleting = isDeleting === staff.id;
+  
+    return (
+      <>
+        <div
+          className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+          onClick={handleClose}
+          aria-hidden="true"
+        ></div>
+  
+        <div
+          className={`fixed top-0 right-0 h-full w-full max-w-lg bg-slate-50 shadow-xl z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${isVisible ? 'translate-x-0' : 'translate-x-full'}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sidebar-title"
+        >
+          <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
+            <h2 id="sidebar-title" className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <Briefcase size={20} className="text-indigo-600" />
+              Staff Profile
+            </h2>
+            <Button variant="ghost" onClick={handleClose} aria-label="Close panel">
+              <X size={24} />
+            </Button>
+          </div>
+  
+          <div className="flex-1 p-6 space-y-8 overflow-y-auto">
+            <div className="flex flex-col items-center text-center">
+              <img
+                className="h-28 w-28 rounded-full object-cover ring-4 ring-white shadow-md"
+                src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
+                alt={staff.name}
+              />
+              <h3 className="mt-4 text-2xl font-bold text-slate-900">{staff.name}</h3>
+              <p className="text-md text-slate-500">{staff.position}</p>
+              <span className={`mt-2 px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                  staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              }`}>
+                  {staff.status.charAt(0).toUpperCase() + staff.status.slice(1)}
+              </span>
+            </div>
+  
+            <div className="bg-white p-4 rounded-lg border border-slate-200">
+              <h4 className="text-md font-semibold text-slate-800 mb-2">Contact & Personal Information</h4>
+              <dl className="divide-y divide-slate-200">
+                <DetailItem icon={<AtSign size={20}/>} label="Email" value={<a href={`mailto:${staff.email}`} className="text-indigo-600 hover:underline">{staff.email || 'N/A'}</a>} />
+                <DetailItem icon={<Phone size={20}/>} label="Phone" value={staff.phone || 'N/A'} />
+                <DetailItem icon={<Home size={20}/>} label="Address" value={staff.address || 'N/A'} />
+              </dl>
+            </div>
+            
+            <div className="bg-white p-4 rounded-lg border border-slate-200">
+              <h4 className="text-md font-semibold text-slate-800 mb-2">Employment Details</h4>
+              <dl className="divide-y divide-slate-200">
+                <DetailItem icon={<Badge size={20}/>} label="Staff ID" value={staff.staffIdNumber || 'N/A'} />
+                <DetailItem icon={<CreditCard size={20}/>} label="Aadhar Number" value={staff.aadharNumber || 'N/A'} />
+                <DetailItem 
+                  icon={<span className="font-bold text-lg">₹</span>} 
+                  label="Salary" 
+                  value={staff.salary ? `₹${Number(staff.salary).toLocaleString('en-IN')}` : 'N/A'} 
+                />
+                <DetailItem icon={<Calendar size={20}/>} label="Joined Date" value={new Date(staff.joinDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} />
+              </dl>
+            </div>
+            
+            <div className="bg-white p-4 rounded-lg border border-slate-200">
+              <h4 className="text-md font-semibold text-slate-800 mb-2">Uploaded Documents</h4>
+              <dl className="divide-y divide-slate-200">
+                <DetailItem 
+                  icon={<ShieldCheck size={20}/>} 
+                  label="Aadhar Card" 
+                  value={
+                    staff.aadharImage ? (
+                      <Button variant="link" size="sm" onClick={() => onViewDocument(staff.aadharImage!, 'Aadhar Card')}>View Document</Button>
+                    ) : (
+                      'Not Uploaded'
+                    )
+                  }
+                />
+                <DetailItem 
+                  icon={<Banknote size={20}/>} 
+                  label="Bank Passbook" 
+                  value={
+                    staff.passbookImage ? (
+                      <Button variant="link" size="sm" onClick={() => onViewDocument(staff.passbookImage!, 'Bank Passbook')}>View Document</Button>
+                    ) : (
+                      'Not Uploaded'
+                    )
+                  }
+                />
+                <DetailItem 
+                  icon={<FileText size={20}/>} 
+                  label="Agreement" 
+                  value={
+                    staff.agreementImage ? (
+                      <Button variant="link" size="sm" onClick={() => onViewDocument(staff.agreementImage!, 'Agreement')}>View Document</Button>
+                    ) : (
+                      'Not Uploaded'
+                    )
+                  }
+                />
+              </dl>
+            </div>
+          </div>
+  
+          <div className="p-4 border-t border-slate-200 bg-white flex gap-3">
+              {canUpdate && (
+                <Button
+                    variant="outline"
+                    className="flex-1"
+                    icon={<Edit size={16} />}
+                    onClick={() => router.push(`/staffmanagement/staff/editstaff?staffId=${staff.id}`)}
+                >
+                    Edit Profile
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                    variant="danger"
+                    className="flex-1"
+                    icon={isCurrentlyDeleting ? <RefreshCw className="animate-spin" size={16} /> : <Trash size={16} />}
+                    onClick={() => onDelete(staff)}
+                    disabled={isCurrentlyDeleting || staff.status === 'inactive'}
+                >
+                    {isCurrentlyDeleting ? 'Deactivating...' : 'Deactivate'}
+                </Button>
+              )}
+          </div>
+        </div>
+      </>
+    );
+  };
+  
+  const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number; color: string }> = ({ icon, title, value, color }) => (
+    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
+      <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${color}`}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-sm text-slate-500 font-medium">{title}</p>
+        <p className="text-2xl font-bold text-slate-800">{value}</p>
       </div>
     </div>
-    <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
-       <div className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
-         <Mail size={14} className="text-slate-400 flex-shrink-0"/>
-         <span className="truncate">{staff.email}</span>
-       </div>
-       <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full flex-shrink-0 ${
-          staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-        }`}>
-          {staff.status.charAt(0).toUpperCase() + staff.status.slice(1)}
-       </span>
+  );
+  
+  const StaffCard: React.FC<{ staff: StaffMember; onSelect: (staff: StaffMember) => void }> = ({ staff, onSelect }) => (
+    <div 
+      className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
+      onClick={() => onSelect(staff)}
+    >
+      <div className="flex items-center gap-4">
+        <img
+          className="h-14 w-14 rounded-full object-cover ring-2 ring-slate-100"
+          src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
+          alt={staff.name}
+        />
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-slate-800 text-md truncate">{staff.name}</h3>
+          <p className="text-sm text-slate-500 truncate">{staff.position}</p>
+          <p className="text-xs text-slate-400 mt-1 truncate">ID: {staff.staffIdNumber || 'N/A'}</p>
+        </div>
+      </div>
+      <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
+         <div className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
+           <Mail size={14} className="text-slate-400 flex-shrink-0"/>
+           <span className="truncate">{staff.email}</span>
+         </div>
+         <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full flex-shrink-0 ${
+            staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}>
+            {staff.status.charAt(0).toUpperCase() + staff.status.slice(1)}
+         </span>
+      </div>
     </div>
-  </div>
-);
-
-
+  );
+  
 const StaffList: React.FC = () => {
   const { data: session } = useSession();
   const { staffMembers, loadingStaff, errorStaff, fetchStaffMembers, deleteStaffMember } = useStaff();
   const router = useRouter();
+  const searchParams = useSearchParams(); // --- NEW: Get search params
   const [searchTerm, setSearchTerm] = useState('');
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
@@ -266,12 +270,25 @@ const StaffList: React.FC = () => {
 
   const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
 
-    // NEW: Define permission variables based on the user's session
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
   const canCreate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_CREATE), [userPermissions]);
   const canUpdate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_UPDATE), [userPermissions]);
   const canDelete = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_DELETE), [userPermissions]);
   
+  // --- NEW: useEffect to show toasts on successful add/edit ---
+  useEffect(() => {
+    const successAction = searchParams.get('success');
+    if (successAction) {
+      if (successAction === 'add') {
+        toast.success('New staff member added successfully!');
+      } else if (successAction === 'edit') {
+        toast.success('Staff details updated successfully!');
+      }
+      // Clean the URL to prevent the toast from re-appearing on refresh
+      router.replace('/staffmanagement/staff/stafflist');
+    }
+  }, [searchParams, router]);
+
   useEffect(() => {
     if (fetchStaffMembers) fetchStaffMembers();
   }, [fetchStaffMembers]);
@@ -304,15 +321,17 @@ const StaffList: React.FC = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [staffMembers, searchTerm, filters]);
 
+  // --- MODIFICATION: Use toast for delete success/error ---
   const handleDeleteStaff = async (staff: StaffMember) => {
     if (window.confirm(`Are you sure you want to deactivate staff member: ${staff.name}? Their status will be set to 'inactive'.`)) {
       setIsDeleting(staff.id);
       try {
         await deleteStaffMember(staff.id);
+        toast.success(`Staff member '${staff.name}' deactivated successfully.`);
         setSelectedStaff(null); 
         if (fetchStaffMembers) fetchStaffMembers();
       } catch (apiError: any) {
-        alert(`Failed to deactivate staff: ${apiError.message || 'Unknown error'}`);
+        toast.error(`Failed to deactivate staff: ${apiError.message || 'Unknown error'}`);
       } finally {
         setIsDeleting(null);
       }
@@ -337,6 +356,20 @@ const StaffList: React.FC = () => {
 
   return (
     <div className="relative">
+       {/* --- NEW: Add ToastContainer --- */}
+      <ToastContainer
+          position="top-right"
+          autoClose={4000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+      />
+      
       <DocumentViewerModal 
         src={viewingDocument.src}
         title={viewingDocument.title}
@@ -370,7 +403,8 @@ const StaffList: React.FC = () => {
               )}
             </div>
           </div>
-
+          
+          {/* ... The rest of the component remains the same ... */}
           {errorStaff && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl" role="alert">
               <strong className="font-bold">Error: </strong>
