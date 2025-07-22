@@ -231,7 +231,9 @@ const EditStaffContent: React.FC = () => {
 
     if (!staffId) { toast.error("Cannot save, Staff ID is missing."); setIsSubmitting(false); return; }
 
-    if (!formData.staffIdNumber.trim() || !formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.joinDate.trim() || !formData.salary.trim()) {
+    // --- MODIFICATION: Updated required fields validation ---
+    // Aadhar Number is now required, and Email is optional.
+    if (!formData.staffIdNumber.trim() || !formData.name.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.joinDate.trim() || !formData.salary.trim() || !formData.aadharNumber.trim()) {
         toast.warn("Please fill in all required fields marked with *.");
         setIsSubmitting(false);
         return;
@@ -242,7 +244,9 @@ const EditStaffContent: React.FC = () => {
         setIsSubmitting(false);
         return;
     }
-     if (formData.aadharNumber.trim() && !/^\d{12}$/.test(formData.aadharNumber.trim())) {
+    // --- MODIFICATION: Updated Aadhar validation ---
+    // Since it's required, we directly validate its format.
+     if (!/^\d{12}$/.test(formData.aadharNumber.trim())) {
         toast.error("Aadhar Number must be 12 digits.");
         setIsSubmitting(false);
         return;
@@ -250,8 +254,9 @@ const EditStaffContent: React.FC = () => {
     
     const apiData: UpdateStaffPayload = {
         staffIdNumber: formData.staffIdNumber,
-        name: formData.name, 
-        email: formData.email, 
+        name: formData.name,
+        // --- MODIFICATION: Make email optional in payload --- 
+        email: formData.email || undefined, 
         phone: formData.phone,
         position: formData.position, 
         joinDate: formData.joinDate,
@@ -259,7 +264,8 @@ const EditStaffContent: React.FC = () => {
         address: formData.address || undefined,
         image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
         status: formData.status, 
-        aadharNumber: formData.aadharNumber || undefined,
+        // --- MODIFICATION: Aadhar is now required ---
+        aadharNumber: formData.aadharNumber,
         aadharImage: formData.aadharImage,
         passbookImage: formData.passbookImage,
         agreementImage: formData.agreementImage,
@@ -267,8 +273,6 @@ const EditStaffContent: React.FC = () => {
 
     try {
       await updateStaffMember(staffId, apiData);
-      // --- MODIFICATION: Updated success message ---
-      // This is the pop-up you requested.
       toast.success('Staff Edited Successfully!');
       router.push('/staffmanagement/staff/stafflist');
     } catch (apiError: any) {
@@ -388,15 +392,17 @@ const EditStaffContent: React.FC = () => {
             </div>
           </div>
 
+          {/* --- MODIFICATION: Email is now optional --- */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email Address*</label>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
              <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <Mail className="h-5 w-5 text-gray-400" aria-hidden="true" />
               </div>
-              <input id="email" name="email" type="email" required value={formData.email} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData} />
+              <input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData} />
             </div>
           </div>
+
           <div>
             <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">Phone Number*</label>
              <div className="relative">
@@ -406,15 +412,18 @@ const EditStaffContent: React.FC = () => {
               <input id="phone" name="phone" type="tel" required value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData} />
             </div>
           </div>
+           
+           {/* --- MODIFICATION: Aadhar Number is now mandatory --- */}
            <div>
-            <label htmlFor="aadharNumber" className="block text-sm font-medium text-gray-700 mb-1">Aadhar Number</label>
+            <label htmlFor="aadharNumber" className="block text-sm font-medium text-gray-700 mb-1">Aadhar Number*</label>
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <Fingerprint className="h-5 w-5 text-gray-400" aria-hidden="true" />
               </div>
-              <input id="aadharNumber" name="aadharNumber" type="text" pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData}/>
+              <input id="aadharNumber" name="aadharNumber" type="text" pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 pl-10 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || isLoadingData} required />
             </div>
           </div>
+
           <div>
             <label htmlFor="position" className="block text-sm font-medium text-gray-700 mb-1">Position*</label>
             <div className="flex items-center space-x-2">

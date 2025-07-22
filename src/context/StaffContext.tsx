@@ -8,8 +8,47 @@ import { toast } from 'react-toastify';
 
 // --- Type Definitions ---
 export interface PositionOption { value: string; label: string; }
-export interface StaffMember { id: string; staffIdNumber: string; name: string; email: string; phone: string; position: string; joinDate: string; salary: number; address?: string; image: string | null; status: 'active' | 'inactive'; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; createdAt?: string; updatedAt?: string; }
-export interface NewStaffPayload { staffIdNumber: string; name: string; email:string; phone: string; position: string; joinDate: string; salary: number; address?: string; image?: string | null; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; }
+
+export interface StaffMember {
+  id: string;
+  staffIdNumber: string;
+  name: string;
+  email: string;
+  phone: string;
+  position: string;
+  joinDate: string; // ISO string format
+  salary: number;
+  address?: string;
+  image: string | null;
+  status: 'active' | 'inactive';
+  aadharNumber?: string;
+  // New document fields
+  aadharImage?: string | null;
+  passbookImage?: string | null;
+  agreementImage?: string | null;
+  // Timestamps
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// --- THIS IS THE CORRECTED INTERFACE ---
+export interface NewStaffPayload {
+  staffIdNumber: string;
+  name: string;
+  email?: string; // FIX: Email is now optional
+  phone: string;
+  position: string;
+  joinDate: string;
+  salary: number;
+  address?: string;
+  image?: string | null;
+  aadharNumber: string; // FIX: Aadhar Number is now required
+  // New document fields
+  aadharImage?: string | null;
+  passbookImage?: string | null;
+  agreementImage?: string | null;
+}
+
 export type UpdateStaffPayload = Partial<Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>>;
 export interface AdvancePaymentType { id: string; staffId: string | { id: string; name: string; image?: string; position?: string; }; requestDate: string; amount: number; reason: string; repaymentPlan: string; status: 'pending' | 'approved' | 'rejected'; approvedDate: string | null; createdAt?: string; updatedAt?: string; }
 export interface NewAdvancePaymentPayload { staffId: string; amount: number; reason: string; repaymentPlan: string; }

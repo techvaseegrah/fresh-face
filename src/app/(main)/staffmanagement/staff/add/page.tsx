@@ -7,7 +7,6 @@ import {
   User, Mail, Phone, Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Image as ImageIcon,
   Badge
 } from 'lucide-react';
-// --- MODIFICATION: Import react-toastify ---
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -62,7 +61,6 @@ const FileUploadInput: React.FC<{
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        // --- MODIFICATION: Use toast for error ---
         toast.error("File size should not exceed 5MB.");
         e.target.value = '';
         return;
@@ -128,8 +126,6 @@ const AddStaffPage: React.FC = () => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // --- MODIFICATION: Removed error state, as toasts will handle it ---
-  // const [error, setError] = useState<string | null>(null);
   const [positionOptions, setPositionOptions] = useState<PositionOption[]>(contextPositionOptions);
   const [showAddPositionForm, setShowAddPositionForm] = useState(false);
   const [newPositionName, setNewPositionName] = useState("");
@@ -154,7 +150,6 @@ const AddStaffPage: React.FC = () => {
         }
       } catch (err: any) {
         setFormData(prev => ({ ...prev, staffIdNumber: 'Error' }));
-        // --- MODIFICATION: Use toast for error ---
         toast.error(`Could not load Staff ID: ${err.message}`);
         console.error(err);
       }
@@ -189,7 +184,6 @@ const AddStaffPage: React.FC = () => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > 2 * 1024 * 1024) { // 2MB limit
-          // --- MODIFICATION: Use toast for error ---
           toast.error("Image size should not exceed 2MB.");
           e.target.value = '';
           return;
@@ -225,19 +219,19 @@ const AddStaffPage: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // --- MODIFICATION: Use toasts for validation ---
     if (formData.staffIdNumber === 'Loading...' || formData.staffIdNumber === 'Error') {
       toast.error("Staff ID is not available. Please wait or refresh the page.");
       setIsSubmitting(false);
       return;
     }
-    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim()) {
-        toast.warn("Please fill in all required fields marked with * (Name, Email, Phone, Position).");
+    
+    if (!formData.name.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.aadharNumber.trim()) {
+        toast.warn("Please fill in all required fields marked with * (Name, Phone, Aadhar Number, Position).");
         setIsSubmitting(false);
         return;
     }
-    if (formData.aadharNumber.trim() && !/^\d{12}$/.test(formData.aadharNumber.trim())) {
-        toast.error("Aadhar Number must be 12 digits.");
+    if (!/^\d{12}$/.test(formData.aadharNumber.trim())) {
+        toast.error("Aadhar Number must be exactly 12 digits.");
         setIsSubmitting(false);
         return;
     }
@@ -250,14 +244,15 @@ const AddStaffPage: React.FC = () => {
     const apiData: NewStaffPayload = {
         staffIdNumber: formData.staffIdNumber,
         name: formData.name,
-        email: formData.email,
+        // --- FIX: Pass undefined if email is empty to match the optional type ---
+        email: formData.email || undefined,
         phone: formData.phone,
         position: formData.position,
         joinDate: formData.joinDate,
         salary: Number(formData.salary) || 0,
         address: formData.address || undefined,
         image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
-        aadharNumber: formData.aadharNumber || undefined,
+        aadharNumber: formData.aadharNumber,
         aadharImage: formData.aadharImage,
         passbookImage: formData.passbookImage,
         agreementImage: formData.agreementImage,
@@ -265,13 +260,10 @@ const AddStaffPage: React.FC = () => {
 
     try {
       await addStaffMember(apiData);
-      // --- MODIFICATION: Show success toast ---
-      // This is the success notification you wanted.
       toast.success('Staff member added successfully!');
       router.push('/staffmanagement/staff/stafflist');
     } catch (apiError: any) {
       console.error('Failed to add staff member:', apiError);
-      // --- MODIFICATION: Show error toast ---
       toast.error(apiError.message || 'Failed to add staff member. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -289,7 +281,6 @@ const AddStaffPage: React.FC = () => {
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
-       {/* --- MODIFICATION: Add ToastContainer for notifications --- */}
       <ToastContainer
           position="top-right"
           autoClose={3000}
@@ -316,10 +307,7 @@ const AddStaffPage: React.FC = () => {
         </div>
       </div>
       
-      {/* --- MODIFICATION: Removed the old error display block --- */}
-
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 md:p-8">
-        {/* The rest of your form JSX remains unchanged */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
           <div className="md:col-span-2 mb-4">
             <IconLabel htmlFor="image-upload-input" icon={<ImageIcon size={14} className="text-gray-500" />} text="Profile Photo" />
@@ -345,16 +333,16 @@ const AddStaffPage: React.FC = () => {
             <input id="name" name="name" type="text" required value={formData.name} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel htmlFor="email" icon={<Mail size={14} className="text-gray-500" />} text="Email Address*" />
-            <input id="email" name="email" type="email" required value={formData.email} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
+            <IconLabel htmlFor="email" icon={<Mail size={14} className="text-gray-500" />} text="Email Address" />
+            <input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
             <IconLabel htmlFor="phone" icon={<Phone size={14} className="text-gray-500" />} text="Phone Number*" />
             <input id="phone" name="phone" type="tel" required value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number" />
-            <input id="aadharNumber" name="aadharNumber" type="text" pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
+            <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number*" />
+            <input id="aadharNumber" name="aadharNumber" type="text" required pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
             <IconLabel htmlFor="position" icon={<Briefcase size={14} className="text-gray-500" />} text="Position*" />

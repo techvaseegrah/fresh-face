@@ -19,7 +19,7 @@ import Button from '../../../../../components/ui/Button';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions'; 
 
-// ... (DocumentViewerModal, DetailItem, StaffDetailSidebar, StatCard, StaffCard components remain unchanged) ...
+// ... (DocumentViewerModal, DetailItem, StaffDetailSidebar, StatCard components remain unchanged) ...
 const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
     if (!src) return null;
     return (
@@ -243,8 +243,10 @@ const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose
       </div>
       <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
          <div className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
-           <Mail size={14} className="text-slate-400 flex-shrink-0"/>
-           <span className="truncate">{staff.email}</span>
+           {/* --- MODIFICATION START --- */}
+           <Phone size={14} className="text-slate-400 flex-shrink-0"/>
+           <span className="truncate">{staff.phone || 'N/A'}</span>
+           {/* --- MODIFICATION END --- */}
          </div>
          <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full flex-shrink-0 ${
             staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'

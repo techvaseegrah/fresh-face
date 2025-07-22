@@ -47,14 +47,32 @@ const PositionRateModal = ({
     existingRates: IPositionRateSetting[];
     editingRate: IPositionRateSetting | null;
 }) => {
-    const [rateData, setRateData] = useState<IPositionRateSetting>({ positionName: '', otRate: 0, extraDayRate: 0 });
+    // --- MODIFIED: State for rate fields will now be 'string' to avoid type errors on input.
+    const [rateData, setRateData] = useState<{
+        positionName: string;
+        otRate: string;
+        extraDayRate: string;
+    }>({ positionName: '', otRate: '', extraDayRate: '' });
 
+    // --- MODIFIED: useEffect now converts incoming numbers to strings for the form state.
     useEffect(() => {
+        if (!isOpen) return;
+
         if (editingRate) {
-            setRateData(editingRate);
+            // If editing, convert the numbers to strings to populate the form state.
+            setRateData({
+                positionName: editingRate.positionName,
+                otRate: String(editingRate.otRate),
+                extraDayRate: String(editingRate.extraDayRate),
+            });
         } else {
+            // If adding, initialize with empty strings.
             const availablePosition = positions.find(p => !existingRates.some(r => r.positionName === p));
-            setRateData({ positionName: availablePosition || '', otRate: 0, extraDayRate: 0 });
+            setRateData({
+                positionName: availablePosition || '',
+                otRate: '',
+                extraDayRate: ''
+            });
         }
     }, [isOpen, editingRate, positions, existingRates]);
 
@@ -62,10 +80,15 @@ const PositionRateModal = ({
 
     const handleSave = (e: FormEvent) => {
         e.preventDefault();
-        onSave(rateData);
+        // Convert the string state back to numbers on save.
+        onSave({
+            positionName: rateData.positionName,
+            otRate: Number(rateData.otRate) || 0,
+            extraDayRate: Number(rateData.extraDayRate) || 0,
+        });
     };
 
-    const availablePositions = positions.filter(p => 
+    const availablePositions = positions.filter(p =>
         !existingRates.some(r => r.positionName === p) || p === editingRate?.positionName
     );
 
@@ -92,11 +115,13 @@ const PositionRateModal = ({
                             </div>
                             <div>
                                 <label htmlFor="modalOtRate" className="block text-sm font-medium text-gray-700">OT Rate per Hour (₹)</label>
-                                <InputField type="number" id="modalOtRate" value={rateData.otRate} onChange={(e) => setRateData({ ...rateData, otRate: e.target.valueAsNumber || 0 })} min="0" />
+                                {/* This now works without error because e.target.value (string) matches the state type (string) */}
+                                <InputField type="number" id="modalOtRate" value={rateData.otRate} onChange={(e) => setRateData({ ...rateData, otRate: e.target.value })} min="0" />
                             </div>
                             <div>
                                 <label htmlFor="modalExtraDayRate" className="block text-sm font-medium text-gray-700">Extra Day Rate (₹)</label>
-                                <InputField type="number" id="modalExtraDayRate" value={rateData.extraDayRate} onChange={(e) => setRateData({ ...rateData, extraDayRate: e.target.valueAsNumber || 0 })} min="0" />
+                                {/* This now works without error because e.target.value (string) matches the state type (string) */}
+                                <InputField type="number" id="modalExtraDayRate" value={rateData.extraDayRate} onChange={(e) => setRateData({ ...rateData, extraDayRate: e.target.value })} min="0" />
                             </div>
                         </div>
                     </div>
@@ -128,7 +153,7 @@ const AttendanceSettingsForm: React.FC = () => {
                 
                 if (result.success) {
                     setSettings({
-                        defaultDailyHours: result.data.settings.defaultDailyHours || 8,
+                        defaultDailyHours: result.data.settings.defaultDailyHours ?? 0,
                         positionRates: result.data.settings.positionRates || [],
                     });
                     setAllPositions(result.data.positions || []);
@@ -225,7 +250,14 @@ const AttendanceSettingsForm: React.FC = () => {
                     <div className="max-w-md space-y-6">
                         <div>
                             <label htmlFor="defaultDailyHours" className="block text-sm font-medium text-gray-700">Default Daily Working Hours</label>
-                            <InputField type="number" id="defaultDailyHours" name="defaultDailyHours" value={settings.defaultDailyHours} onChange={handleChange} min="0" />
+                            <InputField 
+                                type="number" 
+                                id="defaultDailyHours" 
+                                name="defaultDailyHours" 
+                                value={settings.defaultDailyHours === 0 ? '' : settings.defaultDailyHours} 
+                                onChange={handleChange} 
+                                min="0" 
+                            />
                         </div>
                     </div>
                 </div>
