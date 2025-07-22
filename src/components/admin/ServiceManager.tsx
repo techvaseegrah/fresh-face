@@ -270,7 +270,7 @@ export default function ServiceManager() {
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-green-700"
             >
-              Import Services
+              Import Service
             </button>
           </div>
         </div>
