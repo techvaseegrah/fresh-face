@@ -1,29 +1,32 @@
-// src/app/api/target/route.ts - FINAL CORRECTED VERSION
+// src/app/api/target/route.ts - (FINAL CORRECTED VERSION)
 
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import TargetSheet from '@/models/TargetSheet';
-import Invoice from '@/models/invoice'; // Using your provided Invoice model
-import Appointment from '@/models/Appointment'; // Still needed for counting appointments
+import Invoice from '@/models/invoice';
+import Appointment from '@/models/Appointment';
 
-// This is crucial. It tells Next.js to run this route dynamically for every request,
-// ensuring the data is always fresh and not cached from a previous build.
 export const dynamic = 'force-dynamic';
+
+// --- HELPER FUNCTION FOR FINANCIAL PRECISION ---
+// This ensures any number is rounded to exactly two decimal places for clean API responses.
+const roundToTwo = (num: number): number => {
+    if (isNaN(num) || num === null) return 0;
+    // The Number() wrapper handles potential floating point inaccuracies.
+    return Number(Math.round(Number(num + 'e+2')) + 'e-2');
+};
 
 export async function GET(request: Request) {
     try {
         await dbConnect();
 
-        // Define the date range for the current month.
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-        // Fetch the sales targets for the current month.
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         let targetSheet = await TargetSheet.findOne({ month: monthIdentifier });
 
-        // If no target sheet exists, create a default structure to avoid errors.
         if (!targetSheet) {
             targetSheet = { target: {} };
         }
@@ -38,87 +41,46 @@ export async function GET(request: Request) {
             netSales: (targetSheet.target?.service || 0) + (targetSheet.target?.retail || 0),
         };
 
-        // --- CORRECTED AGGREGATION LOGIC FOR YOUR INVOICE MODEL ---
-        // This pipeline correctly calculates the final, post-discount revenue.
+        // This aggregation pipeline correctly reads decimal values from the database.
         const invoiceAggregation = await Invoice.aggregate([
-            // Stage 1: Match only 'Paid' invoices created within the current month.
-            {
-                $match: {
-                    createdAt: { $gte: startOfMonth, $lte: endOfMonth },
-                    paymentStatus: 'Paid'
-                }
-            },
-            // Stage 2: Project and cast fields to ensure they are treated as precise decimals.
-            {
-                $project: {
-                    grandTotal: { $toDouble: "$grandTotal" },
-                    serviceTotal: { $toDouble: "$serviceTotal" },
-                    productTotal: { $toDouble: "$productTotal" }
-                }
-            },
-            // Stage 3: Calculate the pre-discount total to find the proportion.
-            {
-                $addFields: {
-                    preDiscountTotal: { $add: ["$serviceTotal", "$productTotal"] },
-                }
-            },
-            // Stage 4: Calculate the actual service and retail revenue by proportionally
-            // distributing the final paid amount (grandTotal).
-            {
-                $project: {
-                    grandTotal: 1,
-                    actualServiceRevenue: {
-                        $cond: {
-                            if: { $gt: ["$preDiscountTotal", 0] },
-                            then: {
-                                $multiply: ["$grandTotal", { $divide: ["$serviceTotal", "$preDiscountTotal"] }]
-                            },
-                            else: 0
-                        }
-                    },
-                    actualRetailRevenue: {
-                        $cond: {
-                            if: { $gt: ["$preDiscountTotal", 0] },
-                            then: {
-                                $multiply: ["$grandTotal", { $divide: ["$productTotal", "$preDiscountTotal"] }]
-                            },
-                            else: 0
-                        }
-                    }
-                }
-            },
-            // Stage 5: Group all invoices to sum up the final calculated values.
-            {
-                $group: {
-                    _id: null, // Group all results together
-                    totalService: { $sum: '$actualServiceRevenue' }, // Sum of actual service revenue
-                    totalRetail: { $sum: '$actualRetailRevenue' },   // Sum of actual retail revenue
-                    totalBills: { $sum: 1 },                          // Count the number of paid invoices
-                    totalGrandAmount: { $sum: '$grandTotal' }         // Sum of grand totals (used for ABV)
-                }
-            }
+            { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth }, paymentStatus: 'Paid' } },
+            { $project: {
+                grandTotal: { $toDouble: "$grandTotal" },
+                serviceTotal: { $toDouble: "$serviceTotal" },
+                productTotal: { $toDouble: "$productTotal" }
+            }},
+            { $addFields: { preDiscountTotal: { $add: ["$serviceTotal", "$productTotal"] } }},
+            { $project: {
+                grandTotal: 1,
+                actualServiceRevenue: { $cond: { if: { $gt: ["$preDiscountTotal", 0] }, then: { $multiply: ["$grandTotal", { $divide: ["$serviceTotal", "$preDiscountTotal"] }] }, else: 0 }},
+                actualRetailRevenue: { $cond: { if: { $gt: ["$preDiscountTotal", 0] }, then: { $multiply: ["$grandTotal", { $divide: ["$productTotal", "$preDiscountTotal"] }] }, else: 0 }}
+            }},
+            { $group: {
+                _id: null,
+                totalService: { $sum: '$actualServiceRevenue' },
+                totalRetail: { $sum: '$actualRetailRevenue' },
+                totalBills: { $sum: 1 },
+                totalGrandAmount: { $sum: '$grandTotal' }
+            }}
         ]);
 
-        // Safely access the aggregation result.
         const achievedResult = invoiceAggregation[0] || {};
         
-        // Fetch count of all non-cancelled appointments for the month. This still uses the Appointment model.
         const achievedAppointmentsCount = await Appointment.countDocuments({
             appointmentDateTime: { $gte: startOfMonth, $lte: endOfMonth },
             status: { $nin: ['Cancelled', 'No-Show'] }
         });
 
-        // Net sales is the sum of the post-discount service and retail revenues.
         const achievedNetSales = (achievedResult.totalService || 0) + (achievedResult.totalRetail || 0);
 
+        // Apply precision rounding to all financial outputs.
         const achieved = {
-            service: achievedResult.totalService || 0,
-            retail: achievedResult.totalRetail || 0,
+            service: roundToTwo(achievedResult.totalService || 0),
+            retail: roundToTwo(achievedResult.totalRetail || 0),
             bills: achievedResult.totalBills || 0,
-            netSales: achievedNetSales,
-            // Calculate Average Bill Value (ABV) safely, avoiding division by zero.
-            abv: (achievedResult.totalBills > 0) ? (achievedResult.totalGrandAmount / achievedResult.totalBills) : 0,
-            callbacks: 0, // Placeholder for callbacks logic
+            netSales: roundToTwo(achievedNetSales),
+            abv: (achievedResult.totalBills > 0) ? roundToTwo(achievedResult.totalGrandAmount / achievedResult.totalBills) : 0,
+            callbacks: 0,
             appointments: achievedAppointmentsCount,
         };
 
@@ -127,13 +89,13 @@ export async function GET(request: Request) {
         const projectionFactor = dayOfMonth > 0 ? daysInMonth / dayOfMonth : 0;
 
         const headingTo = {
-            service: achieved.service * projectionFactor,
-            retail: achieved.retail * projectionFactor,
-            bills: achieved.bills * projectionFactor,
-            netSales: achieved.netSales * projectionFactor,
-            abv: achieved.abv, // ABV is an average, so no projection
-            callbacks: achieved.callbacks * projectionFactor,
-            appointments: achieved.appointments * projectionFactor,
+            service: roundToTwo(achieved.service * projectionFactor),
+            retail: roundToTwo(achieved.retail * projectionFactor),
+            bills: roundToTwo(achieved.bills * projectionFactor),
+            netSales: roundToTwo(achieved.netSales * projectionFactor),
+            abv: achieved.abv,
+            callbacks: roundToTwo(achieved.callbacks * projectionFactor),
+            appointments: roundToTwo(achieved.appointments * projectionFactor),
         };
 
         return NextResponse.json({
@@ -148,7 +110,6 @@ export async function GET(request: Request) {
     }
 }
 
-// The PUT handler for setting targets is correct and does not need changes.
 export async function PUT(request: Request) {
     await dbConnect();
     try {
@@ -156,6 +117,8 @@ export async function PUT(request: Request) {
         const now = new Date();
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
+        // This logic correctly saves the decimal values sent from the corrected frontend.
+        // `Number()` handles both integers and floats perfectly.
         await TargetSheet.findOneAndUpdate(
             { month: monthIdentifier },
             { 

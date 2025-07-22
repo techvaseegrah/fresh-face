@@ -22,13 +22,43 @@ import {
     FileSpreadsheet,
     FileText,
 } from 'lucide-react';
-// Ensure these types are imported from your actual model file
+// --- TYPE IMPORTS ---
 import type { TargetSheetData, SummaryMetrics } from '@/models/TargetSheet'; 
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
-// --- HELPER COMPONENTS (Unchanged) ---
-// ProgressBar and MetricCard components are unchanged...
+// --- HELPER FUNCTIONS ---
+
+// --- CORRECTED ---: This now correctly displays numbers with two decimal places.
+const formatCurrency = (value: number | undefined | null) => {
+    if (value === undefined || value === null) return '₹0.00';
+    // WAS: maximumFractionDigits: 0 (This was rounding your numbers)
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2, // Ensures decimals are shown
+        maximumFractionDigits: 2, // Ensures decimals are shown
+    }).format(value);
+};
+
+// --- CORRECTED ---: This also now supports two decimal places for exports.
+const formatNumberForExport = (value: number | undefined | null) => {
+    if (value === undefined || value === null) return '0.00';
+    // WAS: maximumFractionDigits: 0
+    return new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: false, // Use plain numbers like '5000.50' for easier parsing in Excel
+    }).format(value);
+};
+
+const calculatePercentage = (achieved: number = 0, target: number = 0) => {
+    if (target === 0) return 0;
+    return Math.round((achieved / target) * 100);
+};
+
+
+// --- HELPER COMPONENTS ---
 interface ProgressBarProps {
   value: number;
 }
@@ -48,6 +78,7 @@ interface MetricCardProps {
     isCurrency?: boolean;
     icon: React.ReactNode;
 }
+// This component now uses the corrected formatCurrency function automatically.
 const MetricCard = ({ title, achieved, target, isCurrency = true, icon }: MetricCardProps) => {
     const percentage = calculatePercentage(achieved, target);
     return (
@@ -69,23 +100,6 @@ const MetricCard = ({ title, achieved, target, isCurrency = true, icon }: Metric
     );
 };
 
-// --- HELPER FUNCTIONS ---
-const formatCurrency = (value: number | undefined) => {
-    if (value === undefined || value === null) return '₹0';
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-};
-
-// --- ADDED ---: A new formatter for exports to avoid font issues with currency symbols.
-const formatNumberForExport = (value: number | undefined | null) => {
-    if (value === undefined || value === null) return '0';
-    // Returns a string with Indian comma style, but no currency symbol. e.g., "5,00,000"
-    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-};
-
-const calculatePercentage = (achieved: number = 0, target: number = 0) => {
-    if (target === 0) return 0;
-    return Math.round((achieved / target) * 100);
-};
 
 // --- MAIN VIEW COMPONENT ---
 
@@ -94,11 +108,8 @@ interface TargetViewProps {
 }
 
 export default function TargetView({ initialData }: TargetViewProps) {
-        // NEW: Get session data to check for permissions
     const { data: session } = useSession();
     const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
-
-    // NEW: Create a specific permission variable for managing targets
     const canManageTarget = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_TARGET_MANAGE), [userPermissions]);
 
     const router = useRouter();
@@ -117,9 +128,11 @@ export default function TargetView({ initialData }: TargetViewProps) {
         setIsModalOpen(true);
     };
 
+    // --- CORRECTED ---: This now uses parseFloat to accept decimals in the form.
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
-        setFormState(prev => ({ ...prev, [name]: value === '' ? undefined : parseInt(value, 10) }));
+        // WAS: parseInt(value, 10) (This was throwing away your decimals)
+        setFormState(prev => ({ ...prev, [name]: value === '' ? undefined : parseFloat(value) }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -159,8 +172,6 @@ export default function TargetView({ initialData }: TargetViewProps) {
         { name: 'APPOINTMENTS', t: target.appointments, a: achieved.appointments, h: headingTo.appointments, icon: <CalendarCheck size={20} className="text-pink-500" /> },
     ];
 
-    // --- MODIFIED: Export Handlers ---
-
     const getExportFileName = () => {
         const currentDate = new Date();
         const monthName = currentDate.toLocaleString('default', { month: 'long' });
@@ -171,12 +182,12 @@ export default function TargetView({ initialData }: TargetViewProps) {
     const handleExportExcel = () => {
         if (!data) return;
 
-        // For Excel, we pass raw numbers so users can perform calculations on the file.
         const detailedDataForExcel = detailedMetrics.map(m => ({
             'Metric': m.name,
             'Target': m.t ?? 0,
             'Achieved': m.a ?? 0,
-            'Projected': Math.round(m.h ?? 0),
+            // --- CORRECTED ---: Pass the raw decimal number to Excel, don't round it.
+            'Projected': m.h ?? 0,
             'Achievement %': calculatePercentage(m.a, m.t)
         }));
 
@@ -192,7 +203,6 @@ export default function TargetView({ initialData }: TargetViewProps) {
         const doc = new jsPDF();
         const fileName = getExportFileName();
 
-        // Add Header
         doc.setFontSize(18);
         doc.text('Shop Target Performance Report', 14, 22);
         doc.setFontSize(11);
@@ -200,37 +210,31 @@ export default function TargetView({ initialData }: TargetViewProps) {
         const reportDate = new Date().toLocaleDateString('en-GB');
         doc.text(`Report Date: ${reportDate}`, 14, 29);
         
-        // --- MODIFIED ---: This is now a single, well-formatted table.
         autoTable(doc, {
             startY: 40,
             head: [['Metric', 'Target', 'Achieved', 'Projected', 'Achievement %']],
             body: detailedMetrics.map(m => [
                 m.name,
-                // Use the new number formatter to avoid currency symbol issues
+                // --- CORRECTED ---: Use the new number formatter to show decimals correctly.
                 formatNumberForExport(m.t),
                 formatNumberForExport(m.a),
                 formatNumberForExport(m.h),
                 `${calculatePercentage(m.a, m.t)}%`
             ]),
-            theme: 'grid', // 'grid' theme looks more professional
-            headStyles: { 
-                fillColor: [41, 128, 185], // Professional blue header
-                halign: 'center' 
-            },
-            // --- ADDED ---: Column styles for proper alignment
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185], halign: 'center' },
             columnStyles: {
-                0: { halign: 'left' }, // Metric name left-aligned
-                1: { halign: 'right' }, // Target right-aligned
-                2: { halign: 'right' }, // Achieved right-aligned
-                3: { halign: 'right' }, // Projected right-aligned
-                4: { halign: 'right' }  // Percentage right-aligned
+                0: { halign: 'left' },
+                1: { halign: 'right' },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right' }
             }
         });
 
         doc.save(`${fileName}.pdf`);
     };
 
-    // The rest of the return statement is unchanged
     return (
         <div className="p-4 sm:p-6 lg:p-8 bg-gray-50 min-h-screen font-sans">
             {isModalOpen && (
@@ -242,7 +246,8 @@ export default function TargetView({ initialData }: TargetViewProps) {
                             {(['service', 'retail', 'bills', 'abv', 'callbacks', 'appointments'] as const).map(fieldName => (
                                 <div key={fieldName}>
                                     <label htmlFor={fieldName} className="block text-gray-600 text-sm font-bold mb-2 capitalize">{fieldName} Target</label>
-                                    <input type="number" id={fieldName} name={fieldName} value={formState[fieldName] || ''} onChange={handleFormChange} className="bg-gray-100 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" required />
+                                    {/* --- CORRECTED ---: Added step="any" to allow decimals in the input field easily */}
+                                    <input type="number" step="any" id={fieldName} name={fieldName} value={formState[fieldName] || ''} onChange={handleFormChange} className="bg-gray-100 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" required />
                                 </div>
                             ))}
                             <div className="md:col-span-2 flex items-center justify-end gap-4 mt-6">
@@ -267,7 +272,6 @@ export default function TargetView({ initialData }: TargetViewProps) {
                         <FileText size={18} className="text-red-600" />
                         Export PDF
                     </button>
-                    {/* MODIFIED: Conditionally render the "Set Target" button */}
                     {canManageTarget && (
                         <button onClick={openModal} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-black text-white font-bold py-2 px-4 rounded-lg shadow hover:shadow-md transition-all">
                             <Target size={18} />
@@ -296,9 +300,10 @@ export default function TargetView({ initialData }: TargetViewProps) {
                             {detailedMetrics.map(({ name, t, a, h, isCurrency, icon }) => (
                                 <tr key={name} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap"><div className="flex items-center gap-3">{icon}<span>{name}</span></div></td>
-                                    <td className="px-6 py-4">{isCurrency ? formatCurrency(t) : (t || 0)}</td>
-                                    <td className="px-6 py-4">{isCurrency ? formatCurrency(a) : (a || 0)}</td>
-                                    <td className="px-6 py-4">{isCurrency ? formatCurrency(h) : Math.round(h || 0)}</td>
+                                    <td className="px-6 py-4">{isCurrency ? formatCurrency(t) : (t || 0).toLocaleString('en-IN')}</td>
+                                    <td className="px-6 py-4">{isCurrency ? formatCurrency(a) : (a || 0).toLocaleString('en-IN')}</td>
+                                    {/* --- CORRECTED ---: Removed Math.round and use correct formatting. */}
+                                    <td className="px-6 py-4">{isCurrency ? formatCurrency(h) : (h || 0).toLocaleString('en-IN')}</td>
                                     <td className="px-6 py-4"><div className="flex items-center gap-4"><div className="w-full"><ProgressBar value={calculatePercentage(a, t)} /></div><span className="font-bold w-12 text-right">{calculatePercentage(a, t)}%</span></div></td>
                                 </tr>
                             ))}
@@ -313,9 +318,10 @@ export default function TargetView({ initialData }: TargetViewProps) {
                             <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-3">{icon}<h4 className="font-bold text-gray-800 text-base">{name}</h4></div><span className="font-bold text-lg">{percentage}%</span></div>
                             <div className="mb-3"><ProgressBar value={percentage} /></div>
                             <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                                <div><p className="text-gray-500 uppercase font-semibold">Target</p><p className="font-bold text-gray-800 text-sm mt-1">{isCurrency ? formatCurrency(t) : (t || 0)}</p></div>
-                                <div><p className="text-gray-500 uppercase font-semibold">Achieved</p><p className="font-bold text-gray-800 text-sm mt-1">{isCurrency ? formatCurrency(a) : (a || 0)}</p></div>
-                                <div><p className="text-gray-500 uppercase font-semibold">Projected</p><p className="font-bold text-gray-800 text-sm mt-1">{isCurrency ? formatCurrency(h) : Math.round(h || 0)}</p></div>
+                                <div><p className="text-gray-500 uppercase font-semibold">Target</p><p className="font-bold text-gray-800 text-sm mt-1">{isCurrency ? formatCurrency(t) : (t || 0).toLocaleString('en-IN')}</p></div>
+                                <div><p className="text-gray-500 uppercase font-semibold">Achieved</p><p className="font-bold text-gray-800 text-sm mt-1">{isCurrency ? formatCurrency(a) : (a || 0).toLocaleString('en-IN')}</p></div>
+                                {/* --- CORRECTED ---: Removed Math.round and use correct formatting. */}
+                                <div><p className="text-gray-500 uppercase font-semibold">Projected</p><p className="font-bold text-gray-800 text-sm mt-1">{isCurrency ? formatCurrency(h) : (h || 0).toLocaleString('en-IN')}</p></div>
                             </div>
                         </div>
                        )}

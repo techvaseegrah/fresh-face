@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 // --- All necessary imports, including for export functionality ---
+import { createPortal } from 'react-dom'; // **FIX: Import createPortal**
 import { Search, Star, TrendingUp, Users, IndianRupee, X, CalendarDays, Sheet, FileDown } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import jsPDF from 'jspdf';
@@ -69,6 +70,19 @@ const SummaryCard: React.FC<{
     </div>
   </div>
 );
+
+// --- **FIX: New Portal Component to handle modal rendering** ---
+const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  // Render the modal into document.body, but only on the client-side
+  return mounted ? createPortal(children, document.body) : null;
+};
 
 // --- Main Performance Page Component ---
 const PerformancePage: React.FC = () => {
@@ -179,7 +193,6 @@ const PerformancePage: React.FC = () => {
     return Array.from({ length: endYear - startYear + 1 }, (_, i) => endYear - i);
   }, []);
 
-  // --- **FIXED**: This function now prepares data with all requested columns ---
   const getExportData = () => {
     const headers = [
         "S.NO", "employee name", "employee code", "client count", "ABV",
@@ -207,16 +220,9 @@ const PerformancePage: React.FC = () => {
     });
 
     const totalsRow = [
-      "", // S.NO
-      "GRAND TOTAL", // employee name
-      "", // employee code
-      grandTotals.totalClients, // client count
-      Math.round(grandTotals.avgAbv), // ABV
-      grandTotals.totalServiceSales,
-      grandTotals.totalProductSales,
-      Math.round(grandTotals.totalSales),
-      Math.round(grandTotals.projectedSales),
-      Math.round(grandTotals.projectedClients)
+      "", "GRAND TOTAL", "", grandTotals.totalClients, Math.round(grandTotals.avgAbv),
+      grandTotals.totalServiceSales, grandTotals.totalProductSales, Math.round(grandTotals.totalSales),
+      Math.round(grandTotals.projectedSales), Math.round(grandTotals.projectedClients)
     ];
 
     return { headers, body, totalsRow };
@@ -226,7 +232,6 @@ const PerformancePage: React.FC = () => {
     const { headers, body, totalsRow } = getExportData();
     const worksheetData = [headers, ...body, totalsRow];
     const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-    // Adjust column widths for new layout
     ws['!cols'] = [
         { wch: 5 },  { wch: 20 }, { wch: 15 }, { wch: 12 }, { wch: 12 },
         { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 25 }
@@ -358,85 +363,88 @@ const PerformancePage: React.FC = () => {
         </div>
       </div>
       
+      {/* **FIX: Wrap modal in the Portal component** */}
       {selectedStaff && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-60 transition-opacity duration-300"
-          onClick={handleCloseDetails}
-        >
-          <div 
-            className="relative w-full max-w-2xl max-h-[90vh] bg-gray-50 rounded-2xl shadow-xl flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="flex-shrink-0 flex justify-between items-center p-4 border-b border-gray-200 bg-white rounded-t-2xl">
-              <h2 className="text-lg font-semibold text-gray-800">Performance Details</h2>
-              <button onClick={handleCloseDetails} className="p-1 rounded-full text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors">
-                <X size={24} />
-              </button>
-            </header>
-            <div className="flex-grow p-4 sm:p-6 overflow-y-auto">
-                <div className="space-y-6">
-                    <div className="relative flex flex-col sm:flex-row items-center p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-                        <div className="relative w-24 h-24 flex-shrink-0">
-                                <svg className="w-full h-full" viewBox="0 0 100 100">
-                                    <circle className="text-gray-200" strokeWidth="8" stroke="currentColor" fill="transparent" r="38" cx="50" cy="50" />
-                                    <circle className="text-amber-500" strokeWidth="8" strokeDasharray={ratingRing.circumference} strokeDashoffset={ratingRing.offset} strokeLinecap="round" stroke="currentColor" fill="transparent" r="38" cx="50" cy="50" style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }} transform="rotate(-90 50 50)" />
-                                </svg>
-                                <img className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-20 w-20 rounded-full object-cover" src={selectedStaff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedStaff.name)}&background=random&color=fff`} alt={selectedStaff.name} />
-                        </div>
-                        <div className="ml-0 sm:ml-5 mt-4 sm:mt-0 text-center sm:text-left">
-                            <h3 className="text-xl font-bold text-gray-900">{selectedStaff.name}</h3>
-                            <p className="text-sm text-gray-600">{selectedStaff.position}</p>
-                            <div className="mt-2 flex items-center justify-center sm:justify-start text-lg font-bold text-amber-600">
-                                <Star className="w-5 h-5 mr-1.5 fill-current" />
-                                <span>{selectedStaff.rating.toFixed(1)} <span className="text-sm font-medium text-gray-500">/ 10 (Monthly)</span></span>
+        <ModalPortal>
+            <div 
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-60 transition-opacity duration-300"
+              onClick={handleCloseDetails}
+            >
+              <div 
+                className="relative w-full max-w-2xl max-h-[90vh] bg-gray-50 rounded-2xl shadow-xl flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <header className="flex-shrink-0 flex justify-between items-center p-4 border-b border-gray-200 bg-white rounded-t-2xl">
+                  <h2 className="text-lg font-semibold text-gray-800">Performance Details</h2>
+                  <button onClick={handleCloseDetails} className="p-1 rounded-full text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors">
+                    <X size={24} />
+                  </button>
+                </header>
+                <div className="flex-grow p-4 sm:p-6 overflow-y-auto">
+                    <div className="space-y-6">
+                        <div className="relative flex flex-col sm:flex-row items-center p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+                            <div className="relative w-24 h-24 flex-shrink-0">
+                                    <svg className="w-full h-full" viewBox="0 0 100 100">
+                                        <circle className="text-gray-200" strokeWidth="8" stroke="currentColor" fill="transparent" r="38" cx="50" cy="50" />
+                                        <circle className="text-amber-500" strokeWidth="8" strokeDasharray={ratingRing.circumference} strokeDashoffset={ratingRing.offset} strokeLinecap="round" stroke="currentColor" fill="transparent" r="38" cx="50" cy="50" style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }} transform="rotate(-90 50 50)" />
+                                    </svg>
+                                    <img className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-20 w-20 rounded-full object-cover" src={selectedStaff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedStaff.name)}&background=random&color=fff`} alt={selectedStaff.name} />
+                            </div>
+                            <div className="ml-0 sm:ml-5 mt-4 sm:mt-0 text-center sm:text-left">
+                                <h3 className="text-xl font-bold text-gray-900">{selectedStaff.name}</h3>
+                                <p className="text-sm text-gray-600">{selectedStaff.position}</p>
+                                <div className="mt-2 flex items-center justify-center sm:justify-start text-lg font-bold text-amber-600">
+                                    <Star className="w-5 h-5 mr-1.5 fill-current" />
+                                    <span>{selectedStaff.rating.toFixed(1)} <span className="text-sm font-medium text-gray-500">/ 10 (Monthly)</span></span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                        <h4 className="text-md font-semibold text-gray-800 mb-3">Summary for {months[currentMonthIndex]}</h4>
-                        {isLoadingDetails ? (<div className="text-center py-4 text-gray-500">Loading...</div>) : 
-                        errorDetails ? (<div className="text-center py-4 text-red-500">{errorDetails}</div>) :
-                        (<div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
-                            <div><p className="text-md sm:text-lg font-bold text-green-600">₹{panelSummary.totalSales.toLocaleString()}</p><p className="text-xs text-gray-500">Total Sales</p></div>
-                            <div><p className="text-md sm:text-lg font-bold text-teal-600">{panelSummary.totalCustomers}</p><p className="text-xs text-gray-500">Customers</p></div>
-                            <div><p className="text-md sm:text-lg font-bold text-amber-600">{panelSummary.averageRating.toFixed(1)}</p><p className="text-xs text-gray-500">Avg Rating</p></div>
-                        </div>)
-                        }
-                    </div>
-                    <div>
-                        <h4 className="text-md font-semibold text-gray-800 mb-3 px-1">Daily Breakdown</h4>
-                        <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
-                            {isLoadingDetails ? (<div className="text-center py-10 text-gray-500">Loading records...</div>) :
-                            errorDetails ? (<div className="text-center py-10 text-red-500">{errorDetails}</div>) :
-                            staffDailyPerformance.length > 0 ? (
-                            <div className="space-y-2">
-                                {staffDailyPerformance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((day) => {
-                                    const dailyTotalSales = day.serviceSales + day.productSales;
-                                    const dailyAbv = day.customersServed > 0 ? Math.round(dailyTotalSales / day.customersServed) : 0;
-                                    return (
-                                        <div key={day.date} className="p-3 rounded-lg hover:bg-gray-50 border-b border-gray-200 last:border-b-0">
-                                            <div className="font-semibold text-gray-800 flex items-center text-sm mb-3">
-                                                <CalendarDays className="w-4 h-4 mr-2 text-indigo-500" />
-                                                {format(parseISO(day.date), 'dd MMM, yyyy')}
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                            <h4 className="text-md font-semibold text-gray-800 mb-3">Summary for {months[currentMonthIndex]}</h4>
+                            {isLoadingDetails ? (<div className="text-center py-4 text-gray-500">Loading...</div>) : 
+                            errorDetails ? (<div className="text-center py-4 text-red-500">{errorDetails}</div>) :
+                            (<div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                                <div><p className="text-md sm:text-lg font-bold text-green-600">₹{panelSummary.totalSales.toLocaleString()}</p><p className="text-xs text-gray-500">Total Sales</p></div>
+                                <div><p className="text-md sm:text-lg font-bold text-teal-600">{panelSummary.totalCustomers}</p><p className="text-xs text-gray-500">Customers</p></div>
+                                <div><p className="text-md sm:text-lg font-bold text-amber-600">{panelSummary.averageRating.toFixed(1)}</p><p className="text-xs text-gray-500">Avg Rating</p></div>
+                            </div>)
+                            }
+                        </div>
+                        <div>
+                            <h4 className="text-md font-semibold text-gray-800 mb-3 px-1">Daily Breakdown</h4>
+                            <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+                                {isLoadingDetails ? (<div className="text-center py-10 text-gray-500">Loading records...</div>) :
+                                errorDetails ? (<div className="text-center py-10 text-red-500">{errorDetails}</div>) :
+                                staffDailyPerformance.length > 0 ? (
+                                <div className="space-y-2">
+                                    {staffDailyPerformance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((day) => {
+                                        const dailyTotalSales = day.serviceSales + day.productSales;
+                                        const dailyAbv = day.customersServed > 0 ? Math.round(dailyTotalSales / day.customersServed) : 0;
+                                        return (
+                                            <div key={day.date} className="p-3 rounded-lg hover:bg-gray-50 border-b border-gray-200 last:border-b-0">
+                                                <div className="font-semibold text-gray-800 flex items-center text-sm mb-3">
+                                                    <CalendarDays className="w-4 h-4 mr-2 text-indigo-500" />
+                                                    {format(parseISO(day.date), 'dd MMM, yyyy')}
+                                                </div>
+                                                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center text-xs">
+                                                    <div className="p-2 rounded-md bg-blue-50 text-blue-800"><p className="font-bold">₹{day.serviceSales.toLocaleString()}</p><p className="text-[10px] uppercase">Service</p></div>
+                                                    <div className="p-2 rounded-md bg-purple-50 text-purple-800"><p className="font-bold">₹{day.productSales.toLocaleString()}</p><p className="text-[10px] uppercase">Product</p></div>
+                                                    <div className="p-2 rounded-md bg-teal-50 text-teal-800"><p className="font-bold">{day.customersServed}</p><p className="text-[10px] uppercase">Clients</p></div>
+                                                    <div className="p-2 rounded-md bg-indigo-50 text-indigo-800"><p className="font-bold">₹{dailyAbv.toLocaleString()}</p><p className="text-[10px] uppercase">ABV</p></div>
+                                                    <div className="p-2 rounded-md bg-amber-50 text-amber-800 col-span-3 sm:col-span-1"><p className="font-bold">{day.rating.toFixed(1)} / 10</p><p className="text-[10px] uppercase">Rating</p></div>
+                                                </div>
                                             </div>
-                                            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center text-xs">
-                                                <div className="p-2 rounded-md bg-blue-50 text-blue-800"><p className="font-bold">₹{day.serviceSales.toLocaleString()}</p><p className="text-[10px] uppercase">Service</p></div>
-                                                <div className="p-2 rounded-md bg-purple-50 text-purple-800"><p className="font-bold">₹{day.productSales.toLocaleString()}</p><p className="text-[10px] uppercase">Product</p></div>
-                                                <div className="p-2 rounded-md bg-teal-50 text-teal-800"><p className="font-bold">{day.customersServed}</p><p className="text-[10px] uppercase">Clients</p></div>
-                                                <div className="p-2 rounded-md bg-indigo-50 text-indigo-800"><p className="font-bold">₹{dailyAbv.toLocaleString()}</p><p className="text-[10px] uppercase">ABV</p></div>
-                                                <div className="p-2 rounded-md bg-amber-50 text-amber-800 col-span-3 sm:col-span-1"><p className="font-bold">{day.rating.toFixed(1)} / 10</p><p className="text-[10px] uppercase">Rating</p></div>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
+                                        )
+                                    })}
+                                </div>
+                                ) : ( <p className="text-sm text-gray-500 text-center py-10">No daily records found for this month.</p> )}
                             </div>
-                            ) : ( <p className="text-sm text-gray-500 text-center py-10">No daily records found for this month.</p> )}
                         </div>
                     </div>
                 </div>
+              </div>
             </div>
-          </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );
