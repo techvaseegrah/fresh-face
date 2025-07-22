@@ -31,6 +31,7 @@ export async function GET() {
     .populate('roleId', 'name')
     .sort({ name: 1 });
     
+    // The successful response
     return NextResponse.json({
       success: true,
       staff: staff.map(user => ({
@@ -39,6 +40,13 @@ export async function GET() {
         email: user.email,
         role: user.roleId?.name
       }))
+    }, 
+    // *** THIS IS THE FIX ***
+    // Add this options object to the response
+    {
+      headers: {
+        'Cache-Control': 'no-store',
+      },
     });
     
   } catch (error) {
