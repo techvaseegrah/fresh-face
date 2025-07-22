@@ -260,8 +260,8 @@ export default function TargetView({ initialData }: TargetViewProps) {
             )}
             <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
                  <div>
-                    <h1 className="text-3xl font-bold text-gray-800">Performance Dashboard</h1>
-                    <p className="text-gray-500 mt-1">Monthly performance summary and targets.</p>
+                    <h1 className="text-3xl font-bold text-gray-800">Shop Targets Dashboard</h1>
+                    <p className="text-gray-500 mt-1">Monthly Shop summary and targets.</p>
                  </div>
                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <button onClick={handleExportExcel} className="flex items-center justify-center gap-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition-all">

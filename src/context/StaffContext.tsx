@@ -9,7 +9,6 @@ import { toast } from 'react-toastify';
 // --- Type Definitions ---
 export interface PositionOption { value: string; label: string; }
 
-// --- MODIFICATION: Added new document fields to StaffMember interface ---
 export interface StaffMember {
   id: string;
   staffIdNumber: string;
@@ -32,25 +31,24 @@ export interface StaffMember {
   updatedAt?: string;
 }
 
-// --- MODIFICATION: Added new document fields to NewStaffPayload interface ---
+// --- THIS IS THE CORRECTED INTERFACE ---
 export interface NewStaffPayload {
   staffIdNumber: string;
   name: string;
-  email:string;
+  email?: string; // FIX: Email is now optional
   phone: string;
   position: string;
   joinDate: string;
   salary: number;
   address?: string;
   image?: string | null;
-  aadharNumber?: string;
+  aadharNumber: string; // FIX: Aadhar Number is now required
   // New document fields
   aadharImage?: string | null;
   passbookImage?: string | null;
   agreementImage?: string | null;
 }
 
-// --- MODIFICATION: This type now implicitly includes the new document fields because it's based on StaffMember ---
 export type UpdateStaffPayload = Partial<Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>>;
 
 
@@ -169,5 +167,3 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
 
   return <StaffContext.Provider value={contextValue}>{children}</StaffContext.Provider>;
 };
-
-

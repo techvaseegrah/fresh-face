@@ -58,10 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === 'list') {
-      // Your original filter was { status: 'active' }. Based on your screenshot showing
-      // all users, I've removed the filter to ensure all staff data is sent to the frontend.
-      // The .lean() will fetch ALL fields from the schema, including the new image fields.
-      const staffList = await Staff.find({}) // Removed filter to fetch all users
+      const staffList = await Staff.find({})
         .sort({ name: 'asc' })
         .lean<LeanStaffDocument[]>();
       return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
@@ -71,7 +68,6 @@ export async function GET(request: NextRequest) {
       if (!isValidObjectId(staffId)) {
         return NextResponse.json({ success: false, error: 'Invalid staff ID format' }, { status: 400 });
       }
-      // This part is correct and will fetch all fields for a single staff member.
       const staffMember = await Staff.findById(staffId).lean<LeanStaffDocument>();
       if (!staffMember) {
         return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
@@ -96,14 +92,18 @@ export async function POST(request: NextRequest) {
   await dbConnect();
   try {
     const body = await request.json();
-    // --- CHANGE 1: Destructure the new document fields from the request body ---
     const { 
         name, email, position, phone, salary, address, image, aadharNumber, joinDate,
         aadharImage, passbookImage, agreementImage 
     } = body;
 
-    if (!name || !email || !position) {
-      return NextResponse.json({ success: false, error: 'Name, email, and position are required' }, { status: 400 });
+    // --- CHANGE 1: Updated the validation logic ---
+    // Email is now optional. Phone and Aadhar Number are now required.
+    if (!name || !phone || !position || !aadharNumber) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Name, phone, position, and Aadhar Number are required' 
+      }, { status: 400 });
     }
 
     const settings = await ShopSetting.findOneAndUpdate(
@@ -114,21 +114,24 @@ export async function POST(request: NextRequest) {
 
     const newStaffIdNumber = (settings?.staffIdBaseNumber || 1).toString();
 
+    // --- CHANGE 2: Updated the duplicate check to only check for email if it's provided ---
+    // This prevents errors if multiple staff members have no email.
     const existingStaff = await Staff.findOne({
         $or: [
             { staffIdNumber: newStaffIdNumber },
-            { email },
+            ...(email ? [{ email }] : []), // Only check for email if it's not an empty string
             ...(aadharNumber ? [{ aadharNumber }] : [])
         ]
     }).lean();
 
     if (existingStaff) {
+        // Rollback the staffIdBaseNumber increment if creation fails
         await ShopSetting.updateOne({ key: 'defaultSettings' }, { $inc: { staffIdBaseNumber: -1 } });
         
         let errorMessage = 'A user with this data already exists.';
         if (existingStaff.staffIdNumber === newStaffIdNumber) {
             errorMessage = `Staff ID ${newStaffIdNumber} already exists. Please check settings and try again.`;
-        } else if (existingStaff.email === email) {
+        } else if (email && existingStaff.email === email) { // Check 'email' variable before accessing property
             errorMessage = 'Email already exists.';
         } else if (aadharNumber && existingStaff.aadharNumber === aadharNumber) {
             errorMessage = 'Aadhar number already exists.';
@@ -136,10 +139,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: errorMessage }, { status: 409 });
     }
 
-    // --- CHANGE 2: Add the new document fields when creating the Staff document ---
     const newStaffDoc = new Staff({
       staffIdNumber: newStaffIdNumber,
-      name, email, position, phone, salary, address, aadharNumber, joinDate,
+      name, 
+      email: email || null, // Ensure empty email is stored as null
+      position, phone, salary, address, aadharNumber, joinDate,
       image: image || null,
       aadharImage: aadharImage || null,
       passbookImage: passbookImage || null,
@@ -163,6 +167,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: {...staffObject, id: savedStaff._id.toString()} }, { status: 201 });
   } catch (error: any) {
     console.error('Error adding staff:', error);
+    // Attempt to roll back the number on any error during the creation process
     await ShopSetting.updateOne({ key: 'defaultSettings' }, { $inc: { staffIdBaseNumber: -1 } });
     if (error.name === 'ValidationError') {
         return NextResponse.json({ success: false, error: error.message }, { status: 400 });
@@ -187,15 +192,12 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    // This `updateData` will correctly contain any new document fields sent from the frontend.
-    // No change is needed here.
     const updateData = await request.json(); 
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 });
     }
     
-    // This logic to check for duplicates is correct. No change needed.
     const orConditions: any[] = [];
     if (updateData.staffIdNumber) orConditions.push({ staffIdNumber: updateData.staffIdNumber });
     if (updateData.email) orConditions.push({ email: updateData.email });
@@ -203,7 +205,7 @@ export async function PUT(request: NextRequest) {
 
     if (orConditions.length > 0) {
         const existingStaff = await Staff.findOne({
-            _id: { $ne: staffId }, // IMPORTANT: Exclude the current staff member from the check
+            _id: { $ne: staffId },
             $or: orConditions
         }).lean();
 
@@ -216,8 +218,6 @@ export async function PUT(request: NextRequest) {
         }
     }
 
-    // This `$set` operator is flexible and correctly updates any fields provided in `updateData`,
-    // including the new document fields. No change is needed here.
     const updatedStaff = await Staff.findByIdAndUpdate(staffId, { $set: updateData }, { new: true, runValidators: true }).lean<LeanStaffDocument>();
     if (!updatedStaff) {
       return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
@@ -246,7 +246,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
   }
 
-  // No changes are needed in this function.
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const staffId = searchParams.get('id');
