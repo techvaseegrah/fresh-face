@@ -7,11 +7,13 @@ import {
   User, Mail, Phone, Fingerprint, Briefcase, Calendar, IndianRupee, MapPin, Image as ImageIcon,
   Badge
 } from 'lucide-react';
+// --- MODIFICATION: Import react-toastify ---
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 import { useStaff, NewStaffPayload, PositionOption } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
-// --- MODIFICATION: Add new document fields to form data interface ---
 interface StaffFormData {
   staffIdNumber: string;
   name: string;
@@ -23,7 +25,6 @@ interface StaffFormData {
   address: string;
   image: string | null;
   aadharNumber: string;
-  // New document fields
   aadharImage: string | null;
   passbookImage: string | null;
   agreementImage: string | null;
@@ -31,8 +32,6 @@ interface StaffFormData {
 
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
 
-
-// --- NEW COMPONENT: Document Viewer Modal ---
 const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
   if (!src) return null;
   return (
@@ -50,7 +49,6 @@ const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose
   );
 };
 
-// --- NEW COMPONENT: Reusable File Upload Input ---
 const FileUploadInput: React.FC<{
   id: string;
   label: string;
@@ -64,7 +62,8 @@ const FileUploadInput: React.FC<{
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        alert("File size should not exceed 5MB.");
+        // --- MODIFICATION: Use toast for error ---
+        toast.error("File size should not exceed 5MB.");
         e.target.value = '';
         return;
       }
@@ -112,7 +111,6 @@ const AddStaffPage: React.FC = () => {
     addPositionOption
   } = useStaff();
   
-  // --- MODIFICATION: Set initial state for new fields ---
   const [formData, setFormData] = useState<StaffFormData>({
     staffIdNumber: 'Loading...',
     name: '',
@@ -130,17 +128,16 @@ const AddStaffPage: React.FC = () => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // --- MODIFICATION: Removed error state, as toasts will handle it ---
+  // const [error, setError] = useState<string | null>(null);
   const [positionOptions, setPositionOptions] = useState<PositionOption[]>(contextPositionOptions);
   const [showAddPositionForm, setShowAddPositionForm] = useState(false);
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
   
-  // --- NEW STATE: For the document viewer modal ---
   const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
 
 
-  // --- All useEffects and handlers from original file (mostly unchanged) ---
   useEffect(() => {
     const fetchNextId = async () => {
       try {
@@ -157,7 +154,8 @@ const AddStaffPage: React.FC = () => {
         }
       } catch (err: any) {
         setFormData(prev => ({ ...prev, staffIdNumber: 'Error' }));
-        setError(`Could not load Staff ID: ${err.message}`);
+        // --- MODIFICATION: Use toast for error ---
+        toast.error(`Could not load Staff ID: ${err.message}`);
         console.error(err);
       }
     };
@@ -183,7 +181,6 @@ const AddStaffPage: React.FC = () => {
     }));
   };
   
-  // --- NEW HANDLER: For new document fields ---
   const handleFileChange = (fieldName: keyof StaffFormData, fileData: string | null) => {
     setFormData(prev => ({...prev, [fieldName]: fileData}));
   }
@@ -192,7 +189,8 @@ const AddStaffPage: React.FC = () => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > 2 * 1024 * 1024) { // 2MB limit
-          setError("Image size should not exceed 2MB.");
+          // --- MODIFICATION: Use toast for error ---
+          toast.error("Image size should not exceed 2MB.");
           e.target.value = '';
           return;
       }
@@ -204,7 +202,7 @@ const AddStaffPage: React.FC = () => {
     }
   };
 
-  const handleAddNewPosition = () => { /* ... (unchanged) ... */ 
+  const handleAddNewPosition = () => { 
       setNewPositionError(null);
       if (!newPositionName.trim()) {
         setNewPositionError("Position name cannot be empty.");
@@ -226,31 +224,29 @@ const AddStaffPage: React.FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError(null);
-
-    // ... (Validation logic unchanged) ...
+    
+    // --- MODIFICATION: Use toasts for validation ---
     if (formData.staffIdNumber === 'Loading...' || formData.staffIdNumber === 'Error') {
-      setError("Staff ID is not available. Please wait or refresh the page.");
+      toast.error("Staff ID is not available. Please wait or refresh the page.");
       setIsSubmitting(false);
       return;
     }
     if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim()) {
-        setError("Please fill in all required fields marked with * (Name, Email, Phone, Position).");
+        toast.warn("Please fill in all required fields marked with * (Name, Email, Phone, Position).");
         setIsSubmitting(false);
         return;
     }
     if (formData.aadharNumber.trim() && !/^\d{12}$/.test(formData.aadharNumber.trim())) {
-        setError("Aadhar Number must be 12 digits.");
+        toast.error("Aadhar Number must be 12 digits.");
         setIsSubmitting(false);
         return;
     }
     if (formData.salary !== '' && Number(formData.salary) < 0) {
-        setError("Salary cannot be negative.");
+        toast.error("Salary cannot be negative.");
         setIsSubmitting(false);
         return;
     }
 
-    // --- MODIFICATION: Add new document fields to the API payload ---
     const apiData: NewStaffPayload = {
         staffIdNumber: formData.staffIdNumber,
         name: formData.name,
@@ -262,7 +258,6 @@ const AddStaffPage: React.FC = () => {
         address: formData.address || undefined,
         image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
         aadharNumber: formData.aadharNumber || undefined,
-        // New fields
         aadharImage: formData.aadharImage,
         passbookImage: formData.passbookImage,
         agreementImage: formData.agreementImage,
@@ -270,10 +265,14 @@ const AddStaffPage: React.FC = () => {
 
     try {
       await addStaffMember(apiData);
+      // --- MODIFICATION: Show success toast ---
+      // This is the success notification you wanted.
+      toast.success('Staff member added successfully!');
       router.push('/staffmanagement/staff/stafflist');
     } catch (apiError: any) {
       console.error('Failed to add staff member:', apiError);
-      setError(apiError.message || 'Failed to add staff member. Please try again.');
+      // --- MODIFICATION: Show error toast ---
+      toast.error(apiError.message || 'Failed to add staff member. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -290,7 +289,20 @@ const AddStaffPage: React.FC = () => {
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
-       {/* --- NEW: Render the document viewer modal --- */}
+       {/* --- MODIFICATION: Add ToastContainer for notifications --- */}
+      <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+        />
+      
       <DocumentViewerModal
         src={viewingDocument.src}
         title={viewingDocument.title}
@@ -303,20 +315,12 @@ const AddStaffPage: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-bold text-gray-800">Add New Staff Member</h1>
         </div>
       </div>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-4" role="alert">
-          <strong className="font-bold">Error: </strong>
-          <span className="block sm:inline">{error}</span>
-          <button type="button" className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setError(null)} aria-label="Close">
-            <span className="text-2xl" aria-hidden="true">×</span>
-          </button>
-        </div>
-      )}
+      
+      {/* --- MODIFICATION: Removed the old error display block --- */}
 
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 md:p-8">
+        {/* The rest of your form JSX remains unchanged */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-          {/* --- Profile Photo Section (unchanged) --- */}
           <div className="md:col-span-2 mb-4">
             <IconLabel htmlFor="image-upload-input" icon={<ImageIcon size={14} className="text-gray-500" />} text="Profile Photo" />
             <div className="flex items-center mt-1">
@@ -332,7 +336,6 @@ const AddStaffPage: React.FC = () => {
             </div>
           </div>
           
-          {/* --- Personal & Employment Details (unchanged) --- */}
           <div>
             <IconLabel htmlFor="staffIdNumber" icon={<Badge size={14} className="text-gray-500" />} text="Staff ID*" />
             <input id="staffIdNumber" name="staffIdNumber" type="text" required value={formData.staffIdNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black bg-gray-100 cursor-not-allowed" disabled={isSubmitting} readOnly />
@@ -355,7 +358,6 @@ const AddStaffPage: React.FC = () => {
           </div>
           <div>
             <IconLabel htmlFor="position" icon={<Briefcase size={14} className="text-gray-500" />} text="Position*" />
-            {/* Position Select Logic is Unchanged */}
             <div className="flex items-center space-x-2">
               <select id="position" name="position" required value={formData.position} onChange={handleInputChange} className="flex-grow w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || showAddPositionForm}>
                 {positionOptions.map(option => (<option key={option.value} value={option.value}>{option.label}</option>))}
@@ -387,7 +389,6 @@ const AddStaffPage: React.FC = () => {
             <textarea id="address" name="address" rows={3} value={formData.address} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}></textarea>
           </div>
 
-           {/* --- NEW SECTION: Document Uploads --- */}
           <div className="md:col-span-2 border-t pt-5 mt-3 space-y-4">
             <h3 className="text-lg font-medium text-gray-900">Documents</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -10,8 +10,13 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 import { useStaff, StaffMember, UpdateStaffPayload, PositionOption } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
+
+// ... (Interfaces and other components remain the same) ...
 
 interface EditStaffFormData {
   staffIdNumber: string;
@@ -25,7 +30,6 @@ interface EditStaffFormData {
   image: string | null;
   status: 'active' | 'inactive';
   aadharNumber: string;
-  // New document fields
   aadharImage: string | null;
   passbookImage: string | null;
   agreementImage: string | null;
@@ -34,73 +38,74 @@ interface EditStaffFormData {
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
 
 const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
-  if (!src) return null;
-  return (
-    <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
-        </div>
-        <div className="p-4">
-          <img src={src} alt={title} className="w-full h-auto object-contain" />
+    if (!src) return null;
+    return (
+      <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-between items-center p-4 border-b">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <Button variant="ghost" onClick={onClose}><XCircle /></Button>
+          </div>
+          <div className="p-4">
+            <img src={src} alt={title} className="w-full h-auto object-contain" />
+          </div>
         </div>
       </div>
-    </div>
-  );
-};
-
-const FileUploadInput: React.FC<{
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  fileData: string | null;
-  onFileChange: (file: string | null) => void;
-  onView: () => void;
-  isSubmitting: boolean;
-}> = ({ id, label, icon, fileData, onFileChange, onView, isSubmitting }) => {
-  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        alert("File size should not exceed 5MB.");
-        e.target.value = '';
-        return;
+    );
+  };
+  
+  const FileUploadInput: React.FC<{
+    id: string;
+    label: string;
+    icon: React.ReactNode;
+    fileData: string | null;
+    onFileChange: (file: string | null) => void;
+    onView: () => void;
+    isSubmitting: boolean;
+  }> = ({ id, label, icon, fileData, onFileChange, onView, isSubmitting }) => {
+    const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        if (file.size > 5 * 1024 * 1024) { 
+          toast.error("File size should not exceed 5MB.");
+          e.target.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          onFileChange(reader.result as string);
+        };
+        reader.readAsDataURL(file);
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onFileChange(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    };
+  
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="flex items-center gap-2">{icon}<span>{label}</span></div>
+        </label>
+        <div className="mt-1 flex items-center gap-3 p-3 border border-gray-300 rounded-md">
+          <input type="file" id={id} accept="image/*,application/pdf" onChange={handleFileSelect} className="hidden" disabled={isSubmitting} />
+          {fileData ? (
+            <>
+              <FileText className="h-8 w-8 text-indigo-500 flex-shrink-0" />
+              <div className="flex-grow text-sm text-gray-700">File uploaded.</div>
+              <Button type="button" variant="outline" size="sm" icon={<Eye size={14}/>} onClick={onView} disabled={isSubmitting}>View</Button>
+              <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={14}/>} onClick={() => onFileChange(null)} className="text-red-500" title="Remove File" disabled={isSubmitting} />
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="outline" icon={<Upload size={16}/>} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting}>
+                Upload File
+              </Button>
+              <p className="text-xs text-gray-500">Max 5MB</p>
+            </>
+          )}
+        </div>
+      </div>
+    );
   };
 
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        <div className="flex items-center gap-2">{icon}<span>{label}</span></div>
-      </label>
-      <div className="mt-1 flex items-center gap-3 p-3 border border-gray-300 rounded-md">
-        <input type="file" id={id} accept="image/*,application/pdf" onChange={handleFileSelect} className="hidden" disabled={isSubmitting} />
-        {fileData ? (
-          <>
-            <FileText className="h-8 w-8 text-indigo-500 flex-shrink-0" />
-            <div className="flex-grow text-sm text-gray-700">File uploaded.</div>
-            <Button type="button" variant="outline" size="sm" icon={<Eye size={14}/>} onClick={onView} disabled={isSubmitting}>View</Button>
-            <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={14}/>} onClick={() => onFileChange(null)} className="text-red-500" title="Remove File" disabled={isSubmitting} />
-          </>
-        ) : (
-          <>
-            <Button type="button" variant="outline" icon={<Upload size={16}/>} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting}>
-              Upload File
-            </Button>
-            <p className="text-xs text-gray-500">Max 5MB</p>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const EditStaffContent: React.FC = () => {
   const searchParams = useSearchParams();
@@ -121,7 +126,6 @@ const EditStaffContent: React.FC = () => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   const [positionOptions, setPositionOptions] = useState<PositionOption[]>(contextPositionOptions);
@@ -131,6 +135,7 @@ const EditStaffContent: React.FC = () => {
 
   const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
 
+  // ... (useEffect for fetching data and other handlers remain the same) ...
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
   }, [contextPositionOptions]);
@@ -139,7 +144,6 @@ const EditStaffContent: React.FC = () => {
     const fetchStaffData = async () => {
       if (staffId) {
         setIsLoadingData(true);
-        setError(null);
         try {
           const response = await fetch(`/api/staff?id=${staffId}`);
           if (!response.ok) {
@@ -149,7 +153,6 @@ const EditStaffContent: React.FC = () => {
           const result = await response.json();
           if (result.success && result.data) {
             const fetchedStaffData = result.data as StaffMember;
-
             setFormData({
               staffIdNumber: fetchedStaffData.staffIdNumber || '',
               name: fetchedStaffData.name,
@@ -171,18 +174,17 @@ const EditStaffContent: React.FC = () => {
                 const staffPositionOption = { value: fetchedStaffData.position, label: fetchedStaffData.position };
                 addPositionOption(staffPositionOption);
             }
-
           } else {
             throw new Error(result.error || 'Staff member not found.');
           }
         } catch (err: any) {
           console.error(`Error fetching staff ${staffId}:`, err);
-          setError(err.message);
+          toast.error(err.message);
         } finally {
           setIsLoadingData(false);
         }
       } else {
-        setError("Staff ID is missing. Cannot load data.");
+        toast.error("Staff ID is missing. Cannot load data.");
         setIsLoadingData(false);
       }
     };
@@ -200,7 +202,7 @@ const EditStaffContent: React.FC = () => {
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          if (file.size > 2 * 1024 * 1024) { setError("Image size should not exceed 2MB."); e.target.value = ''; return; }
+          if (file.size > 2 * 1024 * 1024) { toast.error("Image size should not exceed 2MB."); e.target.value = ''; return; }
           const reader = new FileReader();
           reader.onloadend = () => { setFormData((prev) => ({ ...prev, image: reader.result as string })); };
           reader.readAsDataURL(file);
@@ -225,23 +227,23 @@ const EditStaffContent: React.FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!staffId) { setError("Cannot save, Staff ID is missing."); return; }
     setIsSubmitting(true);
-    setError(null);
+
+    if (!staffId) { toast.error("Cannot save, Staff ID is missing."); setIsSubmitting(false); return; }
 
     if (!formData.staffIdNumber.trim() || !formData.name.trim() || !formData.email.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.joinDate.trim() || !formData.salary.trim()) {
-        setError("Please fill in all required fields marked with *.");
+        toast.warn("Please fill in all required fields marked with *.");
         setIsSubmitting(false);
         return;
     }
     const salaryValue = parseFloat(formData.salary);
     if (isNaN(salaryValue) || salaryValue < 0) {
-        setError("Salary must be a valid non-negative number.");
+        toast.error("Salary must be a valid non-negative number.");
         setIsSubmitting(false);
         return;
     }
      if (formData.aadharNumber.trim() && !/^\d{12}$/.test(formData.aadharNumber.trim())) {
-        setError("Aadhar Number must be 12 digits.");
+        toast.error("Aadhar Number must be 12 digits.");
         setIsSubmitting(false);
         return;
     }
@@ -265,10 +267,13 @@ const EditStaffContent: React.FC = () => {
 
     try {
       await updateStaffMember(staffId, apiData);
+      // --- MODIFICATION: Updated success message ---
+      // This is the pop-up you requested.
+      toast.success('Staff Edited Successfully!');
       router.push('/staffmanagement/staff/stafflist');
     } catch (apiError: any) {
       console.error('Failed to update staff member:', apiError);
-      setError(apiError.message || 'Failed to update staff. Please try again.');
+      toast.error(apiError.message || 'Failed to update staff. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -276,10 +281,10 @@ const EditStaffContent: React.FC = () => {
 
   if (isLoadingData) return <div className="p-6 text-center">Loading staff data...</div>;
   
-  if (error && !formData.name && !isLoadingData) {
+  if (!formData.name && !isLoadingData) {
       return (
           <div className="p-6 text-center">
-              <p className="text-red-500">{error}</p>
+              <p className="text-gray-600">Could not load staff data. Please check the Staff ID and try again.</p>
               <Button variant="black" onClick={() => router.push('/staffmanagement/staff/stafflist')} className="mt-4">
                   Back to Staff List
               </Button>
@@ -289,6 +294,20 @@ const EditStaffContent: React.FC = () => {
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+
+      {/* ... (The rest of the JSX is unchanged) ... */}
       <DocumentViewerModal
         src={viewingDocument.src}
         title={viewingDocument.title}
@@ -301,21 +320,6 @@ const EditStaffContent: React.FC = () => {
               <h1 className="text-xl md:text-2xl font-bold text-gray-800">Edit Staff Member</h1>
           </div>
       </div>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-4" role="alert">
-          <strong className="font-bold">Error: </strong>
-          <span className="block sm:inline">{error}</span>
-           <button
-            type="button"
-            className="absolute top-0 bottom-0 right-0 px-4 py-3"
-            onClick={() => setError(null)}
-            aria-label="Close"
-          >
-            <span className="text-2xl" aria-hidden="true">×</span>
-          </button>
-        </div>
-      )}
 
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 md:p-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
@@ -584,12 +588,13 @@ const EditStaffContent: React.FC = () => {
   );
 };
 
-const EditStaffPage: React.FC = () => {
-  return (
-    <Suspense fallback={<div className="p-6 text-center">Loading editor...</div>}>
-      <EditStaffContent />
-    </Suspense>
-  );
-};
 
-export default EditStaffPage;
+const EditStaffPage: React.FC = () => {
+    return (
+      <Suspense fallback={<div className="p-6 text-center">Loading editor...</div>}>
+        <EditStaffContent />
+      </Suspense>
+    );
+  };
+  
+  export default EditStaffPage;

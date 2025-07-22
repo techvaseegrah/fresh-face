@@ -1,142 +1,167 @@
-'use client';
+// /src/app/(main)/staffmanagement/swift/page.tsx
+"use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Save, Loader2, Calendar, Edit, Check, X } from 'lucide-react';
-import { format, addDays, subDays, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { ArrowLeft, ArrowRight, Save, Loader2, AlertCircle, Edit, XCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
 
-// --- Type Definitions ---
-interface ScheduleEntry {
-  [date: string]: string;
+// --- TYPE DEFINITIONS (Unchanged) ---
+interface StaffMember {
+  _id: string;
+  staffIdNumber: string;
+  name: string;
+  status: 'active' | 'inactive';
 }
 
-interface StaffSchedule {
-  staffId: string;
-  staffName: string;
-  schedule: ScheduleEntry;
+interface Shift {
+  _id?: string;
+  employeeId: string;
+  date: string;
+  isWeekOff: boolean;
+  shiftTiming: string;
 }
 
-interface WeeklyData {
-  weekStart: string;
-  weekEnd: string;
-  schedule: StaffSchedule[];
-}
+type ShiftScheduleState = Record<string, Record<string, Shift>>;
 
-const ShiftSchedulePage: React.FC = () => {
-  const [referenceDate, setReferenceDate] = useState(new Date());
-  const [weeklyData, setWeeklyData] = useState<StaffSchedule[]>([]);
-  const [originalData, setOriginalData] = useState<StaffSchedule[]>([]);
-  
+// --- HELPER FUNCTIONS (Unchanged) ---
+const getWeekDateRange = (date: Date) => {
+  const start = new Date(date);
+  start.setDate(start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1));
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setUTCHours(23, 59, 59, 999);
+  return { startDate: start, endDate: end };
+};
+
+const getDaysOfWeek = (startDate: Date) => {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(startDate);
+    day.setDate(startDate.getDate() + i);
+    days.push(day);
+  }
+  return days;
+};
+
+// --- MAIN COMPONENT ---
+export default function ShiftManagementPage() {
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [shifts, setShifts] = useState<ShiftScheduleState>({});
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [quickSetIndex, setQuickSetIndex] = useState<number | null>(null);
-  const [quickSetValue, setQuickSetValue] = useState('');
+  // --- NEW STATE: To manage which row is being edited ---
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  // --- NEW STATE: To hold temporary changes for the row being edited ---
+  const [tempRowData, setTempRowData] = useState<Record<string, Shift> | null>(null);
 
-  const weekDays = useMemo(() => {
-    const start = startOfWeek(referenceDate, { weekStartsOn: 1 }); // Monday
-    const end = endOfWeek(referenceDate, { weekStartsOn: 1 });   // Sunday
-    return eachDayOfInterval({ start, end });
-  }, [referenceDate]);
+
+  const { startDate, endDate } = useMemo(() => getWeekDateRange(currentDate), [currentDate]);
+  const weekDays = useMemo(() => getDaysOfWeek(startDate), [startDate]);
+
+  const fetchData = useCallback(async () => {
+    // ... (fetchData logic is unchanged)
+    setIsLoading(true);
+    setError(null);
+    try {
+      const staffResponse = await fetch('/api/staff?action=list');
+      if (!staffResponse.ok) throw new Error('Failed to fetch staff list');
+      const staffData = await staffResponse.json();
+      const activeStaff: StaffMember[] = staffData.data.filter((s: StaffMember) => s.status === 'active');
+      setStaffList(activeStaff);
+
+      const { startDate: weekStart, endDate: weekEnd } = getWeekDateRange(currentDate);
+      const shiftResponse = await fetch(`/api/shifts?startDate=${weekStart.toISOString()}&endDate=${weekEnd.toISOString()}`);
+      if (!shiftResponse.ok) throw new Error('Failed to fetch shift data');
+      const shiftData = await shiftResponse.json();
+      
+      const currentWeekDays = getDaysOfWeek(weekStart);
+      const schedule: ShiftScheduleState = {};
+      activeStaff.forEach(staff => {
+        schedule[staff._id] = {};
+        currentWeekDays.forEach(day => {
+          const dateStr = day.toISOString().split('T')[0];
+          const existingShift = shiftData.data?.find(
+            (s: any) => s.employeeId === staff._id && s.date.startsWith(dateStr)
+          );
+          schedule[staff._id][dateStr] = existingShift || {
+            employeeId: staff._id,
+            date: day.toISOString(),
+            isWeekOff: false,
+            shiftTiming: '',
+          };
+        });
+      });
+      setShifts(schedule);
+    } catch (err: any) {
+      setError(err.message);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentDate]);
 
   useEffect(() => {
-    const fetchSchedule = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const dateParam = format(referenceDate, 'yyyy-MM-dd');
-        const response = await fetch(`/api/staffmanagement/swift?date=${dateParam}`);
-        
-        if (response.ok) {
-          const data: WeeklyData = await response.json();
-          setWeeklyData(data.schedule);
-          setOriginalData(JSON.parse(JSON.stringify(data.schedule))); // Deep copy
-          return; // Success
-        }
+    fetchData();
+  }, [fetchData]);
 
-        const errorText = await response.text();
-        let errorMessage = `Failed to fetch schedule. Status: ${response.status}`;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.message || errorMessage;
-        } catch (e) {
-          if (/<(!DOCTYPE|html)/i.test(errorText)) {
-            errorMessage = "Server error. An HTML page was returned instead of data. Please check the server logs.";
-          } else {
-            errorMessage = errorText.substring(0, 200);
-          }
-        }
-        throw new Error(errorMessage);
+  // --- NEW HANDLER: Starts the editing process for a row ---
+  const handleEditClick = (employeeId: string) => {
+    setEditingRowId(employeeId);
+    // Create a deep copy of the row's data to edit temporarily
+    setTempRowData(JSON.parse(JSON.stringify(shifts[employeeId])));
+  };
 
-      } catch (err: any) {
-        setError(err.message);
-        setWeeklyData([]);
-        setOriginalData([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSchedule();
-  }, [referenceDate]);
-
-  const handleShiftChange = (staffIndex: number, dateKey: string, value: string) => {
-    const updatedSchedule = [...weeklyData];
-    updatedSchedule[staffIndex].schedule[dateKey] = value;
-    setWeeklyData(updatedSchedule);
+  // --- NEW HANDLER: Cancels editing for a row ---
+  const handleCancelClick = () => {
+    setEditingRowId(null);
+    setTempRowData(null);
   };
   
-  const handleApplyWeek = (staffIndex: number) => {
-    if (!quickSetValue.trim()) return;
-
-    const updatedSchedule = [...weeklyData];
-    weekDays.forEach(day => {
-      const dateKey = format(day, 'yyyy-MM-dd');
-      updatedSchedule[staffIndex].schedule[dateKey] = quickSetValue.toUpperCase();
-    });
-    setWeeklyData(updatedSchedule);
-    
-    setQuickSetIndex(null);
-    setQuickSetValue('');
+  // --- NEW HANDLER: Updates the temporary state as the user types ---
+  const handleTempRowChange = (date: string, field: 'shiftTiming' | 'isWeekOff', value: string | boolean) => {
+    if (!tempRowData) return;
+    const newRowData = { ...tempRowData };
+    newRowData[date] = { ...newRowData[date], [field]: value };
+    if (field === 'isWeekOff' && value === true) {
+      newRowData[date].shiftTiming = '';
+    }
+    setTempRowData(newRowData);
   };
 
-  const hasChanges = useMemo(() => {
-    return JSON.stringify(weeklyData) !== JSON.stringify(originalData);
-  }, [weeklyData, originalData]);
+  // --- MODIFIED HANDLER: Saves only the currently edited row ---
+  const handleSaveRow = async () => {
+    if (!editingRowId || !tempRowData) return;
 
-  const handleSaveChanges = async () => {
     setIsSaving(true);
     setError(null);
-    const changes: { staffId: string; date: string; shiftTime: string }[] = [];
-
-    weeklyData.forEach((staff, staffIndex) => {
-        Object.keys(staff.schedule).forEach(dateKey => {
-            const newShift = staff.schedule[dateKey];
-            const originalShift = originalData[staffIndex]?.schedule[dateKey] || '';
-            if (newShift !== originalShift) {
-                changes.push({ staffId: staff.staffId, date: dateKey, shiftTime: newShift });
-            }
-        });
-    });
-
-    if (changes.length === 0) {
-        setIsSaving(false);
-        return;
-    }
+    
+    // Create payload only from the temporary row data
+    const payload: Shift[] = Object.values(tempRowData);
 
     try {
-        const response = await fetch('/api/staffmanagement/swift', {
+        const response = await fetch('/api/shifts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(changes),
+            body: JSON.stringify(payload),
         });
-
         if (!response.ok) {
             const errData = await response.json();
-            throw new Error(errData.message || "Failed to save changes.");
+            throw new Error(errData.error || 'Failed to save changes.');
         }
-        setOriginalData(JSON.parse(JSON.stringify(weeklyData)));
+
+        // On success, update the main state and exit editing mode
+        setShifts(prev => ({
+          ...prev,
+          [editingRowId]: tempRowData
+        }));
+        setEditingRowId(null);
+        setTempRowData(null);
+        alert('Schedule updated successfully!');
+
     } catch (err: any) {
         setError(err.message);
     } finally {
@@ -144,122 +169,126 @@ const ShiftSchedulePage: React.FC = () => {
     }
   };
 
-  const getCellClass = (shift: string) => {
-    if (shift.toUpperCase().includes('WEEK OFF')) {
-      return 'bg-green-100 text-green-800';
-    }
-    return 'bg-white';
+  const changeWeek = (direction: 'prev' | 'next') => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(newDate.getDate() + (direction === 'prev' ? -7 : 7));
+    setCurrentDate(newDate);
   };
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-        <h1 className="text-xl md:text-2xl font-bold text-gray-800">Weekly Shift Roster</h1>
-        <div className="flex items-center gap-2 bg-white p-1 rounded-lg border">
-          <Button variant="ghost" size="sm" icon={<ChevronLeft size={16}/>} onClick={() => setReferenceDate(subDays(referenceDate, 7))} disabled={isLoading}>
-            Prev
-          </Button>
-          <div className="text-center font-semibold text-gray-700 min-w-[200px] flex items-center justify-center gap-2">
-            <Calendar size={16} />
-            <span>{format(weekDays[0], 'MMM d')} - {format(weekDays[6], 'MMM d, yyyy')}</span>
+      <div className="max-w-7xl mx-auto">
+        <div className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-4">
+          <h1 className="text-2xl font-bold text-gray-800">Shift Management</h1>
+          <div className="flex items-center gap-2">
+            {/* Week navigation is unchanged */}
+            <Button variant="outline" size="sm" icon={<ArrowLeft size={16} />} onClick={() => changeWeek('prev')} disabled={isLoading || isSaving}>
+              Prev Week
+            </Button>
+            <span className="font-semibold text-gray-700 w-48 text-center">
+              {startDate.toLocaleDateString()} - {endDate.toLocaleDateString()}
+            </span>
+            <Button variant="outline" size="sm" icon={<ArrowRight size={16} />} onClick={() => changeWeek('next')} disabled={isLoading || isSaving}>
+              Next Week
+            </Button>
           </div>
-          <Button variant="ghost" size="sm" icon={<ChevronRight size={16}/>} onClick={() => setReferenceDate(addDays(referenceDate, 7))} disabled={isLoading}>
-            Next
-          </Button>
+          {/* Main Save button is removed */}
         </div>
-        <Button 
-          variant="black" 
-          icon={isSaving ? <Loader2 className="animate-spin" /> : <Save size={16} />} 
-          onClick={handleSaveChanges} 
-          disabled={!hasChanges || isSaving || isLoading}
-        >
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </div>
 
-      {error && <div className="bg-red-100 border border-red-300 text-red-700 p-3 rounded-md mb-4 text-sm">{error}</div>}
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-4 flex items-center gap-2">
+            <AlertCircle size={18} /> <span><strong>Error:</strong> {error}</span>
+          </div>
+        )}
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="overflow-x-auto">
-          {isLoading ? (
-            <div className="p-10 text-center text-gray-500 flex items-center justify-center gap-3">
-                <Loader2 className="animate-spin"/> Loading Schedule...
-            </div>
-          ) : (
-            <table className="w-full text-sm text-center border-collapse">
-              <thead className="bg-yellow-400">
-                 <tr>
-                  <th scope="col" className="px-3 py-3 font-semibold text-gray-800 text-left border-r w-64">NAME</th>
-                  {weekDays.map(day => (
-                    <th key={day.toISOString()} scope="col" className="px-2 py-2 font-semibold text-gray-800 border-r">
-                        <div className="text-xs">{format(day, 'MMM-d')}</div>
-                        <div className="uppercase">{format(day, 'EEEE')}</div>
-                    </th>
-                  ))}
+        <div className="overflow-x-auto shadow-lg rounded-lg bg-white">
+          <table className="min-w-full text-center text-sm border-collapse">
+            <thead className="bg-yellow-400 font-bold">
+              <tr>
+                <th className="p-3 border-r sticky left-0 bg-purple-700 text-white z-10 w-48">Staff Name</th>
+                {weekDays.map(day => (
+                  <th key={day.toISOString()} className="p-2 border-r">
+                    <div>{day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                    <div className="font-normal">{day.toLocaleDateString('en-US', { weekday: 'long' })}</div>
+                  </th>
+                ))}
+                {/* --- NEW: Header for the Actions column --- */}
+                <th className="p-3 border-r w-40">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? ( /* ... unchanged loading/empty state ... */
+                <tr>
+                  <td colSpan={9} className="text-center p-10">
+                    <div className="flex justify-center items-center gap-2 text-gray-500">
+                      <Loader2 className="animate-spin" /> Loading Schedule...
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="text-gray-700">
-                {weeklyData.length > 0 ? weeklyData.map((staff, staffIndex) => (
-                  <tr key={staff.staffId} className="border-b">
-                    <td className="px-3 py-2 font-bold text-gray-900 bg-gray-100 text-left border-r whitespace-nowrap">
-                      {quickSetIndex === staffIndex ? (
-                        <div className="flex items-center gap-2">
-                           <input
-                              type="text"
-                              value={quickSetValue}
-                              onChange={(e) => setQuickSetValue(e.target.value)}
-                              placeholder="e.g. 9-6 or WEEK OFF"
-                              className="w-full p-1 text-sm rounded-md border-gray-300 focus:ring-black focus:border-black"
-                              autoFocus
-                           />
-                           <Button variant="ghost" size="sm" className="p-1.5 text-green-600" onClick={() => handleApplyWeek(staffIndex)}><Check size={18}/></Button>
-                           <Button variant="ghost" size="sm" className="p-1.5 text-red-600" onClick={() => setQuickSetIndex(null)}><X size={18}/></Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                            <span>{staff.staffName}</span>
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="p-1.5 text-gray-500 hover:text-black" 
-                                onClick={() => { setQuickSetIndex(staffIndex); setQuickSetValue(''); }}>
-                                <Edit size={14} />
-                                <span className="sr-only">Set Week</span>
+              ) : staffList.length === 0 ? (
+                <tr>
+                   <td colSpan={9} className="text-center p-10 text-gray-500">No active staff found. Please add staff first.</td>
+                </tr>
+              ) : (
+                staffList.map((staff, staffIndex) => {
+                  const isCurrentRowEditing = editingRowId === staff._id;
+                  const rowData = isCurrentRowEditing ? tempRowData : shifts[staff._id];
+
+                  return (
+                    <tr key={staff._id} className={staffIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="p-3 border-r font-semibold sticky left-0 z-10 w-48" style={{ backgroundColor: staffIndex % 2 === 0 ? 'white' : '#F9FAFB' }}>
+                        <div>{staff.name}</div>
+                        <div className="text-xs text-gray-500 font-normal">ID: {staff.staffIdNumber}</div>
+                      </td>
+                      
+                      {weekDays.map(day => {
+                        const dateStr = day.toISOString().split('T')[0];
+                        const shift = rowData?.[dateStr];
+                        if (!shift) return <td key={dateStr} className="border-r"></td>;
+
+                        // --- MODIFIED: Conditionally render inputs or plain text ---
+                        return (
+                          <td key={dateStr} className={`p-2 border-r ${shift.isWeekOff ? 'bg-green-100' : ''}`}>
+                            {isCurrentRowEditing ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <label className="flex items-center gap-1 cursor-pointer text-xs">
+                                  <input type="checkbox" checked={shift.isWeekOff} onChange={(e) => handleTempRowChange(dateStr, 'isWeekOff', e.target.checked)} className="form-checkbox h-4 w-4"/>
+                                  Off
+                                </label>
+                                <input type="text" placeholder="e.g., 9-6" value={shift.shiftTiming} onChange={(e) => handleTempRowChange(dateStr, 'shiftTiming', e.target.value)} disabled={shift.isWeekOff} className={`w-20 p-1 text-center border rounded-md ${shift.isWeekOff ? 'bg-gray-200' : 'border-gray-300'}`}/>
+                              </div>
+                            ) : (
+                              <div className="h-8 flex items-center justify-center">
+                                {shift.isWeekOff ? (<span className="font-bold text-green-700">WEEK OFF</span>) : (<span>{shift.shiftTiming || '--'}</span>)}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                      
+                      {/* --- NEW: Actions Column for Edit/Save/Cancel --- */}
+                      <td className="p-2 border-r">
+                        <div className="flex items-center justify-center gap-2">
+                          {isCurrentRowEditing ? (
+                            <>
+                              <Button variant="primary" size="sm" icon={<Save size={14} />} onClick={handleSaveRow} isLoading={isSaving}>Save</Button>
+                              <Button variant="ghost" size="sm" icon={<XCircle size={14} />} onClick={handleCancelClick} disabled={isSaving}>Cancel</Button>
+                            </>
+                          ) : (
+                            <Button variant="outline" size="sm" icon={<Edit size={14} />} onClick={() => handleEditClick(staff._id)} disabled={editingRowId !== null}>
+                              Assign Shift
                             </Button>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    {weekDays.map(day => {
-                      const dateKey = format(day, 'yyyy-MM-dd');
-                      const shiftValue = staff.schedule[dateKey] || '';
-                      return (
-                        <td key={dateKey} className={`p-0 border-r ${getCellClass(shiftValue)}`}>
-                            <input
-                                type="text"
-                                value={shiftValue}
-                                onChange={(e) => handleShiftChange(staffIndex, dateKey, e.target.value)}
-                                className="w-full h-full p-2 text-center bg-transparent focus:outline-none focus:bg-blue-100 uppercase"
-                                placeholder="-"
-                                disabled={isLoading || isSaving}
-                            />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                )) : (
-                    <tr>
-                        <td colSpan={8} className="text-center p-10 text-gray-500">
-                            No active staff found. Add staff members to create a schedule.
-                        </td>
+                      </td>
                     </tr>
-                )}
-              </tbody>
-            </table>
-          )}
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   );
-};
-
-export default ShiftSchedulePage;
+}
