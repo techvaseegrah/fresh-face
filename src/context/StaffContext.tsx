@@ -170,6 +170,10 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     performanceRecords, loadingPerformance, errorPerformance, fetchPerformanceRecords, recordPerformance,
     salaryRecords, loadingSalary, errorSalary, fetchSalaryRecords, processSalary, markSalaryAsPaid,
   };
-
+  console.log("CONTEXT PROVIDING:", { 
+      loadingStaff, 
+      loadingAttendance, 
+      staffMembersCount: staffMembers.length 
+  });
   return <StaffContext.Provider value={contextValue}>{children}</StaffContext.Provider>;
 };
