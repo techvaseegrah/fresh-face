@@ -287,16 +287,18 @@ const BillingModal: React.FC<BillingModalProps> = ({
       const data = await res.json();
       if (data.success) {
         setAvailableStaff(data.staff);
-        if (data.staff.some((s: StaffMember) => s._id === stylist._id)) {
-          setSelectedStaffId(stylist._id);
-        }
+        // optionally set default selection
       }
     } catch (err) {
       console.error('Failed to fetch staff:', err);
     } finally {
       setIsLoadingStaff(false);
     }
-  }, [stylist._id]);
+  }, []);
+
+  useEffect(() => {
+    fetchStaffMembers();
+  }, [fetchStaffMembers]);;
   
   const fetchInventoryImpact = useCallback(async (currentBillItems: BillLineItem[]) => {
     const serviceItems = currentBillItems.filter(item => item.itemType === 'service');
