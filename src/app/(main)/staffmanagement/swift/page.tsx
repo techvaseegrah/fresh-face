@@ -251,6 +251,9 @@ const StaffShiftCard: React.FC<StaffShiftCardProps> = React.memo(({ staff, weekD
   const blackButtonClasses = "inline-flex items-center justify-center h-9 px-3 rounded-md text-sm font-medium bg-black text-white hover:bg-black/90 disabled:pointer-events-none disabled:opacity-50 transition-colors";
   return (
     <div className="bg-white rounded-xl shadow-sm mb-6 overflow-hidden border border-gray-200/80">
+      {/* --- THIS IS THE ADDED DECORATIVE LINE --- */}
+      <div className="h-2 bg-indigo-500"></div>
+      
       <div className={`p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${isEditing ? 'bg-gray-100' : 'bg-white'} border-b border-gray-200/80`}>
         <div className="flex items-center gap-4">
           <Avatar name={staff.name} />
