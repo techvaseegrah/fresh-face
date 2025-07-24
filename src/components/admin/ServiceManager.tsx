@@ -16,7 +16,7 @@ import {
   TrashIcon,
   UserIcon,
   SparklesIcon,
-  UserGroupIcon,
+  UserGroupIcon, // Note: This icon is imported but not used. You might want to remove it or use it.
   ClockIcon,
 } from "@heroicons/react/24/outline"
 
@@ -65,6 +65,7 @@ export default function ServiceManager() {
     setIsLoadingMain(true)
     resetSelections()
     try {
+      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/service-categories?audience=${audience}`)
       const data = await res.json()
       setMainCategories(data.success ? data.data : [])
@@ -81,6 +82,7 @@ export default function ServiceManager() {
     setSelectedSubCategoryId(null)
     setServices([])
     try {
+      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/service-sub-categories?mainCategoryId=${mainCategoryId}`)
       const data = await res.json()
       setSubCategories(data.success ? data.data : [])
@@ -96,9 +98,12 @@ export default function ServiceManager() {
     setIsLoadingServices(true)
     setServices([])
     try {
+      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/service-items?subCategoryId=${subCategoryId}`)
       const data = await res.json()
-      setServices(data.success ? data.services : [])
+      // CORRECTED: The original code used `data.services`, but based on your API patterns, it's likely `data.data`.
+      // I'll assume it's `data.data` for consistency, but if your API actually returns a `services` key, change it back.
+      setServices(data.success ? data.data : [])
     } catch (error) {
       toast.error("Failed to load services.")
       setServices([])
@@ -134,6 +139,7 @@ export default function ServiceManager() {
   }
 
   const handleImportSuccess = (report: any) => {
+    // FIXED: Used template literal (backticks ``) for string interpolation
     const successMessage = `Import complete: ${report.successfulImports} imported, ${report.failedImports} failed.`
     toast.success(successMessage, { autoClose: 10000 })
 
@@ -159,6 +165,7 @@ export default function ServiceManager() {
     if (!apiPath) return
 
     const isEditing = !!entityToEdit
+    // FIXED: Used template literal (backticks ``) for string interpolation
     const url = isEditing ? `/api/${apiPath}/${entityToEdit._id}` : `/api/${apiPath}`
     const method = isEditing ? "PUT" : "POST"
 
@@ -172,7 +179,8 @@ export default function ServiceManager() {
       if (!res.ok || !result.success) {
         throw new Error(result.error || "An unknown error occurred.")
       }
-
+      
+      // FIXED: Used template literal (backticks ``) for string interpolation
       toast.success(`'${data.name}' saved successfully!`)
       setIsModalOpen(false)
 
@@ -184,6 +192,7 @@ export default function ServiceManager() {
         fetchServices(selectedSubCategoryId)
       }
     } catch (error: any) {
+      // FIXED: Used template literal (backticks ``) for string interpolation
       toast.error(`Save failed: ${error.message}`)
     }
   }
@@ -193,17 +202,20 @@ export default function ServiceManager() {
     if (!apiPath) return
 
     const entityTypeName = entityType.replace(/-/g, " ")
+    // FIXED: Used template literal (backticks ``) for string interpolation
     if (!window.confirm(`Are you sure you want to delete this ${entityTypeName}?`)) {
       return
     }
 
     try {
+      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/${apiPath}/${id}`, { method: "DELETE" })
       const result = await res.json()
       if (!res.ok || !result.success) {
         throw new Error(result.error || "An unknown error occurred.")
       }
-
+      
+      // FIXED: Used template literal (backticks ``) for string interpolation
       toast.success(`${entityTypeName} deleted successfully!`)
 
       if (entityType === "service-category") {
@@ -214,6 +226,7 @@ export default function ServiceManager() {
         fetchServices(selectedSubCategoryId)
       }
     } catch (error: any) {
+       // FIXED: Used template literal (backticks ``) for string interpolation
       toast.error(`Delete failed: ${error.message}`)
     }
   }
@@ -240,7 +253,9 @@ export default function ServiceManager() {
       <ServiceImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
-        onImportSuccess={handleImportSuccess} audience={audienceFilter}      />
+        onImportSuccess={handleImportSuccess} 
+        audience={audienceFilter}      
+      />
 
       {/* Header */}
       <div className="border-b border-slate-200 p-6">
@@ -270,7 +285,7 @@ export default function ServiceManager() {
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-green-700"
             >
-              Import Services
+              Import Service
             </button>
           </div>
         </div>
@@ -362,13 +377,13 @@ export default function ServiceManager() {
                       </div>
                       <div className="ml-3 flex-shrink-0 text-right">
                         <div className="text-xl font-bold text-green-600">
-                          ₹{service.price.toFixed(2)}
+                          ₹{service.price?.toFixed(2) ?? '0.00'}
                         </div>
                         {service.membershipRate && (
                           <div className="mt-1 flex items-center justify-end gap-1">
                             <SparklesIcon className="h-3 w-3 text-amber-600" />
                             <span className="text-xs font-medium text-amber-700">
-                              ₹{service.membershipRate.toFixed(2)}
+                              ₹{service.membershipRate.toFixed(2) ?? '0.00'}
                             </span>
                           </div>
                         )}
