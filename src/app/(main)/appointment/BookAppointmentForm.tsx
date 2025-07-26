@@ -1,4 +1,3 @@
-// src/app/(main)/appointment/BookAppointmentForm.tsx
 'use-client';
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
@@ -444,9 +443,13 @@ const initialFormData: AppointmentFormData = {
   const [formData, setFormData] = useState<AppointmentFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // MODIFIED: State for service assignments
+  
   const [serviceAssignments, setServiceAssignments] = useState<ServiceAssignmentState[]>([]);
+
+  // START: MODIFIED CODE - State for assignable staff
+  const [assignableStaff, setAssignableStaff] = useState<StylistFromAPI[]>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(true);
+  // END: MODIFIED CODE
 
   const [filteredServices, setFilteredServices] = useState<ServiceFromAPI[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
@@ -480,7 +483,6 @@ const initialFormData: AppointmentFormData = {
     return `${hours}:${minutes}`;
   };
 
-  // NEW: Calculate totals based on assignments
   const calculateTotals = useCallback(() => {
     let total = 0;
     let membershipSavings = 0;
@@ -504,7 +506,7 @@ const initialFormData: AppointmentFormData = {
   useEffect(() => {
     if (isOpen) {
       setFormData(initialFormData);
-      setServiceAssignments([]); // Reset assignments
+      setServiceAssignments([]);
       setFormError(null);
       setStockIssues(null);
       setIsSubmitting(false);
@@ -516,7 +518,11 @@ const initialFormData: AppointmentFormData = {
       setSearchMode('phone');
       setServiceSearch('');
       setFilteredServices([]);
-      setCustomerLookupStatus('idle'); // Reset on open
+      setCustomerLookupStatus('idle');
+      // START: MODIFIED CODE - Reset staff state
+      setAssignableStaff([]);
+      setIsLoadingStaff(true);
+      // END: MODIFIED CODE
     }
   }, [isOpen]);
 
@@ -543,45 +549,77 @@ const initialFormData: AppointmentFormData = {
       setFormData(prev => ({ ...prev, date: getCurrentDate(), time: getCurrentTime() }));
     }
   }, [formData.status]);
-
-  // NEW: Update an individual assignment (e.g., select a stylist or add guest name)
+  
   const handleUpdateAssignment = (_tempId: string, updates: Partial<ServiceAssignmentState>) => {
     setServiceAssignments(prev =>
       prev.map(a => (a._tempId === _tempId ? { ...a, ...updates } : a))
     );
   };
   
-  // NEW: Fetch available stylists for a single service assignment
-  const findStylistsForService = useCallback(async (_tempId: string, serviceId: string) => {
-    if (!formData.date || !formData.time) return;
-    handleUpdateAssignment(_tempId, { isLoadingStylists: true, availableStylists: [] });
-    try {
-      const res = await fetch(`/api/stylists/available?date=${formData.date}&time=${formData.time}&serviceIds=${serviceId}`);
-     
-       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Could not fetch stylists.');
-      handleUpdateAssignment(_tempId, { availableStylists: data.stylists, isLoadingStylists: false });
-    } catch (err: any) {
-      toast.error(`Error fetching stylists: ${err.message}`);
-      handleUpdateAssignment(_tempId, { isLoadingStylists: false });
-    }
-  }, [formData.date, formData.time]);
-
-  
-  // NEW: useEffect to trigger stylist fetch when date/time or assignments change
+  // START: REFACTORED CODE - This effect now fetches all assignable staff (stylists & managers)
   useEffect(() => {
-    if(formData.date && formData.time){
-        serviceAssignments.forEach(assignment => {
-            findStylistsForService(assignment._tempId, assignment.serviceId);
-        });
+    // Only fetch if the form is open and a date and time have been selected
+    if (isOpen && formData.date && formData.time) {
+      setIsLoadingStaff(true);
+      // Mark all current assignments as loading and invalidate previous selections
+      setServiceAssignments(prev => prev.map(a => ({
+        ...a,
+        isLoadingStylists: true,
+        stylistId: '' 
+      })));
+
+      const fetchAssignableStaff = async () => {
+        try {
+          // Call the new, more inclusive API endpoint
+          const res = await fetch(`/api/staff?action=listForAssignment`);
+          const data = await res.json();
+          const staffList = data.success ? data.stylists : [];
+          
+          if (!data.success) {
+            toast.error("Failed to load staff list.");
+          }
+          
+          setAssignableStaff(staffList);
+          // Update all existing service assignments with the newly fetched list
+          setServiceAssignments(prev => prev.map(a => ({
+            ...a,
+            availableStylists: staffList,
+            isLoadingStylists: false
+          })));
+
+        } catch (error) {
+          toast.error("Error fetching staff list.");
+          setAssignableStaff([]);
+           // Update assignments to show no staff is available
+          setServiceAssignments(prev => prev.map(a => ({
+            ...a,
+            availableStylists: [],
+            isLoadingStylists: false
+          })));
+        } finally {
+          setIsLoadingStaff(false);
+        }
+      };
+      
+      fetchAssignableStaff();
+    } else {
+      // If date/time are cleared, reset the staff lists
+      setAssignableStaff([]);
+      setServiceAssignments(prev => prev.map(a => ({
+        ...a,
+        availableStylists: [],
+        isLoadingStylists: true,
+        stylistId: ''
+      })));
     }
-  }, [serviceAssignments.length, formData.date, formData.time, findStylistsForService]);
+  }, [isOpen, formData.date, formData.time]);
+  // END: REFACTORED CODE
 
 
   useEffect(() => {
     if (searchMode !== 'phone') return;
     const query = formData.phoneNumber.trim();
-    if (isCustomerSelected || query.length < 3 || query.length >= 10) { // Don't show dropdown for full number
+    if (isCustomerSelected || query.length < 3 || query.length >= 10) { 
       setCustomerSearchResults([]); return;
     }
     const handler = setTimeout(async () => {
@@ -596,7 +634,6 @@ const initialFormData: AppointmentFormData = {
     return () => clearTimeout(handler);
   }, [formData.phoneNumber, isCustomerSelected, searchMode]);
 
-  // START: MODIFIED handleChange
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     let { name, value } = e.target;
     
@@ -606,7 +643,6 @@ const initialFormData: AppointmentFormData = {
     }
 
     if (name === 'customerName') {
-        // Allow only letters and spaces, remove everything else
         value = value.replace(/[^a-zA-Z\s]/g, '');
     }
     
@@ -616,10 +652,8 @@ const initialFormData: AppointmentFormData = {
     
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
-  // END: MODIFIED handleChange
 
   const fetchAndSetCustomerDetails = async (phone: string) => {
-    // This check is important to prevent re-fetching if a search is already in progress
     if (isLoadingCustomerDetails) return;
 
     setIsLoadingCustomerDetails(true);
@@ -638,7 +672,6 @@ const initialFormData: AppointmentFormData = {
         setSelectedCustomerDetails(null);
         setIsCustomerSelected(false);
         setCustomerLookupStatus('not_found');
-        // Focus on the name field for a new customer
         if (nameInputRef.current) nameInputRef.current.focus();
       }
     } catch (err) {
@@ -652,12 +685,9 @@ const initialFormData: AppointmentFormData = {
 
   useEffect(() => {
     const phone = formData.phoneNumber.trim();
-
-    // Automatically trigger search when a 10-digit number is entered
     if (phone.length === 10 && !isCustomerSelected) {
       fetchAndSetCustomerDetails(phone);
     } 
-    // If the user deletes characters, reset the lookup status
     else if (phone.length < 10 && customerLookupStatus !== 'idle') {
       setCustomerLookupStatus('idle');
     }
@@ -690,7 +720,7 @@ const initialFormData: AppointmentFormData = {
   const handleClearSelection = (clearPhone = true) => {
     setIsCustomerSelected(false);
     setSelectedCustomerDetails(null);
-    setCustomerLookupStatus('idle'); // Reset the lookup status
+    setCustomerLookupStatus('idle');
     const resetData: Partial<typeof formData> = { customerId: undefined, customerName: '', email: '', gender: '' };
     if (clearPhone) {
       resetData.phoneNumber = ''; setBarcodeQuery('');
@@ -722,7 +752,7 @@ const initialFormData: AppointmentFormData = {
     }
   };
   
-  // NEW: Handler to add a new service assignment
+  // MODIFIED: `handleAddService` now uses the shared staff list and loading state.
   const handleAddService = (service: ServiceFromAPI) => {
     if (service && !serviceAssignments.some((a) => a.serviceId === service._id)) {
         const newAssignment: ServiceAssignmentState = {
@@ -730,30 +760,25 @@ const initialFormData: AppointmentFormData = {
             serviceId: service._id,
             stylistId: '', // Initially unassigned
             serviceDetails: service,
-            availableStylists: [],
-            isLoadingStylists: true,
+            availableStylists: assignableStaff, // Use pre-fetched list
+            isLoadingStylists: isLoadingStaff, // Use shared loading state
         };
         setServiceAssignments(prev => [...prev, newAssignment]);
         setServiceSearch('');
     }
   };
 
-  // NEW: Handler to remove a service assignment by its temporary ID
   const handleRemoveService = (_tempId: string) => {
     setServiceAssignments(prev => prev.filter(a => a._tempId !== _tempId));
   };
 
-
-  // MODIFIED: Submit handler to construct the new data payload
-  // The NEW handleSubmit function
 const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    setStockIssues(null); // Clear previous stock issues
+    setStockIssues(null); 
 
     const { phoneNumber, customerName, date, time, status, gender } = formData;
 
-    // --- Step 1: Initial Form Validation (same as before) ---
     if (!phoneNumber || !customerName || !date || !time || !status || !gender) {
         setFormError('Please fill in all customer and schedule details.');
         return;
@@ -763,13 +788,12 @@ const handleSubmit = async (e: FormEvent) => {
         return;
     }
     if (serviceAssignments.some(a => !a.stylistId)) {
-        setFormError('A stylist must be assigned to every service.');
+        setFormError('A staff member must be assigned to every service.');
         return;
     }
 
     setIsSubmitting(true);
     try {
-        // --- Step 2: PRE-CHECK CONSUMABLE STOCK ---
         const checkPayload = {
             serviceIds: serviceAssignments.map(a => a.serviceId),
             customerGender: formData.gender as 'male' | 'female' | 'other',
@@ -787,16 +811,13 @@ const handleSubmit = async (e: FormEvent) => {
             throw new Error(checkData.message || "Failed to check stock availability.");
         }
 
-        // If booking is not possible, show the specific issues and stop.
-if (checkData.canBook === false) {
-    // --- THIS IS THE NEW LINE ---
-      toast.error("Cannot book: Required items are out of stock. See details below.");
+        if (checkData.canBook === false) {
+            toast.error("Cannot book: Required items are out of stock. See details below.");
             setStockIssues(checkData.issues);
             setIsSubmitting(false);
             return;
         }
 
-        // --- Step 3: PROCEED WITH ACTUAL BOOKING (if check passed) ---
         const finalAssignments = serviceAssignments.map(a => ({
             serviceId: a.serviceId,
             stylistId: a.stylistId,
@@ -810,7 +831,6 @@ if (checkData.canBook === false) {
         };
         
         await onBookAppointment(appointmentData);
-        // The `onBookAppointment` function should handle success toasts and closing the modal.
 
     } catch (error: any) {
         setFormError(error.message || 'An unexpected error occurred.');
@@ -838,19 +858,19 @@ if (checkData.canBook === false) {
             <form onSubmit={handleSubmit} className="space-y-6 lg:col-span-2 flex flex-col">
               <div className="space-y-6 flex-grow">
                 {formError && (<div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{formError}</div>)}
-  {stockIssues && stockIssues.length > 0 && (
-  <div className="my-4 p-4 border-l-4 border-orange-500 bg-orange-50 text-orange-800 rounded-r-lg">
-    <h4 className="font-bold">Cannot Book: Insufficient Consumables</h4>
-    <p className="text-sm mt-1">The following items are required for the selected services but are low on stock:</p>
-    <ul className="list-disc pl-5 mt-2 text-sm space-y-1">
-      {stockIssues.map((issue, index) => (
-        <li key={index}>
-          <strong>{issue.productName}</strong>: Requires {issue.required}{issue.unit}, but only {issue.available}{issue.unit} available.
-        </li>
-      ))}
-    </ul>
-  </div>
-)}
+                {stockIssues && stockIssues.length > 0 && (
+                <div className="my-4 p-4 border-l-4 border-orange-500 bg-orange-50 text-orange-800 rounded-r-lg">
+                  <h4 className="font-bold">Cannot Book: Insufficient Consumables</h4>
+                  <p className="text-sm mt-1">The following items are required for the selected services but are low on stock:</p>
+                  <ul className="list-disc pl-5 mt-2 text-sm space-y-1">
+                    {stockIssues.map((issue, index) => (
+                      <li key={index}>
+                        <strong>{issue.productName}</strong>: Requires {issue.required}{issue.unit}, but only {issue.available}{issue.unit} available.
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                )}
                 <fieldset className={fieldsetClasses}>
                   <legend className={legendClasses}>Customer Information</legend>
                   <div className="flex items-center gap-4 mb-4">
@@ -915,7 +935,6 @@ if (checkData.canBook === false) {
                   </div>
                   <div className="mt-5"><label className="block text-sm font-medium mb-1.5">Add Services <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Search for services..." className={`${inputBaseClasses} pr-8`} />{serviceSearch && filteredServices.length > 0 && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{filteredServices.map((service) => (<li key={service._id} onClick={() => handleAddService(service)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer">{service.name} - ₹{service.price}{service.membershipRate && ` (Member: ₹${service.membershipRate})`}</li>))}</ul>)}</div></div>
 
-                  {/* MODIFIED: Render Service Assignment Cards */}
                   <div className="mt-4 space-y-4">
                     {serviceAssignments.map((assignment, index) => (
                       <div key={assignment._tempId} className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
@@ -933,13 +952,13 @@ if (checkData.canBook === false) {
                                 <p className="text-xs text-gray-400 mt-1">E.g., "John Jr. (Son)". Leave blank for primary.</p>
                             </div>
                             <div>
-                                <label htmlFor={`stylist-${assignment._tempId}`} className="block text-xs font-medium text-gray-600 mb-1">Assigned Stylist <span className="text-red-500">*</span></label>
+                                <label htmlFor={`stylist-${assignment._tempId}`} className="block text-xs font-medium text-gray-600 mb-1">Assigned Staff <span className="text-red-500">*</span></label>
                                 <select id={`stylist-${assignment._tempId}`} value={assignment.stylistId} onChange={(e) => handleUpdateAssignment(assignment._tempId, { stylistId: e.target.value })} required disabled={!formData.date || !formData.time || assignment.isLoadingStylists} className={`${inputBaseClasses} py-2 text-sm disabled:bg-gray-100/80`}>
-                                    <option value="" disabled>{assignment.isLoadingStylists ? 'Finding stylists...' : 'Select a stylist'}</option>
+                                    <option value="" disabled>{assignment.isLoadingStylists ? 'Finding staff...' : 'Select a staff member'}</option>
                                     {assignment.availableStylists.length > 0 ? (
                                         assignment.availableStylists.map((s) => (<option key={s._id} value={s._id}>{s.name}</option>))
                                     ) : (
-                                        !assignment.isLoadingStylists && <option disabled>No stylists available</option>
+                                        !assignment.isLoadingStylists && <option disabled>No staff available</option>
                                     )}
                                 </select>
                             </div>
@@ -981,5 +1000,5 @@ if (checkData.canBook === false) {
 
       <CustomerHistoryModal isOpen={showCustomerHistory} onClose={() => setShowCustomerHistory(false)} customer={selectedCustomerDetails} />
     </>
-  );
+  ); 
 }

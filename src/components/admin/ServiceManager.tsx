@@ -1,3 +1,5 @@
+// ServiceManager.tsx - FINAL, CORRECTED VERSION
+
 "use client"
 
 import type React from "react"
@@ -14,9 +16,7 @@ import {
   PlusIcon,
   PencilIcon,
   TrashIcon,
-  UserIcon,
   SparklesIcon,
-  UserGroupIcon, // Note: This icon is imported but not used. You might want to remove it or use it.
   ClockIcon,
 } from "@heroicons/react/24/outline"
 
@@ -24,14 +24,11 @@ import CategoryColumn from "./CategoryColumn"
 import ServiceFormModal from "./ServiceFormModal"
 import ServiceImportModal from "./ServiceImportModal"
 
-type AudienceType = "Unisex" | "male" | "female"
 type EntityType = "service-category" | "service-sub-category" | "service-item"
 
 export default function ServiceManager() {
   const { data: session } = useSession()
 
-  // State
-  const [audienceFilter, setAudienceFilter] = useState<AudienceType>("female")
   const [mainCategories, setMainCategories] = useState<IServiceCategory[]>([])
   const [subCategories, setSubCategories] = useState<IServiceSubCategory[]>([])
   const [services, setServices] = useState<IServiceItem[]>([])
@@ -48,12 +45,10 @@ export default function ServiceManager() {
   const [entityToEdit, setEntityToEdit] = useState<any | null>(null)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
 
-  // Permissions
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_CREATE)
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_UPDATE)
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_DELETE)
 
-  // --- Data Fetching ---
   const resetSelections = useCallback(() => {
     setSelectedMainCategory(null)
     setSelectedSubCategoryId(null)
@@ -61,12 +56,11 @@ export default function ServiceManager() {
     setServices([])
   }, [])
 
-  const fetchMainCategories = useCallback(async (audience: AudienceType) => {
+  const fetchMainCategories = useCallback(async () => {
     setIsLoadingMain(true)
     resetSelections()
     try {
-      // FIXED: Used template literal (backticks ``) for string interpolation
-      const res = await fetch(`/api/service-categories?audience=${audience}`)
+      const res = await fetch(`/api/service-categories`)
       const data = await res.json()
       setMainCategories(data.success ? data.data : [])
     } catch (error) {
@@ -82,7 +76,6 @@ export default function ServiceManager() {
     setSelectedSubCategoryId(null)
     setServices([])
     try {
-      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/service-sub-categories?mainCategoryId=${mainCategoryId}`)
       const data = await res.json()
       setSubCategories(data.success ? data.data : [])
@@ -98,11 +91,8 @@ export default function ServiceManager() {
     setIsLoadingServices(true)
     setServices([])
     try {
-      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/service-items?subCategoryId=${subCategoryId}`)
       const data = await res.json()
-      // CORRECTED: The original code used `data.services`, but based on your API patterns, it's likely `data.data`.
-      // I'll assume it's `data.data` for consistency, but if your API actually returns a `services` key, change it back.
       setServices(data.success ? data.data : [])
     } catch (error) {
       toast.error("Failed to load services.")
@@ -113,14 +103,8 @@ export default function ServiceManager() {
   }, [])
 
   useEffect(() => {
-    fetchMainCategories(audienceFilter)
-  }, [audienceFilter, fetchMainCategories])
-
-  // --- Event Handlers ---
-  const handleAudienceChange = (newAudience: AudienceType) => {
-    if (newAudience === audienceFilter) return
-    setAudienceFilter(newAudience)
-  }
+    fetchMainCategories()
+  }, [fetchMainCategories])
 
   const handleSelectMainCategory = (category: IServiceCategory) => {
     setSelectedMainCategory(category)
@@ -139,7 +123,6 @@ export default function ServiceManager() {
   }
 
   const handleImportSuccess = (report: any) => {
-    // FIXED: Used template literal (backticks ``) for string interpolation
     const successMessage = `Import complete: ${report.successfulImports} imported, ${report.failedImports} failed.`
     toast.success(successMessage, { autoClose: 10000 })
 
@@ -147,10 +130,9 @@ export default function ServiceManager() {
       console.error("Service Import Errors:", report.errors)
       toast.error("Some services failed to import. Check console for details.", { autoClose: false })
     }
-    fetchMainCategories(audienceFilter)
+    fetchMainCategories()
   }
 
-  // --- CRUD Operations ---
   const getApiPath = (entityType: EntityType) => {
     const paths: Record<EntityType, string> = {
       "service-category": "service-categories",
@@ -165,7 +147,6 @@ export default function ServiceManager() {
     if (!apiPath) return
 
     const isEditing = !!entityToEdit
-    // FIXED: Used template literal (backticks ``) for string interpolation
     const url = isEditing ? `/api/${apiPath}/${entityToEdit._id}` : `/api/${apiPath}`
     const method = isEditing ? "PUT" : "POST"
 
@@ -180,19 +161,17 @@ export default function ServiceManager() {
         throw new Error(result.error || "An unknown error occurred.")
       }
       
-      // FIXED: Used template literal (backticks ``) for string interpolation
       toast.success(`'${data.name}' saved successfully!`)
       setIsModalOpen(false)
 
       if (entityType === "service-category") {
-        fetchMainCategories(audienceFilter)
+        fetchMainCategories()
       } else if (entityType === "service-sub-category" && selectedMainCategory) {
         fetchSubCategories(selectedMainCategory._id)
       } else if (entityType === "service-item" && selectedSubCategoryId) {
         fetchServices(selectedSubCategoryId)
       }
     } catch (error: any) {
-      // FIXED: Used template literal (backticks ``) for string interpolation
       toast.error(`Save failed: ${error.message}`)
     }
   }
@@ -202,39 +181,30 @@ export default function ServiceManager() {
     if (!apiPath) return
 
     const entityTypeName = entityType.replace(/-/g, " ")
-    // FIXED: Used template literal (backticks ``) for string interpolation
     if (!window.confirm(`Are you sure you want to delete this ${entityTypeName}?`)) {
       return
     }
 
     try {
-      // FIXED: Used template literal (backticks ``) for string interpolation
       const res = await fetch(`/api/${apiPath}/${id}`, { method: "DELETE" })
       const result = await res.json()
       if (!res.ok || !result.success) {
         throw new Error(result.error || "An unknown error occurred.")
       }
       
-      // FIXED: Used template literal (backticks ``) for string interpolation
       toast.success(`${entityTypeName} deleted successfully!`)
 
       if (entityType === "service-category") {
-        fetchMainCategories(audienceFilter)
+        fetchMainCategories()
       } else if (entityType === "service-sub-category" && selectedMainCategory) {
         fetchSubCategories(selectedMainCategory._id)
       } else if (entityType === "service-item" && selectedSubCategoryId) {
         fetchServices(selectedSubCategoryId)
       }
     } catch (error: any) {
-       // FIXED: Used template literal (backticks ``) for string interpolation
       toast.error(`Delete failed: ${error.message}`)
     }
   }
-
-  const audienceButtons: [AudienceType, React.ElementType, string][] = [
-    ["female", UserIcon, "Female"],
-    ["male", UserIcon, "Male"],
-  ]
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl bg-white shadow-lg">
@@ -245,19 +215,17 @@ export default function ServiceManager() {
         entityType={modalEntityType}
         entityToEdit={entityToEdit}
         context={{
-          audience: audienceFilter,
           mainCategory: selectedMainCategory,
           subCategoryId: selectedSubCategoryId,
         }}
       />
+      {/* THE FIX: Removed the 'audience' prop from the modal invocation */}
       <ServiceImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onImportSuccess={handleImportSuccess} 
-        audience={audienceFilter}      
       />
 
-      {/* Header */}
       <div className="border-b border-slate-200 p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -265,22 +233,6 @@ export default function ServiceManager() {
             <h1 className="text-xl font-semibold text-slate-900">Service Management</h1>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex rounded-lg bg-slate-200 p-1">
-              {audienceButtons.map(([type, Icon, label]) => (
-                <button
-                  key={type}
-                  onClick={() => handleAudienceChange(type)}
-                  className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all duration-200 ${
-                    audienceFilter === type
-                      ? "bg-white text-blue-600 shadow-sm"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
             <button
               onClick={() => setIsImportModalOpen(true)}
               className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-green-700"
@@ -291,7 +243,6 @@ export default function ServiceManager() {
         </div>
       </div>
 
-      {/* Content Area */}
       <div className="flex min-h-0 flex-1 flex-row">
         <CategoryColumn
           className="w-1/3"
@@ -322,7 +273,6 @@ export default function ServiceManager() {
           disabledText="Select a category to see its sub-categories."
         />
 
-        {/* Services Column */}
         <div className="flex h-full w-1/3 flex-col bg-slate-50/30">
           <div className="flex items-center justify-between border-b border-slate-200 bg-white p-4">
             <h3 className="text-lg font-semibold text-slate-800">Services</h3>
@@ -361,7 +311,6 @@ export default function ServiceManager() {
                   key={service._id}
                   className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-md"
                 >
-                  {/* Header Section */}
                   <div className="p-4">
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
@@ -390,8 +339,6 @@ export default function ServiceManager() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Consumables Section */}
                   {service.consumables && service.consumables.length > 0 && (
                     <div className="border-y border-slate-100 bg-slate-50/50 px-4 py-3">
                       <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
@@ -399,13 +346,7 @@ export default function ServiceManager() {
                       </h5>
                       <div className="max-h-24 space-y-2 overflow-y-auto pr-2">
                         {service.consumables.map((con, index) => {
-                          const serviceAudience = service.audience as AudienceType
-                          const quantity =
-                            serviceAudience === "male" && con.quantity.male !== undefined
-                              ? con.quantity.male
-                              : serviceAudience === "female" && con.quantity.female !== undefined
-                                ? con.quantity.female
-                                : con.quantity.default
+                          const quantity = con.quantity.default;
                           return (
                             <div key={index} className="flex items-center justify-between">
                               <span className="mr-2 flex-1 truncate text-xs text-slate-600">
@@ -421,8 +362,6 @@ export default function ServiceManager() {
                       </div>
                     </div>
                   )}
-
-                  {/* Actions Section */}
                   <div className="bg-white px-4 py-2">
                     <div className="flex justify-end gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                       {canUpdate && (

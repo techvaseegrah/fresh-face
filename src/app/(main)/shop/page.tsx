@@ -22,7 +22,7 @@ export default function StoreManagementPage() {
   const availableTabs: { id: ShopTab; label: string; icon: React.ElementType, show: boolean }[] = [
     { id: "products", label: "Products", icon: BuildingStorefrontIcon, show: canReadProducts ?? false },
     { id: "services", label: "Services", icon: SparklesIcon, show: canReadServices ?? false },
-    { id: "stylists", label: "Stylists", icon: UserGroupIcon, show: canReadStylists ?? false },
+    // { id: "stylists", label: "Stylists", icon: UserGroupIcon, show: canReadStylists ?? false },
   ];
 
   const visibleTabs = availableTabs.filter((tab) => tab.show);
