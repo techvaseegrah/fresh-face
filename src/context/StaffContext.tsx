@@ -6,7 +6,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { format, parseISO, startOfDay, isEqual } from 'date-fns';
 import { toast } from 'react-toastify';
 
-// --- Type Definitions ---
+// --- Type Definitions (Unchanged) ---
 export interface PositionOption { value: string; label: string; }
 
 // --- MODIFICATION: Added new document fields to StaffMember interface ---

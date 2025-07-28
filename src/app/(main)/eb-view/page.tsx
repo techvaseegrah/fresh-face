@@ -24,13 +24,26 @@ import ImageZoomModal from '@/components/ImageZoomModal';
 
 // --- TYPE DEFINITIONS & INTERFACES ---
 interface CustomSession extends Session {
-    user: { id: string; name?: string | null; email?: string | null; image?: string | null; role: { permissions: string[] } };
+    user: { 
+        id: string; 
+        name?: string | null; 
+        email?: string | null; 
+        image?: string | null; 
+        role: { permissions: string[] };
+    };
 }
 
 interface IHistoryEntry {
   timestamp: string;
-  user: { id: string; name: string; };
-  changes: { field: string; oldValue?: number; newValue?: number; }[];
+  user: { 
+    id: string; 
+    name: string; 
+  };
+  changes: { 
+    field: string; 
+    oldValue?: number; 
+    newValue?: number; 
+  }[];
 }
 
 interface IEBReading {
@@ -139,7 +152,12 @@ export default function EBViewPage(): JSX.Element {
             if (costData.success && costData.setting.value !== null) {
                 setGlobalCost(costData.setting.value);
             }
-        } catch (error) { console.error('Error fetching page data:', error); alert('An error occurred while fetching data.'); } finally { setIsLoading(false); }
+        } catch (error) { 
+            console.error('Error fetching page data:', error); 
+            alert('An error occurred while fetching data.'); 
+        } finally { 
+            setIsLoading(false); 
+        }
     }, []);
 
     useEffect(() => {
@@ -151,7 +169,9 @@ export default function EBViewPage(): JSX.Element {
         const res = await fetch('/api/eb', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ readingId: id, morningUnits }) });
         if (!res.ok) { const errorData = await res.json(); throw new Error(errorData.message || "Failed to update reading."); }
         await fetchPageData();
-      } catch (error) { alert((error as Error).message); }
+      } catch (error) { 
+        alert((error as Error).message); 
+      }
     };
     
     const handleSetGlobalCost = async (newCost: number) => {
@@ -173,7 +193,7 @@ export default function EBViewPage(): JSX.Element {
             alert('Global cost per unit has been updated for all future readings.');
         } catch (error) {
             console.error('Failed to apply global cost', error);
-            alert(`An error occurred while setting the new cost.`);
+            alert(`An error occurred while setting the new cost: ${(error as Error).message}`);
         } finally {
             setIsSavingCost(false);
         }
@@ -191,10 +211,10 @@ export default function EBViewPage(): JSX.Element {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-    startDate: params.startDate, 
-    endDate: params.endDate, 
-    format: params.format 
-}),
+                    startDate: params.startDate, 
+                    endDate: params.endDate, 
+                    format: params.format 
+                }),
             });
 
             if (!response.ok) {
@@ -233,15 +253,15 @@ export default function EBViewPage(): JSX.Element {
             }
             
             setIsReportModalOpen(false);
-        } catch (error: any) {
-            alert(`Download failed: ${error.message}`);
+        } catch (error) {
+            alert(`Download failed: ${(error as Error).message}`);
         } finally {
             setIsDownloading(false);
         }
     };
 
     if (isLoading) {
-        return <div className="p-4 sm:p-6 lg:p-8 bg-slate-100"><div className="animate-pulse"><div className="h-10 bg-slate-200 rounded w-80 mb-8"></div><div className="space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-80 bg-slate-200 rounded-2xl"></div>)}</div></div></div>;
+        return <div className="p-4 sm:p-6 lg:p-8 bg-slate-100"><div className="animate-pulse"><div className="h-10 bg-slate-200 rounded w-80 mb-8"></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-8">{[1, 2].map(i => <div key={i} className="h-80 bg-slate-200 rounded-2xl"></div>)}</div></div></div>;
     }
 
     if (!canViewCalculateEB) {
@@ -274,7 +294,7 @@ export default function EBViewPage(): JSX.Element {
                         {readings.length === 0 ? (
                             <div className="text-center py-16"><DocumentTextIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-700">No EB Readings Found</h3><p className="text-slate-500 mt-2">Get started by adding the first reading.</p><Link href="/eb-upload" className="mt-6 inline-block bg-indigo-600 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm hover:bg-indigo-700">Upload First Reading</Link></div>
                         ) : (
-                            <div className="space-y-8">
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                                 {readings.map((reading, index) => {
                                     const nextDayReading = index > 0 ? readings[index - 1] : null;
                                     return (<EBReadingCard key={reading._id} reading={reading} nextDayMorningUnits={nextDayReading?.morningUnits} onUpdate={handleUnitUpdate} onImageZoom={(url) => setZoomedImageUrl(url)} onHistoryOpen={handleHistoryOpen}/>);
