@@ -11,12 +11,12 @@ import ServiceSubCategory from '@/models/ServiceSubCategory';
 import ServiceItem from '@/models/ServiceItem';
 import Product from '@/models/Product';
 
+// FIX 1: The 'Audience' field is completely removed from the interface.
 interface ServiceImportRow {
   ServiceName: string;
   ServiceCode: string;
   CategoryName: string;
   SubCategoryName: string;
-  Audience?: 'male' | 'female' | 'Unisex'; // Audience is optional in the file
   Duration: number;
   Price: number;
   MembershipRate?: number;
@@ -52,20 +52,23 @@ export async function POST(req: NextRequest) {
             throw new Error('Missing required fields (ServiceCode, ServiceName, CategoryName, SubCategoryName).');
         }
 
-        const audience = ['male', 'female', 'Unisex'].includes(row.Audience as string) ? row.Audience : 'Unisex';
+        // FIX 2: The logic to determine an 'audience' has been completely removed.
 
+        // FIX 3: Find or create a category based ONLY on its name.
         const category = await ServiceCategory.findOneAndUpdate(
-          { name: row.CategoryName, targetAudience: audience },
-          { $setOnInsert: { name: row.CategoryName, targetAudience: audience } },
+          { name: row.CategoryName },
+          { $setOnInsert: { name: row.CategoryName } }, // No longer inserts 'targetAudience'
           { upsert: true, new: true, runValidators: true }
         );
 
+        // This logic is fine, as it correctly depends on the universal category ID.
         const subCategory = await ServiceSubCategory.findOneAndUpdate(
           { name: row.SubCategoryName, mainCategory: category._id },
           { $setOnInsert: { name: row.SubCategoryName, mainCategory: category._id } },
           { upsert: true, new: true, runValidators: true }
         );
-
+        
+        // This consumable logic is also fine.
         const resolvedConsumables = [];
         for (let i = 1; i <= 10; i++) {
           const sku = row[`Consumable${i}_SKU`];
@@ -83,18 +86,16 @@ export async function POST(req: NextRequest) {
               unit: row[`Consumable${i}_Unit`] || product.unit,
               quantity: {
                 default: Number(defaultQty),
-                male: Number(row[`Consumable${i}_Male_Qty`]) || undefined,
-                female: Number(row[`Consumable${i}_Female_Qty`]) || undefined,
               },
             });
           }
         }
         
+        // FIX 4: The 'audience' field is removed from the service data object before saving.
         const serviceData = {
           name: row.ServiceName,
           serviceCode: row.ServiceCode,
           subCategory: subCategory._id,
-          audience: audience,
           duration: row.Duration,
           price: row.Price,
           membershipRate: row.MembershipRate,

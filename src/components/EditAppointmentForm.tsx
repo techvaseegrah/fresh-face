@@ -1,11 +1,13 @@
-// /components/EditAppointmentForm.tsx - FINAL CORRECTED VERSION
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { XMarkIcon, ChevronDownIcon, CurrencyRupeeIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, CurrencyRupeeIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
+// 1. ADD NEW IMPORTS for the searchable dropdown
+import { Combobox } from '@headlessui/react';
+import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
 
-// Interfaces remain the same
+// Interfaces
 interface ServiceFromAPI {
   _id: string;
   name: string;
@@ -19,7 +21,6 @@ interface StylistFromAPI {
   name: string;
 }
 
-// 1. UPDATE THE INTERFACE TO MATCH THE NEW DATA STRUCTURE
 interface AppointmentForEdit {
   id: string;
   customerId: {
@@ -28,15 +29,12 @@ interface AppointmentForEdit {
     phoneNumber?: string;
     isMembership?: boolean;
   };
-  stylistId: StylistFromAPI;
+  stylistId: StylistFromAPI | null; // Allow stylist to be null for robustness
   serviceIds?: ServiceFromAPI[];
-  appointmentDateTime: string; // <-- USE THE NEW FIELD
+  appointmentDateTime: string;
   notes?: string;
   status: string;
   appointmentType: string;
-  estimatedDuration?: number;
-  finalAmount?: number;
-  membershipDiscount?: number;
 }
 
 interface EditAppointmentFormProps {
@@ -68,6 +66,9 @@ export default function EditAppointmentForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 2. ADD NEW STATE for the service search input
+  const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+
   const calculateTotals = useCallback(() => {
     let total = 0;
     let membershipSavings = 0;
@@ -81,32 +82,25 @@ export default function EditAppointmentForm({
         membershipSavings += service.price - service.membershipRate!;
       }
     });
-
     return { total, membershipSavings };
   }, [selectedServices, appointment?.customerId?.isMembership]);
 
   const { total, membershipSavings } = calculateTotals();
 
-  // Initialize form when appointment changes
   useEffect(() => {
     if (!isOpen || !appointment) return;
 
-    // 2. THIS IS THE CORE FIX: Derive date and time from the single correct field
     const appointmentDate = new Date(appointment.appointmentDateTime);
-    
-    // Format to YYYY-MM-DD for the date input
     const datePart = appointmentDate.toISOString().split('T')[0];
-    
-    // Format to HH:mm for the time input, being careful about timezone conversion
     const hours = String(appointmentDate.getHours()).padStart(2, '0');
     const minutes = String(appointmentDate.getMinutes()).padStart(2, '0');
     const timePart = `${hours}:${minutes}`;
 
     setFormData({
       serviceIds: appointment.serviceIds?.map(s => s._id) || [],
-      stylistId: appointment.stylistId._id,
-      date: datePart, // Use the derived date part
-      time: timePart, // Use the derived time part
+      stylistId: appointment.stylistId?._id || '',
+      date: datePart,
+      time: timePart,
       notes: appointment.notes || '',
       status: appointment.status,
     });
@@ -118,51 +112,38 @@ export default function EditAppointmentForm({
       try {
         const res = await fetch('/api/service-items');
         const data = await res.json();
-        if (data.success) {
-          setAllServices(data.services);
-        }
-      } catch (e) {
-        console.error('Failed to fetch services:', e);
-      }
+        if (data.success) setAllServices(data.services);
+      } catch (e) { console.error('Failed to fetch services:', e); }
     };
-
     fetchServices();
   }, [isOpen, appointment]);
 
-  // The rest of the component handlers (findAvailableStylists, etc.) are fine
   const findAvailableStylists = useCallback(async () => {
     if (!formData.date || !formData.time || formData.serviceIds.length === 0) {
-      setAvailableStylists([appointment?.stylistId || { _id: '', name: 'Current Stylist' }] as StylistFromAPI[]);
+      setAvailableStylists(appointment?.stylistId ? [appointment.stylistId] : []);
       return;
     }
-
     setIsLoadingStylists(true);
     try {
       const serviceQuery = formData.serviceIds.map((id) => `serviceIds=${id}`).join('&');
       const res = await fetch(`/api/stylists/available?date=${formData.date}&time=${formData.time}&${serviceQuery}&appointmentId=${appointment?.id}`);
       const data = await res.json();
-      
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Could not fetch stylists.');
-      }
+      if (!res.ok || !data.success) throw new Error(data.message || 'Could not fetch stylists.');
 
-      const currentStylistInList = data.stylists.some((s: any) => s._id === appointment?.stylistId._id);
+      const currentStylistInList = data.stylists.some((s: any) => s._id === appointment?.stylistId?._id);
       if (!currentStylistInList && appointment?.stylistId) {
         data.stylists.unshift(appointment.stylistId);
       }
-
       setAvailableStylists(data.stylists);
     } catch (err: any) {
       setError(err.message);
-      setAvailableStylists([appointment?.stylistId || { _id: '', name: 'Current Stylist' }] as StylistFromAPI[]);
+      setAvailableStylists(appointment?.stylistId ? [appointment.stylistId] : []);
     } finally {
       setIsLoadingStylists(false);
     }
   }, [formData.date, formData.time, formData.serviceIds, appointment]);
 
-  useEffect(() => {
-    findAvailableStylists();
-  }, [findAvailableStylists]);
+  useEffect(() => { findAvailableStylists(); }, [findAvailableStylists]);
 
   const handleAddService = (serviceId: string) => {
     if (!serviceId) return;
@@ -170,37 +151,27 @@ export default function EditAppointmentForm({
     if (serviceToAdd && !selectedServices.some((s) => s._id === serviceId)) {
       const newSelected = [...selectedServices, serviceToAdd];
       setSelectedServices(newSelected);
-      setFormData(prev => ({
-        ...prev,
-        serviceIds: newSelected.map((s) => s._id)
-      }));
+      setFormData(prev => ({ ...prev, serviceIds: newSelected.map((s) => s._id) }));
     }
+    setServiceSearchQuery(''); // Clear search input after selection
   };
 
   const handleRemoveService = (serviceId: string) => {
     const newSelected = selectedServices.filter((s) => s._id !== serviceId);
     setSelectedServices(newSelected);
-    setFormData(prev => ({
-      ...prev,
-      serviceIds: newSelected.map((s) => s._id)
-    }));
+    setFormData(prev => ({ ...prev, serviceIds: newSelected.map((s) => s._id) }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!appointment) return;
-
     setIsSubmitting(true);
     setError(null);
-
-    // The payload is correct. It sends separate date/time, which the PUT API handles.
-    const updatePayload = {
-      ...formData,
-      appointmentType: appointment.appointmentType
-    };
-
     try {
-      await onUpdateAppointment(appointment.id, updatePayload);
+      await onUpdateAppointment(appointment.id, {
+        ...formData,
+        appointmentType: appointment.appointmentType,
+      });
     } catch (err: any) {
       setError(err.message || 'Failed to update appointment');
     } finally {
@@ -208,11 +179,21 @@ export default function EditAppointmentForm({
     }
   };
 
+  // 3. ADD NEW FILTERING LOGIC for the service search
+  const filteredServices =
+    serviceSearchQuery === ''
+      ? allServices
+      : allServices.filter((service) =>
+          service.name
+            .toLowerCase()
+            .replace(/\s+/g, '')
+            .includes(serviceSearchQuery.toLowerCase().replace(/\s+/g, ''))
+        );
+
   if (!isOpen || !appointment) return null;
 
   const inputClasses = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/30 text-sm';
 
-  // JSX rendering remains largely the same
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -281,27 +262,61 @@ export default function EditAppointmentForm({
             </div>
           </div>
 
+          {/* 4. REPLACEMENT: The old <select> is replaced with the new <Combobox> */}
           <div>
             <label className="block text-sm font-medium mb-1">Services</label>
-            <select
-              onChange={(e) => { handleAddService(e.target.value); e.target.value = ''; }}
-              value=""
-              className={inputClasses}
-            >
-              <option value="">Add a service...</option>
-              {allServices.map((service) => (
-                <option key={service._id} value={service._id} disabled={selectedServices.some((s) => s._id === service._id)}>
-                  {service.name} - ₹{service.price}
-                  {appointment.customerId.isMembership && service.membershipRate && ` (Member: ₹${service.membershipRate})`}
-                </option>
-              ))}
-            </select>
+            <Combobox onChange={handleAddService} value="">
+              <div className="relative">
+                <Combobox.Input
+                  className={inputClasses + ' pr-10'}
+                  onChange={(event) => setServiceSearchQuery(event.target.value)}
+                  placeholder="Search and add a service..."
+                  autoComplete="off"
+                />
+                <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                  <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                </Combobox.Button>
+              </div>
+              <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full max-w-md overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm">
+                {filteredServices.length === 0 && serviceSearchQuery !== '' ? (
+                  <div className="relative cursor-default select-none px-4 py-2 text-gray-700">
+                    Nothing found.
+                  </div>
+                ) : (
+                  filteredServices.map((service) => (
+                    <Combobox.Option
+                      key={service._id}
+                      value={service._id}
+                      disabled={selectedServices.some((s) => s._id === service._id)}
+                      className={({ active }) =>
+                        `relative cursor-pointer select-none py-2 pl-10 pr-4 ${
+                          active ? 'bg-black text-white' : 'text-gray-900'
+                        } ${selectedServices.some((s) => s._id === service._id) ? 'opacity-50 cursor-not-allowed' : ''}`
+                      }
+                    >
+                      {({ active }) => (
+                        <>
+                          <span className="block truncate font-normal">
+                            {service.name} - ₹{service.price}
+                          </span>
+                          {selectedServices.some((s) => s._id === service._id) && (
+                            <span className={`absolute inset-y-0 left-0 flex items-center pl-3 ${active ? 'text-white' : 'text-teal-600'}`}>
+                              <CheckIcon className="h-5 w-5" aria-hidden="true" />
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </Combobox.Option>
+                  ))
+                )}
+              </Combobox.Options>
+            </Combobox>
+            {/* The list of selected services renders below */}
             <div className="mt-2 space-y-2">
               {selectedServices.map((service) => {
                 const isMember = appointment.customerId.isMembership;
                 const showMemberPrice = isMember && service.membershipRate;
                 const finalPrice = showMemberPrice ? service.membershipRate! : service.price;
-                
                 return (
                   <div key={service._id} className="flex items-center justify-between bg-gray-100 p-2 rounded">
                     <div>
@@ -324,6 +339,7 @@ export default function EditAppointmentForm({
               })}
             </div>
           </div>
+          {/* END OF REPLACEMENT */}
 
           <div>
             <label className="block text-sm font-medium mb-1">Stylist</label>
@@ -332,7 +348,7 @@ export default function EditAppointmentForm({
                 availableStylists.map((stylist) => (
                   <option key={stylist._id} value={stylist._id}>
                     {stylist.name}
-                    {stylist._id === appointment.stylistId._id && ' (Current)'}
+                    {stylist._id === appointment.stylistId?._id && ' (Current)'}
                   </option>
                 ))
               )}

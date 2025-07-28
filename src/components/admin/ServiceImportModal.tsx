@@ -6,20 +6,19 @@ import { read, utils } from 'xlsx';
 import { X, UploadCloudIcon, FileTextIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-type AudienceType = "male" | "female" | "Unisex";
-
+// FIX 1: The 'audience' prop and its type are no longer needed.
 interface ServiceImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportSuccess: (report: any) => void;
-  audience: AudienceType;
 }
 
 const REQUIRED_HEADERS = [
   'ServiceName', 'ServiceCode', 'CategoryName', 'SubCategoryName', 'Duration', 'Price'
 ];
 
-export default function ServiceImportModal({ isOpen, onClose, onImportSuccess, audience }: ServiceImportModalProps) {
+// FIX 2: Remove 'audience' from the function arguments.
+export default function ServiceImportModal({ isOpen, onClose, onImportSuccess }: ServiceImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -60,7 +59,8 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess, a
         throw new Error(`File is missing required columns: ${missingHeaders.join(', ')}`);
       }
 
-      const response = await fetch(`/api/service-items/import?audience=${audience}`, {
+      // FIX 3: The API call no longer sends the 'audience' query parameter.
+      const response = await fetch(`/api/service-items/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jsonData),
@@ -85,25 +85,23 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess, a
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">Import Services for <span className="text-indigo-600">{audience}</span></h2>
+          {/* FIX 4: Update the title to be generic and not mention 'audience'. */}
+          <h2 className="text-xl font-semibold text-gray-900">Import Services</h2>
           <button onClick={onClose} disabled={isProcessing} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
             <X className="h-5 w-5" />
           </button>
         </div>
         
         <div className="p-6 space-y-6 overflow-y-auto">
-          {/* --- UPDATED INSTRUCTIONS --- */}
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
             <p className="font-semibold mb-2">Instructions:</p>
+            {/* FIX 5: Remove the instruction that referenced 'audience'. */}
             <ol className="list-decimal list-inside space-y-2">
-              <li>
-                All services in the uploaded file will be automatically assigned to the currently selected audience: <strong className="font-semibold">{audience}</strong>.
-              </li>
               <li>
                 The <strong>ServiceCode</strong> column must be unique for each service. It is used to update existing services if you re-upload a file.
               </li>
               <li>
-                Each service and its consumables must be defined in a **single row**.
+                Each service and its consumables must be defined in a <strong>single row</strong>.
               </li>
               <li>
                 To add consumables, use the `Consumable1_SKU`, `Consumable1_Default_Qty`, etc., columns.

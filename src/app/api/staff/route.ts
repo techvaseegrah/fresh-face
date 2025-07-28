@@ -1,9 +1,8 @@
-// src/app/api/staff/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
-import Stylist from '../../../models/Stylist';
+// The Stylist model is no longer used in this file.
+// import Stylist from '../../../models/Stylist';
 import ShopSetting from '../../../models/ShopSetting';
 import mongoose, { Types } from 'mongoose';
 import { getServerSession } from 'next-auth/next';
@@ -18,12 +17,10 @@ type LeanStaffDocument = Omit<IStaff, keyof mongoose.Document<Types.ObjectId>> &
 
 /**
  * Reads the next available staff ID directly from the settings.
- * This function now returns the number exactly as it is in the settings.
  */
 async function getNextStaffId(): Promise<string> {
     await dbConnect();
     const settings = await ShopSetting.findOne({ key: 'defaultSettings' }).lean();
-    // The base number is now treated as the NEXT available number.
     const nextNumber = settings?.staffIdBaseNumber || 1;
     return nextNumber.toString();
 }
@@ -57,28 +54,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: { nextId } });
     }
 
-    // START: MODIFIED CODE - This is the corrected block
     if (action === 'listForAssignment') {
-        // Using a case-insensitive regular expression to find positions.
-        // This will match 'stylist', 'Stylist', 'manager', 'Manager', etc.
         const assignableStaff = await Staff.find(
           {
             status: 'active',
-            position: { $in: [/^stylist$/i, /^manager$/i] } // <-- THE FIX IS HERE
+           position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] }
           },
           '_id name' // Select only the ID and name fields for the dropdown
         )
         .sort({ name: 'asc' })
         .lean<{ _id: Types.ObjectId, name: string }[]>();
 
-        // The frontend component expects a property named 'stylists'.
-        // We format the response to match, minimizing frontend changes.
         return NextResponse.json({ 
             success: true, 
             stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name })) 
         });
     }
-    // END: MODIFIED CODE
 
     if (action === 'list') {
       const staffList = await Staff.find({})
@@ -104,8 +95,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: `Failed to fetch staff: ${message}` }, { status: 500 });
   }
 }
-
-// ... (The rest of the file - POST, PUT, DELETE - remains exactly the same. No changes needed there.)
 
 export async function POST(request: NextRequest) {
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_CREATE);
@@ -170,16 +159,8 @@ export async function POST(request: NextRequest) {
         { upsert: true }
     );
 
-    if (savedStaff.position.toLowerCase().trim() === 'stylist') {
-      const existingStylist = await Stylist.findOne({ staffInfo: savedStaff._id });
-      if (!existingStylist) {
-        const newStylist = new Stylist({
-          staffInfo: savedStaff._id,
-          availabilityStatus: 'Available',
-        });
-        await newStylist.save();
-      }
-    }
+    // The entire block that tried to create and link a Stylist has been removed.
+    // This resolves the validation error.
 
     const staffObject = savedStaff.toObject();
     return NextResponse.json({ success: true, data: {...staffObject, id: savedStaff._id.toString()} }, { status: 201 });

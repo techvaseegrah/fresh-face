@@ -1,10 +1,10 @@
-// /app/api/appointment/route.ts - FINAL CORRECTED VERSION
+// /app/api/appointment/route.ts - FINAL CORRECTED VERSION (with sorting fix)
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
 import Customer from '@/models/customermodel';
-import Stylist from '@/models/Stylist';
+import Staff from '@/models/staff';
 import ServiceItem from '@/models/ServiceItem';
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
@@ -72,7 +72,7 @@ export async function GET(req: Request) {
         const customerIds = matchingCustomers.map(c => c._id);
 
         const stylistQuery = { name: { $regex: searchStr, $options: 'i' } };
-        const matchingStylists = await Stylist.find(stylistQuery).select('_id').lean();
+        const matchingStylists = await Staff.find(stylistQuery).select('_id').lean();
         const stylistIds = matchingStylists.map(s => s._id);
 
         const finalSearchOrConditions = [];
@@ -92,7 +92,8 @@ export async function GET(req: Request) {
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
-        .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : 1 })
+        // --- FIX [2023-11-03]: Changed sorting for 'All Time' view to descending (-1) to show newest first. ---
+        .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 }) 
         .skip(skip)
         .limit(limit),
       Appointment.countDocuments(matchStage)
@@ -111,6 +112,7 @@ export async function GET(req: Request) {
         }
         return { ...apt.toObject(), id: apt._id.toString(), appointmentDateTime: finalDateTime.toISOString(), createdAt: (apt.createdAt || finalDateTime).toISOString() };
     });
+      console.log("Data being sent to frontend:", JSON.stringify(formattedAppointments, null, 2));
 
     return NextResponse.json({
       success: true,
@@ -151,8 +153,6 @@ export async function POST(req: Request) {
     let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind }).session(session);
 
     if (!customerDoc) {
-      // --- (2) THIS IS THE DEFINITIVE FIX ---
-      // The old code was missing phoneSearchIndex and using the wrong hash function.
       const customerDataForCreation = {
         name: encrypt(customerName.trim()),
         phoneNumber: encrypt(normalizedPhone),
@@ -163,7 +163,7 @@ export async function POST(req: Request) {
         phoneHash: phoneHashToFind,
         searchableName: customerName.trim().toLowerCase(),
         last4PhoneNumber: normalizedPhone.slice(-4),
-        phoneSearchIndex: generateNgrams(normalizedPhone).map(ngram => createBlindIndex(ngram)), // <-- The crucial field
+        phoneSearchIndex: generateNgrams(normalizedPhone).map(ngram => createBlindIndex(ngram)), 
       };
       
       const newCustomers = await Customer.create([customerDataForCreation], { session });

@@ -20,11 +20,7 @@ export async function GET(req: NextRequest) {
 
   await dbConnect();
   try {
-    const audience = req.nextUrl.searchParams.get('audience');
-    if (!audience) {
-      return NextResponse.json({ success: false, error: 'Audience filter is required.' }, { status: 400 });
-    }
-    const categories = await ServiceCategory.find({ targetAudience: audience }).sort({ name: 1 });
+    const categories = await ServiceCategory.find({}).sort({ name: 1 });
     return NextResponse.json({ success: true, data: categories });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Server Error' }, { status: 500 });

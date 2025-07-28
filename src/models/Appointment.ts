@@ -1,7 +1,7 @@
 // /models/Appointment.ts - THE CORRECT AND FINAL VERSION
 
 import mongoose, { Schema, model, models } from 'mongoose';
-import './Stylist'; 
+import './staff'; 
 import './ServiceItem';
 import './customermodel';
 import './user'; // Make sure the User model is imported for the ref
@@ -21,7 +21,7 @@ const appointmentSchema = new Schema({
   
   stylistId: { 
     type: Schema.Types.ObjectId, 
-    ref: 'Stylist',
+    ref: 'Staff',
     required: true,
     index: true
   },
