@@ -57,6 +57,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: { nextId } });
     }
 
+    // START: MODIFIED CODE - This is the corrected block
+    if (action === 'listForAssignment') {
+        // Using a case-insensitive regular expression to find positions.
+        // This will match 'stylist', 'Stylist', 'manager', 'Manager', etc.
+        const assignableStaff = await Staff.find(
+          {
+            status: 'active',
+            position: { $in: [/^stylist$/i, /^manager$/i] } // <-- THE FIX IS HERE
+          },
+          '_id name' // Select only the ID and name fields for the dropdown
+        )
+        .sort({ name: 'asc' })
+        .lean<{ _id: Types.ObjectId, name: string }[]>();
+
+        // The frontend component expects a property named 'stylists'.
+        // We format the response to match, minimizing frontend changes.
+        return NextResponse.json({ 
+            success: true, 
+            stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name })) 
+        });
+    }
+    // END: MODIFIED CODE
+
     if (action === 'list') {
       const staffList = await Staff.find({})
         .sort({ name: 'asc' })
@@ -81,6 +104,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: `Failed to fetch staff: ${message}` }, { status: 500 });
   }
 }
+
+// ... (The rest of the file - POST, PUT, DELETE - remains exactly the same. No changes needed there.)
 
 export async function POST(request: NextRequest) {
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_CREATE);

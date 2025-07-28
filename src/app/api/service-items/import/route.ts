@@ -1,4 +1,4 @@
-// /app/api/services/import/route.ts - FINAL VERSION
+// /app/api/services/import/route.ts - FINAL CORRECTED VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
@@ -11,16 +11,16 @@ import ServiceSubCategory from '@/models/ServiceSubCategory';
 import ServiceItem from '@/models/ServiceItem';
 import Product from '@/models/Product';
 
-// The Audience column is no longer needed in the Excel file itself
 interface ServiceImportRow {
   ServiceName: string;
   ServiceCode: string;
   CategoryName: string;
   SubCategoryName: string;
+  Audience?: 'male' | 'female' | 'Unisex'; // Audience is optional in the file
   Duration: number;
   Price: number;
   MembershipRate?: number;
-  [key: string]: any; // Allows for dynamic consumable columns
+  [key: string]: any; 
 }
 
 export async function POST(req: NextRequest) {
@@ -30,14 +30,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { searchParams } = new URL(req.url);
-    const audience = searchParams.get('audience');
-
-    // **THE FIX: Validate the audience from the query parameter**
-    if (!audience || !['male', 'female', 'Unisex'].includes(audience)) {
-        return NextResponse.json({ success: false, message: 'A valid audience (male, female, or Unisex) is required.' }, { status: 400 });
-    }
-
     const rows: ServiceImportRow[] = await req.json();
     if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ success: false, message: 'No service data provided.' }, { status: 400 });
@@ -49,8 +41,6 @@ export async function POST(req: NextRequest) {
       totalRows: rows.length,
       successfulImports: 0,
       failedImports: 0,
-      newCategories: new Set<string>(),
-      newSubCategories: new Set<string>(),
       errors: [] as { row: number; serviceName?: string; message: string }[],
     };
 
@@ -59,23 +49,22 @@ export async function POST(req: NextRequest) {
     for (const [index, row] of rows.entries()) {
       try {
         if (!row.ServiceCode || !row.ServiceName || !row.CategoryName || !row.SubCategoryName) {
-            throw new Error('Missing required fields.');
+            throw new Error('Missing required fields (ServiceCode, ServiceName, CategoryName, SubCategoryName).');
         }
 
-        // **THE FIX: Use the audience from the query parameter to find or create the category**
+        const audience = ['male', 'female', 'Unisex'].includes(row.Audience as string) ? row.Audience : 'Unisex';
+
         const category = await ServiceCategory.findOneAndUpdate(
           { name: row.CategoryName, targetAudience: audience },
           { $setOnInsert: { name: row.CategoryName, targetAudience: audience } },
           { upsert: true, new: true, runValidators: true }
         );
-        if (category.isNew) report.newCategories.add(category.name);
 
         const subCategory = await ServiceSubCategory.findOneAndUpdate(
           { name: row.SubCategoryName, mainCategory: category._id },
           { $setOnInsert: { name: row.SubCategoryName, mainCategory: category._id } },
           { upsert: true, new: true, runValidators: true }
         );
-        if (subCategory.isNew) report.newSubCategories.add(subCategory.name);
 
         const resolvedConsumables = [];
         for (let i = 1; i <= 10; i++) {
@@ -100,22 +89,18 @@ export async function POST(req: NextRequest) {
             });
           }
         }
-
-        
         
         const serviceData = {
           name: row.ServiceName,
           serviceCode: row.ServiceCode,
           subCategory: subCategory._id,
+          audience: audience,
           duration: row.Duration,
           price: row.Price,
           membershipRate: row.MembershipRate,
           consumables: resolvedConsumables,
         };
-
-
         
-
         await ServiceItem.findOneAndUpdate(
           { serviceCode: row.ServiceCode },
           { $set: serviceData },
@@ -132,7 +117,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Service import process completed.',
-      report: { ...report, newCategories: Array.from(report.newCategories), newSubCategories: Array.from(report.newSubCategories) },
+      report,
     });
 
   } catch (error: any) {
