@@ -56,15 +56,41 @@ interface FilePreviewModalProps {
   fileType: string;
 }
 
-// --- CHILD COMPONENT: EXPENSE DETAILS MODAL ---
+// --- CHILD COMPONENT: EXPENSE DETAILS MODAL (CORRECTED) ---
 function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDetailsModalProps) {
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<{ url: string; name: string; type: string } | null>(null);
+  
   const modalTotal = historyData.reduce((sum, expense) => sum + expense.amount, 0);
+
+  const handleViewBill = (billUrl: string) => {
+    // Extract file name from URL, handling potential query parameters
+    const fileName = billUrl.split('?')[0].split('/').pop() || 'bill';
+    const extension = (fileName.split('.').pop() || '').toLowerCase();
+    let fileType = '';
+
+    if (extension === 'pdf') {
+      fileType = 'application/pdf';
+    } else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) {
+      fileType = `image/${extension}`;
+    }
+
+    if (fileType) {
+      setSelectedBill({ url: billUrl, name: fileName, type: fileType });
+      setIsPreviewModalOpen(true);
+    } else {
+      // Fallback for unknown or unsupported file types: open in a new tab
+      window.open(billUrl, '_blank');
+      toast.info("Preview not available for this file type. Opening in a new tab.");
+    }
+  };
 
   const handlePdfDownload = () => {
     const doc = new jsPDF();
     doc.text(`Expenses Report - ${title}`, 14, 22);
     const tableColumn = ["Date", "Type", "Description", "Frequency", "Payment", "Time", "Amount", "Bill"];
     const tableRows: (string | number)[][] = [];
+
     historyData.forEach(expense => {
       const expenseData = [
         new Date(expense.date).toLocaleDateString('en-GB'),
@@ -73,17 +99,29 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
         expense.frequency,
         expense.paymentMethod,
         new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-        `₹${expense.amount.toFixed(2)}`,
+        // Use toLocaleString for better number formatting
+        `₹${expense.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         expense.billUrl ? 'Attached' : 'N/A'
       ];
       tableRows.push(expenseData);
     });
+
     autoTable(doc, {
-      head: [tableColumn], body: tableRows, startY: 30, theme: 'grid',
+      head: [tableColumn], 
+      body: tableRows, 
+      startY: 30, 
+      theme: 'grid',
       headStyles: { fillColor: [34, 41, 47] },
+      // Add column styles for alignment
+      columnStyles: {
+        6: { halign: 'right' }, // Align Amount column to the right
+        7: { halign: 'center' }  // Align Bill column to the center
+      },
+      // Fix the footer to align correctly
       foot: [[
-        { content: 'TOTAL', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
-        { content: `₹${modalTotal.toFixed(2)}`, colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }
+        { content: 'TOTAL', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10 } },
+        { content: `₹${modalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10 } },
+        { content: '', styles: {} } // Empty cell for the 'Bill' column
       ]],
       footStyles: { fontStyle: 'bold', fillColor: [240, 240, 240], textColor: [0, 0, 0] }
     });
@@ -91,29 +129,34 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
   };
 
   const handleCsvDownload = () => {
-    const reportTitle = `"${`Expenses Report - ${title}`.replace(/"/g, '""')}"\r\n\r\n`;
+    // FIX: Ensure title is a string before calling replace
+    const safeTitle = title || "Untitled Report";
+    const reportTitle = `"${`Expenses Report - ${safeTitle}`.replace(/"/g, '""')}"\r\n\r\n`;
     const tableColumn = ["Date", "Type", "Description", "Frequency", "Payment Method", "Time", "Amount", "Bill URL"];
     const escapeCsvCell = (cell: string) => `"${cell.replace(/"/g, '""')}"`;
     let csvContent = reportTitle + tableColumn.join(',') + '\r\n';
+
     historyData.forEach(expense => {
       const row = [
         `'${new Date(expense.date).toLocaleDateString('en-GB')}`,
-        escapeCsvCell(expense.type),
+        // FIX: Add fallbacks to prevent error on undefined/null values
+        escapeCsvCell(expense.type || 'N/A'),
         escapeCsvCell(expense.description || 'N/A'),
-        expense.frequency,
-        escapeCsvCell(expense.paymentMethod),
+        expense.frequency || 'N/A',
+        escapeCsvCell(expense.paymentMethod || 'N/A'),
         new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         expense.amount.toFixed(2),
         expense.billUrl || ''
       ].join(',');
       csvContent += row + '\r\n';
     });
+
     csvContent += `\r\n,,,,,,Total,${modalTotal.toFixed(2)}`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_report.csv`);
+    link.setAttribute('download', `${safeTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_report.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -121,86 +164,100 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
   };
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
-          <div className="fixed inset-0 bg-black bg-opacity-50" />
-        </Transition.Child>
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 text-center">
-            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
-              <Dialog.Panel className="w-full max-w-6xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all border-t-4 border-gray-800">
-                <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-gray-900 flex justify-between items-start">
-                  <div className="flex items-center gap-3">
-                    <DocumentChartBarIcon className="h-7 w-7 text-gray-700"/>
-                    <span className="block text-gray-600 font-normal">{title}</span>
-                  </div>
-                  <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 transition-colors">
-                    <XMarkIcon className="h-6 w-6 text-gray-600" />
-                  </button>
-                </Dialog.Title>
-                <div className="mt-6">
-                  <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-gray-200">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-100 sticky top-0 z-10">
-                        <tr>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                          <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Bill</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200 [&>*:nth-child(even)]:bg-slate-50">
-                        {historyData.map(expense => (
-                          <tr key={expense._id} className="hover:bg-gray-100">
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleDateString('en-GB')}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-800">{expense.type}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.description || <span className="text-gray-400">N/A</span>}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.frequency}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.paymentMethod}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-semibold text-gray-900">₹{expense.amount.toFixed(2)}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
-                              {expense.billUrl ? (
-                                <a href={expense.billUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-medium transition-colors">
-                                  <EyeIcon className="h-4 w-4"/> View
-                                </a>
-                              ) : (
-                                <span className="text-gray-400">N/A</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                       <tfoot className="bg-gray-100 sticky bottom-0 border-t-2 border-gray-300">
+    <Fragment>
+      <Transition appear show={isOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={onClose}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black bg-opacity-50" />
+          </Transition.Child>
+          <div className="fixed inset-0 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+                <Dialog.Panel className="w-full max-w-6xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all border-t-4 border-gray-800">
+                  <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-gray-900 flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <DocumentChartBarIcon className="h-7 w-7 text-gray-700"/>
+                      <span className="block text-gray-600 font-normal">{title}</span>
+                    </div>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 transition-colors">
+                      <XMarkIcon className="h-6 w-6 text-gray-600" />
+                    </button>
+                  </Dialog.Title>
+                  <div className="mt-6">
+                    <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-gray-200">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-100 sticky top-0 z-10">
                           <tr>
-                            <td colSpan={7} className="px-4 py-4 text-right text-sm font-bold text-gray-800 uppercase">Total</td>
-                            <td className="px-4 py-4 text-right text-sm font-bold text-gray-900">₹{modalTotal.toFixed(2)}</td>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                            <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                            <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Bill</th>
                           </tr>
-                      </tfoot>
-                    </table>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200 [&>*:nth-child(even)]:bg-slate-50">
+                          {historyData.map(expense => (
+                            <tr key={expense._id} className="hover:bg-gray-100">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleDateString('en-GB')}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-800">{expense.type}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.description || <span className="text-gray-400">N/A</span>}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.frequency}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.paymentMethod}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-semibold text-gray-900">₹{expense.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
+                                {expense.billUrl ? (
+                                  <button onClick={() => handleViewBill(expense.billUrl!)} className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-medium transition-colors">
+                                    <EyeIcon className="h-4 w-4"/> View
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400">N/A</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-gray-100 sticky bottom-0 border-t-2 border-gray-300">
+                            <tr>
+                              <td colSpan={6} className="px-4 py-4 text-right text-sm font-bold text-gray-800 uppercase">Total</td>
+                              <td className="px-4 py-4 text-right text-sm font-bold text-gray-900">₹{modalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td></td>
+                            </tr>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-6 flex justify-end items-center gap-3">
-                    <button onClick={handleCsvDownload} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors">
-                        <ArrowDownTrayIcon className="h-4 w-4" /> Export to Excel (CSV)
-                    </button>
-                    <button onClick={handlePdfDownload} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-md hover:bg-gray-900 transition-colors">
-                        <ArrowDownTrayIcon className="h-4 w-4" /> Download PDF
-                    </button>
-                </div>
-              </Dialog.Panel>
-            </Transition.Child>
+                  <div className="mt-6 flex justify-end items-center gap-3">
+                      <button onClick={handleCsvDownload} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors">
+                          <ArrowDownTrayIcon className="h-4 w-4" /> Export to Excel (CSV)
+                      </button>
+                      <button onClick={handlePdfDownload} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-md hover:bg-gray-900 transition-colors">
+                          <ArrowDownTrayIcon className="h-4 w-4" /> Download PDF
+                      </button>
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
           </div>
-        </div>
-      </Dialog>
-    </Transition>
+        </Dialog>
+      </Transition>
+
+      {selectedBill && (
+        <FilePreviewModal
+          isOpen={isPreviewModalOpen}
+          onClose={() => setIsPreviewModalOpen(false)}
+          fileUrl={selectedBill.url}
+          fileName={selectedBill.name}
+          fileType={selectedBill.type}
+        />
+      )}
+    </Fragment>
   );
 }
+
 
 // --- CHILD COMPONENT: FILE PREVIEW MODAL ---
 function FilePreviewModal({ isOpen, onClose, fileUrl, fileName, fileType }: FilePreviewModalProps) {
