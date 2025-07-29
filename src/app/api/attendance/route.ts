@@ -7,14 +7,12 @@ import Staff, { IStaff } from '../../../models/staff';
 import TemporaryExit, { ITemporaryExit } from '../../../models/TemporaryExit';
 import mongoose, { Types } from 'mongoose';
 import { differenceInMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth, parseISO, isValid } from 'date-fns';
-// NEW: Import permission tools
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
 
-// NEW: A reusable function to check permissions, same as before
 async function checkPermissions(permission: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.role?.permissions) {
@@ -30,7 +28,6 @@ async function checkPermissions(permission: string) {
 
 // --- GET Handler ---
 export async function GET(request: NextRequest) {
-  // NEW: Protect GET actions with READ permission
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_READ);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -42,43 +39,92 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
     
-    // ... rest of GET handler is unchanged ...
+    // ... other actions like 'getToday' and 'getMonthly' are unchanged ...
     if (action === 'getToday') {
-      const todayDate = new Date();
-      const todayStartBoundary = startOfDay(todayDate);
-      const todayEndBoundary = endOfDay(todayDate);
-      const records = await Attendance.find({
-        date: { $gte: todayStartBoundary, $lte: todayEndBoundary },
-      })
-        .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
-        .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
-        .sort({ checkIn: 'asc' })
-        .lean();
-      const validRecords = records.filter(record => record.staffId);
-      return NextResponse.json({ success: true, data: validRecords });
+        const todayDate = new Date();
+        const todayStartBoundary = startOfDay(todayDate);
+        const todayEndBoundary = endOfDay(todayDate);
+        const records = await Attendance.find({
+          date: { $gte: todayStartBoundary, $lte: todayEndBoundary },
+        })
+          .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
+          .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
+          .sort({ checkIn: 'asc' })
+          .lean();
+        const validRecords = records.filter(record => record.staffId);
+        return NextResponse.json({ success: true, data: validRecords });
     } 
     else if (action === 'getMonthly') {
+        const yearStr = searchParams.get('year');
+        const monthStr = searchParams.get('month');
+        if (!yearStr || !monthStr) {
+          return NextResponse.json({ success: false, error: 'Year and month parameters are required for monthly view' }, { status: 400 });
+        }
+        const parsedYear = parseInt(yearStr);
+        const parsedMonth = parseInt(monthStr);
+        if (isNaN(parsedYear) || isNaN(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
+          return NextResponse.json({ success: false, error: 'Invalid year or month parameters' }, { status: 400 });
+        }
+        const localMonthDate = new Date(parsedYear, parsedMonth - 1, 1);
+        const startDate = startOfMonth(localMonthDate);
+        const endDate = endOfMonth(localMonthDate);
+        const records = await Attendance.find({ date: { $gte: startDate, $lte: endDate } })
+          .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
+          .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
+          .sort({ date: 'asc', checkIn: 'asc' })
+          .lean();
+        const validRecords = records.filter(record => record.staffId);
+        return NextResponse.json({ success: true, data: validRecords });
+    }
+    // START: MODIFIED LOGIC FOR SALARY PAGE
+    else if (action === 'getOvertimeTotal' || action === 'getTotalHoursForMonth') {
+      const staffId = searchParams.get('staffId');
       const yearStr = searchParams.get('year');
-      const monthStr = searchParams.get('month');
+      const monthStr = searchParams.get('month'); // Expecting month name e.g., "July"
+      
+      if (!staffId || !isValidObjectId(staffId)) {
+        return NextResponse.json({ success: false, error: 'Valid staffId is required' }, { status: 400 });
+      }
       if (!yearStr || !monthStr) {
-        return NextResponse.json({ success: false, error: 'Year and month parameters are required for monthly view' }, { status: 400 });
+        return NextResponse.json({ success: false, error: 'Year and month name are required' }, { status: 400 });
       }
+
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthIndex = monthNames.findIndex(m => m.toLowerCase() === monthStr.toLowerCase());
       const parsedYear = parseInt(yearStr);
-      const parsedMonth = parseInt(monthStr);
-      if (isNaN(parsedYear) || isNaN(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
-        return NextResponse.json({ success: false, error: 'Invalid year or month parameters' }, { status: 400 });
+
+      if (isNaN(parsedYear) || monthIndex === -1) {
+        return NextResponse.json({ success: false, error: 'Invalid year or month name' }, { status: 400 });
       }
-      const localMonthDate = new Date(parsedYear, parsedMonth - 1, 1);
+
+      const localMonthDate = new Date(parsedYear, monthIndex, 1);
       const startDate = startOfMonth(localMonthDate);
       const endDate = endOfMonth(localMonthDate);
-      const records = await Attendance.find({ date: { $gte: startDate, $lte: endDate } })
-        .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
-        .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
-        .sort({ date: 'asc', checkIn: 'asc' })
-        .lean();
-      const validRecords = records.filter(record => record.staffId);
-      return NextResponse.json({ success: true, data: validRecords });
+
+      // Find all records where the staff actually worked (or was expected to)
+      const records = await Attendance.find({
+        staffId: new Types.ObjectId(staffId),
+        date: { $gte: startDate, $lte: endDate },
+        status: { $in: ['present', 'incomplete'] }
+      }).lean();
+
+      if (action === 'getTotalHoursForMonth') {
+        // Calculate BOTH achieved and required hours from the same records
+        const totalMinutes = records.reduce((sum, record) => sum + (record.totalWorkingMinutes || 0), 0);
+        const requiredMinutes = records.reduce((sum, record) => sum + (record.requiredMinutes || 0), 0);
+
+        const totalWorkingHours = totalMinutes / 60; // Convert to decimal hours
+        const totalRequiredHours = requiredMinutes / 60; // Convert to decimal hours
+
+        return NextResponse.json({ success: true, data: { totalWorkingHours, totalRequiredHours } });
+      }
+      
+      if (action === 'getOvertimeTotal') {
+        const totalOtHours = records.reduce((sum, record) => sum + (record.overtimeHours || 0), 0);
+        return NextResponse.json({ success: true, data: { totalOtHours } });
+      }
     }
+    // END: MODIFIED LOGIC FOR SALARY PAGE
     return NextResponse.json({ success: false, error: 'Invalid or missing GET action specified' }, { status: 400 });
 
   } catch (error: any) {
@@ -87,7 +133,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// --- POST, PUT, DELETE Handlers are unchanged ---
+// ... (rest of the file)
 // --- POST Handler ---
+// ... (POST handler is unchanged)
 export async function POST(request: NextRequest) {
   // NEW: Protect all POST actions with MANAGE permission
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_MANAGE);
@@ -234,7 +283,9 @@ export async function POST(request: NextRequest) {
    }
 }
 
+
 // --- PUT Handler ---
+// ... (PUT handler is unchanged)
 export async function PUT(request: NextRequest) {
     // NEW: Protect all PUT actions with MANAGE permission
     const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_MANAGE);
@@ -270,6 +321,7 @@ export async function PUT(request: NextRequest) {
 }
 
 // --- DELETE Handler ---
+// ... (DELETE handler is unchanged)
 export async function DELETE(request: NextRequest) {
   // NEW: Protect DELETE action with MANAGE permission
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_MANAGE);

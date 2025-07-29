@@ -1,4 +1,4 @@
-// src/models/expenses.ts
+// src/models/Expense.ts
 
 import mongoose, { Document, Schema } from 'mongoose';
 
@@ -7,6 +7,9 @@ export interface IExpense extends Document {
   description: string;
   amount: number;
   date: Date;
+  frequency: 'Regular' | 'Once';
+  paymentMethod: string;
+  billUrl?: string; // <-- NEW
 }
 
 const ExpenseSchema: Schema = new Schema({
@@ -14,9 +17,6 @@ const ExpenseSchema: Schema = new Schema({
     type: String,
     required: [true, 'Please provide an expense type.'],
     trim: true,
-    //  <-- MAKE SURE THIS LINE IS DELETED OR COMMENTED OUT
-    // enum: expenseTypes, 
-    //  <-- THE 'enum' RESTRICTION MUST BE GONE
   },
   description: {
     type: String,
@@ -31,6 +31,21 @@ const ExpenseSchema: Schema = new Schema({
   date: {
     type: Date,
     default: Date.now,
+  },
+  frequency: {
+    type: String,
+    enum: ['Regular', 'Once'],
+    required: [true, 'Please specify the expense frequency.']
+  },
+  paymentMethod: {
+    type: String,
+    required: [true, 'Please provide a payment method.'],
+    trim: true,
+  },
+  // --- NEW FIELD ---
+  billUrl: {
+    type: String,
+    required: false,
   },
 });
 
