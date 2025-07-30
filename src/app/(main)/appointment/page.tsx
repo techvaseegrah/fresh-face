@@ -85,7 +85,7 @@ export default function AppointmentPage() {
   const [selectedAppointmentForBilling, setSelectedAppointmentForBilling] = useState<AppointmentWithCustomer | null>(null);
 
   const [statusFilter, setStatusFilter] = useState('All');
-  const [dateFilter, setDateFilter] = useState('all'); // NEW: State for date filter ('all' or 'today')
+  const [dateFilter, setDateFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalAppointmentsCount, setTotalAppointmentsCount] = useState(0);
@@ -93,7 +93,6 @@ export default function AppointmentPage() {
   const fetchAppointments = useCallback(async () => {
     setIsLoading(true);
     try {
-      // MODIFIED: Added date filter to the API call
       const params = new URLSearchParams({ 
         status: statusFilter, 
         page: currentPage.toString(), 
@@ -118,7 +117,7 @@ export default function AppointmentPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, currentPage, searchTerm, dateFilter]); // MODIFIED: Added dateFilter dependency
+  }, [statusFilter, currentPage, searchTerm, dateFilter]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -131,7 +130,7 @@ export default function AppointmentPage() {
     return () => clearTimeout(handler);
   }, [searchTerm, fetchAppointments, currentPage]);
 
-  useEffect(() => { fetchAppointments(); }, [currentPage, statusFilter, dateFilter]); // MODIFIED: Added dateFilter dependency
+  useEffect(() => { fetchAppointments(); }, [currentPage, statusFilter, dateFilter]);
 
   const handleBookNewAppointment = async (bookingData: NewBookingData) => {
     try {
@@ -209,11 +208,9 @@ const canUpdateAppointments = session && (
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
       </div>
-      {/* MODIFIED: Added Date Filter buttons and adjusted layout */}
       <div className="mb-6 flex flex-col md:flex-row items-center gap-4">
         <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10" /></div>
         
-        {/* NEW: Date filter button group */}
         <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">
           <button
             onClick={() => { setDateFilter('all'); setCurrentPage(1); }}
@@ -293,7 +290,25 @@ const canUpdateAppointments = session && (
                       <td className="px-6 py-4">{billingStaffName}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-2">
-                          {canUpdateAppointments ? (isEditable ? (<button onClick={() => handleEditAppointment(appointment)} className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"><PencilIcon className="w-3 h-3" />Edit</button>) : (<span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full"><CheckCircleIcon className="w-4 h-4" />Completed</span>)) : null}
+                          {/* MODIFICATION: Show Completed badge and Edit button separately */}
+                          
+                          {/* Show the "Completed" badge for non-editable statuses */}
+                          {!isEditable && (
+                            <span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
+                              <CheckCircleIcon className="w-4 h-4" />
+                              Completed
+                            </span>
+                          )}
+
+                          {/* Always show the Edit button if the user has permission */}
+                          {canUpdateAppointments && (
+                            <button 
+                              onClick={() => handleEditAppointment(appointment)} 
+                              className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1">
+                                <PencilIcon className="w-3 h-3" />
+                                Edit
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
