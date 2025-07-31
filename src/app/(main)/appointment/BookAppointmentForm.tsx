@@ -7,19 +7,19 @@ import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
 import { useDebounce } from '@/hooks/useDebounce'; 
 
 // ===================================================================================
-//  INTERFACES & TYPE DEFINITIONS (MODIFIED FOR GROUP BOOKINGS)
+//  INTERFACES & TYPE DEFINITIONS
 // ===================================================================================
 export interface ServiceAssignment {
-  _tempId: string;      // A temporary client-side ID for React list keys
-  serviceId: string;    // The ID of the service
-  stylistId: string;    // The ID of the stylist assigned to THIS service
-  guestName?: string;   // Optional name for the person receiving the service (e.g., "Son")
+  _tempId: string;
+  serviceId: string;
+  stylistId: string;
+  guestName?: string;
 }
 
 export interface ServiceAssignmentState extends ServiceAssignment {
-  serviceDetails: ServiceFromAPI;      // Full details of the service for display
-  availableStylists: StylistFromAPI[]; // List of stylists available for this specific service
-  isLoadingStylists: boolean;          // Loading state for this service's stylist list
+  serviceDetails: ServiceFromAPI;
+  availableStylists: StylistFromAPI[];
+  isLoadingStylists: boolean;
 }
 
 export interface NewBookingData {
@@ -28,7 +28,6 @@ export interface NewBookingData {
   customerName: string;
   email: string;
   gender?: string;
-  // REPLACED `serviceIds` and `stylistId` with the array below
   serviceAssignments: { serviceId: string; stylistId: string; guestName?: string }[];
   date: string;
   time: string;
@@ -38,7 +37,7 @@ export interface NewBookingData {
 }
 
 interface AppointmentFormData {
-  customerId?: string; // This now correctly allows string or undefined
+  customerId?: string;
   phoneNumber: string;
   customerName: string;
   email: string;
@@ -95,12 +94,11 @@ interface CustomerDetails {
 interface BookAppointmentFormProps {
   isOpen: boolean;
   onClose: () => void;
-  // MODIFIED: The function now expects the new data structure.
   onBookAppointment: (data: NewBookingData) => Promise<void>;
 }
 
 // ===================================================================================
-//  CUSTOMER HISTORY MODAL & CUSTOMER DETAIL PANEL
+//  CUSTOMER HISTORY MODAL & CUSTOMER DETAIL PANEL (No changes here)
 // ===================================================================================
 
 const CustomerHistoryModal: React.FC<{
@@ -135,8 +133,6 @@ const CustomerHistoryModal: React.FC<{
             <XMarkIcon className="w-6 h-6" />
           </button>
         </div>
-
-        {/* Customer Summary */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
           <div className="text-center">
             <div className="text-2xl font-bold text-blue-600">{customer.appointmentHistory.length}</div>
@@ -144,10 +140,7 @@ const CustomerHistoryModal: React.FC<{
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600">
-              ₹{customer.appointmentHistory
-                .filter(apt => apt.status === 'Paid')
-                .reduce((sum, apt) => sum + apt.totalAmount, 0)
-                .toFixed(0)}
+              ₹{totalSpent.toFixed(0)}
             </div>
             <div className="text-sm text-gray-600">Total Spent</div>
           </div>
@@ -162,8 +155,6 @@ const CustomerHistoryModal: React.FC<{
             <div className="text-sm text-gray-600">Member</div>
           </div>
         </div>
-
-        {/* Barcode Display */}
         {customer.membershipBarcode && (
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-center gap-3">
@@ -175,8 +166,6 @@ const CustomerHistoryModal: React.FC<{
             </div>
           </div>
         )}
-
-        {/* Appointment History */}
         <div>
           <h3 className="text-lg font-semibold mb-4">Appointment History</h3>
           {customer.appointmentHistory.length === 0 ? (
@@ -427,13 +416,12 @@ export default function BookAppointmentForm({
   onClose,
   onBookAppointment
 }: BookAppointmentFormProps) {
-  // Use a temporary data structure for the form state
 const initialFormData: AppointmentFormData = {
   customerId: undefined,
   phoneNumber: '',
   customerName: '',
   email: '',
-  gender: '', // The empty string is valid for the initial state
+  gender: '',
   date: '',
   time: '',
   notes: '',
@@ -443,34 +431,27 @@ const initialFormData: AppointmentFormData = {
   const [formData, setFormData] = useState<AppointmentFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
   const [serviceAssignments, setServiceAssignments] = useState<ServiceAssignmentState[]>([]);
-
-  // START: MODIFIED CODE - State for assignable staff
   const [assignableStaff, setAssignableStaff] = useState<StylistFromAPI[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
-  // END: MODIFIED CODE
-
+  
+  // MODIFICATION: State for the complete list of services
+  const [allServices, setAllServices] = useState<ServiceFromAPI[]>([]);
   const [filteredServices, setFilteredServices] = useState<ServiceFromAPI[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
-  const debouncedServiceSearch = useDebounce(serviceSearch, 300);
-
+  const debouncedServiceSearch = useDebounce(serviceSearch, 200); // Faster debounce for local search
+  
   const [customerSearchResults, setCustomerSearchResults] = useState<CustomerSearchResult[]>([]);
   const [isSearchingCustomers, setIsSearchingCustomers] = useState(false);
   const [isCustomerSelected, setIsCustomerSelected] = useState(false);
-
   const [selectedCustomerDetails, setSelectedCustomerDetails] = useState<CustomerDetails | null>(null);
   const [isLoadingCustomerDetails, setIsLoadingCustomerDetails] = useState(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState(false);
-
   const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
-
   const [barcodeQuery, setBarcodeQuery] = useState<string>('');
   const [isSearchingByBarcode, setIsSearchingByBarcode] = useState<boolean>(false);
   const [searchMode, setSearchMode] = useState<'phone' | 'barcode'>('phone');
-
   const [stockIssues, setStockIssues] = useState<any[] | null>(null);
-
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -519,30 +500,58 @@ const initialFormData: AppointmentFormData = {
       setServiceSearch('');
       setFilteredServices([]);
       setCustomerLookupStatus('idle');
-      // START: MODIFIED CODE - Reset staff state
       setAssignableStaff([]);
       setIsLoadingStaff(true);
-      // END: MODIFIED CODE
     }
   }, [isOpen]);
 
+  // MODIFICATION: Fetch all services once when the modal opens
   useEffect(() => {
-    if (!isOpen) return;
-    const fetchServices = async () => {
-      try {
-        const searchQuery = debouncedServiceSearch ? `&search=${encodeURIComponent(debouncedServiceSearch)}` : '';
-        const res = await fetch(`/api/service-items?${searchQuery}`);
-        const data = await res.json();
-        if (data.success) setFilteredServices(data.services);
-        else setFormError('Failed to load services.');
-      } catch (e) {
-        setFormError('Failed to load services.');
+      if (isOpen) {
+          const fetchAllServices = async () => {
+              try {
+                  const res = await fetch(`/api/service-items`);
+                  const data = await res.json();
+                  if (data.success) {
+                      setAllServices(data.services);
+                      // Also set the initial filtered list to show all services sorted by price
+                      setFilteredServices([...data.services].sort((a,b) => a.price - b.price));
+                  } else {
+                      setFormError('Failed to load services.');
+                  }
+              } catch (e) {
+                  setFormError('An error occurred while loading services.');
+              }
+          };
+          fetchAllServices();
+      } else {
+          setAllServices([]);
       }
-    };
-    if (debouncedServiceSearch || serviceSearch === '') {
-      fetchServices();
-    }
-  }, [isOpen, debouncedServiceSearch, serviceSearch]);
+  }, [isOpen]);
+
+  // MODIFICATION: Filter and sort services locally based on the search term
+  useEffect(() => {
+      const query = debouncedServiceSearch.trim().toLowerCase();
+
+      if (!query) {
+          // If no search query, display the whole list, sorted by price
+          const sorted = [...allServices].sort((a, b) => a.price - b.price);
+          setFilteredServices(sorted);
+          return;
+      }
+
+      // Apply the filter logic: check name OR price
+      const filtered = allServices.filter(service =>
+          service.name.toLowerCase().includes(query) ||
+          String(service.price).includes(query)
+      );
+
+      // Sort the filtered results by price
+      const sorted = filtered.sort((a,b) => a.price - b.price);
+      setFilteredServices(sorted);
+
+  }, [debouncedServiceSearch, allServices]);
+
 
   useEffect(() => {
     if (formData.status === 'Checked-In') {
@@ -556,12 +565,9 @@ const initialFormData: AppointmentFormData = {
     );
   };
   
-  // START: REFACTORED CODE - This effect now fetches all assignable staff (stylists & managers)
   useEffect(() => {
-    // Only fetch if the form is open and a date and time have been selected
     if (isOpen && formData.date && formData.time) {
       setIsLoadingStaff(true);
-      // Mark all current assignments as loading and invalidate previous selections
       setServiceAssignments(prev => prev.map(a => ({
         ...a,
         isLoadingStylists: true,
@@ -570,7 +576,6 @@ const initialFormData: AppointmentFormData = {
 
       const fetchAssignableStaff = async () => {
         try {
-          // Call the new, more inclusive API endpoint
           const res = await fetch(`/api/staff?action=listForAssignment`);
           const data = await res.json();
           const staffList = data.success ? data.stylists : [];
@@ -580,7 +585,6 @@ const initialFormData: AppointmentFormData = {
           }
           
           setAssignableStaff(staffList);
-          // Update all existing service assignments with the newly fetched list
           setServiceAssignments(prev => prev.map(a => ({
             ...a,
             availableStylists: staffList,
@@ -590,7 +594,6 @@ const initialFormData: AppointmentFormData = {
         } catch (error) {
           toast.error("Error fetching staff list.");
           setAssignableStaff([]);
-           // Update assignments to show no staff is available
           setServiceAssignments(prev => prev.map(a => ({
             ...a,
             availableStylists: [],
@@ -603,7 +606,6 @@ const initialFormData: AppointmentFormData = {
       
       fetchAssignableStaff();
     } else {
-      // If date/time are cleared, reset the staff lists
       setAssignableStaff([]);
       setServiceAssignments(prev => prev.map(a => ({
         ...a,
@@ -613,7 +615,6 @@ const initialFormData: AppointmentFormData = {
       })));
     }
   }, [isOpen, formData.date, formData.time]);
-  // END: REFACTORED CODE
 
 
   useEffect(() => {
@@ -655,7 +656,6 @@ const initialFormData: AppointmentFormData = {
 
   const fetchAndSetCustomerDetails = async (phone: string) => {
     if (isLoadingCustomerDetails) return;
-
     setIsLoadingCustomerDetails(true);
     setCustomerLookupStatus('searching');
     setCustomerSearchResults([]);
@@ -691,7 +691,6 @@ const initialFormData: AppointmentFormData = {
     else if (phone.length < 10 && customerLookupStatus !== 'idle') {
       setCustomerLookupStatus('idle');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.phoneNumber, isCustomerSelected]);
 
 
@@ -752,16 +751,15 @@ const initialFormData: AppointmentFormData = {
     }
   };
   
-  // MODIFIED: `handleAddService` now uses the shared staff list and loading state.
   const handleAddService = (service: ServiceFromAPI) => {
     if (service && !serviceAssignments.some((a) => a.serviceId === service._id)) {
         const newAssignment: ServiceAssignmentState = {
             _tempId: Date.now().toString(),
             serviceId: service._id,
-            stylistId: '', // Initially unassigned
+            stylistId: '',
             serviceDetails: service,
-            availableStylists: assignableStaff, // Use pre-fetched list
-            isLoadingStylists: isLoadingStaff, // Use shared loading state
+            availableStylists: assignableStaff,
+            isLoadingStylists: isLoadingStaff,
         };
         setServiceAssignments(prev => [...prev, newAssignment]);
         setServiceSearch('');
@@ -772,72 +770,72 @@ const initialFormData: AppointmentFormData = {
     setServiceAssignments(prev => prev.filter(a => a._tempId !== _tempId));
   };
 
-const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-    setStockIssues(null); 
+  const handleSubmit = async (e: FormEvent) => {
+      e.preventDefault();
+      setFormError(null);
+      setStockIssues(null); 
 
-    const { phoneNumber, customerName, date, time, status, gender } = formData;
+      const { phoneNumber, customerName, date, time, status, gender } = formData;
 
-    if (!phoneNumber || !customerName || !date || !time || !status || !gender) {
-        setFormError('Please fill in all customer and schedule details.');
-        return;
-    }
-    if (serviceAssignments.length === 0) {
-        setFormError('Please add at least one service.');
-        return;
-    }
-    if (serviceAssignments.some(a => !a.stylistId)) {
-        setFormError('A staff member must be assigned to every service.');
-        return;
-    }
+      if (!phoneNumber || !customerName || !date || !time || !status || !gender) {
+          setFormError('Please fill in all customer and schedule details.');
+          return;
+      }
+      if (serviceAssignments.length === 0) {
+          setFormError('Please add at least one service.');
+          return;
+      }
+      if (serviceAssignments.some(a => !a.stylistId)) {
+          setFormError('A staff member must be assigned to every service.');
+          return;
+      }
 
-    setIsSubmitting(true);
-    try {
-        const checkPayload = {
-            serviceIds: serviceAssignments.map(a => a.serviceId),
-            customerGender: formData.gender as 'male' | 'female' | 'other',
-        };
+      setIsSubmitting(true);
+      try {
+          const checkPayload = {
+              serviceIds: serviceAssignments.map(a => a.serviceId),
+              customerGender: formData.gender as 'male' | 'female' | 'other',
+          };
 
-        const checkRes = await fetch('/api/appointment/check-consumables', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(checkPayload),
-        });
+          const checkRes = await fetch('/api/appointment/check-consumables', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(checkPayload),
+          });
 
-        const checkData = await checkRes.json();
+          const checkData = await checkRes.json();
 
-        if (!checkRes.ok || !checkData.success) {
-            throw new Error(checkData.message || "Failed to check stock availability.");
-        }
+          if (!checkRes.ok || !checkData.success) {
+              throw new Error(checkData.message || "Failed to check stock availability.");
+          }
 
-        if (checkData.canBook === false) {
-            toast.error("Cannot book: Required items are out of stock. See details below.");
-            setStockIssues(checkData.issues);
-            setIsSubmitting(false);
-            return;
-        }
+          if (checkData.canBook === false) {
+              toast.error("Cannot book: Required items are out of stock. See details below.");
+              setStockIssues(checkData.issues);
+              setIsSubmitting(false);
+              return;
+          }
 
-        const finalAssignments = serviceAssignments.map(a => ({
-            serviceId: a.serviceId,
-            stylistId: a.stylistId,
-            guestName: a.guestName || undefined,
-        }));
+          const finalAssignments = serviceAssignments.map(a => ({
+              serviceId: a.serviceId,
+              stylistId: a.stylistId,
+              guestName: a.guestName || undefined,
+          }));
 
-        const appointmentData: NewBookingData = {
-            ...formData,
-            serviceAssignments: finalAssignments,
-            appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online'
-        };
-        
-        await onBookAppointment(appointmentData);
+          const appointmentData: NewBookingData = {
+              ...formData,
+              serviceAssignments: finalAssignments,
+              appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online'
+          };
+          
+          await onBookAppointment(appointmentData);
 
-    } catch (error: any) {
-        setFormError(error.message || 'An unexpected error occurred.');
-    } finally {
-        setIsSubmitting(false);
-    }
-};
+      } catch (error: any) {
+          setFormError(error.message || 'An unexpected error occurred.');
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
 
   if (!isOpen) return null;
 
@@ -933,7 +931,9 @@ const handleSubmit = async (e: FormEvent) => {
                     <div><label htmlFor="date" className="block text-sm font-medium mb-1.5">Date <span className="text-red-500">*</span></label><input id="date" type="date" name="date" value={formData.date} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                     <div><label htmlFor="time" className="block text-sm font-medium mb-1.5">Time <span className="text-red-500">*</span></label><input id="time" type="time" name="time" value={formData.time} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                   </div>
-                  <div className="mt-5"><label className="block text-sm font-medium mb-1.5">Add Services <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Search for services..." className={`${inputBaseClasses} pr-8`} />{serviceSearch && filteredServices.length > 0 && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{filteredServices.map((service) => (<li key={service._id} onClick={() => handleAddService(service)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer">{service.name} - ₹{service.price}{service.membershipRate && ` (Member: ₹${service.membershipRate})`}</li>))}</ul>)}</div></div>
+                  
+                  {/* MODIFICATION: Updated placeholder text and list rendering */}
+                  <div className="mt-5"><label className="block text-sm font-medium mb-1.5">Add Services <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Search by name or price (e.g., 250)..." className={`${inputBaseClasses} pr-8`} />{serviceSearch && filteredServices.length > 0 && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{filteredServices.map((service) => (<li key={service._id} onClick={() => handleAddService(service)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer flex justify-between"><span>{service.name}</span><span className="font-semibold">₹{service.price}</span></li>))}</ul>)}</div></div>
 
                   <div className="mt-4 space-y-4">
                     {serviceAssignments.map((assignment, index) => (
@@ -987,8 +987,6 @@ const handleSubmit = async (e: FormEvent) => {
                 <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm bg-white border rounded-lg hover:bg-gray-50" disabled={isSubmitting}>Cancel</button>
                 <button type="submit" className="px-5 py-2.5 text-sm text-white bg-gray-800 rounded-lg hover:bg-black flex items-center justify-center min-w-[150px]" disabled={isSubmitting}>{isSubmitting ? (<div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />) : ('Book Appointment')}</button>
               </div>
-
-              
             </form>
 
             <div className="lg:col-span-1 lg:border-l lg:pl-8 mt-8 lg:mt-0">
