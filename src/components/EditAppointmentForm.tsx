@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { XMarkIcon, CurrencyRupeeIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
-// 1. ADD NEW IMPORTS for the searchable dropdown
 import { Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
 
@@ -50,6 +49,7 @@ export default function EditAppointmentForm({
   appointment,
   onUpdateAppointment
 }: EditAppointmentFormProps) {
+  // State variables
   const [formData, setFormData] = useState({
     serviceIds: [] as string[],
     stylistId: '',
@@ -65,8 +65,6 @@ export default function EditAppointmentForm({
   const [isLoadingStylists, setIsLoadingStylists] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // 2. ADD NEW STATE for the service search input
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
 
   const calculateTotals = useCallback(() => {
@@ -87,9 +85,12 @@ export default function EditAppointmentForm({
 
   const { total, membershipSavings } = calculateTotals();
 
+  // This is the main effect hook that runs when the form opens.
+  // It has been updated to fetch both services and the master staff list.
   useEffect(() => {
     if (!isOpen || !appointment) return;
 
+    // Set up initial form data from the appointment prop
     const appointmentDate = new Date(appointment.appointmentDateTime);
     const datePart = appointmentDate.toISOString().split('T')[0];
     const hours = String(appointmentDate.getHours()).padStart(2, '0');
@@ -108,42 +109,58 @@ export default function EditAppointmentForm({
     setSelectedServices(appointment.serviceIds || []);
     setError(null);
 
+    // Fetch all services for the dropdown
     const fetchServices = async () => {
       try {
         const res = await fetch('/api/service-items');
         const data = await res.json();
         if (data.success) setAllServices(data.services);
-      } catch (e) { console.error('Failed to fetch services:', e); }
+      } catch (e) {
+        console.error('Failed to fetch services:', e);
+        setError('Could not load services.');
+      }
     };
+
+    // REFACTORED: Fetch all assignable staff (stylists) using the new, static endpoint
+    const fetchAssignableStaff = async () => {
+      setIsLoadingStylists(true);
+      try {
+        const res = await fetch(`/api/staff?action=listForAssignment`);
+        const data = await res.json();
+        
+        let staffList: StylistFromAPI[] = [];
+        if (data.success) {
+          staffList = data.stylists; // Assuming the API returns a 'stylists' array
+        } else {
+          toast.error("Failed to load staff list.");
+        }
+        
+        // IMPORTANT: Ensure the currently assigned stylist is always in the list.
+        // This handles cases where the assigned stylist might not be in the default list
+        // but should still be a selectable option.
+        const currentStylist = appointment.stylistId;
+        if (currentStylist && !staffList.some(s => s._id === currentStylist._id)) {
+          staffList.unshift(currentStylist); // Add the current stylist to the front
+        }
+
+        setAvailableStylists(staffList);
+
+      } catch (err: any) {
+        setError("Could not fetch staff list.");
+        // As a fallback, ensure the current stylist is still selectable
+        setAvailableStylists(appointment.stylistId ? [appointment.stylistId] : []);
+      } finally {
+        setIsLoadingStylists(false);
+      }
+    };
+
+    // Call both async functions
     fetchServices();
+    fetchAssignableStaff();
+
   }, [isOpen, appointment]);
 
-  const findAvailableStylists = useCallback(async () => {
-    if (!formData.date || !formData.time || formData.serviceIds.length === 0) {
-      setAvailableStylists(appointment?.stylistId ? [appointment.stylistId] : []);
-      return;
-    }
-    setIsLoadingStylists(true);
-    try {
-      const serviceQuery = formData.serviceIds.map((id) => `serviceIds=${id}`).join('&');
-      const res = await fetch(`/api/stylists/available?date=${formData.date}&time=${formData.time}&${serviceQuery}&appointmentId=${appointment?.id}`);
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Could not fetch stylists.');
-
-      const currentStylistInList = data.stylists.some((s: any) => s._id === appointment?.stylistId?._id);
-      if (!currentStylistInList && appointment?.stylistId) {
-        data.stylists.unshift(appointment.stylistId);
-      }
-      setAvailableStylists(data.stylists);
-    } catch (err: any) {
-      setError(err.message);
-      setAvailableStylists(appointment?.stylistId ? [appointment.stylistId] : []);
-    } finally {
-      setIsLoadingStylists(false);
-    }
-  }, [formData.date, formData.time, formData.serviceIds, appointment]);
-
-  useEffect(() => { findAvailableStylists(); }, [findAvailableStylists]);
+  // REMOVED: The old dynamic stylist fetching logic (`findAvailableStylists` and its useEffect) is no longer here.
 
   const handleAddService = (serviceId: string) => {
     if (!serviceId) return;
@@ -179,7 +196,6 @@ export default function EditAppointmentForm({
     }
   };
 
-  // 3. ADD NEW FILTERING LOGIC for the service search
   const filteredServices =
     serviceSearchQuery === ''
       ? allServices
@@ -262,7 +278,7 @@ export default function EditAppointmentForm({
             </div>
           </div>
 
-          {/* 4. REPLACEMENT: The old <select> is replaced with the new <Combobox> */}
+          {/* Searchable Service Dropdown */}
           <div>
             <label className="block text-sm font-medium mb-1">Services</label>
             <Combobox onChange={handleAddService} value="">
@@ -311,7 +327,7 @@ export default function EditAppointmentForm({
                 )}
               </Combobox.Options>
             </Combobox>
-            {/* The list of selected services renders below */}
+            {/* Selected services list */}
             <div className="mt-2 space-y-2">
               {selectedServices.map((service) => {
                 const isMember = appointment.customerId.isMembership;
@@ -339,18 +355,27 @@ export default function EditAppointmentForm({
               })}
             </div>
           </div>
-          {/* END OF REPLACEMENT */}
-
+         
+          {/* Stylist Dropdown */}
           <div>
             <label className="block text-sm font-medium mb-1">Stylist</label>
-            <select value={formData.stylistId} onChange={(e) => setFormData(prev => ({ ...prev, stylistId: e.target.value }))} className={inputClasses} disabled={isLoadingStylists} required>
-              {isLoadingStylists ? (<option>Loading stylists...</option>) : (
-                availableStylists.map((stylist) => (
-                  <option key={stylist._id} value={stylist._id}>
-                    {stylist.name}
-                    {stylist._id === appointment.stylistId?._id && ' (Current)'}
-                  </option>
-                ))
+            <select
+                value={formData.stylistId}
+                onChange={(e) => setFormData(prev => ({ ...prev, stylistId: e.target.value }))}
+                className={inputClasses}
+                disabled={isLoadingStylists}
+                required
+            >
+              {isLoadingStylists ? (<option>Loading staff...</option>) : (
+                <>
+                  <option value="" disabled>Select a staff member</option>
+                  {availableStylists.map((stylist) => (
+                    <option key={stylist._id} value={stylist._id}>
+                      {stylist.name}
+                      {stylist._id === appointment.stylistId?._id && ' (Current)'}
+                    </option>
+                  ))}
+                </>
               )}
             </select>
           </div>

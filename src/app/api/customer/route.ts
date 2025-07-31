@@ -1,24 +1,15 @@
-// /api/customer/route.ts
+// FILE: /api/customer/route.ts - COMPLETE & FINAL
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
-import Appointment from '@/models/Appointment';
-import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import mongoose from 'mongoose';
-
-// --- (1) IMPORT THE NEW SEARCH & ENCRYPTION FUNCTIONS ---
-// Import the new functions for creating the secure search indexes.
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
-// Import the encryption function for creating new customers.
-import { encrypt } from '@/lib/crypto';
+import { encrypt, decrypt } from '@/lib/crypto';
 
-// ===================================================================================
-//  GET: Handler for searching and listing customers (UPDATED)
-// ===================================================================================
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ)) {
@@ -28,187 +19,143 @@ export async function GET(req: Request) {
     try {
       await connectToDatabase();
       const { searchParams } = new URL(req.url);
+      
       const page = parseInt(searchParams.get('page') || '1', 10);
       const limit = parseInt(searchParams.get('limit') || '10', 10);
-      const searchQuery = searchParams.get('search')?.trim(); // Trim whitespace from search query
       const skip = (page - 1) * limit;
-  
-      let query: any = { isActive: true };
-  
-      // --- (2) ENHANCED SEARCH LOGIC ---
-      // This block now intelligently handles searches for both phone numbers and names.
-      if (searchQuery) {
-        // Test if the search query consists only of digits.
-        const isNumeric = /^\d+$/.test(searchQuery);
+      const searchQuery = searchParams.get('search')?.trim();
+      
+      const statusFilter = searchParams.get('status');
+      const isMemberFilter = searchParams.get('isMember');
+      const lastVisitFrom = searchParams.get('lastVisitFrom');
+      const lastVisitTo = searchParams.get('lastVisitTo');
+      const genderFilter = searchParams.get('gender');
+      const birthdayMonthFilter = searchParams.get('birthdayMonth');
+      const nonReturningDaysParam = searchParams.get('nonReturningDays');
 
-        if (isNumeric) {
-          // --- If it's a number, perform a partial, secure search on the phone number ---
-          // This creates the same hash from the user's input that we store in the index.
-          const searchHash = createBlindIndex(searchQuery);
-          // This query is extremely fast because `phoneSearchIndex` is indexed in your schema.
-          query.phoneSearchIndex = searchHash;
-        } else {
-          // --- If it contains letters, perform a partial, case-insensitive search on the name ---
-          query.searchableName = { $regex: searchQuery, $options: 'i' };
-        }
+      const pipeline: mongoose.PipelineStage[] = [];
+      const initialMatchConditions: any[] = [{ isActive: true }];
+
+      if (searchQuery) {
+        const isNumeric = /^\d+$/.test(searchQuery);
+        if (isNumeric) { initialMatchConditions.push({ phoneSearchIndex: createBlindIndex(searchQuery) }); } 
+        else { initialMatchConditions.push({ searchableName: { $regex: searchQuery, $options: 'i' } }); }
       }
-      // If there's no searchQuery, the `query` object remains `{ isActive: true }`,
-      // which will correctly list all active customers.
-  
-      // --- The rest of your data aggregation logic remains unchanged ---
-      const [customersFromDb, totalCustomers] = await Promise.all([
-        Customer.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-        Customer.countDocuments(query)
-      ]);
+      if (isMemberFilter) { initialMatchConditions.push({ isMembership: isMemberFilter === 'true' }); }
+      if (genderFilter) { initialMatchConditions.push({ gender: { $regex: `^${genderFilter}$`, $options: 'i' } }); }
+      if (birthdayMonthFilter) { initialMatchConditions.push({ $expr: { $eq: [{ $month: { $toDate: "$dob" } }, parseInt(birthdayMonthFilter, 10)] } }); }
       
-      const customerIds = customersFromDb.map(c => c._id);
-  
-      const [latestAppointments, loyaltyPointsData] = await Promise.all([
-        Appointment.aggregate([
-          { $match: { customerId: { $in: customerIds } } },
-          { $addFields: { unifiedDate: { $ifNull: ["$appointmentDateTime", "$date"] } } },
-          { $sort: { unifiedDate: -1 } },
-          {
-            $lookup: {
-              from: 'serviceitems',
-              localField: 'serviceIds',
-              foreignField: '_id',
-              as: 'populatedServices'
-            }
-          },
-          { 
-            $group: { 
-              _id: '$customerId', 
-              lastAppointmentDate: { $first: '$unifiedDate' },
-              lastServicesDetails: { $first: '$populatedServices' }
-            } 
-          }
-        ]),
-        LoyaltyTransaction.aggregate([
-          { $match: { customerId: { $in: customerIds } } },
-          { 
-            $group: { 
-              _id: '$customerId', 
-              totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } }
-            }
-          }
-        ])
-      ]);
-  
-      const appointmentMap = new Map(latestAppointments.map((a: any) => [a._id.toString(), a]));
-      const loyaltyMap = new Map(loyaltyPointsData.map((l: any) => [l._id.toString(), l.totalPoints]));
-      
+      pipeline.push({ $match: { $and: initialMatchConditions } });
+
+      pipeline.push({ $lookup: { from: 'appointments', localField: '_id', foreignField: 'customerId', as: 'appointments' } });
       const twoMonthsAgo = new Date();
       twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
-  
-      const customersWithDetails = customersFromDb.map((customer: any) => {
-        const latestAppointmentDetails = appointmentMap.get(customer._id.toString());
-        const loyaltyPoints = loyaltyMap.get(customer._id.toString()) || 0;
-        let status: 'Active' | 'Inactive' | 'New';
-  
-        if (latestAppointmentDetails) {
-          status = new Date(latestAppointmentDetails.lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
-        } else {
-          status = (customer.createdAt && new Date(customer.createdAt) < twoMonthsAgo) ? 'Inactive' : 'New';
+      pipeline.push({
+        $addFields: {
+          lastAppointment: { $arrayElemAt: [ { $filter: { input: "$appointments", as: "appt", cond: { $eq: ["$$appt.appointmentDateTime", { $max: "$appointments.appointmentDateTime" }] } } }, 0 ] },
+          status: { $let: { vars: { lastApptDate: { $max: "$appointments.appointmentDateTime" } }, in: { $cond: { if: { $gt: ["$$lastApptDate", null] }, then: { $cond: { if: { $gte: ["$$lastApptDate", twoMonthsAgo] }, then: "Active", else: "Inactive" } }, else: "New" } } } }
         }
-        
-        const finalCustomerObject = {
-          ...customer,
-          id: customer._id.toString(),
-          status: status,
-          loyaltyPoints: loyaltyPoints,
-          appointmentHistory: latestAppointmentDetails ? [{
-              date: latestAppointmentDetails.lastAppointmentDate,
-              services: latestAppointmentDetails.lastServicesDetails?.map((s: any) => s.name) || [],
-              _id: '', id: '', status: '', totalAmount: 0, stylistName: ''
-          }] : [],
-        };
-        
-        return finalCustomerObject;
       });
-  
+      
+      const postMatchConditions: any[] = [];
+      
+      if (statusFilter === 'Non-returning') {
+          const nonReturningDays = parseInt(nonReturningDaysParam || '90', 10);
+          if (!isNaN(nonReturningDays) && nonReturningDays > 0) {
+              const thresholdDate = new Date();
+              thresholdDate.setDate(thresholdDate.getDate() - nonReturningDays);
+              postMatchConditions.push({ 'lastAppointment.appointmentDateTime': { $lt: thresholdDate, $ne: null } });
+          }
+      } else if (statusFilter) {
+          postMatchConditions.push({ status: statusFilter });
+      }
+
+      if (lastVisitFrom || lastVisitTo) {
+          const dateCondition: any = {};
+          if (lastVisitFrom) { dateCondition.$gte = new Date(lastVisitFrom); }
+          if (lastVisitTo) {
+              const toDate = new Date(lastVisitTo);
+              toDate.setDate(toDate.getDate() + 1);
+              dateCondition.$lt = toDate;
+          }
+          postMatchConditions.push({ 'lastAppointment.appointmentDateTime': dateCondition });
+      }
+      
+      if (postMatchConditions.length > 0) {
+        pipeline.push({ $match: { $and: postMatchConditions } });
+      }
+      
+      const facetStage: mongoose.PipelineStage.Facet = {
+        $facet: {
+          metadata: [{ $count: 'total' }],
+          data: [
+            { $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit },
+            { $lookup: { from: 'serviceitems', localField: 'lastAppointment.serviceIds', foreignField: '_id', as: 'lastServicesDetails' } },
+            { $lookup: { from: "loyaltytransactions", localField: "_id", foreignField: "customerId", as: "loyaltyData" } },
+            { $project: {
+                name: 1, phoneNumber: 1, email: 1, gender: 1, dob: 1, isMembership: 1, membershipBarcode: 1, createdAt: 1, status: 1,
+                lastVisitDate: '$lastAppointment.appointmentDateTime',
+                lastServices: '$lastServicesDetails.name',
+                loyaltyPoints: { $reduce: { input: "$loyaltyData", initialValue: 0, in: { $add: ["$$value", { $cond: [{ $eq: ["$$this.type", "Credit"] }, "$$this.points", { $multiply: ["$$this.points", -1] }] } ] } } }
+              }
+            }
+          ]
+        }
+      };
+      pipeline.push(facetStage);
+      
+      const [result] = await Customer.aggregate(pipeline);
+      const totalCustomers = result.metadata[0] ? result.metadata[0].total : 0;
+      const customersFromDb = result.data;
+      const customersWithDetails = customersFromDb.map((customer: any) => ({
+        ...customer,
+        name: customer.name ? decrypt(customer.name) : 'N/A',
+        phoneNumber: customer.phoneNumber ? decrypt(customer.phoneNumber) : '',
+        email: customer.email ? decrypt(customer.email) : '',
+        id: customer._id.toString(),
+        appointmentHistory: customer.lastVisitDate ? [{ date: customer.lastVisitDate, services: customer.lastServices || [], _id: '', id: '', status: '', totalAmount: 0, stylistName: '' }] : [],
+      }));
       const totalPages = Math.ceil(totalCustomers / limit);
   
-      return NextResponse.json({
-        success: true,
-        customers: customersWithDetails,
-        pagination: { totalCustomers, totalPages, currentPage: page, limit }
-      });
+      return NextResponse.json({ success: true, customers: customersWithDetails, pagination: { totalCustomers, totalPages, currentPage: page, limit } });
   
-    } catch (error: any) {
+    } catch (error: any)      {
       console.error("API Error fetching customers:", error);
-      return NextResponse.json({ success: false, message: "Failed to fetch customers" }, { status: 500 });
+      return NextResponse.json({ success: false, message: `Failed to fetch customers: ${error.message}` }, { status: 500 });
     }
 }
 
-
-// ===================================================================================
-//  POST: Handler for creating a customer (UPDATED)
-// ===================================================================================
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
-  
   try {
     await connectToDatabase();
     const body = await req.json();
-    
     if (!body.name || !body.phoneNumber) {
         return NextResponse.json({ success: false, message: 'Name and Phone Number are required.' }, { status: 400 });
     }
-
-    // --- (3) PREPARE ALL DATA, INCLUDING THE NEW SEARCH INDEX ---
+    if (body.gender) { body.gender = body.gender.toLowerCase(); }
     const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
-    
-    // Create the hash for exact-match duplicate checks (this is still useful).
     const phoneHash = createBlindIndex(normalizedPhoneNumber);
-
-    // --- Generate the array of searchable hashes for partial search ---
     const phoneSearchIndexes = generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram));
-
-    // --- Check for Duplicates using the exact-match hash ---
     const existingCustomer = await Customer.findOne({ phoneHash });
     if (existingCustomer) {
-        return NextResponse.json({ 
-            success: false, 
-            message: 'A customer with this phone number already exists.', 
-            exists: true, 
-            customer: existingCustomer
-        }, { status: 409 });
+        return NextResponse.json({ success: false, message: 'A customer with this phone number already exists.', exists: true, customer: existingCustomer }, { status: 409 });
     }
-
-    // --- (4) CREATE CUSTOMER DOCUMENT WITH THE NEW `phoneSearchIndex` FIELD ---
     const newCustomerData = {
-      // Encrypt sensitive fields
-      name: encrypt(body.name),
-      phoneNumber: encrypt(normalizedPhoneNumber),
-      email: body.email ? encrypt(body.email) : undefined,
-
-      // Add the required search and index fields
-      phoneHash, // For exact matches
-      searchableName: body.name.toLowerCase(),
-      last4PhoneNumber: normalizedPhoneNumber.slice(-4),
-      phoneSearchIndex: phoneSearchIndexes, // <-- THE NEWLY GENERATED INDEXES ARE ADDED HERE
-      
-      // Add other optional fields from the form
-      dob: body.dob || undefined,
-      gender: body.gender || undefined,
-      survey: body.survey || undefined,
+      name: encrypt(body.name), phoneNumber: encrypt(normalizedPhoneNumber), email: body.email ? encrypt(body.email) : undefined,
+      phoneHash, searchableName: body.name.toLowerCase(), last4PhoneNumber: normalizedPhoneNumber.slice(-4), phoneSearchIndex: phoneSearchIndexes,
+      dob: body.dob || undefined, gender: body.gender || undefined, survey: body.survey || undefined,
     };
-
     const newCustomer = await Customer.create(newCustomerData);
-
-    // The 'post' middleware on your model will decrypt fields before sending the response.
     return NextResponse.json({ success: true, data: newCustomer }, { status: 201 });
-
   } catch (error: any) {
     console.error("API Error creating customer:", error);
     if (error.name === 'ValidationError') {
       return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
     }
-    // Handle specific duplicate key errors (e.g., for email)
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
       return NextResponse.json({ success: false, message: `A customer with this ${field} already exists.` }, { status: 409 });
