@@ -8,6 +8,7 @@ import IncentiveRule from '@/models/IncentiveRule';
 
 export const dynamic = 'force-dynamic';
 
+// Define the rule interface here to ensure type safety within this file
 interface IRule {
   type: 'daily' | 'monthly';
   target: { multiplier: number };
@@ -15,6 +16,7 @@ interface IRule {
   incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
 }
 
+// Helper functions (unchanged)
 function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -56,10 +58,13 @@ export async function GET(request: Request, { params }: { params: { staffId: str
     const targetDate = new Date(Date.UTC(year, month - 1, day));
 
     const dailySaleRecord = await DailySale.findOne({ staff: staffId, date: targetDate }).lean<IDailySale>();
-    let dailyResult = {};
+    
+    // Rename to avoid confusion with the monthly result object
+    let dailyCalculationResult = {};
 
     if (dailySaleRecord) {
-      // ✨ --- START: Robust Rule Determination Logic ---
+      // ✨ --- START: THIS IS THE CRITICAL CHANGE ---
+      // This logic now correctly uses the snapshotted rule from your model.
       let dailyRuleToUse: IRule;
       let ruleUsedSource = '';
 
@@ -68,15 +73,15 @@ export async function GET(request: Request, { params }: { params: { staffId: str
         ruleUsedSource = 'Snapshotted Rule (Historical)';
         dailyRuleToUse = { type: 'daily', ...dailySaleRecord.appliedRule };
       } else {
-        // PRIORITY 2 (FALLBACK): Only triggered for old data without a snapshot.
-        // After running the data migration script, this path should rarely be taken.
+        // PRIORITY 2 (FALLBACK): For old data without a snapshot.
         console.warn(`[Incentive Calc] Fallback rule used for staff ${staffId} on ${dateQuery}. Record is missing 'appliedRule'.`);
         ruleUsedSource = 'Current Rule (Fallback)';
         const defaultDaily: IRule = { type: 'daily', target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
         const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily' }).lean<IRule>();
-        dailyRuleToUse = dailyRuleDb ? { ...defaultDaily, ...dailyRuleDb, incentive: { ...defaultDaily.incentive, ...(dailyRuleDb.incentive || {}) } } : defaultDaily;
+        // Merge DB rule with default to prevent crashes if a field is missing
+        dailyRuleToUse = dailyRuleDb ? { ...defaultDaily, ...dailyRuleDb, sales: {...defaultDaily.sales, ...(dailyRuleDb.sales || {})}, incentive: { ...defaultDaily.incentive, ...(dailyRuleDb.incentive || {}) } } : defaultDaily;
       }
-      // ✨ --- END: Rule Determination Logic ---
+      // ✨ --- END: CRITICAL CHANGE ---
 
       const daysInMonth = getDaysInMonth(targetDate.getUTCFullYear(), targetDate.getUTCMonth());
       const dailyTarget = (staff.salary * dailyRuleToUse.target.multiplier) / daysInMonth;
@@ -93,9 +98,9 @@ export async function GET(request: Request, { params }: { params: { staffId: str
       
       const { incentive, isTargetMet, appliedRate } = calculateIncentiveWithDoubleTarget(dailyAchievedValue, dailyTarget, dailyRuleToUse, dailyBaseForIncentive);
       
-      dailyResult = { 
+      dailyCalculationResult = { 
         targetValue: dailyTarget, 
-        achievedValue: dailyAchievedValue, 
+        totalSaleValue: dailyAchievedValue, // Renamed for clarity on the frontend
         incentiveAmount: incentive,
         isTargetMet, 
         appliedRate,
@@ -106,12 +111,12 @@ export async function GET(request: Request, { params }: { params: { staffId: str
     // --- Incentive 2: Monthly Target Calculation (No changes needed here) ---
     const defaultMonthly: IRule = { type: 'monthly', target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: false, reviewNameValue: 0, reviewPhotoValue: 0 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'serviceSaleOnly' } };
     const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly' }).lean<IRule>();
-    const monthlyRule: IRule = monthlyRuleDb ? { ...defaultMonthly, ...monthlyRuleDb, incentive: { ...defaultMonthly.incentive, ...(monthlyRuleDb.incentive || {}) } } : defaultMonthly;
+    const monthlyRule: IRule = monthlyRuleDb ? { ...defaultMonthly, ...monthlyRuleDb, sales: {...defaultMonthly.sales, ...(monthlyRuleDb.sales || {})}, incentive: { ...defaultMonthly.incentive, ...(monthlyRuleDb.incentive || {}) } } : defaultMonthly;
     
     const startDate = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), 1));
     const endDate = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 0, 23, 59, 59));
     
-    const monthlySalesData = await DailySale.find({ staff: staffId, date: { $gte: startDate, $lte: endDate } });
+    const monthlySalesData = await DailySale.find({ staff: staffId, date: { $gte: startDate, $lte: endDate } }).lean();
     
     const totalMonthlyServiceSale = monthlySalesData.reduce((sum, sale) => sum + sale.serviceSale, 0);
     const totalMonthlyProductSale = monthlySalesData.reduce((sum, sale) => sum + sale.productSale, 0);
@@ -123,18 +128,17 @@ export async function GET(request: Request, { params }: { params: { staffId: str
     const { incentive: monthlyIncentive, isTargetMet: isMonthlyTargetMet, appliedRate: monthlyAppliedRate } = calculateIncentiveWithDoubleTarget(monthlyAchievedValue, monthlyTarget, monthlyRule, monthlyBaseForIncentive);
     
     const monthlyResult = { 
-      targetValue: monthlyTarget, 
-      achievedValue: monthlyAchievedValue, 
+      monthlyTarget: monthlyTarget, // Renamed for clarity
+      totalMonthlyServiceSale: totalMonthlyServiceSale, // Renamed for clarity
       incentiveAmount: monthlyIncentive, 
       isTargetMet: isMonthlyTargetMet, 
       appliedRate: monthlyAppliedRate, 
-      totalMonthlyServiceSale 
     };
 
     return NextResponse.json({
       staffName: staff.name,
       calculationDate: targetDate.toISOString().split('T')[0],
-      incentive1_daily: dailyResult,
+      incentive1_daily: dailyCalculationResult,
       incentive2_monthly: monthlyResult,
     });
 

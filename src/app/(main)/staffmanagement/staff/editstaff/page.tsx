@@ -16,8 +16,6 @@ import 'react-toastify/dist/ReactToastify.css';
 import { useStaff, StaffMember, UpdateStaffPayload, PositionOption } from '../../../../../context/StaffContext';
 import Button from '../../../../../components/ui/Button';
 
-// ... (Interfaces and other components remain the same) ...
-
 interface EditStaffFormData {
   staffIdNumber: string;
   name: string;
@@ -54,6 +52,47 @@ const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose
     );
   };
   
+  // --- NEW HELPER FUNCTION FOR IMAGE COMPRESSION --- (Duplicated, but necessary for isolated pages)
+const compressImage = (file: File, maxWidth: number, maxHeight: number, quality: number): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+  
+          if (width > height) {
+            if (width > maxWidth) {
+              height *= maxWidth / width;
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width *= maxHeight / height;
+              height = maxHeight;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+  
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+  
+          resolve(canvas.toDataURL("image/jpeg", quality)); // Using JPEG for better compression
+        };
+      };
+      reader.onerror = (error) => {
+        console.error("FileReader error: ", error);
+        toast.error("Failed to read file.");
+        resolve(file.type.startsWith('image/') ? '' : event?.target?.result as string); // Return empty or original if error
+      };
+    });
+  };
+
   const FileUploadInput: React.FC<{
     id: string;
     label: string;
@@ -63,7 +102,7 @@ const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose
     onView: () => void;
     isSubmitting: boolean;
   }> = ({ id, label, icon, fileData, onFileChange, onView, isSubmitting }) => {
-    const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
         if (file.size > 5 * 1024 * 1024) { 
@@ -71,11 +110,26 @@ const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose
           e.target.value = '';
           return;
         }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          onFileChange(reader.result as string);
-        };
-        reader.readAsDataURL(file);
+
+        if (file.type.startsWith('image/')) {
+            try {
+              const compressedDataUrl = await compressImage(file, 1024, 1024, 0.7); // Max 1024px, 70% quality
+              onFileChange(compressedDataUrl);
+            } catch (error) {
+              console.error("Image compression failed:", error);
+              toast.error("Failed to process image for upload.");
+              onFileChange(null);
+            }
+          } else if (file.type === 'application/pdf') {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              onFileChange(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+          } else {
+            toast.error("Unsupported file type. Please upload an image or PDF.");
+            e.target.value = "";
+          }
       }
     };
   
@@ -135,7 +189,6 @@ const EditStaffContent: React.FC = () => {
 
   const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
 
-  // ... (useEffect for fetching data and other handlers remain the same) ...
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
   }, [contextPositionOptions]);
@@ -199,13 +252,19 @@ const EditStaffContent: React.FC = () => {
       setFormData(prevFormData => ({ ...prevFormData, [name]: value, }));
   };
 
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
           if (file.size > 2 * 1024 * 1024) { toast.error("Image size should not exceed 2MB."); e.target.value = ''; return; }
-          const reader = new FileReader();
-          reader.onloadend = () => { setFormData((prev) => ({ ...prev, image: reader.result as string })); };
-          reader.readAsDataURL(file);
+          
+          try {
+            const compressedDataUrl = await compressImage(file, 800, 800, 0.8); // Max 800px, 80% quality
+            setFormData((prev) => ({ ...prev, image: compressedDataUrl }));
+          } catch (error) {
+            console.error("Profile image compression failed:", error);
+            toast.error("Failed to process profile image.");
+            setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE }));
+          }
       }
   };
 

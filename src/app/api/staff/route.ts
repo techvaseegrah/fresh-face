@@ -1,19 +1,44 @@
+// src/app/api/staff/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
-// The Stylist model is no longer used in this file.
-// import Stylist from '../../../models/Stylist';
 import ShopSetting from '../../../models/ShopSetting';
 import mongoose, { Types } from 'mongoose';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+import cloudinary from '../../../lib/cloudinary'; 
 
 // Helper function to validate MongoDB ObjectId string
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
 
 // Define a more specific type for lean results that include _id
 type LeanStaffDocument = Omit<IStaff, keyof mongoose.Document<Types.ObjectId>> & { _id: Types.ObjectId };
+
+/**
+ * Uploads an image to Cloudinary if it's a Base64 string.
+ * @param {string | undefined | null} imageData - The image data (Base64 string) or an existing URL.
+ * @param {string} folder - The folder in Cloudinary to upload to.
+ * @returns {Promise<string | null>} The Cloudinary URL or null if no new image was provided.
+ */
+async function uploadImageToCloudinary(imageData: string | undefined | null, folder: string): Promise<string | null> {
+    // Only upload if the imageData is a new Base64 string
+    if (imageData && imageData.startsWith('data:image')) {
+        try {
+            const result = await cloudinary.uploader.upload(imageData, {
+                folder: folder,
+                resource_type: 'image',
+            });
+            return result.secure_url;
+        } catch (error) {
+            console.error('Cloudinary upload failed:', error);
+            // Throw an error to be caught by the main handler
+            throw new Error('Failed to upload image to Cloudinary.');
+        }
+    }
+    // If it's not a new Base64 string, return it as is (it might be an existing URL or null)
+    return imageData || null;
+}
 
 /**
  * Reads the next available staff ID directly from the settings.
@@ -60,7 +85,7 @@ export async function GET(request: NextRequest) {
             status: 'active',
            position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] }
           },
-          '_id name' // Select only the ID and name fields for the dropdown
+          '_id name'
         )
         .sort({ name: 'asc' })
         .lean<{ _id: Types.ObjectId, name: string }[]>();
@@ -73,6 +98,9 @@ export async function GET(request: NextRequest) {
 
     if (action === 'list') {
       const staffList = await Staff.find({})
+        // Explicitly select all fields required by StaffCard AND StaffDetailSidebar.
+        // This is a minor optimization to make the projection explicit.
+        .select('staffIdNumber name email phone aadharNumber position joinDate salary address image status aadharImage passbookImage agreementImage')
         .sort({ name: 'asc' })
         .lean<LeanStaffDocument[]>();
       return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
@@ -105,10 +133,23 @@ export async function POST(request: NextRequest) {
   await dbConnect();
   try {
     const body = await request.json();
+    
+    // Handle image uploads before validation
+    const [
+        uploadedImageUrl,
+        uploadedAadharUrl,
+        uploadedPassbookUrl,
+        uploadedAgreementUrl,
+    ] = await Promise.all([
+        uploadImageToCloudinary(body.image, 'salon/staff_photos'),
+        uploadImageToCloudinary(body.aadharImage, 'salon/staff_documents'),
+        uploadImageToCloudinary(body.passbookImage, 'salon/staff_documents'),
+        uploadImageToCloudinary(body.agreementImage, 'salon/staff_documents'),
+    ]);
+    
     const { 
         staffIdNumber, 
-        name, email, position, phone, salary, address, image, aadharNumber, joinDate,
-        aadharImage, passbookImage, agreementImage 
+        name, email, position, phone, salary, address, aadharNumber, joinDate,
     } = body;
 
     if (!staffIdNumber || !name || !phone || !position || !aadharNumber) {
@@ -118,7 +159,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Check for duplicates using the ID from the form
     const existingStaff = await Staff.findOne({
         $or: [
             { staffIdNumber: staffIdNumber },
@@ -140,28 +180,24 @@ export async function POST(request: NextRequest) {
     }
 
     const newStaffDoc = new Staff({
-      staffIdNumber: staffIdNumber,
+      staffIdNumber,
       name, 
       email: email || null,
       position, phone, salary, address, aadharNumber, joinDate,
-      image: image || null,
-      aadharImage: aadharImage || null,
-      passbookImage: passbookImage || null,
-      agreementImage: agreementImage || null,
+      image: uploadedImageUrl,
+      aadharImage: uploadedAadharUrl,
+      passbookImage: uploadedPassbookUrl,
+      agreementImage: uploadedAgreementUrl,
       status: 'active',
     });
     const savedStaff = await newStaffDoc.save();
 
-    // After successfully saving the staff member, increment the setting for the next user.
     await ShopSetting.updateOne(
         { key: 'defaultSettings' },
         { $inc: { staffIdBaseNumber: 1 } },
         { upsert: true }
     );
-
-    // The entire block that tried to create and link a Stylist has been removed.
-    // This resolves the validation error.
-
+    
     const staffObject = savedStaff.toObject();
     return NextResponse.json({ success: true, data: {...staffObject, id: savedStaff._id.toString()} }, { status: 201 });
   } catch (error: any) {
@@ -182,7 +218,7 @@ export async function PUT(request: NextRequest) {
 
   await dbConnect();
   const { searchParams } = request.nextUrl;
-  const staffId = searchParams.get('id'); // This is the unique MongoDB _id
+  const staffId = searchParams.get('id');
 
   if (!staffId || !isValidObjectId(staffId)) {
     return NextResponse.json({ success: false, error: 'Valid Staff ID is required' }, { status: 400 });
@@ -194,6 +230,25 @@ export async function PUT(request: NextRequest) {
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 });
     }
+
+    // Handle potential image uploads for PUT request
+    const [
+        uploadedImageUrl,
+        uploadedAadharUrl,
+        uploadedPassbookUrl,
+        uploadedAgreementUrl,
+    ] = await Promise.all([
+        uploadImageToCloudinary(updateData.image, 'salon/staff_photos'),
+        uploadImageToCloudinary(updateData.aadharImage, 'salon/staff_documents'),
+        uploadImageToCloudinary(updateData.passbookImage, 'salon/staff_documents'),
+        uploadImageToCloudinary(updateData.agreementImage, 'salon/staff_documents'),
+    ]);
+
+    // Replace image data with URLs in the update payload
+    updateData.image = uploadedImageUrl;
+    updateData.aadharImage = uploadedAadharUrl;
+    updateData.passbookImage = uploadedPassbookUrl;
+    updateData.agreementImage = uploadedAgreementUrl;
     
     const orConditions: any[] = [];
     if (updateData.staffIdNumber) orConditions.push({ staffIdNumber: updateData.staffIdNumber });

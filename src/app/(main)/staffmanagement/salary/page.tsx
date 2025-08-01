@@ -114,7 +114,7 @@ const PaymentDetailSidebar: React.FC<PaymentDetailSidebarProps> = ({ record, all
                 <History size={20} className="text-slate-500" /> Recent Payment History
               </h4>
               <div className="space-y-3">
-                {recentPastPayments.map(pastRecord => (
+                {recentPastPayments.map((pastRecord: SalaryRecordType) => (
                   <div key={pastRecord.id} onClick={() => onSelectPastPayment(pastRecord)} className="p-3 bg-white border rounded-lg hover:bg-slate-100 hover:shadow-sm cursor-pointer transition-all flex justify-between items-center">
                     <div>
                         <p className="font-bold text-md text-slate-900">₹{pastRecord.netSalary.toLocaleString('en-IN')}</p>
@@ -195,24 +195,24 @@ const Salary: React.FC = () => {
       return Array.from({ length: 10 }, (_, i) => startYear + i);
     }, []);
   
-    const stableFetchSalaryRecords = useCallback((filter: any) => {
-      if (fetchSalaryRecords) fetchSalaryRecords(filter);
-      else console.error("Salary/page.tsx: fetchSalaryRecords from context is undefined!");
-    }, [fetchSalaryRecords]);
-  
     useEffect(() => {
-      stableFetchSalaryRecords({ populateStaff: 'true' });
-    }, [stableFetchSalaryRecords]);
+      if (fetchSalaryRecords) {
+        fetchSalaryRecords({ populateStaff: 'true' });
+      }
+    }, [fetchSalaryRecords]);
     
+    // **OPTIMIZATION 1 START**: Use a Map for faster staff lookups when enriching salary records.
+    // This changes the operation from O(N*M) to O(N+M), which is much faster for large data sets.
     const enrichedSalaryRecords = useMemo(() => {
       if (!salaryRecords.length || !staffMembers.length) {
         return salaryRecords;
       }
+      
+      const staffMap = new Map(staffMembers.map(staff => [staff.id, staff]));
+
       return salaryRecords.map(record => {
-        const fullStaffDetails = staffMembers.find(staff => {
-           const recordStaffId = typeof record.staffId === 'string' ? record.staffId : (record.staffId as any)?.id;
-           return staff.id === recordStaffId;
-        });
+        const recordStaffId = typeof record.staffId === 'string' ? record.staffId : (record.staffId as any)?.id;
+        const fullStaffDetails = staffMap.get(recordStaffId);
   
         if (fullStaffDetails) {
           return { ...record, staffDetails: fullStaffDetails };
@@ -220,6 +220,7 @@ const Salary: React.FC = () => {
         return record;
       });
     }, [salaryRecords, staffMembers]);
+    // **OPTIMIZATION 1 END**
   
     const filteredStaff = useMemo(() => {
       const activeStaff = staffMembers.filter(staff => staff.status === 'active');
@@ -233,21 +234,35 @@ const Salary: React.FC = () => {
       );
     }, [staffMembers, searchTerm]);
     
-    const getSalaryRecord = useCallback((staffId: string): SalaryRecordType | undefined => {
-      return enrichedSalaryRecords.find(r => {
-        const recordStaffId = typeof r.staffId === 'string' ? r.staffId : (r.staffId as any)?.id;
-        return recordStaffId === staffId && r.month === months[currentMonthIndex] && r.year === currentYear;
-      });
-    }, [enrichedSalaryRecords, months, currentMonthIndex, currentYear]);
-  
     const currentMonthProcessedRecords = useMemo(() => enrichedSalaryRecords.filter(r => r.month === months[currentMonthIndex] && r.year === currentYear), [enrichedSalaryRecords, months, currentMonthIndex, currentYear]);
+    
+    // **OPTIMIZATION 2 START**: Create a lookup map for the current month's salary records.
+    // This avoids a slow `find()` operation inside the render loop for each staff member.
+    // Lookups are now O(1) instead of O(N), making the UI much more responsive.
+    const salaryRecordMapForCurrentMonth = useMemo(() => {
+        const recordMap = new Map<string, SalaryRecordType>();
+        for (const record of currentMonthProcessedRecords) {
+            const recordStaffId = typeof record.staffId === 'string' ? record.staffId : (record.staffId as any)?.id;
+            if (recordStaffId) {
+                recordMap.set(recordStaffId, record);
+            }
+        }
+        return recordMap;
+    }, [currentMonthProcessedRecords]);
+    // **OPTIMIZATION 2 END**
+
     const currentMonthPaidRecords = useMemo(() => currentMonthProcessedRecords.filter(r => r.isPaid), [currentMonthProcessedRecords]);
     const allPaidRecords = useMemo(() => enrichedSalaryRecords.filter(r => r.isPaid).sort((a, b) => { if (!a.paidDate || !b.paidDate) return 0; return parseISO(b.paidDate).getTime() - parseISO(a.paidDate).getTime(); }), [enrichedSalaryRecords]);
     const totalSalaryExpense = useMemo(() => currentMonthPaidRecords.reduce((total, r) => total + (r.netSalary ?? 0), 0), [currentMonthPaidRecords]);
     const processedSalariesCount = useMemo(() => currentMonthProcessedRecords.length, [currentMonthProcessedRecords]);
     const paidSalariesCount = useMemo(() => currentMonthPaidRecords.length, [currentMonthPaidRecords]);
     const pendingPaymentsCount = useMemo(() => processedSalariesCount - paidSalariesCount, [processedSalariesCount, paidSalariesCount]);
-    
+
+    // **FIX START**: Create a robust loading state to prevent race conditions.
+    // The page is considered "loading" if the salary API is running, OR if salaries have loaded but staff haven't yet.
+    const isDataLoading = loadingSalary || (salaryRecords.length > 0 && staffMembers.length === 0);
+    // **FIX END**
+
     const openProcessingModal = async (staff: StaffMember, recordToEdit: SalaryRecordType | null = null) => {
       setProcessingStaff(staff);
       setEditingRecord(recordToEdit);
@@ -311,25 +326,11 @@ const Salary: React.FC = () => {
         return;
       }
       
-      // --- START: CUSTOM SALARY CALCULATION LOGIC AS PER REQUIREMENT ---
-      // The API returns standard decimal hours (e.g., 6 hours 3 minutes = 6.05).
-      // The requirement is to convert this to a custom format where minutes are treated as tenths
-      // (e.g., 6 hours 3 minutes -> 6.3) for salary calculation.
-
-      // 1. Deconstruct the standard decimal hours back into hours and minutes.
       const fullHours = Math.floor(actualHoursWorkedFromAPI);
       const minutes = Math.round((actualHoursWorkedFromAPI - fullHours) * 60);
-      
-      // 2. Reconstruct the hours into the custom decimal format (H.M).
       const customDecimalHours = fullHours + (minutes / 10);
-      
-      // 3. Calculate the effective hourly rate based on the monthly salary and target hours.
       const hourlyRate = targetHours > 0 ? fixedSalary / targetHours : 0;
-      
-      // 4. Calculate the base salary using the CUSTOM decimal hours.
-      //    Example: (29996 / 251) * 6.3 = 752.887
       const calculatedBaseSalary = Math.max(0, hourlyRate * customDecimalHours);
-      // --- END: CUSTOM SALARY CALCULATION LOGIC ---
   
       const advanceToDeduct = editingRecord ? editingRecord.advanceDeducted : (advancePayments?.filter(adv => { const idToCompare = typeof adv.staffId === 'string' ? adv.staffId : (adv.staffId as any)?.id; if (idToCompare !== processingStaff.id || adv.status !== 'approved' || !adv.approvedDate) return false; const approvedDate = parseISO(adv.approvedDate); return approvedDate.getMonth() === currentMonthIndex && approvedDate.getFullYear() === currentYear; }).reduce((total, adv) => total + (Number(adv.amount) || 0), 0) || 0);
   
@@ -343,9 +344,7 @@ const Salary: React.FC = () => {
       const positionRate = shopSettings.positionRates?.find((p) => p.positionName === processingStaff.position);
       const otRate = positionRate?.otRate ?? shopSettings.defaultOtRate; 
       const extraDayRate = positionRate?.extraDayRate ?? shopSettings.defaultExtraDayRate;
-      
       const baseSalary = calculatedBaseSalary;
-      
       const otAmount = inputs.otHours * otRate;
       const extraDayPay = inputs.extraDays * extraDayRate;
       const totalEarnings = baseSalary + otAmount + extraDayPay + inputs.foodDeduction;
@@ -375,7 +374,6 @@ const Salary: React.FC = () => {
       finally { setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } })); setProcessingStaff(null); setEditingRecord(null); }
     };
 
-    // ... (rest of the component is unchanged and remains the same as your provided code)
     const handlePayNow = async (record: SalaryRecordType, staff: StaffMember) => {
         if (!record || !staff) return;
         setButtonLoadingStates(prev => ({ ...prev, [staff.id]: { ...prev[staff.id], paying: true } }));
@@ -519,19 +517,22 @@ const Salary: React.FC = () => {
           )}
     
           <div className="space-y-8 p-4 md:p-8 bg-slate-50 min-h-screen">
-            {/* ... rest of the JSX is unchanged ... */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <h1 className="text-3xl font-bold text-slate-800">Salary Management</h1>
                 <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-2 p-2.5 border border-slate-300 rounded-lg bg-white shadow-sm"><Calendar size={18} className="text-slate-600" /><span className="text-sm font-medium text-slate-700">{months[currentMonthIndex]} {currentYear}</span></div>
-                  <Button variant="outline" icon={<FileSpreadsheet size={16}/>} onClick={handleExportExcel} isLoading={isExportingExcel} disabled={loadingSalary || currentMonthPaidRecords.length === 0}>Excel</Button>
-                  <Button variant="black" icon={<Download size={16}/>} onClick={handleExportPDF} isLoading={isExporting} disabled={loadingSalary || currentMonthPaidRecords.length === 0}>PDF</Button>
+                  <Button variant="outline" icon={<FileSpreadsheet size={16}/>} onClick={handleExportExcel} isLoading={isExportingExcel} disabled={isDataLoading || currentMonthPaidRecords.length === 0}>Excel</Button>
+                  <Button variant="black" icon={<Download size={16}/>} onClick={handleExportPDF} isLoading={isExporting} disabled={isDataLoading || currentMonthPaidRecords.length === 0}>PDF</Button>
                 </div>
             </div>
     
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><IndianRupee className="absolute -right-4 -bottom-4 h-28 w-28 text-purple-500/10" /><div className="inline-block p-3 bg-purple-100 rounded-xl mb-4"><IndianRupee className="h-7 w-7 text-purple-600"/></div><p className="text-sm text-slate-500">Total Paid this Month</p><p className="text-3xl font-bold text-slate-800">₹{totalSalaryExpense.toLocaleString('en-IN', {maximumFractionDigits: 0})}</p></Card>
-                <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><CheckCircle className="absolute -right-4 -bottom-4 h-28 w-28 text-teal-500/10" /><div className="inline-block p-3 bg-teal-100 rounded-xl mb-4"><CheckCircle className="h-7 w-7 text-teal-600"/></div><p className="text-sm text-slate-500">Processed Salaries</p><p className="text-3xl font-bold text-slate-800">{processedSalariesCount} <span className="text-lg font-medium text-slate-500">/ {filteredStaff.length}</span></p></Card>
+                <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><CheckCircle className="absolute -right-4 -bottom-4 h-28 w-28 text-teal-500/10" /><div className="inline-block p-3 bg-teal-100 rounded-xl mb-4"><CheckCircle className="h-7 w-7 text-teal-600"/></div><p className="text-sm text-slate-500">Processed Salaries</p>
+                    {/* **FIX START**: Prevent showing "X / 0" during the loading race condition. */}
+                    <p className="text-3xl font-bold text-slate-800">{processedSalariesCount} <span className="text-lg font-medium text-slate-500">/ {isDataLoading && filteredStaff.length === 0 ? '...' : filteredStaff.length}</span></p>
+                    {/* **FIX END** */}
+                </Card>
                 <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><Clock className="absolute -right-4 -bottom-4 h-28 w-28 text-amber-500/10" /><div className="inline-block p-3 bg-amber-100 rounded-xl mb-4"><Clock className="h-7 w-7 text-amber-600"/></div><p className="text-sm text-slate-500">Pending Payments</p><p className="text-3xl font-bold text-slate-800">{pendingPaymentsCount}</p></Card>
             </div>
     
@@ -545,10 +546,11 @@ const Salary: React.FC = () => {
                 </div>
     
                 <div className="p-4 space-y-3">
-                {loadingSalary ? (<div className="text-center py-20 text-slate-500 font-medium">Loading Salary Data...</div>) :
+                {isDataLoading ? (<div className="text-center py-20 text-slate-500 font-medium">Loading Data...</div>) :
                  filteredStaff.length > 0 ? (
                     filteredStaff.map((staff) => {
-                        const record = getSalaryRecord(staff.id);
+                        // **OPTIMIZATION**: Use the pre-calculated Map for an instant O(1) lookup.
+                        const record = salaryRecordMapForCurrentMonth.get(staff.id);
                         const isPaying = buttonLoadingStates[staff.id]?.paying;
                         const isProcessing = buttonLoadingStates[staff.id]?.processing;
                         
