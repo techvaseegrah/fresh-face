@@ -58,21 +58,32 @@ export const authOptions: NextAuthOptions = {
       }
     })
   ],
+
   callbacks: {
+    // This function is called when the JWT is created.
     async jwt({ token, user }) {
+      // `user` is only passed on the initial sign-in.
       if (user) {
+        // We explicitly add the user's database ID and role to the token.
+        // This is clearer than relying on the default 'sub' claim.
+        token.id = user.id;
         token.role = user.role;
       }
       return token;
     },
+
+    // This function is called whenever the session is accessed.
     async session({ session, token }) {
-      if (token) {
-        session.user.id = token.sub;
-        session.user.role = token.role;
+      // We transfer our custom properties from the token to the session object.
+      // This is what `useSession` and `getServerSession` will see.
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as { id: string; name: string; permissions: string[] };
       }
       return session;
     }
   },
+  
   pages: {
     signIn: '/login'
   },
