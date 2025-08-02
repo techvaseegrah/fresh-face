@@ -6,7 +6,7 @@ import Customer from '@/models/customermodel';
 import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
 // --- FIX: IMPORT THE CORRECT STAFF MODEL ---
-import Staff from '@/models/Staff'; // Adjust path if necessary, e.g., '@/models/staffmodel'
+import Staff from '@/models/staff'; // Adjust path if necessary, e.g., '@/models/staffmodel'
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
