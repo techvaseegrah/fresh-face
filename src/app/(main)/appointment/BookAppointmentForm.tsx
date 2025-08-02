@@ -1,4 +1,4 @@
-'use-client';
+'use client';
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
 import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesIcon, TagIcon, GiftIcon, ClockIcon, EyeIcon, QrCodeIcon } from '@heroicons/react/24/solid';
@@ -435,11 +435,10 @@ const initialFormData: AppointmentFormData = {
   const [assignableStaff, setAssignableStaff] = useState<StylistFromAPI[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   
-  // MODIFICATION: State for the complete list of services
   const [allServices, setAllServices] = useState<ServiceFromAPI[]>([]);
   const [filteredServices, setFilteredServices] = useState<ServiceFromAPI[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
-  const debouncedServiceSearch = useDebounce(serviceSearch, 200); // Faster debounce for local search
+  const debouncedServiceSearch = useDebounce(serviceSearch, 200);
   
   const [customerSearchResults, setCustomerSearchResults] = useState<CustomerSearchResult[]>([]);
   const [isSearchingCustomers, setIsSearchingCustomers] = useState(false);
@@ -505,16 +504,14 @@ const initialFormData: AppointmentFormData = {
     }
   }, [isOpen]);
 
-  // MODIFICATION: Fetch all services once when the modal opens
   useEffect(() => {
       if (isOpen) {
           const fetchAllServices = async () => {
               try {
-                  const res = await fetch(`/api/service-items`);
+                  const res = await fetch('/api/service-items');
                   const data = await res.json();
                   if (data.success) {
                       setAllServices(data.services);
-                      // Also set the initial filtered list to show all services sorted by price
                       setFilteredServices([...data.services].sort((a,b) => a.price - b.price));
                   } else {
                       setFormError('Failed to load services.');
@@ -529,24 +526,20 @@ const initialFormData: AppointmentFormData = {
       }
   }, [isOpen]);
 
-  // MODIFICATION: Filter and sort services locally based on the search term
   useEffect(() => {
       const query = debouncedServiceSearch.trim().toLowerCase();
 
       if (!query) {
-          // If no search query, display the whole list, sorted by price
           const sorted = [...allServices].sort((a, b) => a.price - b.price);
           setFilteredServices(sorted);
           return;
       }
 
-      // Apply the filter logic: check name OR price
       const filtered = allServices.filter(service =>
           service.name.toLowerCase().includes(query) ||
           String(service.price).includes(query)
       );
 
-      // Sort the filtered results by price
       const sorted = filtered.sort((a,b) => a.price - b.price);
       setFilteredServices(sorted);
 
@@ -576,7 +569,7 @@ const initialFormData: AppointmentFormData = {
 
       const fetchAssignableStaff = async () => {
         try {
-          const res = await fetch(`/api/staff?action=listForAssignment`);
+          const res = await fetch('/api/staff?action=listForAssignment');
           const data = await res.json();
           const staffList = data.success ? data.stylists : [];
           
@@ -926,13 +919,23 @@ const initialFormData: AppointmentFormData = {
 
                 <fieldset className={fieldsetClasses}>
                   <legend className={legendClasses}>Schedule & Service</legend>
-                  <div className="mt-3"><label htmlFor="status" className="block text-sm font-medium mb-1.5">Status <span className="text-red-500">*</span></label><select id="status" name="status" value={formData.status} onChange={handleChange} className={inputBaseClasses}><option value="Appointment">Appointment (Online Booking)</option><option value="Checked-In">Checked-In (Walk-in Customer)</option></select>{formData.status === 'Checked-In' && (<p className="text-sm text-gray-500 mt-1">Service starts now at {formatTimeIST(formData.time)} on {formatDateIST(formData.date)}.</p>)}</div>
+                  <div className="mt-3">
+                    <label htmlFor="status" className="block text-sm font-medium mb-1.5">Status <span className="text-red-500">*</span></label>
+                    <select id="status" name="status" value={formData.status} onChange={handleChange} className={inputBaseClasses}>
+                      <option value="Appointment">Appointment (Online Booking)</option>
+                      <option value="Checked-In">Checked-In (Walk-in Customer)</option>
+                    </select>
+                    {formData.status === 'Checked-In' && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Service starts now at {formatTimeIST(`${formData.date}T${formData.time}`)} on {formatDateIST(formData.date)}.
+                      </p>
+                    )}
+                  </div>
                   <div className="grid md:grid-cols-2 gap-x-6 gap-y-5 mt-5">
                     <div><label htmlFor="date" className="block text-sm font-medium mb-1.5">Date <span className="text-red-500">*</span></label><input id="date" type="date" name="date" value={formData.date} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                     <div><label htmlFor="time" className="block text-sm font-medium mb-1.5">Time <span className="text-red-500">*</span></label><input id="time" type="time" name="time" value={formData.time} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                   </div>
                   
-                  {/* MODIFICATION: Updated placeholder text and list rendering */}
                   <div className="mt-5"><label className="block text-sm font-medium mb-1.5">Add Services <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Search by name or price (e.g., 250)..." className={`${inputBaseClasses} pr-8`} />{serviceSearch && filteredServices.length > 0 && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{filteredServices.map((service) => (<li key={service._id} onClick={() => handleAddService(service)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer flex justify-between"><span>{service.name}</span><span className="font-semibold">₹{service.price}</span></li>))}</ul>)}</div></div>
 
                   <div className="mt-4 space-y-4">

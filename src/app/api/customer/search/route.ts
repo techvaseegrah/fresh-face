@@ -6,7 +6,7 @@ import Customer from '@/models/customermodel';
 import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
 // --- FIX: IMPORT THE CORRECT STAFF MODEL ---
-import Staff from '@/models/Staff'; // You might need to adjust the path, e.g., '@/models/staffmodel'
+import Staff from '@/models/staff'; // You might need to adjust the path, e.g., '@/models/staffmodel'
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import { createBlindIndex } from '@/lib/search-indexing';
 

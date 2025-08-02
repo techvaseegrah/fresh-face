@@ -9,14 +9,13 @@ import Stylist from '@/models/Stylist';
 import Customer from '@/models/customermodel';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import Setting from '@/models/Setting';
-import Product, { IProduct } from '@/models/Product'; // Import Product model
+import Product, { IProduct } from '@/models/Product';
 import { InventoryManager, InventoryUpdate } from '@/lib/inventoryManager';
 //import { sendLowStockAlertEmail } from '@/lib/mail';
 
 const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 
 export async function POST(req: Request) {
-  // --- START TRANSACTION ---
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -65,6 +64,11 @@ export async function POST(req: Request) {
     // --- 3. DATA FETCHING ---
     const appointment = await Appointment.findById(appointmentId).populate('serviceIds').session(session);
     if (!appointment) throw new Error('Appointment not found');
+    // MODIFICATION: Added a check to prevent re-billing a paid appointment
+    if (appointment.status === 'Paid') {
+      throw new Error('This appointment has already been paid for.');
+    }
+
     const customer = await Customer.findById(customerId).session(session);
     if (!customer) throw new Error('Customer not found');
     const customerGender = customer.gender || 'other';
@@ -73,7 +77,6 @@ export async function POST(req: Request) {
     let allInventoryUpdates: InventoryUpdate[] = [];
     let lowStockProducts: IProduct[] = [];
 
-    // In-house inventory for services
     const serviceIds = appointment.serviceIds.map((s: any) => s._id.toString());
     if (serviceIds.length > 0) {
       const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
@@ -82,7 +85,6 @@ export async function POST(req: Request) {
       allInventoryUpdates.push(...serviceProductUpdates);
     }
     
-    // Retail product inventory
     const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map((item: any) => ({
       productId: item.itemId,
       productName: item.name,
@@ -91,14 +93,12 @@ export async function POST(req: Request) {
     }));
     allInventoryUpdates.push(...retailProductUpdates);
 
-    // Apply all updates
     if (allInventoryUpdates.length > 0) {
       console.log('Applying inventory updates...');
       const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates, session);
       if (inventoryUpdateResult.success) {
         lowStockProducts = inventoryUpdateResult.lowStockProducts;
       } else {
-        // This will now cause the transaction to fail, which is correct.
         throw new Error('One or more inventory updates failed: ' + JSON.stringify(inventoryUpdateResult.errors));
       }
     }
@@ -116,16 +116,17 @@ export async function POST(req: Request) {
       }
     });
     await invoice.save({ session });
-    console.log('Created invoice:', invoice.invoiceNumber);
+    // MODIFICATION: Changed log to show the ID, since invoiceNumber is not generated here
+    console.log('Created invoice with ID:', invoice._id);
 
-    // --- 6. UPDATE APPOINTMENT ---
+    // --- 6. UPDATE APPOINTMENT (This is the critical part) ---
     await Appointment.updateOne({ _id: appointmentId }, {
       amount: subtotal,
       membershipDiscount,
       finalAmount: grandTotal,
       paymentDetails,
       billingStaffId,
-      invoiceId: invoice._id,
+      invoiceId: invoice._id, // This line ensures the link is created. It was already in your code but is essential.
       status: 'Paid',
     }, { session });
     console.log('Updated appointment to Paid status');
@@ -139,8 +140,8 @@ export async function POST(req: Request) {
             if (pointsEarned > 0) {
                 await LoyaltyTransaction.create([{
                     customerId, points: pointsEarned, type: 'Credit',
-                    description: `Earned from Invoice #${invoice.invoiceNumber}`,
-                    reason: `Invoice #${invoice.invoiceNumber}`,
+                    description: `Earned from an invoice`, // Changed to a generic message
+                    reason: `Invoice`,
                     transactionDate: new Date(),
                 }], { session });
                 console.log(`Credited ${pointsEarned} loyalty points.`);
@@ -161,16 +162,9 @@ export async function POST(req: Request) {
     console.log("--- TRANSACTION COMMITTED SUCCESSFULLY ---");
 
     // --- 10. POST-TRANSACTION ACTIONS (like sending emails) ---
-    if (lowStockProducts.length > 0) {
-      // This is outside the transaction, which is good practice for external calls.
-      try {
-        const thresholdSetting = await Setting.findOne({ key: 'globalLowStockThreshold' }).lean();
-        const globalThreshold = thresholdSetting ? parseInt(thresholdSetting.value, 10) : 10;
-        sendLowStockAlertEmail(lowStockProducts, globalThreshold);
-      } catch (emailError) {
-          console.error("Failed to send low stock email post-transaction:", emailError);
-      }
-    }
+    // if (lowStockProducts.length > 0) {
+    //   ... your email logic ...
+    // }
 
     return NextResponse.json({
       success: true,
@@ -179,13 +173,11 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
-    // --- ABORT TRANSACTION ON FAILURE ---
     console.error('--- BILLING TRANSACTION FAILED, ROLLING BACK ---', error);
     await session.abortTransaction();
-    return NextResponse.json({ success: false, message: error.message || 'Failed to process payment' }, { status: 400 }); // Use 400 for client-side errors
+    return NextResponse.json({ success: false, message: error.message || 'Failed to process payment' }, { status: 400 });
   
   } finally {
-    // --- END SESSION ---
     session.endSession();
   }
 }

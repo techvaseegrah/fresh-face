@@ -1,4 +1,5 @@
-// /app/appointment/page.tsx - COMPLETE AND FINAL VERSION (Self-Contained)
+// src/app/appointment/page.tsx
+
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -9,7 +10,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilIcon,
-  CheckCircleIcon
+  Cog6ToothIcon // Using a gear/cog icon for "Correct Bill"
 } from '@heroicons/react/24/outline';
 import { toast } from 'react-toastify';
 import EditAppointmentForm from '@/components/EditAppointmentForm';
@@ -55,6 +56,7 @@ interface AppointmentWithCustomer {
   paymentDetails?: Record<string, number>;
   finalAmount?: number;
   membershipDiscount?: number;
+  invoiceId?: string; // To track if an invoice already exists
 }
 
 const getStatusColor = (status: string) => {
@@ -147,8 +149,14 @@ export default function AppointmentPage() {
   };
 
   const handleEditAppointment = (appointment: AppointmentWithCustomer) => {
-    setSelectedAppointmentForEdit(appointment);
-    setIsEditModalOpen(true);
+    // If the appointment is already paid, go straight to billing correction.
+    if (appointment.status === 'Paid') {
+      setSelectedAppointmentForBilling(appointment);
+      setIsBillingModalOpen(true);
+    } else {
+      setSelectedAppointmentForEdit(appointment);
+      setIsEditModalOpen(true);
+    }
   };
 
   const handleUpdateAppointment = async (appointmentId: string, updateData: any) => {
@@ -171,18 +179,29 @@ export default function AppointmentPage() {
     }
   };
 
+  // This function now handles both CREATING and UPDATING invoices.
   const handleFinalizeBill = async (finalPayload: any) => {
+    if (!selectedAppointmentForBilling) {
+        toast.error("No appointment selected for billing.");
+        return;
+    }
+    
+    // Check if we are updating an existing invoice or creating a new one.
+    const isUpdating = !!selectedAppointmentForBilling.invoiceId;
+    const url = isUpdating ? `/api/billing/${selectedAppointmentForBilling.invoiceId}` : '/api/billing';
+    const method = isUpdating ? 'PUT' : 'POST';
+
     try {
-      const response = await fetch(`/api/billing`, {
-        method: 'POST',
+      const response = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalPayload)
       });
       const result = await response.json();
       if (!response.ok || !result.success) {
-        throw new Error(result.message || 'Failed to create invoice.');
+        throw new Error(result.message || (isUpdating ? 'Failed to update invoice.' : 'Failed to create invoice.'));
       }
-      toast.success('Payment completed successfully!');
+      toast.success(isUpdating ? 'Invoice corrected successfully!' : 'Payment completed successfully!');
       handleCloseBillingModal();
     } catch (err: any) {
       toast.error(err.message);
@@ -191,44 +210,27 @@ export default function AppointmentPage() {
 
   const handleCloseBillingModal = () => { setIsBillingModalOpen(false); setSelectedAppointmentForBilling(null); fetchAppointments(); };
   const handleFilterChange = (newStatus: string) => { setCurrentPage(1); setStatusFilter(newStatus); };
-  const canCreateAppointments = session && (
-  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) ||
-  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE)
-);
-
-const canUpdateAppointments = session && (
-  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) ||
-  hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE)
-);
+  const canCreateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE));
+  const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
   return (
-    <div className="bg-gray-50/50 ">
+    <div className="bg-gray-50/50 p-6">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
       </div>
       <div className="mb-6 flex flex-col md:flex-row items-center gap-4">
-        <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-black/10" /></div>
+        <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/50" /></div>
         
         <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => { setDateFilter('all'); setCurrentPage(1); }}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
-          >
-            All Time
-          </button>
-          <button
-            onClick={() => { setDateFilter('today'); setCurrentPage(1); }}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'today' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}
-          >
-            Today
-          </button>
+          <button onClick={() => { setDateFilter('all'); setCurrentPage(1); }} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>All Time</button>
+          <button onClick={() => { setDateFilter('today'); setCurrentPage(1); }} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'today' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>Today</button>
         </div>
 
-        <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">{['All', 'Appointment', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled'].map((status) => (<button key={status} onClick={() => handleFilterChange(status)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${statusFilter === status ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>{status}</button>))}</div>
+        <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">{['All', 'Appointment', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled', 'No-Show'].map((status) => (<button key={status} onClick={() => handleFilterChange(status)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${statusFilter === status ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>{status}</button>))}</div>
       </div>
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
         {isLoading && (<div className="p-10 text-center text-gray-500">Loading appointments...</div>)}
         {!isLoading && allAppointments.length === 0 && (<div className="p-10 text-center text-gray-500">{searchTerm || statusFilter !== 'All' || dateFilter !== 'all' ? 'No appointments match criteria.' : 'No appointments scheduled.'}</div>)}
         {!isLoading && allAppointments.length > 0 && (
@@ -256,10 +258,12 @@ const canUpdateAppointments = session && (
                   const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map((s) => s.name).join(', ') : 'N/A';
                   const billingStaffName = appointment.billingStaffId?.name || 'N/A';
                   const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join('<br />') || 'No payment' : '';
-                  const isEditable = !['Paid', 'Cancelled', 'No-Show'].includes(appointment.status);
+                  
+                  const isActionable = !['Cancelled', 'No-Show'].includes(appointment.status);
+                  const isPaid = appointment.status === 'Paid';
 
                   return (
-                    <tr key={appointment.id} className="bg-white border-b hover:bg-gray-50">
+                    <tr key={appointment.id} className="bg-white border-b last:border-b-0 hover:bg-gray-50">
                       <td className="px-6 py-4">
                         <div>{formatDateIST(appointment.appointmentDateTime)}</div>
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.appointmentDateTime)}</div>
@@ -289,25 +293,25 @@ const canUpdateAppointments = session && (
                       </td>
                       <td className="px-6 py-4">{billingStaffName}</td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end space-x-2">
-                          {/* MODIFICATION: Show Completed badge and Edit button separately */}
-                          
-                          {/* Show the "Completed" badge for non-editable statuses */}
-                          {!isEditable && (
-                            <span className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full">
-                              <CheckCircleIcon className="w-4 h-4" />
-                              Completed
-                            </span>
-                          )}
-
-                          {/* Always show the Edit button if the user has permission */}
-                          {canUpdateAppointments && (
-                            <button 
-                              onClick={() => handleEditAppointment(appointment)} 
-                              className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1">
-                                <PencilIcon className="w-3 h-3" />
-                                Edit
-                            </button>
+                        <div className="flex items-center justify-end">
+                          {isActionable && canUpdateAppointments ? (
+                              isPaid ? (
+                                <button 
+                                  onClick={() => handleEditAppointment(appointment)} 
+                                  className="px-3 py-1 text-xs font-semibold text-orange-800 bg-orange-100 rounded-full hover:bg-orange-200 flex items-center gap-1.5">
+                                    <Cog6ToothIcon className="w-4 h-4" />
+                                    Correct Bill
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => handleEditAppointment(appointment)} 
+                                  className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1">
+                                    <PencilIcon className="w-3 h-3" />
+                                    Edit
+                                </button>
+                              )
+                          ) : (
+                            !isActionable && <span className="px-3 py-1 text-xs text-gray-500">No Actions</span>
                           )}
                         </div>
                       </td>
@@ -320,9 +324,12 @@ const canUpdateAppointments = session && (
         )}
       </div>
 
-      {totalPages > 1 && (<div className="px-6 py-4 border-t flex items-center justify-center space-x-2 text-sm"><button onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1 || isLoading} className="px-3 py-1 border rounded-md disabled:opacity-50 flex items-center"><ChevronLeftIcon className="h-4 w-4 mr-1" />Previous</button><span>Page <b>{currentPage}</b> of <b>{totalPages}</b></span><button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages || isLoading} className="px-3 py-1 border rounded-md disabled:opacity-50 flex items-center">Next<ChevronRightIcon className="h-4 w-4 ml-1" /></button></div>)}
+      {totalPages > 1 && (<div className="px-6 py-4 flex items-center justify-center space-x-2 text-sm"><button onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1 || isLoading} className="px-3 py-1 border rounded-md disabled:opacity-50 flex items-center"><ChevronLeftIcon className="h-4 w-4 mr-1" />Previous</button><span>Page <b>{currentPage}</b> of <b>{totalPages}</b></span><button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages || isLoading} className="px-3 py-1 border rounded-md disabled:opacity-50 flex items-center">Next<ChevronRightIcon className="h-4 w-4 ml-1" /></button></div>)}
+      
       <BookAppointmentForm isOpen={isBookAppointmentModalOpen} onClose={() => setIsBookAppointmentModalOpen(false)} onBookAppointment={handleBookNewAppointment} />
+      
       <EditAppointmentForm isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setSelectedAppointmentForEdit(null); }} appointment={selectedAppointmentForEdit} onUpdateAppointment={handleUpdateAppointment} />
+      
       {selectedAppointmentForBilling && isBillingModalOpen && (<BillingModal isOpen={isBillingModalOpen} onClose={handleCloseBillingModal} appointment={selectedAppointmentForBilling} customer={selectedAppointmentForBilling.customerId} stylist={selectedAppointmentForBilling.stylistId} onFinalizeAndPay={handleFinalizeBill} />)}
 
       <Tooltip id="app-tooltip" variant="dark" style={{ backgroundColor: '#2D3748', color: '#FFF', borderRadius: '6px', padding: '4px 8px', fontSize: '12px' }} />
