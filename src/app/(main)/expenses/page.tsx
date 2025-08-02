@@ -17,6 +17,8 @@ import {
   ArrowPathIcon,
   DocumentArrowUpIcon,
   EyeIcon,
+  PencilIcon, // <-- NEW
+  TrashIcon,   // <-- NEW
 } from '@heroicons/react/24/outline';
 import { Dialog, Transition } from '@headlessui/react';
 
@@ -46,6 +48,8 @@ interface ExpenseDetailsModalProps {
   onClose: () => void;
   title: string;
   historyData: IExpense[];
+  onEdit: (expense: IExpense) => void;    // <-- NEW
+  onDelete: (expenseId: string) => void; // <-- NEW
 }
 
 interface FilePreviewModalProps {
@@ -56,15 +60,14 @@ interface FilePreviewModalProps {
   fileType: string;
 }
 
-// --- CHILD COMPONENT: EXPENSE DETAILS MODAL (CORRECTED) ---
-function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDetailsModalProps) {
+// --- CHILD COMPONENT: EXPENSE DETAILS MODAL (UPDATED) ---
+function ExpenseDetailsModal({ isOpen, onClose, title, historyData, onEdit, onDelete }: ExpenseDetailsModalProps) {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState<{ url: string; name: string; type: string } | null>(null);
   
   const modalTotal = historyData.reduce((sum, expense) => sum + expense.amount, 0);
 
   const handleViewBill = (billUrl: string) => {
-    // Extract file name from URL, handling potential query parameters
     const fileName = billUrl.split('?')[0].split('/').pop() || 'bill';
     const extension = (fileName.split('.').pop() || '').toLowerCase();
     let fileType = '';
@@ -79,7 +82,6 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
       setSelectedBill({ url: billUrl, name: fileName, type: fileType });
       setIsPreviewModalOpen(true);
     } else {
-      // Fallback for unknown or unsupported file types: open in a new tab
       window.open(billUrl, '_blank');
       toast.info("Preview not available for this file type. Opening in a new tab.");
     }
@@ -88,7 +90,7 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
   const handlePdfDownload = () => {
     const doc = new jsPDF();
     doc.text(`Expenses Report - ${title}`, 14, 22);
-    const tableColumn = ["Date", "Type", "Description", "Frequency", "Payment", "Time", "Amount", "Bill"];
+    const tableColumn = ["Date", "Type", "Description", "Frequency", "Payment", "Amount", "Bill"];
     const tableRows: (string | number)[][] = [];
 
     historyData.forEach(expense => {
@@ -98,8 +100,6 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
         expense.description || 'N/A',
         expense.frequency,
         expense.paymentMethod,
-        new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-        // Use toLocaleString for better number formatting
         `₹${expense.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         expense.billUrl ? 'Attached' : 'N/A'
       ];
@@ -112,16 +112,14 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
       startY: 30, 
       theme: 'grid',
       headStyles: { fillColor: [34, 41, 47] },
-      // Add column styles for alignment
       columnStyles: {
-        6: { halign: 'right' }, // Align Amount column to the right
-        7: { halign: 'center' }  // Align Bill column to the center
+        5: { halign: 'right' },
+        6: { halign: 'center' }
       },
-      // Fix the footer to align correctly
       foot: [[
-        { content: 'TOTAL', colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10 } },
+        { content: 'TOTAL', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10 } },
         { content: `₹${modalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10 } },
-        { content: '', styles: {} } // Empty cell for the 'Bill' column
+        { content: '', styles: {} }
       ]],
       footStyles: { fontStyle: 'bold', fillColor: [240, 240, 240], textColor: [0, 0, 0] }
     });
@@ -129,35 +127,31 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
   };
 
   const handleCsvDownload = () => {
-    // FIX: Ensure title is a string before calling replace
     const safeTitle = title || "Untitled Report";
     const reportTitle = `"${`Expenses Report - ${safeTitle}`.replace(/"/g, '""')}"\r\n\r\n`;
-    const tableColumn = ["Date", "Type", "Description", "Frequency", "Payment Method", "Time", "Amount", "Bill URL"];
+    const tableColumn = ["Date", "Type", "Description", "Frequency", "Payment Method", "Amount", "Bill URL"];
     const escapeCsvCell = (cell: string) => `"${cell.replace(/"/g, '""')}"`;
     let csvContent = reportTitle + tableColumn.join(',') + '\r\n';
 
     historyData.forEach(expense => {
       const row = [
         `'${new Date(expense.date).toLocaleDateString('en-GB')}`,
-        // FIX: Add fallbacks to prevent error on undefined/null values
         escapeCsvCell(expense.type || 'N/A'),
         escapeCsvCell(expense.description || 'N/A'),
         expense.frequency || 'N/A',
         escapeCsvCell(expense.paymentMethod || 'N/A'),
-        new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         expense.amount.toFixed(2),
         expense.billUrl || ''
       ].join(',');
       csvContent += row + '\r\n';
     });
 
-    csvContent += `\r\n,,,,,,Total,${modalTotal.toFixed(2)}`;
+    csvContent += `\r\n,,,,,Total,${modalTotal.toFixed(2)}`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
     link.setAttribute('download', `${safeTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_report.csv`);
-    link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -173,7 +167,7 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
           <div className="fixed inset-0 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4 text-center">
               <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-200" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
-                <Dialog.Panel className="w-full max-w-6xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all border-t-4 border-gray-800">
+                <Dialog.Panel className="w-full max-w-7xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all border-t-4 border-gray-800">
                   <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-gray-900 flex justify-between items-start">
                     <div className="flex items-center gap-3">
                       <DocumentChartBarIcon className="h-7 w-7 text-gray-700"/>
@@ -188,43 +182,53 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-100 sticky top-0 z-10">
                           <tr>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Frequency</th>
                             <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
-                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                             <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                             <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Bill</th>
+                            <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200 [&>*:nth-child(even)]:bg-slate-50">
                           {historyData.map(expense => (
                             <tr key={expense._id} className="hover:bg-gray-100">
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleDateString('en-GB')}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {new Date(expense.date).toLocaleDateString('en-GB')}
+                                <span className="block text-xs text-gray-400">
+                                  {new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </span>
+                              </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-800">{expense.type}</td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.description || <span className="text-gray-400">N/A</span>}</td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.frequency}</td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.paymentMethod}</td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(expense.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</td>
+                              <td className="px-4 py-4 text-sm text-gray-600 max-w-xs truncate" title={expense.description}>{expense.description || <span className="text-gray-400">N/A</span>}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{expense.paymentMethod} <span className="text-gray-400">({expense.frequency})</span></td>
                               <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-semibold text-gray-900">₹{expense.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                               <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
                                 {expense.billUrl ? (
                                   <button onClick={() => handleViewBill(expense.billUrl!)} className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-medium transition-colors">
                                     <EyeIcon className="h-4 w-4"/> View
                                   </button>
-                                ) : (
-                                  <span className="text-gray-400">N/A</span>
-                                )}
+                                ) : ( <span className="text-gray-400">N/A</span> )}
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-center text-sm font-medium">
+                                <div className="flex justify-center items-center gap-4">
+                                  <button onClick={() => onEdit(expense)} className="text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1">
+                                    <PencilIcon className="h-4 w-4" /> Edit
+                                  </button>
+                                  <button onClick={() => onDelete(expense._id)} className="text-red-600 hover:text-red-800 transition-colors flex items-center gap-1">
+                                    <TrashIcon className="h-4 w-4" /> Delete
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot className="bg-gray-100 sticky bottom-0 border-t-2 border-gray-300">
                             <tr>
-                              <td colSpan={6} className="px-4 py-4 text-right text-sm font-bold text-gray-800 uppercase">Total</td>
+                              <td colSpan={4} className="px-4 py-4 text-right text-sm font-bold text-gray-800 uppercase">Total</td>
                               <td className="px-4 py-4 text-right text-sm font-bold text-gray-900">₹{modalTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td></td>
+                              <td colSpan={2}></td>
                             </tr>
                         </tfoot>
                       </table>
@@ -244,16 +248,7 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData }: ExpenseDet
           </div>
         </Dialog>
       </Transition>
-
-      {selectedBill && (
-        <FilePreviewModal
-          isOpen={isPreviewModalOpen}
-          onClose={() => setIsPreviewModalOpen(false)}
-          fileUrl={selectedBill.url}
-          fileName={selectedBill.name}
-          fileType={selectedBill.type}
-        />
-      )}
+      {selectedBill && (<FilePreviewModal isOpen={isPreviewModalOpen} onClose={() => setIsPreviewModalOpen(false)} fileUrl={selectedBill.url} fileName={selectedBill.name} fileType={selectedBill.type}/>)}
     </Fragment>
   );
 }
@@ -303,6 +298,7 @@ function FilePreviewModal({ isOpen, onClose, fileUrl, fileName, fileType }: File
 export default function ExpensesPage() {
   const [allExpenses, setAllExpenses] = useState<IExpense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   // --- Form State ---
   const [type, setType] = useState('Tea');
@@ -313,19 +309,18 @@ export default function ExpensesPage() {
   const [expenseTime, setExpenseTime] = useState(new Date().toTimeString().substring(0, 5));
   const [billFile, setBillFile] = useState<File | null>(null);
   const [billPreviewUrl, setBillPreviewUrl] = useState<string | null>(null);
+  const [existingBillUrl, setExistingBillUrl] = useState<string | null>(null);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-
   const [frequency, setFrequency] = useState<'Regular' | 'Once'>('Regular');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentMethods, setPaymentMethods] = useState<string[]>(['Cash', 'UPI', 'Card']);
-  
   const [showAddType, setShowAddType] = useState(false);
   const [newType, setNewType] = useState('');
   const [typeError, setTypeError] = useState<string | null>(null);
   const [showAddPaymentMethod, setShowAddPaymentMethod] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [paymentMethodError, setPaymentMethodError] = useState<string | null>(null);
-
+  
   // --- Filtering State ---
   const [filterType, setFilterType] = useState('all');
   const [filterFrequency, setFilterFrequency] = useState('all');
@@ -342,11 +337,11 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     return () => {
-      if (billPreviewUrl) {
+      if (billPreviewUrl && billFile) { // Only revoke URL if it's from a File object
         URL.revokeObjectURL(billPreviewUrl);
       }
     };
-  }, [billPreviewUrl]);
+  }, [billPreviewUrl, billFile]);
 
   const fetchExpenses = async () => {
     setIsLoading(true);
@@ -356,19 +351,142 @@ export default function ExpensesPage() {
       const data = await res.json();
       setAllExpenses(data.data);
       const fetchedTypes = data.data.map((exp: IExpense) => exp.type).filter(Boolean);
-      setExpenseTypes(prev => Array.from(new Set([...prev, ...fetchedTypes])));
+      const initialTypes = ['Tea', 'Coffee', 'Snacks', 'General'];
+      setExpenseTypes(prev => Array.from(new Set([...initialTypes, ...fetchedTypes])));
+
       const fetchedMethods = data.data.map((exp: IExpense) => exp.paymentMethod).filter(Boolean);
-      const allMethods = Array.from(new Set([...paymentMethods, ...fetchedMethods]));
+      const initialMethods = ['Cash', 'UPI', 'Card'];
+      const allMethods = Array.from(new Set([...initialMethods, ...fetchedMethods]));
       setPaymentMethods(allMethods);
-      if (!type && expenseTypes.length > 0) setType(expenseTypes[0]);
-      if (!paymentMethod && allMethods.length > 0) setPaymentMethod(allMethods[0]);
+
+      if (!type) setType(initialTypes[0]);
+      if (!paymentMethod) setPaymentMethod(initialMethods[0]);
     } catch (err) {
       toast.error("Could not fetch expense data.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  const resetForm = () => {
+    setEditingExpenseId(null);
+    setType(expenseTypes[0] || '');
+    setDescription('');
+    setAmount('');
+    setExpenseDate(new Date().toISOString().split('T')[0]);
+    setExpenseTime(new Date().toTimeString().substring(0, 5));
+    setFrequency('Regular');
+    setPaymentMethod(paymentMethods[0] || '');
+    handleRemoveFile();
+  };
+
+  const handleRemoveFile = () => {
+    if (billPreviewUrl && billFile) {
+      URL.revokeObjectURL(billPreviewUrl);
+    }
+    setBillFile(null);
+    setBillPreviewUrl(null);
+    setExistingBillUrl(null);
+    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
+  };
   
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files ? e.target.files[0] : null;
+    handleRemoveFile(); // Clear previous file state
+    if (file) {
+      setBillFile(file);
+      setBillPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!type || !amount || !expenseDate || !expenseTime || !frequency || !paymentMethod) {
+      toast.warn("Please fill all required fields.");
+      return;
+    }
+
+    const submissionDate = new Date(`${expenseDate}T${expenseTime}`);
+    const formData = new FormData();
+    formData.append('type', type);
+    formData.append('description', description);
+    formData.append('amount', amount);
+    formData.append('date', submissionDate.toISOString());
+    formData.append('frequency', frequency);
+    formData.append('paymentMethod', paymentMethod);
+    
+    if (billFile) {
+        formData.append('billFile', billFile);
+    } else if (existingBillUrl) {
+        formData.append('billUrl', existingBillUrl);
+    }
+
+    try {
+      const isEditing = !!editingExpenseId;
+      const url = isEditing ? `/api/expenses/${editingExpenseId}` : '/api/expenses';
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const res = await fetch(url, { method, body: formData });
+      if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || `${isEditing ? 'Update' : 'Submission'} failed`);
+      }
+      toast.success(`Expense ${isEditing ? 'updated' : 'added'} successfully!`);
+      resetForm();
+      await fetchExpenses();
+    } catch (err) { 
+        const errorMessage = err instanceof Error ? err.message : `Failed to ${editingExpenseId ? 'update' : 'add'} expense.`;
+        toast.error(errorMessage);
+    }
+  };
+  
+  const handleEditClick = (expense: IExpense) => {
+    setIsModalOpen(false);
+    const formElement = document.getElementById('expense-form-container');
+    formElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    setEditingExpenseId(expense._id);
+    setType(expense.type);
+    setDescription(expense.description || '');
+    setAmount(String(expense.amount));
+    
+    const expenseLocalDate = new Date(expense.date);
+    setExpenseDate(expenseLocalDate.toISOString().split('T')[0]);
+    setExpenseTime(expenseLocalDate.toTimeString().substring(0, 5));
+    
+    setFrequency(expense.frequency);
+    setPaymentMethod(expense.paymentMethod);
+    
+    handleRemoveFile(); // Clear any existing new file selection
+    if (expense.billUrl) {
+        setExistingBillUrl(expense.billUrl);
+        setBillPreviewUrl(expense.billUrl);
+    }
+  };
+
+  const handleDeleteClick = async (expenseId: string) => {
+    if (!window.confirm("Are you sure you want to delete this expense? This action cannot be undone.")) {
+        return;
+    }
+    try {
+        const res = await fetch(`/api/expenses/${expenseId}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.error || "Deletion failed");
+        }
+        toast.success("Expense deleted successfully!");
+        setIsModalOpen(false);
+        await fetchExpenses();
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to delete expense.";
+        toast.error(errorMessage);
+    }
+  };
+  
+  // All other handlers (handleAddType, handleAddPaymentMethod, handleViewHistory, etc.) and memoized values remain the same...
+  // Omitted for brevity, but they should be in your final code.
+  // ... (todayStats, filteredExpenses, grouped expenses, etc.) ...
   const todayStats = useMemo(() => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -456,70 +574,7 @@ export default function ExpensesPage() {
     return Object.entries(groupedByMonth).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [filteredExpenses]);
 
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!type || !amount || !expenseDate || !expenseTime || !frequency || !paymentMethod) {
-      toast.warn("Please fill all required fields.");
-      return;
-    }
-    const submissionDate = new Date(`${expenseDate}T${expenseTime}`);
-    const formData = new FormData();
-    formData.append('type', type);
-    formData.append('description', description);
-    formData.append('amount', amount);
-    formData.append('date', submissionDate.toISOString());
-    formData.append('frequency', frequency);
-    formData.append('paymentMethod', paymentMethod);
-    if (billFile) {
-        formData.append('billFile', billFile);
-    }
-    try {
-      const res = await fetch('/api/expenses', { method: 'POST', body: formData });
-      if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || "Submission failed");
-      }
-      toast.success("Expense added successfully!");
-      setDescription(''); 
-      setAmount('');
-      setExpenseDate(new Date().toISOString().split('T')[0]);
-      setExpenseTime(new Date().toTimeString().substring(0, 5));
-      handleRemoveFile();
-      await fetchExpenses();
-    } catch (err) { 
-        const errorMessage = err instanceof Error ? err.message : "Failed to add expense.";
-        toast.error(errorMessage);
-    }
-  };
-  
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files ? e.target.files[0] : null;
-    if (billPreviewUrl) {
-      URL.revokeObjectURL(billPreviewUrl);
-    }
-    if (file) {
-      setBillFile(file);
-      setBillPreviewUrl(URL.createObjectURL(file));
-    } else {
-      setBillFile(null);
-      setBillPreviewUrl(null);
-    }
-  };
-
-  const handleRemoveFile = () => {
-    if (billPreviewUrl) {
-      URL.revokeObjectURL(billPreviewUrl);
-    }
-    setBillFile(null);
-    setBillPreviewUrl(null);
-    const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-    if (fileInput) {
-      fileInput.value = '';
-    }
-  };
-
-  const handleAddType = () => {
+    const handleAddType = () => {
     setTypeError(null);
     const trimmedNewType = newType.trim();
     if (!trimmedNewType) { setTypeError("New type name cannot be empty."); return; }
@@ -572,7 +627,6 @@ export default function ExpensesPage() {
     'Monthly': monthlyGroupedExpenses,
   }[historyView];
 
-
   return (
     <div className="bg-gray-100 min-h-screen">
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light"/>
@@ -597,14 +651,19 @@ export default function ExpensesPage() {
             </div>
         </div>
         <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 p-5 text-white shadow-lg"><div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div><BanknotesIcon className="absolute top-4 right-4 h-8 w-8 text-white/50" /><p className="text-sm font-medium text-rose-100">Total Spent Today</p><p className="mt-2 text-3xl font-bold">₹{todayStats.totalSpent.toFixed(2)}</p></div>
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 p-5 text-white shadow-lg"><div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div><BanknotesIcon className="absolute top-4 right-4 h-8 w-8 text-white/50" /><p className="text-sm font-medium text-rose-100">Total Spent Today</p><p className="mt-2 text-3xl font-bold">₹{todayStats.totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-teal-400 to-cyan-500 p-5 text-white shadow-lg"><div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div><ClipboardDocumentListIcon className="absolute top-4 right-4 h-8 w-8 text-white/50" /><p className="text-sm font-medium text-cyan-100">Number of Expenses</p><p className="mt-2 text-3xl font-bold">{todayStats.expenseCount}</p></div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 p-5 text-white shadow-lg"><div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div><ArrowUpCircleIcon className="absolute top-4 right-4 h-8 w-8 text-white/50" /><p className="text-sm font-medium text-indigo-100">Highest Expense</p><p className="mt-2 text-3xl font-bold">₹{todayStats.highestExpense.toFixed(2)}</p></div>
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 p-5 text-white shadow-lg"><div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div><ArrowUpCircleIcon className="absolute top-4 right-4 h-8 w-8 text-white/50" /><p className="text-sm font-medium text-indigo-100">Highest Expense</p><p className="mt-2 text-3xl font-bold">₹{todayStats.highestExpense.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 p-5 text-white shadow-lg"><div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div><TagIcon className="absolute top-4 right-4 h-8 w-8 text-white/50" /><p className="text-sm font-medium text-orange-100">Most Common Type</p><p className="mt-2 text-3xl font-bold truncate">{todayStats.mostCommonType}</p></div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-6 rounded-lg shadow-md flex flex-col h-full">
-            <div className="flex justify-between items-center mb-4"><h2 className="text-xl font-semibold text-gray-700 flex items-center"><PlusCircleIcon className="h-6 w-6 mr-2 text-gray-500" /> Add New Expense</h2></div>
+          <div id="expense-form-container" className="bg-white p-6 rounded-lg shadow-md flex flex-col h-full">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-700 flex items-center">
+                    <PlusCircleIcon className="h-6 w-6 mr-2 text-gray-500" />
+                    {editingExpenseId ? 'Edit Expense' : 'Add New Expense'}
+                </h2>
+            </div>
             <form onSubmit={handleSubmit} className="space-y-4 flex-grow flex flex-col">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -640,7 +699,7 @@ export default function ExpensesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Attach Bill (Optional)</label>
                   <div className="mt-1">
-                    {!billFile && (
+                    {!(billFile || existingBillUrl) && (
                       <label htmlFor="file-upload" className="relative cursor-pointer flex justify-center items-center w-full p-4 border-2 border-gray-300 border-dashed rounded-md hover:border-indigo-500 transition-colors bg-gray-50 hover:bg-indigo-50">
                         <div className="space-y-1 text-center">
                           <DocumentArrowUpIcon className="mx-auto h-10 w-10 text-gray-400" />
@@ -649,11 +708,11 @@ export default function ExpensesPage() {
                         </div>
                       </label>
                     )}
-                    {billFile && billPreviewUrl && (
+                    {(billFile || existingBillUrl) && billPreviewUrl && (
                       <div className="flex items-center justify-between gap-4 p-3 border border-gray-300 rounded-md bg-gray-50">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{billFile.name}</p>
-                          <p className="text-sm text-gray-500">{ (billFile.size / 1024).toFixed(1) } KB</p>
+                          <p className="text-sm font-medium text-gray-900 truncate">{billFile?.name || existingBillUrl?.split('/').pop()}</p>
+                          {billFile && <p className="text-sm text-gray-500">{ (billFile.size / 1024).toFixed(1) } KB</p>}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button type="button" onClick={() => setIsPreviewModalOpen(true)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors rounded-md hover:bg-indigo-50"><EyeIcon className="h-4 w-4" /> View</button>
@@ -664,7 +723,16 @@ export default function ExpensesPage() {
                   </div>
                 </div>
               </div>
-              <button type="submit" className="w-full bg-gray-800 text-white py-2.5 px-4 rounded-md hover:bg-gray-900 font-semibold transition-colors mt-auto">Submit Expense</button>
+              <div className="mt-auto flex items-center gap-4">
+                <button type="submit" className="w-full bg-gray-800 text-white py-2.5 px-4 rounded-md hover:bg-gray-900 font-semibold transition-colors">
+                    {editingExpenseId ? 'Update Expense' : 'Submit Expense'}
+                </button>
+                {editingExpenseId && (
+                  <button type="button" onClick={resetForm} className="w-full bg-gray-200 text-gray-800 py-2.5 px-4 rounded-md hover:bg-gray-300 font-semibold transition-colors">
+                    Cancel
+                  </button>
+                )}
+              </div>
             </form>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-md flex flex-col h-full">
@@ -674,7 +742,7 @@ export default function ExpensesPage() {
             </div>
             <div className="relative flex-grow">
               <div className="absolute inset-0 overflow-y-auto pr-2">
-                {isLoading && <p className="p-4">Loading history...</p>}
+                {isLoading && <p className="p-4 text-center text-gray-500">Loading history...</p>}
                 {!isLoading && (
                   <div className="space-y-4">
                     {dataToRender.length > 0 ? (
@@ -686,7 +754,7 @@ export default function ExpensesPage() {
                               <div className="flex-shrink-0 bg-gray-100 p-3 rounded-lg"><CalendarDaysIcon className="h-6 w-6 text-gray-600" /></div>
                               <div>
                                 <h3 className="font-bold text-lg text-gray-800">{title}</h3>
-                                <p className="text-sm text-gray-500">{data.count} records found. Total spent: <span className="font-semibold text-gray-600">₹{data.total.toFixed(2)}</span></p>
+                                <p className="text-sm text-gray-500">{data.count} records found. Total: <span className="font-semibold text-gray-600">₹{data.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
                               </div>
                             </div>
                             <button onClick={() => handleViewHistory(title, data.records)} className="bg-gray-800 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-900 text-sm transition-colors">View Details</button>
@@ -707,9 +775,9 @@ export default function ExpensesPage() {
           </div>
         </div>
       </div>
-      <ExpenseDetailsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedHistory.title} historyData={selectedHistory.data} />
-      {billPreviewUrl && billFile && (
-        <FilePreviewModal isOpen={isPreviewModalOpen} onClose={() => setIsPreviewModalOpen(false)} fileUrl={billPreviewUrl} fileName={billFile.name} fileType={billFile.type}/>
+      <ExpenseDetailsModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedHistory.title} historyData={selectedHistory.data} onEdit={handleEditClick} onDelete={handleDeleteClick} />
+      {billPreviewUrl && (
+        <FilePreviewModal isOpen={isPreviewModalOpen} onClose={() => setIsPreviewModalOpen(false)} fileUrl={billPreviewUrl} fileName={billFile?.name || existingBillUrl?.split('/').pop() || 'file'} fileType={billFile?.type || (billPreviewUrl.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')}/>
       )}
     </div>
   );

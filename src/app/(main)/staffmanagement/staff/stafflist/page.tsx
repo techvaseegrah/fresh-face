@@ -3,14 +3,13 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation'; // --- MODIFICATION: Added useSearchParams ---
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus, Edit, Trash, Search, Eye, Filter, RefreshCw, X, Users, UserCheck, UserX,
   Mail, Phone, Home, CreditCard, Calendar, Briefcase, AtSign, Badge,
   FileText, Banknote, ShieldCheck, XCircle 
 } from 'lucide-react';
 
-// --- NEW: Import react-toastify ---
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -19,7 +18,6 @@ import Button from '../../../../../components/ui/Button';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions'; 
 
-// ... (DocumentViewerModal, DetailItem, StaffDetailSidebar, StatCard components remain unchanged) ...
 const DocumentViewerModal: React.FC<{ src: string | null; title: string; onClose: () => void; }> = ({ src, title, onClose }) => {
     if (!src) return null;
     return (
@@ -261,7 +259,7 @@ const StaffList: React.FC = () => {
   const { data: session } = useSession();
   const { staffMembers, loadingStaff, errorStaff, fetchStaffMembers, deleteStaffMember } = useStaff();
   const router = useRouter();
-  const searchParams = useSearchParams(); // --- NEW: Get search params
+  const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
@@ -277,7 +275,6 @@ const StaffList: React.FC = () => {
   const canUpdate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_UPDATE), [userPermissions]);
   const canDelete = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_DELETE), [userPermissions]);
   
-  // --- NEW: useEffect to show toasts on successful add/edit ---
   useEffect(() => {
     const successAction = searchParams.get('success');
     if (successAction) {
@@ -286,7 +283,6 @@ const StaffList: React.FC = () => {
       } else if (successAction === 'edit') {
         toast.success('Staff details updated successfully!');
       }
-      // Clean the URL to prevent the toast from re-appearing on refresh
       router.replace('/staffmanagement/staff/stafflist');
     }
   }, [searchParams, router]);
@@ -323,7 +319,6 @@ const StaffList: React.FC = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [staffMembers, searchTerm, filters]);
 
-  // --- MODIFICATION: Use toast for delete success/error ---
   const handleDeleteStaff = async (staff: StaffMember) => {
     if (window.confirm(`Are you sure you want to deactivate staff member: ${staff.name}? Their status will be set to 'inactive'.`)) {
       setIsDeleting(staff.id);
@@ -358,7 +353,6 @@ const StaffList: React.FC = () => {
 
   return (
     <div className="relative">
-       {/* --- NEW: Add ToastContainer --- */}
       <ToastContainer
           position="top-right"
           autoClose={4000}
@@ -406,7 +400,6 @@ const StaffList: React.FC = () => {
             </div>
           </div>
           
-          {/* ... The rest of the component remains the same ... */}
           {errorStaff && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl" role="alert">
               <strong className="font-bold">Error: </strong>

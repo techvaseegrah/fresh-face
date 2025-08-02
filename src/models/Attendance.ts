@@ -1,3 +1,5 @@
+// src/models/Attendance.ts
+
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
 export interface IAttendance extends Document {
@@ -6,7 +8,6 @@ export interface IAttendance extends Document {
   date: Date;
   checkIn: Date | null;
   checkOut: Date | null;
-  // UPDATED: Added 'week_off' to the list of allowed statuses.
   status: 'present' | 'absent' | 'late' | 'incomplete' | 'on_leave' | 'week_off';
   temporaryExits: Types.ObjectId[];
   totalWorkingMinutes: number;
@@ -26,7 +27,6 @@ const AttendanceSchema: Schema<IAttendance> = new Schema(
     checkOut: { type: Date, default: null },
     status: {
       type: String,
-      // UPDATED: Added 'week_off' to the enum array. This is the crucial fix.
       enum: ['present', 'absent', 'late', 'incomplete', 'on_leave', 'week_off'],
       default: 'absent',
     },
@@ -40,9 +40,16 @@ const AttendanceSchema: Schema<IAttendance> = new Schema(
   { timestamps: true }
 );
 
-// This ensures a staff member can only have one attendance record per day.
-// It's important to keep this.
+// --- PERFORMANCE OPTIMIZATION: INDEXES ---
+// These are critical for fast lookups in a large collection.
+
+// This compound index ensures a staff member can only have one attendance record per day.
+// It's also vital for queries filtering by both staffId and a date range (e.g., monthly summary).
 AttendanceSchema.index({ staffId: 1, date: 1 }, { unique: true });
+
+// This index specifically speeds up queries that filter only by date, like the "Today's Attendance" view.
+AttendanceSchema.index({ date: 1 });
+
 
 const Attendance: Model<IAttendance> =
   mongoose.models.Attendance || mongoose.model<IAttendance>('Attendance', AttendanceSchema);
