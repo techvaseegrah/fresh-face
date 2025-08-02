@@ -33,7 +33,52 @@ const StatCard: FC<any> = ({ title, value, icon: Icon, color = 'blue', onClick }
   return (<div className={`flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''}`} onClick={onClick}><div className="flex items-center justify-between flex-grow"><div className="flex-1 min-h-[60px]"><p className="text-sm font-medium text-gray-600 mb-1">{title}</p><div className="text-3xl font-bold text-gray-900">{typeof value === 'number' ? <AnimatedNumber value={value} /> : value}</div></div><div className={`p-3 rounded-lg ${colorClasses[color]}`}><Icon className={`h-6 w-6 ${colorClasses[color].split(' ')[0]}`} /></div></div></div>);
 };
 const QuickActionCard: FC<any> = ({ title, description, icon: Icon, onClick }) => (<div onClick={onClick} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all cursor-pointer group hover:border-gray-300"><div className="flex items-start space-x-4"><div className="p-2 bg-gray-50 rounded-lg group-hover:bg-gray-100 transition-colors"><Icon className="h-6 w-6 text-gray-600" /></div><div className="flex-1"><h3 className="text-lg font-semibold text-gray-900 group-hover:text-gray-700">{title}</h3><p className="text-sm text-gray-600 mt-1">{description}</p></div></div></div>);
-const LowStockStatCard: FC<{ data: any }> = ({ data }) => { return (<div className="group relative"><StatCard title="Products Low on Stock" value={data.count} icon={ExclamationTriangleIcon} color="red" onClick={() => (window.location.href = '/shop')}/>{data.count > 0 && (<div className="absolute top-full mt-2 w-72 max-h-64 overflow-y-auto rounded-xl bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none shadow-xl border border-gray-200">{/* Tooltip content... */}</div>)}</div>);};
+const LowStockStatCard = ({ data }: { data: LowStockData }) => {
+  return (
+    // 'group' enables the hover effect for child elements
+    <div className="group relative">
+    <StatCard
+      title="Products Low on Stock"
+      value={data.count}
+      icon={ExclamationTriangleIcon}
+      color="red"
+      onClick={() => (window.location.href = '/shop')}
+    />
+    
+    {/* +++ NEW LIGHT-THEME, DOWNWARD-HOVERING TOOLTIP +++ */}
+    {data.count > 0 && (
+      <div className="absolute top-full mt-2 w-72 max-h-64 overflow-y-auto rounded-xl bg-white text-black opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none shadow-xl border border-gray-200">
+        <div className="p-3">
+          <div className="mb-2 pb-2 border-b border-gray-200">
+            <h4 className="font-semibold text-base text-gray-800">Low Stock Items</h4>
+            <p className="text-xs text-gray-500">Threshold is {data.threshold} or less</p>
+          </div>
+          
+          <ul className="space-y-1">
+            {data.products.slice(0, 10).map(p => (
+              <li key={p.sku} className="flex items-center justify-between text-sm p-1.5 rounded-md">
+                <div className="flex items-center min-w-0">
+                  <ExclamationTriangleIcon className="h-4 w-4 text-red-400 mr-2 shrink-0" />
+                  <span className="truncate pr-2 text-gray-700">{p.name}</span>
+                </div>
+                <span className="font-bold text-red-600 whitespace-nowrap">{p.numberOfItems} left</span>
+              </li>
+            ))}
+          </ul>
+          
+          {data.products.length > 10 && (
+            <p className="text-gray-500 text-xs mt-2 text-center border-t border-gray-200 pt-2">
+              ...and {data.products.length - 10} more
+            </p>
+          )}
+        </div>
+        {/* Tooltip arrow - now pointing up */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-[-5px] h-2.5 w-2.5 bg-white rotate-45 border-l border-t border-gray-200"></div>
+      </div>
+    )}
+  </div>
+);
+};
 const SalesStatCard: FC<{ title: string; value: number; icon: React.ElementType; color?: string; isCurrency?: boolean; }> = ({ title, value, icon: Icon, color = 'bg-gray-100 text-gray-600', isCurrency = false }) => (<div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center space-x-4"><div className={`p-3 rounded-lg ${color}`}> <Icon className="h-6 w-6" /> </div><div><p className="text-sm text-gray-500">{title}</p><div className="text-2xl font-bold text-gray-900"><AnimatedNumber value={value} prefix={isCurrency ? '₹' : ''} decimals={isCurrency ? 2 : 0} /></div></div></div>);
 
 // --- NEW Reusable Component for the Sales Summary (Style from your image) ---
