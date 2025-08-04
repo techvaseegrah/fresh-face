@@ -137,6 +137,7 @@ const canReceive = hasPermission(userPermissions, PERMISSIONS.WORKFLOW_PO_RECEIV
                         {po.products.length}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-center text-sm font-medium">
+                      <div className="flex items-center justify-center gap-x-4">
                         <button 
                             onClick={() => handleOpenPoModal(po)}
                             className="text-indigo-600 hover:text-indigo-900 transition-colors" title="View/Edit"
@@ -144,7 +145,7 @@ const canReceive = hasPermission(userPermissions, PERMISSIONS.WORKFLOW_PO_RECEIV
                             View Details
                         </button>
 
-                        {['Approved', 'Ordered', 'Partially Received'].includes(po.status) && (
+                        {canReceive && ['Approved', 'Ordered', 'Partially Received'].includes(po.status) && (
       <button
         onClick={() => handleOpenReceiveModal(po)}
         className="px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-md shadow-sm hover:bg-green-700"
@@ -153,6 +154,8 @@ const canReceive = hasPermission(userPermissions, PERMISSIONS.WORKFLOW_PO_RECEIV
         Receive Stock
       </button>
     )}
+
+</div>
                       </td>
                     </tr>
                   ))
