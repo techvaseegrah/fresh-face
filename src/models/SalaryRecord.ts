@@ -5,6 +5,7 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 export interface ISalaryRecord extends Document {
   _id: Types.ObjectId;
   staffId: Types.ObjectId;
+  tenantId: mongoose.Schema.Types.ObjectId;
   month: string;
   year: number;
   baseSalary: number;
@@ -26,6 +27,12 @@ export interface ISalaryRecord extends Document {
 
 const SalaryRecordSchema: Schema<ISalaryRecord> = new Schema(
   {
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
     staffId: { type: Schema.Types.ObjectId, ref: 'Staff', required: true },
     month: { type: String, required: true },
     year: { type: Number, required: true },

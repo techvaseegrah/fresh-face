@@ -7,6 +7,12 @@ import './customermodel';
 import './user'; // Make sure the User model is imported for the ref
 
 const appointmentSchema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   customerId: { 
     type: Schema.Types.ObjectId, 
     ref: 'Customer', 

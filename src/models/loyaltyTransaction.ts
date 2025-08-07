@@ -2,6 +2,12 @@
 import mongoose, { Schema, model, models } from 'mongoose';
 
 const LoyaltyTransactionSchema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   customerId: {
     type: Schema.Types.ObjectId,
     ref: 'Customer',

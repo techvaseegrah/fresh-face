@@ -4,7 +4,13 @@ import mongoose from 'mongoose'; // Correct: Schema, Document, Model types are p
 // No need for separate IMembershipPlan interface if you're not using it for strict method/static typing on the model itself,
 // but it's good practice if you do. For schema definition alone, this is fine.
 
-const membershipPlanSchema = new mongoose.Schema({ // Correct: using mongoose.Schema
+const membershipPlanSchema = new mongoose.Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  }, // Correct: using mongoose.Schema
   name: {
     type: String,
     required: [true, "Membership plan name is required."],

@@ -1,4 +1,4 @@
-// FILE: src/lib/inventoryManager.ts
+// FILE: src/lib/inventoryManager.ts - MULTI-TENANT REFACTORED VERSION
 
 import mongoose from 'mongoose';
 import Product, { IProduct } from '@/models/Product';
@@ -26,9 +26,11 @@ export interface InventoryImpact {
 export class InventoryManager {
   static async calculateServiceInventoryUsage(
     serviceId: string,
-    customerGender: 'male' | 'female' | 'other' = 'other'
+    customerGender: 'male' | 'female' | 'other' = 'other',
+    tenantId: string // --- MT: Add tenantId
   ): Promise<InventoryUpdate[]> {
-    const service = await ServiceItem.findById(serviceId).populate('consumables.product', 'name sku unit');
+    // --- MT: Scope the ServiceItem query by tenantId
+    const service = await ServiceItem.findOne({ _id: serviceId, tenantId }).populate('consumables.product', 'name sku unit');
     if (!service || !service.consumables?.length) return [];
 
     return service.consumables.map(consumable => {
@@ -49,62 +51,57 @@ export class InventoryManager {
     });
   }
 
-  // --- THIS IS THE FULLY CORRECTED FUNCTION ---
   static async applyInventoryUpdates(
     updates: InventoryUpdate[],
-    session?: mongoose.ClientSession
+    session: mongoose.ClientSession | undefined,
+    tenantId: string // --- MT: Add tenantId
   ): Promise<{
     success: boolean;
     errors: string[];
     lowStockProducts: IProduct[];
   }> {
     
-    // Create a list of all database update "promises"
-   const updatePromises = updates.map(async (update) => { // LINE 1: Added 'async'
+   const updatePromises = updates.map(async (update) => {
   
-  // LINE 2: Added this IF statement to handle retail items differently
-  if (update.unit === 'piece') {
-    // LINE 3 (NEW): First, we must fetch the product to get its properties
-    const product = await Product.findById(update.productId).session(session);
-    if (!product) {
-      throw new Error(`Product with ID ${update.productId} not found during inventory update.`);
-    }
+      // --- MT: Scope product lookup by tenantId
+      const product = await Product.findOne({ _id: update.productId, tenantId }).session(session);
+      if (!product) {
+        throw new Error(`Product with ID ${update.productId} not found for this tenant during inventory update.`);
+      }
 
-    // LINE 4 (NEW): We calculate the new values for BOTH fields
-    const newNumberOfItems = product.numberOfItems - update.quantityToDeduct;
-    const newTotalQuantity = newNumberOfItems * product.quantityPerItem;
+      if (update.unit === 'piece') {
+        const newNumberOfItems = product.numberOfItems - update.quantityToDeduct;
+        const newTotalQuantity = newNumberOfItems * product.quantityPerItem;
 
-    // LINE 5 (NEW): We use '$set' to update both fields to their new, correct values
-    return Product.updateOne(
-      { _id: update.productId },
-      { 
-        $set: { 
-          numberOfItems: newNumberOfItems, 
-          totalQuantity: newTotalQuantity 
-        } 
-      },
-      { session }
-    );
-  } 
-  // LINE 6: Added this ELSE to handle the other cases
-  else {
-    // This is the original logic, now only used for in-house items (ml, g, etc.)
-    return Product.updateOne(
-      { _id: update.productId },
-      { $inc: { totalQuantity: -update.quantityToDeduct } },
-      { session }
-    );
-  }
-});
+        // --- MT: Scope the update query by tenantId
+        return Product.updateOne(
+          { _id: update.productId, tenantId },
+          { 
+            $set: { 
+              numberOfItems: newNumberOfItems, 
+              totalQuantity: newTotalQuantity 
+            } 
+          },
+          { session }
+        );
+      } 
+      else {
+        // --- MT: Scope the update query by tenantId
+        return Product.updateOne(
+          { _id: update.productId, tenantId },
+          { $inc: { totalQuantity: -update.quantityToDeduct } },
+          { session }
+        );
+      }
+    });
 
-// We now await the new 'updatePromises' array
-await Promise.all(updatePromises);
+    await Promise.all(updatePromises);
 
-    // If we get here, all updates were successful. Now check for low stock.
     const lowStockProducts: IProduct[] = [];
     const productIds = updates.map(u => u.productId);
 
-    const updatedProducts = await Product.find({ _id: { $in: productIds } })
+    // --- MT: Scope the final check by tenantId
+    const updatedProducts = await Product.find({ _id: { $in: productIds }, tenantId })
       .select('name numberOfItems lowStockThreshold')
       .session(session);
 
@@ -120,17 +117,18 @@ await Promise.all(updatePromises);
       lowStockProducts
     };
   }
-  // --- END OF THE FULLY CORRECTED FUNCTION ---
 
 
   static async calculateMultipleServicesInventoryImpact(
     serviceIds: string[],
-    customerGender: 'male' | 'female' | 'other' = 'other'
+    customerGender: 'male' | 'female' | 'other' = 'other',
+    tenantId: string // --- MT: Add tenantId
   ): Promise<{ impactSummary: InventoryImpact[], totalUpdates: InventoryUpdate[] }> {
     const consolidatedUpdates = new Map<string, InventoryUpdate>();
 
     for (const serviceId of serviceIds) {
-      const updates = await this.calculateServiceInventoryUsage(serviceId, customerGender);
+      // --- MT: Pass tenantId down to the next method
+      const updates = await this.calculateServiceInventoryUsage(serviceId, customerGender, tenantId);
       for (const update of updates) {
         const existing = consolidatedUpdates.get(update.productId);
         if (existing) {
@@ -143,13 +141,14 @@ await Promise.all(updatePromises);
 
     const impactSummary: InventoryImpact[] = [];
     for (const [productId, update] of consolidatedUpdates) {
-      const product = await Product.findById(productId);
+      // --- MT: Scope product lookup by tenantId
+      const product = await Product.findOne({ _id: productId, tenantId });
       if (!product) continue;
       const isPiece = product.unit === 'piece';
       const current = isPiece ? product.numberOfItems : product.totalQuantity;
       const remaining = current - update.quantityToDeduct;
       const initialCapacity = product.numberOfItems * product.quantityPerItem;
-      const percentageRemaining = initialCapacity > 0 ? ((isPiece ? remaining * product.quantityPeritem : remaining) / initialCapacity) * 100 : 0;
+      const percentageRemaining = initialCapacity > 0 ? ((isPiece ? remaining * product.quantityPerItem : remaining) / initialCapacity) * 100 : 0;
 
       let alertLevel: 'ok' | 'low' | 'critical' | 'insufficient' = 'ok';
       if (remaining < 0) alertLevel = 'insufficient';

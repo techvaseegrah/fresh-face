@@ -17,6 +17,12 @@ export interface IStylist extends Document {
 }
 
 const StylistSchema: Schema<IStylist> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   name: {
     type: String,
     required: [true, 'Stylist name is required.'],

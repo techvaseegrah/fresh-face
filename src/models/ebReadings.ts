@@ -2,6 +2,7 @@ import mongoose, { Schema, Document, Model, models } from 'mongoose';
 
 // Interface for the History sub-document to track changes
 export interface IHistoryEntry {
+  tenantId: mongoose.Schema.Types.ObjectId;
   timestamp: Date;
   user: {
     id: string;
@@ -16,6 +17,7 @@ export interface IHistoryEntry {
 
 // The main, simplified EBReading Interface
 export interface IEBReading extends Document {
+  tenantId: mongoose.Schema.Types.ObjectId;
   date: Date;
   morningUnits?: number;
   unitsConsumed?: number; // The result of (next day's morning - this day's morning)
@@ -28,6 +30,12 @@ export interface IEBReading extends Document {
 }
 
 const HistorySchema = new Schema<IHistoryEntry>({
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   timestamp: { type: Date, default: Date.now },
   user: {
     id: { type: String, required: true },
@@ -41,6 +49,12 @@ const HistorySchema = new Schema<IHistoryEntry>({
 });
 
 const EBReadingSchema = new Schema<IEBReading>({
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   date: { 
     type: Date, 
     required: true, 

@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, model, models } from 'mongoose';
 
 // Defines the structure for a rule in the database
 export interface IIncentiveRule extends Document {
+  tenantId: mongoose.Schema.Types.ObjectId;
   type: 'daily' | 'monthly';
   startDate: Date; // NEW: Start date for when this rule set is active
   endDate?: Date; // NEW: Optional end date, if null, it's the current active rule
@@ -24,6 +25,12 @@ export interface IIncentiveRule extends Document {
 
 // Mongoose schema for the incentive rules
 const IncentiveRuleSchema = new Schema<IIncentiveRule>({
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   type: { type: String, enum: ['daily', 'monthly'], required: true }, // Removed 'unique: true' to allow multiple rules of same type over time
   startDate: { type: Date, required: true }, // Ensure start date is always present
   endDate: { type: Date, required: false, default: null }, // Optional end date

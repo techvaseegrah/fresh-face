@@ -11,6 +11,12 @@ export interface IPositionRateSetting {
 }
 
 const PositionRateSettingSchema: Schema<IPositionRateSetting> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
     positionName: {
         type: String,
         required: true,

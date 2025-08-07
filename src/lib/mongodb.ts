@@ -19,6 +19,8 @@ import '@/models/ServiceItem';
 import '@/models/ServiceSubCategory';
 import '@/models/Stylist';
 import '@/models/user';
+import '@/models/Tenant';
+import '@/models/staff'
 
 
 

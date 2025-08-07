@@ -21,6 +21,12 @@ export interface IPerformance extends Document {
 
 // Mongoose Schema for Performance Metrics
 const PerformanceMetricsSchema: Schema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   customersServed: {
     type: Number,
     required: [true, 'Number of customers served is required.'],

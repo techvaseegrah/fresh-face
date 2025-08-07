@@ -1,6 +1,8 @@
-import mongoose, { Document, Schema, Model, models } from 'mongoose';
+// FILE: src/models/ServiceItem.ts
 
-// Interface for consumables remains the same
+// The main mongoose import is sufficient. We don't need to destructure 'models'.
+import mongoose, { Document, Schema, Model } from 'mongoose';
+
 export interface IServiceConsumable {
   product: mongoose.Types.ObjectId | any;
   quantity: {
@@ -11,10 +13,10 @@ export interface IServiceConsumable {
   unit: string;
 }
 
-// Add serviceCode to the main interface
 export interface IServiceItem extends Document {
   _id: string;
-  serviceCode: string; // <-- ADDED
+  tenantId: mongoose.Schema.Types.ObjectId; // <-- ADDED tenantId
+  serviceCode: string;
   name: string;
   price: number;
   membershipRate?: number;
@@ -23,6 +25,8 @@ export interface IServiceItem extends Document {
   consumables: IServiceConsumable[];
 }
 
+// NOTE: The consumables sub-schema does NOT need a tenantId,
+// as it is an embedded part of the parent ServiceItem which has the tenantId.
 const serviceConsumableSchema = new Schema({
   product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   quantity: {
@@ -34,11 +38,15 @@ const serviceConsumableSchema = new Schema({
 }, { _id: false });
 
 const serviceItemSchema = new Schema({
-  // Add the new serviceCode field to the schema
+  tenantId: { // <-- ADDED tenantId to the main schema
+    type: Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   serviceCode: {
     type: String,
     required: [true, 'Service Code is required.'],
-    unique: true,
     trim: true,
     uppercase: true,
     index: true,
@@ -51,6 +59,17 @@ const serviceItemSchema = new Schema({
   consumables: [serviceConsumableSchema]
 }, { timestamps: true });
 
-// Methods and model export remain the same
-const ServiceItem: Model<IServiceItem> = models.ServiceItem || mongoose.model<IServiceItem>('ServiceItem', serviceItemSchema);
+// --- MODIFIED EXPORT LOGIC ---
+// This pattern is more resilient to Next.js hot-reloading issues.
+let ServiceItem: Model<IServiceItem>;
+
+try {
+  // Throws an error if "ServiceItem" hasn't been registered
+  ServiceItem = mongoose.model<IServiceItem>('ServiceItem');
+} catch {
+  // Defines the model only if it doesn't exist
+  ServiceItem = mongoose.model<IServiceItem>('ServiceItem', serviceItemSchema);
+}
+// --- END MODIFICATION ---
+
 export default ServiceItem;

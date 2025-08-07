@@ -26,6 +26,12 @@ export interface IProduct extends Document {
 }
 
 const ProductSchema: Schema<IProduct> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   sku: {
     type: String,
     required: true,

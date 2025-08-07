@@ -6,16 +6,16 @@ require('dotenv').config({ path: '../.env' }); // Make sure to point to your .en
 const MONGODB_URI = "mongodb+srv://dhanush:Dhanush@cluster0.7ymwvxu.mongodb.net/test2?retryWrites=true&w=majority&appName=Cluster0"
 
 // --- Configuration for your first "master" tenant ---
-const TENANT_NAME = 'Fresh Face Platform';
-const TENANT_SUBDOMAIN = 'admin'; // This is the key identifier
-const USER_EMAIL = 'superadmin@freshface.com';
-const USER_PASSWORD = 'SuperAdmin123!';
-const USER_NAME = 'Platform Administrator';
-const ROLE_NAME = 'PLATFORM_ADMIN'; // Using uppercase as in your schema
-const ROLE_DISPLAY_NAME = 'Platform Administrator';
+const TENANT_NAME = 'Glamour Salon'; // New Salon Name
+const TENANT_SUBDOMAIN = 'glamour';      // New, unique subdomain
+const USER_EMAIL = 'owner@glamour.com';  // New User Email
+const USER_PASSWORD = 'Password123!';    // New Password
+const USER_NAME = 'Glamour Salon Owner'; // New User Name
+const ROLE_NAME = 'OWNER';               // Role name can be the same, it will be scoped to the tenant
+const ROLE_DISPLAY_NAME = 'Salon Owner';
 
 
-async function seedInitialTenant() {
+async function seedSecondTenant() {
   if (!MONGODB_URI) {
     console.error('Error: MONGODB_URI is not defined in your .env file.');
     process.exit(1);
@@ -91,4 +91,4 @@ async function seedInitialTenant() {
   }
 }
 
-seedInitialTenant();
+seedSecondTenant();

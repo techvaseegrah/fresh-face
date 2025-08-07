@@ -5,6 +5,7 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 export interface IAttendance extends Document {
   _id: Types.ObjectId;
   staffId: Types.ObjectId;
+  tenantId: mongoose.Schema.Types.ObjectId;
   date: Date;
   checkIn: Date | null;
   checkOut: Date | null;
@@ -21,6 +22,12 @@ export interface IAttendance extends Document {
 
 const AttendanceSchema: Schema<IAttendance> = new Schema(
   {
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
     staffId: { type: Schema.Types.ObjectId, ref: 'Staff', required: true },
     date: { type: Date, required: true },
     checkIn: { type: Date, default: null },

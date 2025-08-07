@@ -36,6 +36,12 @@ export interface ICustomerModel extends Model<ICustomer> {
 }
 
 const customerSchema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   // --- Sensitive Fields ---
   name: { type: String, required: true },
   phoneNumber: { type: String, required: true },
@@ -116,8 +122,12 @@ customerSchema.statics.checkBarcodeExists = function (this: ICustomerModel, barc
     isActive: true
   }).then(result => !!result);
 };
-
-const Customer = (mongoose.models.Customer as ICustomerModel) ||
-  mongoose.model<ICustomer, ICustomerModel>('Customer', customerSchema);
-
+let Customer: ICustomerModel;
+try {
+  // Attempt to use the existing model
+  Customer = mongoose.model<ICustomer, ICustomerModel>('Customer');
+} catch (error) {
+  // If it doesn't exist, create a new one
+  Customer = mongoose.model<ICustomer, ICustomerModel>('Customer', customerSchema);
+}
 export default Customer;

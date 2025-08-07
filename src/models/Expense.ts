@@ -13,6 +13,12 @@ export interface IExpense extends Document {
 }
 
 const ExpenseSchema: Schema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   type: {
     type: String,
     required: [true, 'Please provide an expense type.'],

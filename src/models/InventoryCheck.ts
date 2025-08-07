@@ -14,6 +14,12 @@ export interface IInventoryCheck extends Document {
 }
 
 const InventoryCheckSchema: Schema<IInventoryCheck> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   product: {
     type: Schema.Types.ObjectId,
     ref: 'Product',

@@ -3,6 +3,7 @@ import mongoose, { Document, Schema, Model, Types } from 'mongoose';
 
 // Interface representing a document in MongoDB.
 export interface IAdvancePayment extends Document {
+  tenantId: mongoose.Schema.Types.ObjectId;
   staffId: Types.ObjectId;
   requestDate: Date;
   amount: number;
@@ -14,6 +15,12 @@ export interface IAdvancePayment extends Document {
 
 const advancePaymentSchema: Schema<IAdvancePayment> = new Schema(
   {
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
     staffId: {
       type: Schema.Types.ObjectId,
       ref: 'Staff', // This MUST match the model name you use for Staff

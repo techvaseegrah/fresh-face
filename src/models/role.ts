@@ -2,6 +2,12 @@
 import mongoose from 'mongoose';
 
 const roleSchema = new mongoose.Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   name: {
     type: String,
     required: true,

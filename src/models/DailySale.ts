@@ -73,6 +73,12 @@ const AppliedRuleSchema = new Schema<IAppliedRule>({
  * @description The main Mongoose schema for the DailySale collection.
  */
 const DailySaleSchema: Schema<IDailySale> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   staff: {
     type: Schema.Types.ObjectId,
     ref: 'Staff',

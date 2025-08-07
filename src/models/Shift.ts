@@ -8,6 +8,12 @@ export interface IShift extends Document {
 }
 
 const ShiftSchema: Schema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   employeeId: {
     type: Schema.Types.ObjectId,
     ref: 'Staff',

@@ -1,6 +1,6 @@
-// /app/api/appointment/route.ts - FINAL CORRECTED VERSION (with sorting fix)
+// /app/api/appointment/route.ts - MULTI-TENANT REFACTORED VERSION
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
 import Customer from '@/models/customermodel';
@@ -11,16 +11,19 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { InventoryManager } from '@/lib/inventoryManager'; 
+import { getTenantIdOrBail } from '@/lib/tenant';
 
-// --- (1) IMPORT ALL THE NECESSARY FUNCTIONS ---
 import { encrypt } from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 
 // ===================================================================================
-//  GET: Handler with Upgraded Search and Date Filter
+//  GET: Handler with Multi-Tenant Scoping
 // ===================================================================================
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    const tenantId = getTenantIdOrBail(req);
+    if (tenantId instanceof NextResponse) return tenantId;
+
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_READ)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -36,7 +39,8 @@ export async function GET(req: Request) {
     const dateFilter = searchParams.get('date');
     const skip = (page - 1) * limit;
 
-    const matchStage: any = {};
+    const matchStage: any = { tenantId: new mongoose.Types.ObjectId(tenantId) };
+
     if (statusFilter && statusFilter !== 'All') {
       matchStage.status = statusFilter;
     }
@@ -54,24 +58,21 @@ export async function GET(req: Request) {
         matchStage.appointmentDateTime = { $gte: startOfTodayUTC, $lte: endOfTodayUTC };
     }
 
-    // --- UPGRADED SEARCH LOGIC FOR CUSTOMERS ---
     if (searchQuery) {
         const searchStr = searchQuery.trim();
-        let customerFindConditions: any = {};
+        let customerFindConditions: any = { tenantId };
 
         const isNumeric = /^\d+$/.test(searchStr);
         if (isNumeric) {
-            // Use the new fast index for phone numbers
             customerFindConditions.phoneSearchIndex = createBlindIndex(searchStr);
         } else {
-            // Use regex for names (customers and stylists)
             customerFindConditions.searchableName = { $regex: searchStr, $options: 'i' };
         }
         
         const matchingCustomers = await Customer.find(customerFindConditions).select('_id').lean();
         const customerIds = matchingCustomers.map(c => c._id);
 
-        const stylistQuery = { name: { $regex: searchStr, $options: 'i' } };
+        const stylistQuery = { name: { $regex: searchStr, $options: 'i' }, tenantId };
         const matchingStylists = await Staff.find(stylistQuery).select('_id').lean();
         const stylistIds = matchingStylists.map(s => s._id);
 
@@ -82,6 +83,8 @@ export async function GET(req: Request) {
         if (finalSearchOrConditions.length > 0) {
             matchStage.$or = finalSearchOrConditions;
         } else {
+            // If search query is provided but no customers or stylists match, return no results.
+            // Use a condition that is guaranteed to be false.
             matchStage._id = new mongoose.Types.ObjectId(); 
         }
     }
@@ -92,7 +95,6 @@ export async function GET(req: Request) {
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
-        // --- FIX [2023-11-03]: Changed sorting for 'All Time' view to descending (-1) to show newest first. ---
         .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 }) 
         .skip(skip)
         .limit(limit),
@@ -112,7 +114,6 @@ export async function GET(req: Request) {
         }
         return { ...apt.toObject(), id: apt._id.toString(), appointmentDateTime: finalDateTime.toISOString(), createdAt: (apt.createdAt || finalDateTime).toISOString() };
     });
-      console.log("Data being sent to frontend:", JSON.stringify(formattedAppointments, null, 2));
 
     return NextResponse.json({
       success: true,
@@ -127,9 +128,12 @@ export async function GET(req: Request) {
 }
 
 // ===================================================================================
-//  POST: Handler with the "Bulletproof" fix for creating customers
+//  POST: Handler with Multi-Tenant Scoping and Transaction Safety
 // ===================================================================================
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  
+  const tenantId = getTenantIdOrBail(req);
+  if (tenantId instanceof NextResponse) return tenantId;
   
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -147,19 +151,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields or services." }, { status: 400 });
     }
 
-    // --- Find or Create Customer (with corrected logic) ---
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
-    const phoneHashToFind = createBlindIndex(normalizedPhone); // Use the new blind index function
-    let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind }).session(session);
+    const phoneHashToFind = createBlindIndex(normalizedPhone);
+    let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind, tenantId }).session(session);
 
     if (!customerDoc) {
       const customerDataForCreation = {
+        tenantId: tenantId,
         name: encrypt(customerName.trim()),
         phoneNumber: encrypt(normalizedPhone),
         email: email ? encrypt(email.trim()) : undefined,
         gender: gender || 'other',
-
-        // Generate ALL required search and index fields
         phoneHash: phoneHashToFind,
         searchableName: customerName.trim().toLowerCase(),
         last4PhoneNumber: normalizedPhone.slice(-4),
@@ -173,13 +175,17 @@ export async function POST(req: Request) {
       }
     }
 
+    // Pass tenantId to your InventoryManager if it needs to query tenant-specific data
     const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
-    const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
-      serviceIdsForInventoryCheck,
-      gender
-    );
-    if (totalUpdates.length > 0) {
-      await InventoryManager.applyInventoryUpdates(totalUpdates, session);
+    if (InventoryManager.calculateMultipleServicesInventoryImpact && InventoryManager.applyInventoryUpdates) {
+        const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
+          serviceIdsForInventoryCheck,
+          gender,
+          tenantId
+        );
+        if (totalUpdates.length > 0) {
+          await InventoryManager.applyInventoryUpdates(totalUpdates, session, tenantId);
+        }
     }
 
     const assumedUtcDate = new Date(`${date}T${time}:00.000Z`);
@@ -189,18 +195,27 @@ export async function POST(req: Request) {
 
     const groupBookingId = new mongoose.Types.ObjectId();
     const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
-      const service = await ServiceItem.findById(assignment.serviceId).select('duration price membershipRate').lean();
+      // Ensure the service being booked belongs to the tenant
+      const service = await ServiceItem.findOne({ _id: assignment.serviceId, tenantId }).select('duration price membershipRate').lean();
       if (!service) {
-        throw new Error(`Service with ID ${assignment.serviceId} not found.`);
+        throw new Error(`Service with ID ${assignment.serviceId} not found for this salon.`);
+      }
+
+      // Ensure the stylist being booked belongs to the tenant
+      const stylist = await Staff.findOne({ _id: assignment.stylistId, tenantId }).lean();
+      if(!stylist) {
+        throw new Error(`Stylist with ID ${assignment.stylistId} not found for this salon.`);
       }
 
       const tempAppointmentForCalc = new Appointment({
         customerId: customerDoc!._id,
-        serviceIds: [assignment.serviceId]
+        serviceIds: [assignment.serviceId],
+        tenantId: tenantId, // Pass tenantId to virtuals/methods
       });
       const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
 
       return {
+        tenantId: tenantId,
         customerId: customerDoc!._id,
         stylistId: assignment.stylistId,
         serviceIds: [assignment.serviceId],

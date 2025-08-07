@@ -7,6 +7,12 @@ export interface IServiceCategory extends Document {
 }
 
 const ServiceCategorySchema: Schema<IServiceCategory> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   name: { type: String, required: true, trim: true },
   targetAudience: { type: String, enum: ['male', 'female', 'Unisex'], required: true },
 }, { timestamps: true });

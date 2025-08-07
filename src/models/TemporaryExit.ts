@@ -11,6 +11,12 @@ export interface ITemporaryExit extends Document {
 }
 
 const TemporaryExitSchema: Schema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   attendanceId: { type: Schema.Types.ObjectId, ref: 'Attendance', required: true },
   startTime: { type: Date, required: true },
   endTime: { type: Date, default: null },

@@ -1,14 +1,15 @@
-// src/models/Staff.ts
+// FILE: src/models/staff.ts
 
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export interface IStaff extends Document {
   _id: Types.ObjectId;
   staffIdNumber: string;
+  tenantId: mongoose.Schema.Types.ObjectId;
   name: string;
-  email?: string; // Email is optional now
+  email?: string;
   phone?: string;
-  aadharNumber: string; // Let's assume Aadhar is required
+  aadharNumber: string;
   position: string;
   joinDate: Date;
   salary?: number;
@@ -21,6 +22,12 @@ export interface IStaff extends Document {
 }
 
 const staffSchema = new Schema<IStaff>({
+    tenantId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   staffIdNumber: {
     type: String,
     required: [true, 'Staff ID number is required.'],
@@ -31,15 +38,15 @@ const staffSchema = new Schema<IStaff>({
   email: {
     type: String,
     unique: true,
-    sparse: true, // This allows multiple documents to have a null/missing email
+    sparse: true,
     trim: true,
     lowercase: true,
   },
   phone: { type: String, trim: true },
   aadharNumber: {
     type: String,
-    required: true, // If it's required, `sparse` is not needed.
-    unique: true,   // Every staff member MUST have a UNIQUE Aadhar number.
+    required: true,
+    unique: true,
     trim: true,
   },
   position: { type: String, required: true, trim: true },
@@ -53,8 +60,20 @@ const staffSchema = new Schema<IStaff>({
   agreementImage: { type: String },
 }, { timestamps: true });
 
-// staffSchema.index({ email: 1 }); // REMOVE THIS LINE - it's redundant.
 staffSchema.index({ status: 1, name: 1 });
 
-const Staff: Model<IStaff> = mongoose.models.Staff || mongoose.model<IStaff>('Staff', staffSchema);
+
+// --- MODIFIED EXPORT LOGIC ---
+// This pattern is more resilient to Next.js hot-reloading issues.
+let Staff: Model<IStaff>;
+
+try {
+  // Throws an error if "Staff" hasn't been registered
+  Staff = mongoose.model<IStaff>('Staff');
+} catch {
+  // Defines the model only if it doesn't exist
+  Staff = mongoose.model<IStaff>('Staff', staffSchema);
+}
+// --- END MODIFICATION ---
+
 export default Staff;

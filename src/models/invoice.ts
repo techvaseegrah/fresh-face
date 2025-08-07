@@ -2,6 +2,12 @@
 import mongoose, { Schema, model, models } from 'mongoose';
 
 const lineItemSchema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   itemType: {
     type: String,
     enum: ['service', 'product','fee'],

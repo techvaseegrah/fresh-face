@@ -9,6 +9,12 @@
     }
 
     const BrandSchema: Schema<IProductBrand> = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
     name: { type: String, required: true, trim: true },
     type: { type: String, enum: ['Retail', 'In-House'], required: true },
     }, { timestamps: true });

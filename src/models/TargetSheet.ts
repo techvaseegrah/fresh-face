@@ -33,6 +33,12 @@ interface ITargetSheet extends Document {
 }
 
 const TargetMetricsSchema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   service: { type: Number, default: 0 },
   retail: { type: Number, default: 0 },
   bills: { type: Number, default: 0 },

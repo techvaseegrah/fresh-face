@@ -2,6 +2,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IProcurement extends Document {
+    tenantId: mongoose.Schema.Types.ObjectId;
     name: string;
     quantity: number;
     price: number;
@@ -19,6 +20,12 @@ export interface IProcurement extends Document {
 }
 
 const ProcurementSchema = new Schema<IProcurement>({
+    tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
     name: { type: String, required: true },
     quantity: { type: Number, required: true, min: 0 },
     price: { type: Number, required: true, min: 0 },

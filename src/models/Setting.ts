@@ -10,6 +10,12 @@ export interface ISetting extends Document {
 
 // Mongoose Schema
 const SettingSchema: Schema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   key: { 
     type: String, 
     required: true, 

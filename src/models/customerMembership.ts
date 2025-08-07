@@ -2,6 +2,12 @@
 import mongoose from 'mongoose';
 
 const customerMembershipSchema = new mongoose.Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
