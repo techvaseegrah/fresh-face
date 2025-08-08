@@ -1,9 +1,17 @@
 // app/api/customer/check-barcode/route.ts
+
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
 
 export async function GET(req: Request) {
+  // 2. Get the Tenant ID from the request or fail
+  const tenantId = getTenantIdOrBail(req as any);
+  if (tenantId instanceof NextResponse) {
+    return tenantId;
+  }
+
   try {
     await connectToDatabase();
     
@@ -17,11 +25,16 @@ export async function GET(req: Request) {
       }, { status: 400 });
     }
     
-    const exists = await Customer.checkBarcodeExists(barcode);
+    // 3. Perform the query directly, scoped by tenantId
+    // This checks for the barcode's existence ONLY within the current tenant.
+    const customer = await Customer.findOne({ 
+        membershipBarcode: barcode, 
+        tenantId: tenantId 
+    }).lean();
     
     return NextResponse.json({
       success: true,
-      exists: exists
+      exists: !!customer // Convert the found document (or null) to a boolean
     });
     
   } catch (error) {

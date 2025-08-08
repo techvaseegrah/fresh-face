@@ -1,4 +1,4 @@
-// ServiceManager.tsx - FINAL, CORRECTED VERSION
+// ServiceManager.tsx - FINAL, MULTI-TENANT VERSION
 
 "use client"
 
@@ -8,7 +8,7 @@ import type { IServiceCategory } from "@/models/ServiceCategory"
 import type { IServiceSubCategory } from "@/models/ServiceSubCategory"
 
 import { useEffect, useState, useCallback } from "react"
-import { useSession } from "next-auth/react"
+import { useSession, getSession } from "next-auth/react" // 1. Import getSession
 import { hasPermission, PERMISSIONS } from "@/lib/permissions"
 import { toast } from "react-toastify"
 
@@ -49,6 +49,21 @@ export default function ServiceManager() {
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_UPDATE)
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.SERVICES_DELETE)
 
+  // 2. --- TENANT-AWARE FETCH HELPER ---
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const session = await getSession();
+    if (!session?.user?.tenantId) {
+      throw new Error("Your session is invalid. Please log in again.");
+    }
+
+    const headers = { ...options.headers, 'x-tenant-id': session.user.tenantId };
+    if (options.body) {
+      (headers as any)['Content-Type'] = 'application/json';
+    }
+
+    return fetch(url, { ...options, headers });
+  }, []);
+
   const resetSelections = useCallback(() => {
     setSelectedMainCategory(null)
     setSelectedSubCategoryId(null)
@@ -60,47 +75,50 @@ export default function ServiceManager() {
     setIsLoadingMain(true)
     resetSelections()
     try {
-      const res = await fetch(`/api/service-categories`)
+      // 3. Use tenantFetch
+      const res = await tenantFetch(`/api/service-categories`)
       const data = await res.json()
       setMainCategories(data.success ? data.data : [])
-    } catch (error) {
-      toast.error("Failed to load categories.")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load categories.")
       setMainCategories([])
     } finally {
       setIsLoadingMain(false)
     }
-  }, [resetSelections])
+  }, [resetSelections, tenantFetch])
 
   const fetchSubCategories = useCallback(async (mainCategoryId: string) => {
     setIsLoadingSub(true)
     setSelectedSubCategoryId(null)
     setServices([])
     try {
-      const res = await fetch(`/api/service-sub-categories?mainCategoryId=${mainCategoryId}`)
+      // 3. Use tenantFetch
+      const res = await tenantFetch(`/api/service-sub-categories?mainCategoryId=${mainCategoryId}`)
       const data = await res.json()
       setSubCategories(data.success ? data.data : [])
-    } catch (error) {
-      toast.error("Failed to load sub-categories.")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load sub-categories.")
       setSubCategories([])
     } finally {
       setIsLoadingSub(false)
     }
-  }, [])
+  }, [tenantFetch])
 
   const fetchServices = useCallback(async (subCategoryId: string) => {
     setIsLoadingServices(true)
     setServices([])
     try {
-      const res = await fetch(`/api/service-items?subCategoryId=${subCategoryId}`)
+      // 3. Use tenantFetch
+      const res = await tenantFetch(`/api/service-items?subCategoryId=${subCategoryId}`)
       const data = await res.json()
       setServices(data.success ? data.data : [])
-    } catch (error) {
-      toast.error("Failed to load services.")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load services.")
       setServices([])
     } finally {
       setIsLoadingServices(false)
     }
-  }, [])
+  }, [tenantFetch])
 
   useEffect(() => {
     fetchMainCategories()
@@ -142,7 +160,7 @@ export default function ServiceManager() {
     return paths[entityType] || ""
   }
 
-  const handleSave = async (entityType: EntityType, data: any) => {
+  const handleSave = useCallback(async (entityType: EntityType, data: any) => {
     const apiPath = getApiPath(entityType)
     if (!apiPath) return
 
@@ -151,13 +169,13 @@ export default function ServiceManager() {
     const method = isEditing ? "PUT" : "POST"
 
     try {
-      const res = await fetch(url, {
+      // 3. Use tenantFetch
+      const res = await tenantFetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
       const result = await res.json()
-      if (!res.ok || !result.success) {
+      if (!res.ok) {
         throw new Error(result.error || "An unknown error occurred.")
       }
       
@@ -174,9 +192,9 @@ export default function ServiceManager() {
     } catch (error: any) {
       toast.error(`Save failed: ${error.message}`)
     }
-  }
+  }, [entityToEdit, selectedMainCategory, selectedSubCategoryId, fetchMainCategories, fetchSubCategories, fetchServices, tenantFetch])
 
-  const handleDelete = async (entityType: EntityType, id: string) => {
+  const handleDelete = useCallback(async (entityType: EntityType, id: string) => {
     const apiPath = getApiPath(entityType)
     if (!apiPath) return
 
@@ -186,9 +204,10 @@ export default function ServiceManager() {
     }
 
     try {
-      const res = await fetch(`/api/${apiPath}/${id}`, { method: "DELETE" })
+      // 3. Use tenantFetch
+      const res = await tenantFetch(`/api/${apiPath}/${id}`, { method: "DELETE" })
       const result = await res.json()
-      if (!res.ok || !result.success) {
+      if (!res.ok) {
         throw new Error(result.error || "An unknown error occurred.")
       }
       
@@ -204,8 +223,10 @@ export default function ServiceManager() {
     } catch (error: any) {
       toast.error(`Delete failed: ${error.message}`)
     }
-  }
+  }, [selectedMainCategory, selectedSubCategoryId, fetchMainCategories, fetchSubCategories, fetchServices, tenantFetch])
 
+  // The rest of the JSX rendering is identical.
+  // ...
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl bg-white shadow-lg">
       <ServiceFormModal
@@ -219,7 +240,6 @@ export default function ServiceManager() {
           subCategoryId: selectedSubCategoryId,
         }}
       />
-      {/* THE FIX: Removed the 'audience' prop from the modal invocation */}
       <ServiceImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}

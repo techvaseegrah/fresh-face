@@ -1,4 +1,4 @@
-// src/app/(main)/crm/components/AddEditCustomerModal.tsx
+// src/app/(main)/crm/components/AddEditCustomerModal.tsx - MULTI-TENANT VERSION
 'use client';
 
 import React, { useState, useEffect, FormEvent } from 'react';
@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { CrmCustomer, AddCustomerFormData } from '../types';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Gender } from '@/types/gender';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
 interface AddEditCustomerModalProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
 
   useEffect(() => {
     if (isOpen) {
-      if (isEditMode) {
+      if (isEditMode && customerToEdit) {
         setFormData({
             name: customerToEdit.name,
             email: customerToEdit.email || '',
@@ -49,27 +50,34 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
     setFormError(null);
     setIsSubmitting(true);
 
-    // --- FIXED: Ensure endpoint matches the API file structure ---
-    // The file `/api/customer/route.ts` creates the endpoint `/api/customer`.
-    // For editing, you would need another file at `/api/customer/[id]/route.ts`.
     const apiEndpoint = isEditMode ? `/api/customer/${customerToEdit?._id}` : '/api/customer';
     const method = isEditMode ? 'PUT' : 'POST';
 
     try {
+      // 2. Get the session to retrieve the tenant ID
+      const session = await getSession();
+      if (!session?.user?.tenantId) {
+        throw new Error("Your session is invalid. Please log in again.");
+      }
+
+      // 3. Add the x-tenant-id header to the fetch request
       const response = await fetch(apiEndpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        },
         body: JSON.stringify(formData),
       });
+
       const result = await response.json();
 
-      if (!response.ok || !result.success) {
-        // Use the detailed error message from the server
+      if (!response.ok) {
         throw new Error(result.message || 'Failed to save customer.');
       }
 
       toast.success(`Customer ${isEditMode ? 'updated' : 'added'} successfully!`);
-      onSave();
+      onSave(); // This will trigger a refresh in the parent component
       onClose();
 
     } catch (error: any) {

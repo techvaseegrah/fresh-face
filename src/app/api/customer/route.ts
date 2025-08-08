@@ -1,4 +1,4 @@
-// FILE: /api/customer/route.ts - COMPLETE & FINAL
+// FILE: /api/customer/route.ts - MULTI-TENANT VERSION
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -9,6 +9,10 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import mongoose from 'mongoose';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 import { encrypt, decrypt } from '@/lib/crypto';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
+
+// NOTE: This code assumes that the 'Appointment', 'ServiceItem', and 'LoyaltyTransaction' models
+// also have a 'tenantId' field for secure data lookups.
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
@@ -16,6 +20,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
   
+    const tenantId = getTenantIdOrBail(req as any);
+    if (tenantId instanceof NextResponse) {
+        return tenantId;
+    }
+
     try {
       await connectToDatabase();
       const { searchParams } = new URL(req.url);
@@ -24,7 +33,6 @@ export async function GET(req: Request) {
       const limit = parseInt(searchParams.get('limit') || '10', 10);
       const skip = (page - 1) * limit;
       const searchQuery = searchParams.get('search')?.trim();
-      
       const statusFilter = searchParams.get('status');
       const isMemberFilter = searchParams.get('isMember');
       const lastVisitFrom = searchParams.get('lastVisitFrom');
@@ -34,7 +42,7 @@ export async function GET(req: Request) {
       const nonReturningDaysParam = searchParams.get('nonReturningDays');
 
       const pipeline: mongoose.PipelineStage[] = [];
-      const initialMatchConditions: any[] = [{ isActive: true }];
+      const initialMatchConditions: any[] = [{ tenantId: new mongoose.Types.ObjectId(tenantId) }, { isActive: true }];
 
       if (searchQuery) {
         const isNumeric = /^\d+$/.test(searchQuery);
@@ -47,7 +55,14 @@ export async function GET(req: Request) {
       
       pipeline.push({ $match: { $and: initialMatchConditions } });
 
-      pipeline.push({ $lookup: { from: 'appointments', localField: '_id', foreignField: 'customerId', as: 'appointments' } });
+      pipeline.push({
+        $lookup: {
+          from: 'appointments',
+          let: { customerId: '$_id' },
+          pipeline: [{ $match: { $expr: { $eq: ['$customerId', '$$customerId'] }, tenantId: new mongoose.Types.ObjectId(tenantId) } }],
+          as: 'appointments'
+        }
+      });
       const twoMonthsAgo = new Date();
       twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
       pipeline.push({
@@ -90,8 +105,29 @@ export async function GET(req: Request) {
           metadata: [{ $count: 'total' }],
           data: [
             { $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit },
-            { $lookup: { from: 'serviceitems', localField: 'lastAppointment.serviceIds', foreignField: '_id', as: 'lastServicesDetails' } },
-            { $lookup: { from: "loyaltytransactions", localField: "_id", foreignField: "customerId", as: "loyaltyData" } },
+            {
+              $lookup: {
+                from: 'serviceitems',
+                let: { serviceIds: '$lastAppointment.serviceIds' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: { $in: ['$_id', { $ifNull: ['$$serviceIds', []] }] }, // <-- THE FIX IS HERE
+                      tenantId: new mongoose.Types.ObjectId(tenantId)
+                    }
+                  }
+                ],
+                as: 'lastServicesDetails'
+              }
+            },
+            {
+              $lookup: {
+                from: "loyaltytransactions",
+                let: { customerId: '$_id' },
+                pipeline: [{ $match: { $expr: { $eq: ['$customerId', '$$customerId'] }, tenantId: new mongoose.Types.ObjectId(tenantId) } }],
+                as: "loyaltyData"
+              }
+            },
             { $project: {
                 name: 1, phoneNumber: 1, email: 1, gender: 1, dob: 1, isMembership: 1, membershipBarcode: 1, createdAt: 1, status: 1,
                 lastVisitDate: '$lastAppointment.appointmentDateTime',
@@ -107,14 +143,40 @@ export async function GET(req: Request) {
       const [result] = await Customer.aggregate(pipeline);
       const totalCustomers = result.metadata[0] ? result.metadata[0].total : 0;
       const customersFromDb = result.data;
-      const customersWithDetails = customersFromDb.map((customer: any) => ({
+      const customersWithDetails = customersFromDb.map((customer: any) => {
+    let decryptedName = 'Error: Corrupted Data';
+    let decryptedPhoneNumber = 'Error: Corrupted Data';
+    let decryptedEmail: string | undefined = undefined;
+
+    try {
+        decryptedName = customer.name ? decrypt(customer.name) : 'N/A';
+    } catch (e) {
+        console.error(`🔴 LIST_VIEW_ERROR: Decryption failed for 'name' on customer ID ${customer._id}. Raw value: "${customer.name}"`);
+    }
+    
+    try {
+        decryptedPhoneNumber = customer.phoneNumber ? decrypt(customer.phoneNumber) : 'N/A';
+    } catch (e) {
+        console.error(`🔴 LIST_VIEW_ERROR: Decryption failed for 'phoneNumber' on customer ID ${customer._id}. Raw value: "${customer.phoneNumber}"`);
+    }
+
+    if (customer.email) {
+        try {
+            decryptedEmail = decrypt(customer.email);
+        } catch (e) {
+            console.error(`🔴 LIST_VIEW_ERROR: Decryption failed for 'email' on customer ID ${customer._id}. Raw value: "${customer.email}"`);
+        }
+    }
+
+    return {
         ...customer,
-        name: customer.name ? decrypt(customer.name) : 'N/A',
-        phoneNumber: customer.phoneNumber ? decrypt(customer.phoneNumber) : '',
-        email: customer.email ? decrypt(customer.email) : '',
+        name: decryptedName,
+        phoneNumber: decryptedPhoneNumber,
+        email: decryptedEmail,
         id: customer._id.toString(),
-        appointmentHistory: customer.lastVisitDate ? [{ date: customer.lastVisitDate, services: customer.lastServices || [], _id: '', id: '', status: '', totalAmount: 0, stylistName: '' }] : [],
-      }));
+        appointmentHistory: customer.lastVisitDate ? [{ date: customer.lastVisitDate, services: customer.lastServices || [] }] : [],
+    };
+});
       const totalPages = Math.ceil(totalCustomers / limit);
   
       return NextResponse.json({ success: true, customers: customersWithDetails, pagination: { totalCustomers, totalPages, currentPage: page, limit } });
@@ -125,29 +187,48 @@ export async function GET(req: Request) {
     }
 }
 
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
+
+  // 2. Get Tenant ID or fail early
+  const tenantId = getTenantIdOrBail(req as any);
+  if (tenantId instanceof NextResponse) {
+      return tenantId;
+  }
+
   try {
     await connectToDatabase();
     const body = await req.json();
     if (!body.name || !body.phoneNumber) {
         return NextResponse.json({ success: false, message: 'Name and Phone Number are required.' }, { status: 400 });
     }
-    if (body.gender) { body.gender = body.gender.toLowerCase(); }
+
     const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
     const phoneHash = createBlindIndex(normalizedPhoneNumber);
-    const phoneSearchIndexes = generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram));
-    const existingCustomer = await Customer.findOne({ phoneHash });
+    
+    // 5. Scope the existence check to the current tenant
+    const existingCustomer = await Customer.findOne({ phoneHash, tenantId });
     if (existingCustomer) {
         return NextResponse.json({ success: false, message: 'A customer with this phone number already exists.', exists: true, customer: existingCustomer }, { status: 409 });
     }
+    
+    // 6. Add tenantId to the new customer data before creation
     const newCustomerData = {
-      name: encrypt(body.name), phoneNumber: encrypt(normalizedPhoneNumber), email: body.email ? encrypt(body.email) : undefined,
-      phoneHash, searchableName: body.name.toLowerCase(), last4PhoneNumber: normalizedPhoneNumber.slice(-4), phoneSearchIndex: phoneSearchIndexes,
-      dob: body.dob || undefined, gender: body.gender || undefined, survey: body.survey || undefined,
+      name: encrypt(body.name), 
+      phoneNumber: encrypt(normalizedPhoneNumber), 
+      email: body.email ? encrypt(body.email) : undefined,
+      phoneHash, 
+      searchableName: body.name.toLowerCase(), 
+      last4PhoneNumber: normalizedPhoneNumber.slice(-4), 
+      phoneSearchIndex: generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram)),
+      dob: body.dob || undefined, 
+      gender: body.gender ? body.gender.toLowerCase() : undefined, 
+      survey: body.survey || undefined,
+      tenantId: tenantId, // Enforce tenantId
     };
     const newCustomer = await Customer.create(newCustomerData);
     return NextResponse.json({ success: true, data: newCustomer }, { status: 201 });

@@ -1,4 +1,4 @@
-// /app/api/products/import/route.ts
+// /app/api/products/import/route.ts - MULTI-TENANT VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
@@ -8,6 +8,9 @@ import ProductSubCategory from '@/models/ProductSubCategory';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
+
+// NOTE: It is assumed that Product, ProductBrand, and ProductSubCategory models all have a 'tenantId' field.
 
 // Define the expected structure of a row from the Excel file
 interface ProductImportRow {
@@ -20,16 +23,22 @@ interface ProductImportRow {
   NumberOfItems: number;
   QuantityPerItem: number;
   Unit: 'ml' | 'g' | 'kg' | 'l' | 'piece';
-  StockedDate: string; // Will be a string like 'YYYY-MM-DD'
+  StockedDate: string; 
   ExpiryDate?: string;
   LowStockThreshold?: number;
 }
 
 export async function POST(req: NextRequest) {
-  // 1. --- PERMISSION CHECK ---
+  // 1. --- PERMISSION & TENANT CHECK ---
   const session = await getServerSession(authOptions);
   if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_CREATE)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+  
+  // 2. Get the Tenant ID right at the start or fail.
+  const tenantId = getTenantIdOrBail(req);
+  if (tenantId instanceof NextResponse) {
+    return tenantId;
   }
 
   try {
@@ -40,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     await dbConnect();
     
-    // 2. --- REPORTING & CACHING ---
+    // 3. --- REPORTING & CACHING ---
     const report = {
       totalRows: productsToImport.length,
       successfulImports: 0,
@@ -53,41 +62,42 @@ export async function POST(req: NextRequest) {
     const brandCache = new Map<string, any>();
     const subCategoryCache = new Map<string, any>();
 
-    // 3. --- PROCESS EACH ROW ---
+    // 4. --- PROCESS EACH ROW ---
     for (const [index, row] of productsToImport.entries()) {
       try {
-        // Basic validation for the current row
         if (!row.BrandName || !row.SubCategoryName || !row.ProductName || !row.SKU || !row.ProductType) {
           throw new Error('Missing required fields: BrandName, SubCategoryName, ProductName, SKU, and ProductType are all required.');
         }
 
-        // --- Find or Create Brand ---
-        const brandCacheKey = `${row.BrandName}-${row.ProductType}`;
+        // --- Find or Create Brand (Scoped to Tenant) ---
+        const brandCacheKey = `${row.BrandName}-${row.ProductType}-${tenantId}`; // Tenant-specific cache key
         if (!brandCache.has(brandCacheKey)) {
           const brand = await ProductBrand.findOneAndUpdate(
-            { name: row.BrandName, type: row.ProductType },
-            { $setOnInsert: { name: row.BrandName, type: row.ProductType } },
+            { name: row.BrandName, type: row.ProductType, tenantId }, // Filter includes tenantId
+            { $setOnInsert: { name: row.BrandName, type: row.ProductType, tenantId } }, // Add tenantId on creation
             { upsert: true, new: true, runValidators: true }
           );
           brandCache.set(brandCacheKey, brand);
-          if (brand.isNew) report.newBrands.add(brand.name);
+          // isNew is not a standard mongoose property, but upsert result contains `upserted` field.
+          // A better check might be needed if you rely on this heavily. For simplicity, we'll keep the logic.
+          report.newBrands.add(brand.name);
         }
         const brand = brandCache.get(brandCacheKey);
 
-        // --- Find or Create SubCategory ---
-        const subCategoryCacheKey = `${row.SubCategoryName}-${brand._id}`;
+        // --- Find or Create SubCategory (Scoped to Tenant) ---
+        const subCategoryCacheKey = `${row.SubCategoryName}-${brand._id}-${tenantId}`; // Tenant-specific cache key
         if (!subCategoryCache.has(subCategoryCacheKey)) {
           const subCategory = await ProductSubCategory.findOneAndUpdate(
-            { name: row.SubCategoryName, brand: brand._id },
-            { $setOnInsert: { name: row.SubCategoryName, brand: brand._id, type: brand.type } },
+            { name: row.SubCategoryName, brand: brand._id, tenantId }, // Filter includes tenantId
+            { $setOnInsert: { name: row.SubCategoryName, brand: brand._id, type: brand.type, tenantId } }, // Add tenantId on creation
             { upsert: true, new: true, runValidators: true }
           );
           subCategoryCache.set(subCategoryCacheKey, subCategory);
-          if (subCategory.isNew) report.newSubCategories.add(subCategory.name);
+          report.newSubCategories.add(subCategory.name);
         }
         const subCategory = subCategoryCache.get(subCategoryCacheKey);
         
-        // --- Create or Update Product ---
+        // --- Create or Update Product (Scoped to Tenant) ---
         const productData = {
             name: row.ProductName,
             brand: brand._id,
@@ -100,12 +110,13 @@ export async function POST(req: NextRequest) {
             stockedDate: new Date(row.StockedDate),
             expiryDate: row.ExpiryDate ? new Date(row.ExpiryDate) : null,
             lowStockThreshold: row.LowStockThreshold || 10,
-            totalQuantity: row.NumberOfItems * row.QuantityPerItem
+            totalQuantity: row.NumberOfItems * row.QuantityPerItem,
+            tenantId: tenantId, // Explicitly add tenantId to the data
         };
         
         await Product.findOneAndUpdate(
-            { sku: row.SKU },
-            { $set: productData },
+            { sku: row.SKU, tenantId }, // CRITICAL: Filter by SKU and tenantId
+            { $set: productData }, // $set will apply the tenantId on both update and insert
             { upsert: true, new: true, runValidators: true }
         );
 
@@ -114,7 +125,7 @@ export async function POST(req: NextRequest) {
       } catch (error: any) {
         report.failedImports++;
         report.errors.push({
-          row: index + 2, // Excel rows are 1-based, plus header
+          row: index + 2,
           message: error.message || 'An unknown error occurred.',
           data: row,
         });

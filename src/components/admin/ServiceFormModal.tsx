@@ -6,6 +6,7 @@ import type { IProduct } from "@/models/Product"
 import { useDebounce } from "@/hooks/useDebounce"
 import { XMarkIcon, TrashIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline"
 import type { IServiceCategory } from "@/models/ServiceCategory"
+import { getSession } from "next-auth/react" // 1. Import getSession
 
 type EntityType = "service-category" | "service-sub-category" | "service-item"
 type AudienceType = "male" | "female" 
@@ -64,17 +65,50 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
       setFoundProduct(null);
     }
   }, [entityToEdit, isOpen, entityType]);
-
+  
+  // 2. Refactor the product search useEffect to be tenant-aware
   useEffect(() => {
-    if (debouncedSku.trim()) {
-      fetch(`/api/products?sku=${debouncedSku.toUpperCase()}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setFoundProduct(data.success && data.data.length > 0 ? data.data[0] : null);
-        });
-    } else {
-      setFoundProduct(null);
-    }
+    const findProductBySku = async () => {
+      // Clear results if search is empty
+      if (!debouncedSku.trim()) {
+        setFoundProduct(null);
+        return;
+      }
+      
+      // Get session to retrieve the tenantId
+      const session = await getSession();
+      if (!session?.user?.tenantId) {
+        console.error("Session or Tenant ID not found. Cannot search for products.");
+        setFoundProduct(null);
+        return;
+      }
+      
+      try {
+        // Perform fetch with the x-tenant-id header
+        const response = await fetch(
+          `/api/products?sku=${debouncedSku.toUpperCase()}`, 
+          {
+            headers: {
+              'x-tenant-id': session.user.tenantId,
+            }
+          }
+        );
+
+        if (!response.ok) {
+          setFoundProduct(null); // Clear result on API error
+          return;
+        }
+
+        const data = await response.json();
+        setFoundProduct(data.success && data.data.length > 0 ? data.data[0] : null);
+
+      } catch (error) {
+        console.error("Error fetching product by SKU:", error);
+        setFoundProduct(null); // Clear result on network error
+      }
+    };
+
+    findProductBySku();
   }, [debouncedSku]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -119,6 +153,8 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
     const payload = { ...formData };
     if (entityToEdit) payload._id = entityToEdit._id;
     else {
+      // Note: targetAudience is likely deprecated if you've fully removed it from the backend model.
+      // Keeping it here in case some logic still relies on it before the save.
       if (entityType === "service-category") payload.targetAudience = context.audience;
       if (entityType === "service-sub-category") payload.mainCategory = context.mainCategory?._id;
       if (entityType === "service-item") payload.subCategory = context.subCategoryId;
@@ -134,9 +170,14 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
         unit: c.unit,
       }));
     }
+    // The onSave function passes the data to the parent component, which is responsible
+    // for making the final tenant-aware API call (POST/PUT). This is correct.
     onSave(entityType, payload);
   };
-
+  
+  // The rest of the component's rendering logic remains the same.
+  // ...
+  
   const getTitle = () => {
     const action = entityToEdit ? "Edit" : "Add New";
     switch (entityType) {

@@ -1,10 +1,12 @@
-// app/admin/users/page.tsx
+// /app/admin/users/page.tsx - TENANT-AWARE VERSION
 'use client';
-import { useState, useEffect, use } from 'react';
-import { useSession } from 'next-auth/react';
+
+import { useState, useEffect, useCallback } from 'react'; // <-- 1. Import useCallback
+import { useSession, getSession } from 'next-auth/react'; // <-- 1. Import getSession
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import EditUserModal from '@/components/EditUserModal';
 import { PencilIcon, TrashIcon } from 'lucide-react';
+import { toast } from 'react-toastify';
 
 interface User {
   _id: string;
@@ -32,161 +34,149 @@ export default function UsersPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newUser, setNewUser] = useState({
-    name: '',
-    email: '',
-    password: '',
-    roleId: ''
-  });
-
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', roleId: '' });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-
-  const handleUpdateUser = async (userId: string, updateData: any) => {
-    try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateData)
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        fetchUsers();
-        setShowEditModal(false);
-        alert('User updated successfully!');
-      } else {
-        alert(data.message || 'Error updating user');
-      }
-    } catch (error) {
-      alert('Error updating user');
-    }
-  };
-
-
 
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.USERS_CREATE);
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.USERS_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.USERS_DELETE);
 
-  const handleEditUser = (user: User) => {
-    setEditingUser(user);
-    setShowEditModal(true);
-  };
-
-  useEffect(() => {
-    fetchUsers();
-    fetchRoles();
+  // <-- 2. ADD THE TENANT-AWARE FETCH HELPER -->
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const currentSession = await getSession();
+    if (!currentSession?.user?.tenantId) {
+      toast.error("Your session is invalid. Please log in again.");
+      throw new Error("Missing tenant ID in session");
+    }
+    const headers = {
+      ...options.headers,
+      'Content-Type': 'application/json',
+      'x-tenant-id': currentSession.user.tenantId,
+    };
+    return fetch(url, { ...options, headers });
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
+    if (!session) return;
     try {
-      const response = await fetch('/api/admin/users');
+      // <-- 3. USE tenantFetch -->
+      const response = await tenantFetch('/api/admin/users');
       const data = await response.json();
       if (data.success) {
         setUsers(data.users);
+      } else {
+        toast.error(data.message || "Failed to fetch users.");
       }
     } catch (error) {
       console.error('Error fetching users:', error);
+      toast.error("An unexpected error occurred while fetching users.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [session, tenantFetch]); // <-- 4. Add dependencies
 
-  const fetchRoles = async () => {
+  const fetchRoles = useCallback(async () => {
+    if (!session) return;
     try {
-      const response = await fetch('/api/admin/roles');
+      // <-- 3. USE tenantFetch -->
+      const response = await tenantFetch('/api/admin/roles');
       const data = await response.json();
       if (data.success) {
         setRoles(data.roles);
+      } else {
+        toast.error(data.message || "Failed to fetch roles.");
       }
     } catch (error) {
       console.error('Error fetching roles:', error);
+    }
+  }, [session, tenantFetch]); // <-- 4. Add dependencies
+  
+  useEffect(() => {
+    setIsLoading(true);
+    // Fetch both in parallel
+    Promise.all([fetchUsers(), fetchRoles()]);
+  }, [fetchUsers, fetchRoles]);
+
+  const handleUpdateUser = async (userId: string, updateData: any) => {
+    try {
+      // <-- 3. USE tenantFetch -->
+      const response = await tenantFetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updateData),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('User updated successfully!');
+        fetchUsers(); // Refetch users to show updated data
+        setShowEditModal(false);
+      } else {
+        toast.error(data.message || 'Error updating user');
+      }
+    } catch (error) {
+      toast.error('An unexpected error occurred while updating the user.');
     }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/admin/users', {
+      // <-- 3. USE tenantFetch -->
+      const response = await tenantFetch('/api/admin/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
+        body: JSON.stringify(newUser),
       });
 
       const data = await response.json();
       if (data.success) {
+        toast.success('User created successfully!');
         setShowCreateModal(false);
         setNewUser({ name: '', email: '', password: '', roleId: '' });
         fetchUsers();
-        alert('User created successfully!');
       } else {
-        alert(data.message || 'Error creating user');
+        toast.error(data.message || 'Error creating user');
       }
     } catch (error) {
-      alert('Error creating user');
+      toast.error('An unexpected error occurred while creating the user.');
     }
   };
 
-  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
-    if (!canUpdate) return;
-
-    try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !currentStatus })
-      });
-
-      if (response.ok) {
-        fetchUsers();
-      }
-    } catch (error) {
-      console.error('Error updating user:', error);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
-
-  console.log(users);
-
-
-  // app/admin/users/page.tsx
   const handleDeleteUser = async (userId: string) => {
-    if (confirm('Are you sure you want to delete this user?')) {
+    if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       try {
-        const response = await fetch('/api/admin/users', {
+        // <-- 3. USE tenantFetch -->
+        const response = await tenantFetch('/api/admin/users', {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId })
+          body: JSON.stringify({ userId }),
         });
 
         const data = await response.json();
         if (data.success) {
+          toast.success('User deleted successfully!');
           fetchUsers();
-          alert('User deleted successfully!');
         } else {
-          alert(data.message || 'Error deleting user');
+          toast.error(data.message || 'Error deleting user');
         }
       } catch (error) {
-        alert('Error deleting user');
+        toast.error('An unexpected error occurred while deleting the user.');
       }
     }
   };
 
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setShowEditModal(true);
+  };
+
+  // (The entire JSX return statement remains exactly the same)
   return (
     <div className="space-y-6">
       <div className="sm:flex sm:items-center">
         <div className="sm:flex-auto">
           <h1 className="text-xl font-semibold text-gray-900">Users</h1>
           <p className="mt-2 text-sm text-gray-700">
-            Manage system users and their roles.
+            Manage system users and their roles for your salon.
           </p>
         </div>
         {canCreate && (
@@ -200,95 +190,61 @@ export default function UsersPage() {
           </div>
         )}
       </div>
-      <div className="mt-8 flex flex-col">
-        <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              <table className="min-w-full divide-y divide-gray-300">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      User
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Role
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Last Login
-                    </th>
-                    {(canUpdate || canDelete) && (
-                      <th className="relative px-6 py-3">
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user._id}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {user.name}
+
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-gray-900"></div>
+        </div>
+      ) : (
+        <div className="mt-8 flex flex-col">
+          <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+            <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                <table className="min-w-full divide-y divide-gray-300">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                      {(canUpdate || canDelete) && <th className="relative px-6 py-3"><span className="sr-only">Actions</span></th>}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user._id}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                              <div className="text-sm text-gray-500">{user.email}</div>
                             </div>
-                            <div className="text-sm text-gray-500">
-                              {user.email}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                         {user.roleId?.displayName}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.isActive
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                          }`}>
-                          {user.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
-                      </td>
-                      {(canUpdate || canDelete) && (
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <div className="flex justify-end gap-2">
-                            {canUpdate && (
-                              <button
-                                onClick={() => handleEditUser(user)}
-                                className="text-indigo-600 hover:text-indigo-900"
-                                title="Edit user"
-                              >
-                                <PencilIcon className="h-5 w-5" />
-                              </button>
-                            )}
-                            {canDelete && (
-                              <button
-                                onClick={() => handleDeleteUser(user._id)}
-                                className="text-red-600 hover:text-red-900"
-                                title="Delete user"
-                              >
-                                <TrashIcon className="h-5 w-5" />
-                              </button>
-                            )}
                           </div>
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{user.roleId?.displayName}</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}</td>
+                        {(canUpdate || canDelete) && (
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div className="flex justify-end gap-2">
+                              {canUpdate && <button onClick={() => handleEditUser(user)} className="text-indigo-600 hover:text-indigo-900" title="Edit user"><PencilIcon className="h-5 w-5" /></button>}
+                              {canDelete && <button onClick={() => handleDeleteUser(user._id)} className="text-red-600 hover:text-red-900" title="Delete user"><TrashIcon className="h-5 w-5" /></button>}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Create User Modal */}
       {showCreateModal && (
@@ -297,87 +253,38 @@ export default function UsersPage() {
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Create New User</h3>
               <form onSubmit={handleCreateUser} className="space-y-4">
-                {/* Form Fields for User */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={newUser.name}
-                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={newUser.email}
-                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <input type="email" required value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={newUser.password}
-                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
+                  <input type="password" required value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Role</label>
-                  <select
-                    required
-                    value={newUser.roleId}
-                    onChange={(e) => setNewUser({ ...newUser, roleId: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  >
+                  <select required value={newUser.roleId} onChange={(e) => setNewUser({ ...newUser, roleId: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
                     <option value="">Select a role</option>
-                    {roles.map((role) => (
-                      <option key={role._id} value={role._id}>
-                        {role.displayName}
-                      </option>
-                    ))}
+                    {roles.map((role) => (<option key={role._id} value={role._id}>{role.displayName}</option>))}
                   </select>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700"
-                  >
-                    Create User
-                  </button>
+                  <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200">Cancel</button>
+                  <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700">Create User</button>
                 </div>
               </form>
             </div>
           </div>
         </div>
-        // </div>
       )}
 
        {/* Edit User Modal */}
       {showEditModal && editingUser && (
-        <EditUserModal
-          isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false);
-            setEditingUser(null);
-          }}
-          user={editingUser}
-          roles={roles}
-          onUpdate={handleUpdateUser}
-        />
+        <EditUserModal isOpen={showEditModal} onClose={() => { setShowEditModal(false); setEditingUser(null); }} user={editingUser} roles={roles} onUpdate={handleUpdateUser} />
       )}
     </div>
   );

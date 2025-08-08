@@ -5,8 +5,8 @@ import { useDropzone } from 'react-dropzone';
 import { read, utils } from 'xlsx';
 import { X, UploadCloudIcon, FileTextIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
-// FIX 1: The 'audience' prop and its type are no longer needed.
 interface ServiceImportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,7 +17,6 @@ const REQUIRED_HEADERS = [
   'ServiceName', 'ServiceCode', 'CategoryName', 'SubCategoryName', 'Duration', 'Price'
 ];
 
-// FIX 2: Remove 'audience' from the function arguments.
 export default function ServiceImportModal({ isOpen, onClose, onImportSuccess }: ServiceImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -46,6 +45,12 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess }:
     setIsProcessing(true);
     
     try {
+      // 2. Get the session from NextAuth to retrieve the tenant ID
+      const session = await getSession();
+      if (!session?.user?.tenantId) {
+        throw new Error("Your session has expired or is invalid. Please log in again.");
+      }
+
       const data = await file.arrayBuffer();
       const workbook = read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -59,15 +64,20 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess }:
         throw new Error(`File is missing required columns: ${missingHeaders.join(', ')}`);
       }
 
-      // FIX 3: The API call no longer sends the 'audience' query parameter.
+      // 3. Manually add the 'x-tenant-id' header to the fetch request
       const response = await fetch(`/api/service-items/import`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        },
         body: JSON.stringify(jsonData),
       });
 
       const result = await response.json();
-      if (!result.success) throw new Error(result.message || "Import failed on the server.");
+      if (!response.ok) { // Check the HTTP status for success
+        throw new Error(result.message || result.error || "Import failed on the server.");
+      }
       
       onImportSuccess(result.report);
       onClose();
@@ -81,11 +91,11 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess }:
   
   if (!isOpen) return null;
 
+  // The JSX for the modal remains the same as your corrected version.
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center p-6 border-b">
-          {/* FIX 4: Update the title to be generic and not mention 'audience'. */}
           <h2 className="text-xl font-semibold text-gray-900">Import Services</h2>
           <button onClick={onClose} disabled={isProcessing} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
             <X className="h-5 w-5" />
@@ -95,7 +105,6 @@ export default function ServiceImportModal({ isOpen, onClose, onImportSuccess }:
         <div className="p-6 space-y-6 overflow-y-auto">
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
             <p className="font-semibold mb-2">Instructions:</p>
-            {/* FIX 5: Remove the instruction that referenced 'audience'. */}
             <ol className="list-decimal list-inside space-y-2">
               <li>
                 The <strong>ServiceCode</strong> column must be unique for each service. It is used to update existing services if you re-upload a file.

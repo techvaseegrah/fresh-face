@@ -5,6 +5,7 @@ import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesI
 import { toast } from 'react-toastify';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
 import { useDebounce } from '@/hooks/useDebounce'; 
+import { useSession } from 'next-auth/react';
 
 // ===================================================================================
 //  INTERFACES & TYPE DEFINITIONS
@@ -98,7 +99,7 @@ interface BookAppointmentFormProps {
 }
 
 // ===================================================================================
-//  CUSTOMER HISTORY MODAL & CUSTOMER DETAIL PANEL (No changes here)
+//  SUB-COMPONENTS: CustomerHistoryModal & CustomerDetailPanel
 // ===================================================================================
 
 const CustomerHistoryModal: React.FC<{
@@ -223,13 +224,15 @@ interface CustomerDetailPanelProps {
   isLoading: boolean;
   onToggleMembership: (customBarcode?: string) => void;
   onViewFullHistory: () => void;
+  tenantId: string | undefined; // Accept tenantId as a prop
 }
 
 const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
   customer,
   isLoading,
   onToggleMembership,
-  onViewFullHistory
+  onViewFullHistory,
+  tenantId
 }) => {
   const [showBarcodeInput, setShowBarcodeInput] = useState(false);
   const [membershipBarcode, setMembershipBarcode] = useState('');
@@ -246,9 +249,15 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
       setIsBarcodeValid(false); setBarcodeError('Barcode must be 3-20 characters (letters, numbers, hyphens, underscores only)'); return;
     }
     const handler = setTimeout(async () => {
+      if (!tenantId) {
+        setBarcodeError('Cannot validate barcode: tenant not identified.');
+        return;
+      }
       setIsCheckingBarcode(true); setBarcodeError('');
       try {
-        const res = await fetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`);
+        const res = await fetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`, {
+            headers: { 'x-tenant-id': tenantId }
+        });
         const data = await res.json();
         if (data.success) {
           setIsBarcodeValid(!data.exists);
@@ -263,7 +272,7 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
       }
     }, 500);
     return () => clearTimeout(handler);
-  }, [membershipBarcode]);
+  }, [membershipBarcode, tenantId]);
 
   const handleGrantMembership = () => {
     if (showBarcodeInput) {
@@ -455,6 +464,22 @@ const initialFormData: AppointmentFormData = {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
+  const { data: session } = useSession();
+
+  const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const tenantId = session?.user?.tenantId;
+    if (!tenantId) {
+      toast.error("Your session has expired or is invalid. Please sign in again.");
+      throw new Error("Tenant ID not found in session.");
+    }
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+      'x-tenant-id': tenantId,
+    };
+    return fetch(url, { ...options, headers });
+  }, [session]);
+
   const getCurrentDate = () => new Date().toISOString().split('T')[0];
   const getCurrentTime = () => {
     const now = new Date();
@@ -508,7 +533,7 @@ const initialFormData: AppointmentFormData = {
       if (isOpen) {
           const fetchAllServices = async () => {
               try {
-                  const res = await fetch('/api/service-items');
+                  const res = await tenantAwareFetch('/api/service-items');
                   const data = await res.json();
                   if (data.success) {
                       setAllServices(data.services);
@@ -524,7 +549,7 @@ const initialFormData: AppointmentFormData = {
       } else {
           setAllServices([]);
       }
-  }, [isOpen]);
+  }, [isOpen, tenantAwareFetch]);
 
   useEffect(() => {
       const query = debouncedServiceSearch.trim().toLowerCase();
@@ -569,7 +594,7 @@ const initialFormData: AppointmentFormData = {
 
       const fetchAssignableStaff = async () => {
         try {
-          const res = await fetch('/api/staff?action=listForAssignment');
+          const res = await tenantAwareFetch('/api/staff?action=listForAssignment');
           const data = await res.json();
           const staffList = data.success ? data.stylists : [];
           
@@ -607,53 +632,19 @@ const initialFormData: AppointmentFormData = {
         stylistId: ''
       })));
     }
-  }, [isOpen, formData.date, formData.time]);
+  }, [isOpen, formData.date, formData.time, tenantAwareFetch]);
 
 
-  useEffect(() => {
-    if (searchMode !== 'phone') return;
-    const query = formData.phoneNumber.trim();
-    if (isCustomerSelected || query.length < 3 || query.length >= 10) { 
-      setCustomerSearchResults([]); return;
-    }
-    const handler = setTimeout(async () => {
-      setIsSearchingCustomers(true);
-      try {
-        const res = await fetch(`/api/customer/search?query=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        if (data.success) setCustomerSearchResults(data.customers);
-      } catch (error) { console.error('Customer search failed:', error); } 
-      finally { setIsSearchingCustomers(false); }
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [formData.phoneNumber, isCustomerSelected, searchMode]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    let { name, value } = e.target;
+ const fetchAndSetCustomerDetails = useCallback(async (phone: string) => {
+    // The if (isLoadingCustomerDetails) guard is a good defensive measure,
+    // but the real fix is in the dependency array below. It's safe to keep.
+    if (isLoadingCustomerDetails) return; 
     
-    if (name === 'phoneNumber') {
-        value = value.replace(/[^\d]/g, '');
-        setCustomerLookupStatus('idle');
-    }
-
-    if (name === 'customerName') {
-        value = value.replace(/[^a-zA-Z\s]/g, '');
-    }
-    
-    if (isCustomerSelected && ['customerName', 'phoneNumber', 'email', 'gender'].includes(name)) {
-      handleClearSelection(false);
-    }
-    
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const fetchAndSetCustomerDetails = async (phone: string) => {
-    if (isLoadingCustomerDetails) return;
     setIsLoadingCustomerDetails(true);
     setCustomerLookupStatus('searching');
     setCustomerSearchResults([]);
     try {
-      const res = await fetch(`/api/customer/search?query=${encodeURIComponent(phone.trim())}&details=true`);
+      const res = await tenantAwareFetch(`/api/customer/search?query=${encodeURIComponent(phone.trim())}&details=true`);
       const data = await res.json();
       if (res.ok && data.success && data.customer) {
         const cust = data.customer;
@@ -674,6 +665,44 @@ const initialFormData: AppointmentFormData = {
     } finally {
       setIsLoadingCustomerDetails(false);
     }
+  }, [tenantAwareFetch]); // <-- THE ONLY CHANGE IS HERE
+
+
+  useEffect(() => {
+    if (searchMode !== 'phone') return;
+    const query = formData.phoneNumber.trim();
+    if (isCustomerSelected || query.length < 3 || query.length >= 10) { 
+      setCustomerSearchResults([]); return;
+    }
+    const handler = setTimeout(async () => {
+      setIsSearchingCustomers(true);
+      try {
+        const res = await tenantAwareFetch(`/api/customer/search?query=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (data.success) setCustomerSearchResults(data.customers);
+      } catch (error) { console.error('Customer search failed:', error); } 
+      finally { setIsSearchingCustomers(false); }
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [formData.phoneNumber, isCustomerSelected, searchMode, tenantAwareFetch]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    let { name, value } = e.target;
+    
+    if (name === 'phoneNumber') {
+        value = value.replace(/[^\d]/g, '');
+       
+    }
+
+    if (name === 'customerName') {
+        value = value.replace(/[^a-zA-Z\s]/g, '');
+    }
+    
+    if (isCustomerSelected && ['customerName', 'phoneNumber', 'email', 'gender'].includes(name)) {
+      handleClearSelection(false);
+    }
+    
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   useEffect(() => {
@@ -684,14 +713,14 @@ const initialFormData: AppointmentFormData = {
     else if (phone.length < 10 && customerLookupStatus !== 'idle') {
       setCustomerLookupStatus('idle');
     }
-  }, [formData.phoneNumber, isCustomerSelected]);
+  }, [formData.phoneNumber, isCustomerSelected, fetchAndSetCustomerDetails]);
 
 
   const handleBarcodeSearch = async () => {
     if (!barcodeQuery.trim()) return;
     setIsSearchingByBarcode(true);
     try {
-      const res = await fetch(`/api/customer/search-by-barcode?barcode=${encodeURIComponent(barcodeQuery.trim())}`);
+      const res = await tenantAwareFetch(`/api/customer/search-by-barcode?barcode=${encodeURIComponent(barcodeQuery.trim())}`);
       const data = await res.json();
       if (res.ok && data.success && data.customer) {
         fetchAndSetCustomerDetails(data.customer.phoneNumber);
@@ -727,9 +756,8 @@ const initialFormData: AppointmentFormData = {
   const handleToggleMembership = async (customBarcode?: string) => {
     if (!selectedCustomerDetails) return;
     try {
-      const response = await fetch(`/api/customer/${selectedCustomerDetails._id}/toggle-membership`, {
+      const response = await tenantAwareFetch(`/api/customer/${selectedCustomerDetails._id}/toggle-membership`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isMembership: !selectedCustomerDetails.isMember, membershipBarcode: customBarcode })
       });
       const result = await response.json();
@@ -790,9 +818,8 @@ const initialFormData: AppointmentFormData = {
               customerGender: formData.gender as 'male' | 'female' | 'other',
           };
 
-          const checkRes = await fetch('/api/appointment/check-consumables', {
+          const checkRes = await tenantAwareFetch('/api/appointment/check-consumables', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(checkPayload),
           });
 
@@ -993,7 +1020,13 @@ const initialFormData: AppointmentFormData = {
             </form>
 
             <div className="lg:col-span-1 lg:border-l lg:pl-8 mt-8 lg:mt-0">
-              <CustomerDetailPanel customer={selectedCustomerDetails} isLoading={isLoadingCustomerDetails} onToggleMembership={handleToggleMembership} onViewFullHistory={() => setShowCustomerHistory(true)} />
+              <CustomerDetailPanel 
+                customer={selectedCustomerDetails} 
+                isLoading={isLoadingCustomerDetails} 
+                onToggleMembership={handleToggleMembership} 
+                onViewFullHistory={() => setShowCustomerHistory(true)}
+                tenantId={session?.user?.tenantId} 
+              />
             </div>
           </div>
         </div>

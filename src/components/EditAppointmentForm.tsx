@@ -5,6 +5,7 @@ import { XMarkIcon, CurrencyRupeeIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { Combobox } from '@headlessui/react';
 import { CheckIcon, ChevronUpDownIcon } from '@heroicons/react/20/solid';
+import { useSession } from 'next-auth/react';
 
 // ===================================================================================
 //  INTERFACES
@@ -30,9 +31,7 @@ interface AppointmentForEdit {
     phoneNumber?: string;
     isMembership?: boolean;
   };
-  // MODIFICATION: serviceIds is now the detailed object for easier handling
   serviceIds?: ServiceFromAPI[]; 
-  // MODIFICATION: stylistId is now the detailed object
   stylistId?: StylistFromAPI;
   appointmentDateTime: string;
   notes?: string;
@@ -77,6 +76,24 @@ export default function EditAppointmentForm({
   const [error, setError] = useState<string | null>(null);
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
 
+  // Get the user's session to access the tenantId
+  const { data: session } = useSession();
+
+  // Create a reusable, tenant-aware fetch wrapper
+  const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const tenantId = session?.user?.tenantId;
+    if (!tenantId) {
+      toast.error("Your session has expired or is invalid. Please sign in again.");
+      throw new Error("Tenant ID not found in session.");
+    }
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+      'x-tenant-id': tenantId,
+    };
+    return fetch(url, { ...options, headers });
+  }, [session]);
+
   // Derived state for total calculation
   const { total, membershipSavings } = useMemo(() => {
     let total = 0;
@@ -97,7 +114,6 @@ export default function EditAppointmentForm({
   // Effect to populate form when an appointment is selected
   useEffect(() => {
     if (isOpen && appointment) {
-      // Populate form fields
       const appointmentDate = new Date(appointment.appointmentDateTime);
       const datePart = appointmentDate.toISOString().split('T')[0];
       const hours = String(appointmentDate.getHours()).padStart(2, '0');
@@ -114,10 +130,9 @@ export default function EditAppointmentForm({
 
       setSelectedServices(appointment.serviceIds || []);
 
-      // Fetch all services for the dropdown
       const fetchServices = async () => {
         try {
-          const res = await fetch('/api/service-items');
+          const res = await tenantAwareFetch('/api/service-items');
           const data = await res.json();
           if (data.success) {
             setAllServices(data.services);
@@ -131,11 +146,10 @@ export default function EditAppointmentForm({
       };
       fetchServices();
       
-      // Reset UI state
       setError(null);
       setServiceSearchQuery('');
     }
-  }, [isOpen, appointment]);
+  }, [isOpen, appointment, tenantAwareFetch]);
 
   // Effect to find available stylists when date/time changes
   useEffect(() => {
@@ -144,7 +158,7 @@ export default function EditAppointmentForm({
     const findStylists = async () => {
       setIsLoadingStylists(true);
       try {
-        const res = await fetch(`/api/staff?action=listForAssignment`);
+        const res = await tenantAwareFetch(`/api/staff?action=listForAssignment`);
         const data = await res.json();
         
         if (!res.ok || !data.success) {
@@ -153,7 +167,6 @@ export default function EditAppointmentForm({
 
         const staffList = data.stylists || [];
 
-        // Ensure the currently assigned stylist is in the list, even if now unavailable
         const currentStylist = appointment?.stylistId;
         if (currentStylist && !staffList.some((s: StylistFromAPI) => s._id === currentStylist._id)) {
           staffList.unshift(currentStylist);
@@ -169,7 +182,7 @@ export default function EditAppointmentForm({
     };
 
     findStylists();
-  }, [isOpen, formData.date, formData.time, appointment?.stylistId]);
+  }, [isOpen, formData.date, formData.time, appointment?.stylistId, tenantAwareFetch]);
 
   // Handlers for adding/removing services
   const handleAddService = (serviceId: string) => {
@@ -178,7 +191,7 @@ export default function EditAppointmentForm({
     if (serviceToAdd && !selectedServices.some((s) => s._id === serviceId)) {
       setSelectedServices(prev => [...prev, serviceToAdd]);
     }
-    setServiceSearchQuery(''); // Clear search input after selection
+    setServiceSearchQuery('');
   };
 
   const handleRemoveService = (serviceId: string) => {
@@ -197,8 +210,8 @@ export default function EditAppointmentForm({
     try {
       const updateData = {
           ...formData,
-          serviceIds: selectedServices.map(s => s._id), // Send only IDs
-          appointmentType: appointment.appointmentType, // Preserve original type
+          serviceIds: selectedServices.map(s => s._id),
+          appointmentType: appointment.appointmentType,
       };
       await onUpdateAppointment(appointment.id, updateData);
     } catch (err: any) {
@@ -208,21 +221,17 @@ export default function EditAppointmentForm({
     }
   };
 
-  // Memoized, universal search for services (by name or price)
+  // Memoized, universal search for services
   const filteredServices = useMemo(() => {
     const query = serviceSearchQuery.trim().toLowerCase();
-    
     if (query === '') {
       return [...allServices].sort((a, b) => a.price - b.price);
     }
-    
     const filtered = allServices.filter(service => 
       service.name.toLowerCase().includes(query) || 
       String(service.price).includes(query)
     );
-
     return filtered.sort((a,b) => a.price - b.price);
-
   }, [serviceSearchQuery, allServices]);
 
   if (!isOpen || !appointment) return null;
@@ -298,7 +307,6 @@ export default function EditAppointmentForm({
             </div>
           </div>
           
-          {/* Universal Service Search Combobox */}
           <div>
             <label className="block text-sm font-medium mb-1">Services</label>
             <Combobox onChange={handleAddService} value="">
@@ -370,7 +378,6 @@ export default function EditAppointmentForm({
             </div>
           </div>
          
-          {/* Stylist Dropdown */}
           <div>
             <label className="block text-sm font-medium mb-1">Stylist</label>
             <select
@@ -399,7 +406,6 @@ export default function EditAppointmentForm({
             <textarea rows={3} value={formData.notes} onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))} className={`${inputClasses} resize-none`} placeholder="Any special notes..." />
           </div>
 
-          {/* Footer with actions */}
           <div className="flex justify-end gap-3 pt-4 sticky bottom-0 bg-white">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300" disabled={isSubmitting}>Cancel</button>
             <button type="submit" className="px-6 py-2 text-sm bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isSubmitting || selectedServices.length === 0}>

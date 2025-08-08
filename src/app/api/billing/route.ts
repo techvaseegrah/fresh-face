@@ -1,4 +1,4 @@
-// FILE: /app/api/billing/route.ts - MULTI-TENANT REFACTORED VERSION
+// /app/api/billing/route.ts - FINAL CORRECTED VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -23,8 +23,9 @@ export async function POST(req: NextRequest) {
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) return tenantId;
 
+  // The user's permission check is commented out as per their provided code.
   // const authSession = await getServerSession(authOptions);
-  // if (!authSession || !hasPermission(authSession.user.role.permissions, PERMISSIONS.BILLING_CREATE)) { // Assuming a permission exists
+  // if (!authSession || !hasPermission(authSession.user.role.permissions, PERMISSIONS.BILLING_CREATE)) { 
   //     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   // }
 
@@ -42,13 +43,24 @@ export async function POST(req: NextRequest) {
       manualDiscountType, manualDiscountValue, finalManualDiscountApplied,
     } = body;
 
+    // =========================================================================
+    // === THE FIX TO RESOLVE THE VALIDATION ERROR ===
+    // This maps over the incoming `items` array and injects the `tenantId`
+    // into each individual line item object before saving.
+    // =========================================================================
+    const lineItemsWithTenantId = items.map((item: any) => ({
+        ...item, // Copy all existing item properties (name, price, etc.)
+        tenantId: tenantId, // Add the tenantId from the current request
+    }));
+    // =========================================================================
+
     // --- 1. PRE-VALIDATION ---
     if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
         throw new Error('Invalid or missing Appointment ID.');
     }
     const totalPaid = Object.values(paymentDetails).reduce((sum: number, amount: unknown) => sum + (Number(amount) || 0), 0);
     if (Math.abs(totalPaid - grandTotal) > 0.01) {
-      throw new Error(`Payment amount mismatch. Total: ₹${grandTotal}, Paid: ₹${totalPaid}`);
+      throw new Error(`Payment amount mismatch. Grand Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${totalPaid.toFixed(2)}`);
     }
 
     // --- 2. CRITICAL STOCK VALIDATION ---
@@ -56,7 +68,6 @@ export async function POST(req: NextRequest) {
     
     if (productItemsToBill.length > 0) {
       const productIds = productItemsToBill.map((item: any) => item.itemId);
-      // --- MT: Scope product lookup by tenantId ---
       const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
 
       if (productsInDb.length !== productIds.length) {
@@ -66,14 +77,13 @@ export async function POST(req: NextRequest) {
       const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
       for (const item of productItemsToBill) {
         const dbProduct = productMap.get(item.itemId);
-        if (dbProduct!.numberOfItems < item.quantity) {
-          throw new Error(`Insufficient stock for "${dbProduct!.name}". Requested: ${item.quantity}, Available: ${dbProduct!.numberOfItems}.`);
+        if (!dbProduct || dbProduct.numberOfItems < item.quantity) {
+          throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`);
         }
       }
     }
 
     // --- 3. DATA FETCHING ---
-    // --- MT: Scope all data fetches by tenantId ---
     const appointment = await Appointment.findOne({ _id: appointmentId, tenantId }).populate('serviceIds').session(dbSession);
     if (!appointment) throw new Error('Appointment not found');
     if (appointment.status === 'Paid') {
@@ -90,7 +100,6 @@ export async function POST(req: NextRequest) {
 
     const serviceIds = appointment.serviceIds.map((s: any) => s._id.toString());
     if (serviceIds.length > 0) {
-      // --- MT: Pass tenantId to inventory manager ---
       const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
         serviceIds, customerGender, tenantId
       );
@@ -101,27 +110,38 @@ export async function POST(req: NextRequest) {
       productId: item.itemId,
       productName: item.name,
       quantityToDeduct: item.quantity,
-      unit: 'piece',
+      unit: 'piece', // Assuming retail products are sold in pieces
     }));
     allInventoryUpdates.push(...retailProductUpdates);
 
     if (allInventoryUpdates.length > 0) {
-      // --- MT: Pass tenantId to inventory manager ---
       const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates, dbSession, tenantId);
       if (inventoryUpdateResult.success) {
         lowStockProducts = inventoryUpdateResult.lowStockProducts;
       } else {
-        throw new Error('One or more inventory updates failed: ' + JSON.stringify(inventoryUpdateResult.errors));
+        // Concatenate all error messages for a clear response
+        const errorMessages = inventoryUpdateResult.errors.map(e => e.message).join(', ');
+        throw new Error('One or more inventory updates failed: ' + errorMessages);
       }
     }
 
     // --- 5. CREATE INVOICE ---
-    // --- MT: Add tenantId to the new invoice document ---
     const invoice = new Invoice({
-      tenantId, // Add the tenantId
-      appointmentId, customerId, stylistId, billingStaffId, lineItems: items,
-      serviceTotal, productTotal, subtotal, membershipDiscount, grandTotal,
-      paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling,
+      tenantId,
+      appointmentId,
+      customerId,
+      stylistId,
+      billingStaffId,
+      lineItems: lineItemsWithTenantId, // USE THE CORRECTED ARRAY
+      serviceTotal,
+      productTotal,
+      subtotal,
+      membershipDiscount,
+      grandTotal,
+      paymentDetails,
+      notes,
+      customerWasMember,
+      membershipGrantedDuringBilling,
       paymentStatus: 'Paid',
       manualDiscount: {
         type: manualDiscountType || null,
@@ -132,7 +152,6 @@ export async function POST(req: NextRequest) {
     await invoice.save({ session: dbSession });
     
     // --- 6. UPDATE APPOINTMENT ---
-    // --- MT: Scope update by tenantId ---
     await Appointment.updateOne({ _id: appointmentId, tenantId }, {
       amount: subtotal,
       membershipDiscount,
@@ -144,17 +163,17 @@ export async function POST(req: NextRequest) {
     }, { session: dbSession });
     
     // --- 7. LOYALTY POINTS LOGIC ---
-    // --- MT: Scope settings lookup by tenantId ---
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty', tenantId }).session(dbSession);
     if (loyaltySettingDoc?.value && grandTotal > 0) {
         const { rupeesForPoints, pointsAwarded } = loyaltySettingDoc.value;
         if (rupeesForPoints > 0 && pointsAwarded > 0) {
             const pointsEarned = Math.floor(grandTotal / rupeesForPoints) * pointsAwarded;
             if (pointsEarned > 0) {
-                // --- MT: Add tenantId to the new loyalty transaction ---
                 await LoyaltyTransaction.create([{
-                    tenantId, // Add the tenantId
-                    customerId, points: pointsEarned, type: 'Credit',
+                    tenantId,
+                    customerId,
+                    points: pointsEarned,
+                    type: 'Credit',
                     description: `Earned from an invoice`,
                     reason: `Invoice`,
                     transactionDate: new Date(),
@@ -164,10 +183,9 @@ export async function POST(req: NextRequest) {
     }
 
     // --- 8. UPDATE STYLIST ---
-    // --- MT: Scope stylist update by tenantId ---
     if (stylistId) {
         await Stylist.updateOne({ _id: stylistId, tenantId }, {
-          isAvailable: true, // This field name is from your original code
+          isAvailable: true,
           currentAppointmentId: null,
           lastAvailabilityChange: new Date(),
         }, { session: dbSession });
@@ -176,8 +194,8 @@ export async function POST(req: NextRequest) {
     // --- 9. COMMIT TRANSACTION ---
     await dbSession.commitTransaction();
 
-    // --- 10. POST-TRANSACTION ACTIONS (kept simple as requested) ---
-    // (Your original code had this commented out, so it remains that way)
+    // --- 10. POST-TRANSACTION ACTIONS (e.g., sending emails) ---
+    // (Kept commented as per original code)
     // if (lowStockProducts.length > 0) {
     //   ... your email logic ...
     // }
@@ -190,7 +208,11 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     await dbSession.abortTransaction();
-    return NextResponse.json({ success: false, message: error.message || 'Failed to process payment' }, { status: 400 });
+    // Provide more specific error messages
+    if (error.name === 'ValidationError') {
+        return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
+    }
+    return NextResponse.json({ success: false, message: error.message || 'Failed to process payment' }, { status: 500 });
   
   } finally {
     dbSession.endSession();

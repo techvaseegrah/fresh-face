@@ -1,15 +1,14 @@
-// /app/api/customers/import/route.ts
+// /app/api/customers/import/route.ts - MULTI-TENANT VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
-import connectToDatabase from '@/lib/mongodb'; // Corrected your import from dbConnect
+import connectToDatabase from '@/lib/mongodb';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import Customer from '@/models/customermodel';
-
-// --- (1) IMPORT ALL NECESSARY FUNCTIONS ---
 import { encrypt } from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
 
 interface CustomerImportRow {
   Name: string;
@@ -28,6 +27,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
 
+  // 2. Get the Tenant ID right at the start or fail.
+  const tenantId = getTenantIdOrBail(req);
+  if (tenantId instanceof NextResponse) {
+    return tenantId;
+  }
+
   try {
     const rows: CustomerImportRow[] = await req.json();
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -43,7 +48,6 @@ export async function POST(req: NextRequest) {
       errors: [] as { row: number; message: string; data: CustomerImportRow }[],
     };
 
-    // --- (2) PROCESS EACH ROW INDIVIDUALLY FOR ROBUSTNESS ---
     for (const [index, row] of rows.entries()) {
       try {
         if (!row.Name || !row.PhoneNumber) {
@@ -54,10 +58,8 @@ export async function POST(req: NextRequest) {
         if (!normalizedPhoneNumber) {
             throw new Error('Invalid phone number format.');
         }
-
-        // --- (3) GENERATE ALL DERIVED & ENCRYPTED FIELDS AT ONCE ---
-        // This is the core logic that must be applied to every record.
-        const phoneHash = createBlindIndex(normalizedPhoneNumber); // Use the new blind index function
+        
+        const phoneHash = createBlindIndex(normalizedPhoneNumber);
         const phoneSearchIndexes = generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram));
         const isMember = row.IsMembership === 'TRUE' || row.IsMembership === true;
         const barcode = row.MembershipBarcode?.trim().toUpperCase();
@@ -66,49 +68,52 @@ export async function POST(req: NextRequest) {
             throw new Error('MembershipBarcode is required if IsMembership is TRUE.');
         }
         
-        // Build the complete, correct data payload for the customer document.
+        // 3. Add tenantId to the customer payload.
         const customerPayload = {
           name: encrypt(row.Name.trim()),
           phoneNumber: encrypt(normalizedPhoneNumber),
           email: row.Email ? encrypt(row.Email.trim()) : undefined,
-          
-          // Add all the derived search and helper fields
-          phoneHash: phoneHash,
-          searchableName: row.Name.trim().toLowerCase(), // Ensure it's lowercase
+          phoneHash,
+          searchableName: row.Name.trim().toLowerCase(),
           last4PhoneNumber: normalizedPhoneNumber.slice(-4),
-          phoneSearchIndex: phoneSearchIndexes, // The new partial search index
-          
-          // Add other fields from the import file
+          phoneSearchIndex: phoneSearchIndexes,
           dob: row.DOB ? new Date(row.DOB) : undefined,
           gender: row.Gender || undefined,
           survey: row.Survey || undefined,
           isMembership: isMember,
           membershipBarcode: isMember ? barcode : undefined,
           membershipPurchaseDate: isMember ? new Date() : undefined,
+          tenantId: tenantId, // Enforce the tenantId
         };
         
-        // --- (4) SIMPLIFIED CREATE OR UPDATE LOGIC ---
-        const existingCustomer = await Customer.findOne({ phoneHash });
+        // 4. Scope the check for an existing customer to the current tenant.
+        const existingCustomer = await Customer.findOne({ phoneHash, tenantId });
 
         if (existingCustomer) {
-          // UPDATE: Customer with this phone number already exists. Update their details.
-          // Check for barcode conflicts before updating
+          // UPDATE LOGIC
           if (barcode) {
-              const barcodeExists = await Customer.findOne({ membershipBarcode: barcode, _id: { $ne: existingCustomer._id } });
+              // 5. Scope the barcode conflict check to the current tenant.
+              const barcodeExists = await Customer.findOne({ 
+                membershipBarcode: barcode, 
+                _id: { $ne: existingCustomer._id },
+                tenantId 
+              });
               if (barcodeExists) {
                   throw new Error(`MembershipBarcode "${barcode}" is already in use by another customer.`);
               }
           }
-          await Customer.findByIdAndUpdate(existingCustomer._id, { $set: customerPayload });
+          // 6. Scope the update operation to the current tenant.
+          await Customer.findOneAndUpdate({ _id: existingCustomer._id, tenantId }, { $set: customerPayload });
         } else {
-          // CREATE: This is a new customer.
-          // Check for barcode conflicts before creating
+          // CREATE LOGIC
           if (barcode) {
-              const barcodeExists = await Customer.findOne({ membershipBarcode: barcode });
+              // 5. Scope the barcode conflict check to the current tenant.
+              const barcodeExists = await Customer.findOne({ membershipBarcode: barcode, tenantId });
               if (barcodeExists) {
                   throw new Error(`MembershipBarcode "${barcode}" is already in use by another customer.`);
               }
           }
+          // The customerPayload already includes the tenantId, so create is safe.
           await Customer.create(customerPayload);
         }
 
@@ -116,7 +121,7 @@ export async function POST(req: NextRequest) {
       } catch (error: any) {
         report.failedImports++;
         report.errors.push({
-          row: index + 2, // Assuming row 1 is headers
+          row: index + 2,
           message: error.message || 'An unknown error occurred.',
           data: row,
         });

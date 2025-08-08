@@ -7,6 +7,7 @@ import { useDropzone } from 'react-dropzone';
 import { read, utils, WorkBook, WorkSheet } from 'xlsx';
 import { XIcon, UploadCloudIcon, FileTextIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useSession } from 'next-auth/react'; // 1. IMPORT THE useSession HOOK
 
 interface CustomerImportModalProps {
   isOpen: boolean;
@@ -19,6 +20,9 @@ const REQUIRED_HEADERS = ['Name', 'PhoneNumber'];
 export default function CustomerImportModal({ isOpen, onClose, onImportSuccess }: CustomerImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // 2. GET THE SESSION DATA
+  const { data: session } = useSession();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -41,6 +45,12 @@ export default function CustomerImportModal({ isOpen, onClose, onImportSuccess }
       toast.error("Please select a file to import.");
       return;
     }
+
+    // 3. ADD A GUARD CLAUSE to ensure we have the tenantId before sending
+    if (!session?.user?.tenantId) {
+      toast.error("Could not identify your tenant. Please log out and log in again.");
+      return;
+    }
     
     setIsProcessing(true);
     
@@ -59,16 +69,23 @@ export default function CustomerImportModal({ isOpen, onClose, onImportSuccess }
         }
       }
 
-      const response = await fetch('/api/customer/import', {
+      const response = await fetch('/api/customer/import', { // Ensure this URL is correct
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // 4. THE FIX IS HERE: Add the x-tenant-id to the headers
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId, // Add the user's tenant ID
+        },
         body: JSON.stringify(data),
       });
 
       const result = await response.json();
-      if (!result.success) throw new Error(result.message || "Import failed.");
+      if (!response.ok) { // Check for non-2xx status codes
+          throw new Error(result.message || "An unknown import error occurred.");
+      }
       
       onImportSuccess(result.report);
+      toast.success("Import completed successfully!");
       onClose();
 
     } catch (error: any) {
@@ -79,8 +96,7 @@ export default function CustomerImportModal({ isOpen, onClose, onImportSuccess }
   };
   
   if (!isOpen) return null;
-
-  return (
+ return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center p-6 border-b">

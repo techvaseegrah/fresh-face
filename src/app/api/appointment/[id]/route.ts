@@ -1,17 +1,17 @@
-// app/api/appointment/[id]/route.ts - MULTI-TENANT REFACTORED VERSION
+// /app/api/appointment/[id]/route.ts - FINAL CORRECTED VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
-import Stylist from '@/models/Stylist';
 import ServiceItem from '@/models/ServiceItem';
 import { getServerSession } from 'next-auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { authOptions } from '@/lib/auth';
 import { getTenantIdOrBail } from '@/lib/tenant';
+import { decrypt } from '@/lib/crypto'; // <-- FIX: Import the decrypt function
 
 // ===================================================================================
-//  GET: Handler to fetch a single appointment by its ID
+//  GET: Handler to fetch a single appointment by its ID (with decryption)
 // ===================================================================================
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     const tenantId = getTenantIdOrBail(req);
@@ -26,16 +26,39 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         await connectToDatabase();
         const { id } = params;
 
-        // Securely find the appointment by its ID and the tenantId from the user's session.
+        // Securely find the appointment and populate related data
         const appointment = await Appointment.findOne({ _id: id, tenantId })
             .populate([
-                { path: 'customerId', select: 'name phoneNumber isMembership' },
+                { path: 'customerId' }, // <-- FIX: Populate the full customer object to decrypt it
                 { path: 'stylistId', select: 'name' },
                 { path: 'serviceIds', select: 'name price duration membershipRate' }
-            ]);
+            ])
+            .lean(); // <-- FIX: Use .lean() for a plain JS object, which is easier and faster to modify
 
         if (!appointment) {
             return NextResponse.json({ success: false, message: "Appointment not found." }, { status: 404 });
+        }
+
+        // <-- FIX: Decrypt customer fields before sending the response
+        if (appointment.customerId) {
+            // Decrypt name with error handling
+            if (appointment.customerId.name) {
+                try {
+                    appointment.customerId.name = decrypt(appointment.customerId.name);
+                } catch (e) {
+                    console.error(`Failed to decrypt name for appointment ${id}:`, e);
+                    appointment.customerId.name = 'Decryption Error';
+                }
+            }
+            // Decrypt phone number with error handling
+            if (appointment.customerId.phoneNumber) {
+                 try {
+                    appointment.customerId.phoneNumber = decrypt(appointment.customerId.phoneNumber);
+                } catch (e) {
+                    console.error(`Failed to decrypt phone for appointment ${id}:`, e);
+                    appointment.customerId.phoneNumber = '';
+                }
+            }
         }
 
         return NextResponse.json({ success: true, appointment });
@@ -47,7 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // ===================================================================================
-//  PUT: Handler to update an existing appointment
+//  PUT: Handler to update an existing appointment (with decryption)
 // ===================================================================================
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
     const tenantId = getTenantIdOrBail(req);
@@ -60,93 +83,96 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     
     try {
         await connectToDatabase();
-
         const { id } = params;
         const updateData = await req.json();
 
-        // First, securely find the appointment to ensure it belongs to the current tenant before proceeding.
+        // (Logic to find currentAppointment and calculate updateData remains the same)
         const currentAppointment = await Appointment.findOne({ _id: id, tenantId });
 
         if (!currentAppointment) {
             return NextResponse.json({ success: false, message: "Appointment not found." }, { status: 404 });
         }
-
+        
+        // ... (your existing logic for status changes and cost recalculation)
         const oldStatus = currentAppointment.status;
         const newStatus = updateData.status;
 
-        // If services are being updated, recalculate duration and cost.
         if (updateData.serviceIds) {
-            // Ensure the services being added also belong to the tenant.
-            const services = await ServiceItem.find({
-                _id: { $in: updateData.serviceIds },
-                tenantId: tenantId
-            }).select('duration price membershipRate');
-
-            // Verify that all requested services were found for this tenant.
+            const services = await ServiceItem.find({_id: { $in: updateData.serviceIds }, tenantId: tenantId}).select('duration price membershipRate');
             if (services.length !== updateData.serviceIds.length) {
                 return NextResponse.json({ success: false, message: "One or more services are invalid for this salon." }, { status: 400 });
             }
-
             updateData.estimatedDuration = services.reduce((total, service) => total + service.duration, 0);
-
-            // Create a temporary appointment object for accurate recalculation.
-            const tempAppointment = new Appointment({
-                ...currentAppointment.toObject(),
-                serviceIds: updateData.serviceIds,
-                customerId: updateData.customerId || currentAppointment.customerId,
-                tenantId: tenantId // Ensure tenantId is part of the temp object
-            });
+            const tempAppointment = new Appointment({ ...currentAppointment.toObject(), serviceIds: updateData.serviceIds, customerId: updateData.customerId || currentAppointment.customerId, tenantId: tenantId });
             const { grandTotal, membershipSavings } = await tempAppointment.calculateTotal();
-            
             updateData.finalAmount = grandTotal;
             updateData.membershipDiscount = membershipSavings;
         }
 
-        // Handle status-specific updates (e.g., check-in/check-out times).
         if (newStatus && newStatus !== oldStatus) {
             const currentTime = new Date();
-            switch (newStatus) {
-                case 'Checked-In':
-                    updateData.checkInTime = currentTime;
-                    break;
-                case 'Checked-Out':
-                    updateData.checkOutTime = currentTime;
-                    if (currentAppointment.checkInTime) {
-                        updateData.actualDuration = Math.round(
-                            (currentTime.getTime() - currentAppointment.checkInTime.getTime()) / (1000 * 60)
-                        );
-                    }
-                    break;
+            if(newStatus === 'Checked-In') updateData.checkInTime = currentTime;
+            if(newStatus === 'Checked-Out') {
+                updateData.checkOutTime = currentTime;
+                if (currentAppointment.checkInTime) {
+                    updateData.actualDuration = Math.round((currentTime.getTime() - currentAppointment.checkInTime.getTime()) / (1000 * 60));
+                }
             }
         }
 
-        // The core update operation, scoped by ID and tenantId for maximum security.
-        const updatedAppointment = await Appointment.findOneAndUpdate(
+        // The core update operation, scoped by ID and tenantId
+        const updatedAppointmentDoc = await Appointment.findOneAndUpdate(
             { _id: id, tenantId },
             updateData,
             { new: true, runValidators: true }
         ).populate([
-            { path: 'customerId', select: 'name phoneNumber isMembership' },
+            { path: 'customerId' }, // <-- FIX: Populate the full customer object
             { path: 'stylistId', select: 'name' },
             { path: 'serviceIds', select: 'name price duration membershipRate' }
         ]);
 
+        if (!updatedAppointmentDoc) {
+             return NextResponse.json({ success: false, message: "Appointment not found or update failed." }, { status: 404 });
+        }
+        
+        // <-- FIX: Convert to plain object to modify it
+        const finalAppointment = updatedAppointmentDoc.toObject();
+
+        // <-- FIX: Decrypt customer fields before sending the response
+        if (finalAppointment.customerId) {
+            // Decrypt name
+            if (finalAppointment.customerId.name) {
+                try {
+                    finalAppointment.customerId.name = decrypt(finalAppointment.customerId.name);
+                } catch (e) {
+                    console.error(`Failed to decrypt name for updated appointment ${id}:`, e);
+                    finalAppointment.customerId.name = 'Decryption Error';
+                }
+            }
+            // Decrypt phone number
+            if (finalAppointment.customerId.phoneNumber) {
+                try {
+                    finalAppointment.customerId.phoneNumber = decrypt(finalAppointment.customerId.phoneNumber);
+                } catch (e) {
+                    console.error(`Failed to decrypt phone for updated appointment ${id}:`, e);
+                    finalAppointment.customerId.phoneNumber = '';
+                }
+            }
+        }
+
         return NextResponse.json({
             success: true,
-            appointment: updatedAppointment
+            appointment: finalAppointment // <-- FIX: Send the decrypted object
         });
 
     } catch (error: any) {
         console.error("API Error updating appointment:", error);
-        return NextResponse.json({
-            success: false,
-            message: error.message
-        }, { status: 500 });
+        return NextResponse.json({ success: false, message: error.message }, { status: 500 });
     }
 }
 
 // ===================================================================================
-//  DELETE: Handler to delete an existing appointment
+//  DELETE: Handler to delete an existing appointment (No changes needed)
 // ===================================================================================
 export async function DELETE(req: NextRequest, { params }: { params: { id:string } }) {
     const tenantId = getTenantIdOrBail(req);
@@ -161,12 +187,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { id:string
         await connectToDatabase();
         const { id } = params;
 
-        // Securely find and delete the appointment by its ID and the tenantId.
         const deletedAppointment = await Appointment.findOneAndDelete({ _id: id, tenantId });
 
         if (!deletedAppointment) {
-            // This message is intentionally vague for security.
-            // It could mean the appointment ID is wrong, or it belongs to another tenant.
             return NextResponse.json({ success: false, message: "Appointment not found." }, { status: 404 });
         }
 

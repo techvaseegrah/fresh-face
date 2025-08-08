@@ -1,9 +1,10 @@
-// /app/crm/components/CustomerTable.tsx - UPDATED VERSION
+// FILE: /app/crm/components/CustomerTable.tsx
+// NOTE: No multi-tenancy changes are needed in this file because it is a presentational
+// component. It only displays the tenant-scoped data provided by its parent.
 
 'use client';
 
 import React from 'react';
-// Make sure CrmCustomer is imported from the correct path
 import { CrmCustomer, PaginationInfo } from '../types';
 import {
   PencilIcon,
@@ -26,7 +27,6 @@ const getCustomerStatusColor = (status?: string) => {
 // Helper function to format dates nicely
 const formatDate = (dateString?: string | Date) => {
     if (!dateString) return 'N/A';
-    // This will format the date to the user's local format, e.g., "12/25/2023" in the US
     return new Date(dateString).toLocaleDateString(); 
 };
 
@@ -55,10 +55,8 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
             <tr>
               <th className="px-6 py-4 text-left font-semibold">Name</th>
               <th className="px-6 py-4 text-left font-semibold">Activity Status</th>
-              {/* NEW COLUMN HEADERS */}
               <th className="px-6 py-4 text-left font-semibold">Last Visit</th>
               <th className="px-6 py-4 text-left font-semibold">Last Services</th>
-              {/* END NEW COLUMN HEADERS */}
               <th className="px-6 py-4 text-center font-semibold">Membership</th>
               <th className="px-6 py-4 text-center font-semibold">Loyalty Points</th>
               <th className="px-6 py-4 text-right font-semibold">Actions</th>
@@ -66,19 +64,9 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
           </thead>
           <tbody className="divide-y divide-gray-200">
             {customers.map((customer) => {
-              // --- NEW LOGIC: DERIVE LAST VISIT INFO ---
-              // Get the most recent appointment (assuming the list is sorted newest to oldest)
-               console.log(`Data for customer "${customer.name}":`, customer);
-              // You can also log the specific field you're interested in:
-              console.log(`Appointment History for "${customer.name}":`, customer.appointmentHistory);
               const latestAppointment = customer.appointmentHistory?.[0];
-
-              // Get the last visit date from that appointment
               const lastVisitDate = latestAppointment?.date;
-
-              // Get the last services. Prefer the 'services' array, fallback to 'service' string.
-              const lastServices = latestAppointment?.services?.join(', ') || latestAppointment?.service;
-              // --- END OF NEW LOGIC ---
+              const lastServices = latestAppointment?.services?.join(', ');
 
               return (
                 <tr
@@ -99,14 +87,12 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
                     </span>
                   </td>
 
-                  {/* NEW TABLE CELLS TO DISPLAY THE DATA */}
                   <td className="px-6 py-4 text-gray-700">
                     {formatDate(lastVisitDate)}
                   </td>
                   <td className="px-6 py-4 text-gray-700 truncate max-w-xs" title={lastServices}>
                     {lastServices ?? 'N/A'}
                   </td>
-                  {/* END NEW TABLE CELLS */}
 
                   <td className="px-6 py-4 text-center">
                     {customer.isMembership ? (
@@ -157,14 +143,13 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({
         </table>
       </div>
 
-      {/* Pagination Controls (No changes needed here) */}
       {pagination.totalPages > 1 && (
          <div className="px-6 py-4 border-t flex items-center justify-between text-sm text-gray-600">
             <div>
                 Showing{' '}
-                <span className="font-semibold">{(pagination.currentPage - 1) * pagination.limit + 1}</span>
+                <span className="font-semibold">{(pagination.currentPage - 1) * 10 + 1}</span>
                 {' '}to{' '}
-                <span className="font-semibold">{Math.min(pagination.currentPage * pagination.limit, pagination.totalCustomers)}</span>
+                <span className="font-semibold">{Math.min(pagination.currentPage * 10, pagination.totalCustomers)}</span>
                 {' '}of{' '}
                 <span className="font-semibold">{pagination.totalCustomers}</span>
                 {' '}results

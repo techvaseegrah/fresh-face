@@ -1,22 +1,31 @@
-// app/api/admin/roles/route.ts
-import { NextResponse } from 'next/server';
+// /app/api/admin/roles/route.ts - TENANT-AWARE VERSION
+
+import { NextRequest, NextResponse } from 'next/server'; // <-- 1. Import NextRequest
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
 import Role from '@/models/role';
+import User from '@/models/user'; // Corrected import name
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import user from '@/models/user';
+import { getTenantId } from '@/lib/tenant'; // <-- 2. Import a tenant helper
 
-export async function GET() {
+// GET all roles for the current tenant
+export async function GET(req: NextRequest) { // <-- 3. Add 'req'
   try {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_READ)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const tenantId = getTenantId(req); // <-- 4. Get the tenantId from the request
+    if (!tenantId) {
+        return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
+    }
+
     await connectToDatabase();
     
-    const roles = await Role.find({})
+    // <-- 5. Scope the find query by tenantId
+    const roles = await Role.find({ tenantId: tenantId })
       .sort({ createdAt: -1 });
 
     return NextResponse.json({ success: true, roles });
@@ -26,14 +35,20 @@ export async function GET() {
   }
 }
 
-export async function DELETE(request: Request) {
+// DELETE a role and its associated users within the current tenant
+export async function DELETE(req: NextRequest) { // <-- 3. Change 'Request' to 'NextRequest'
   try {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    
+    const tenantId = getTenantId(req); // <-- 4. Get the tenantId
+    if (!tenantId) {
+        return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
+    }
 
-    const { roleId } = await request.json();
+    const { roleId } = await req.json();
 
     if (!roleId) {
       return NextResponse.json({ success: false, message: 'Role ID is required' }, { status: 400 });
@@ -41,16 +56,18 @@ export async function DELETE(request: Request) {
 
     await connectToDatabase();
     
-    const role = await Role.findById(roleId);
+    // <-- 5. Scope the find query by tenantId AND roleId
+    const role = await Role.findOne({ _id: roleId, tenantId: tenantId });
     if (!role) {
-      return NextResponse.json({ success: false, message: 'Role not found' }, { status: 404 });
+      return NextResponse.json({ success: false, message: 'Role not found in this salon' }, { status: 404 });
     }
 
-    // Delete the associated users
-    await user.deleteMany({ roleId: roleId });
+    // <-- 5. Scope the user deletion by tenantId AND roleId
+    await User.deleteMany({ roleId: roleId, tenantId: tenantId });
 
-    // Delete the role
-    await role.deleteOne({ _id: roleId });
+    // The 'role' object is a Mongoose document, so we can call .deleteOne() on it directly.
+    // This is implicitly secure because we already verified it belongs to the tenant.
+    await role.deleteOne();
 
     return NextResponse.json({ success: true, message: 'Role and associated users deleted successfully' });
   } catch (error) {
@@ -59,29 +76,39 @@ export async function DELETE(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+// POST (create) a new role for the current tenant
+export async function POST(req: NextRequest) { // <-- 3. Change 'Request' to 'NextRequest'
   try {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
+    const tenantId = getTenantId(req); // <-- 4. Get the tenantId
+    if (!tenantId) {
+        return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
+    }
+
     await connectToDatabase();
     
-    const { name, displayName, description, permissions } = await request.json();
+    const { name, displayName, description, permissions } = await req.json();
 
     if (!name || !displayName || !permissions) {
       return NextResponse.json({ success: false, message: 'Name, display name, and permissions are required' }, { status: 400 });
     }
+    
+    const upperCaseName = name.toUpperCase();
 
-    // Check if role already exists
-    const existingRole = await Role.findOne({ name: name.toUpperCase() });
+    // <-- 5. Scope the "check if exists" query by tenantId
+    const existingRole = await Role.findOne({ name: upperCaseName, tenantId: tenantId });
     if (existingRole) {
-      return NextResponse.json({ success: false, message: 'Role with this name already exists' }, { status: 409 });
+      return NextResponse.json({ success: false, message: `Role with name '${name}' already exists in this salon` }, { status: 409 });
     }
 
+    // <-- 6. Add tenantId to the new role being created
     const role = await Role.create({
-      name: name.toUpperCase(),
+      tenantId: tenantId, // Add the tenant's ID
+      name: upperCaseName,
       displayName,
       description,
       permissions,

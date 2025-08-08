@@ -14,7 +14,7 @@ const ServiceCategorySchema: Schema<IServiceCategory> = new Schema({
     index: true 
   },
   name: { type: String, required: true, trim: true },
-  targetAudience: { type: String, enum: ['male', 'female', 'Unisex'], required: true },
+  targetAudience: { type: String, enum: ['male', 'female', 'Unisex'] },
 }, { timestamps: true });
 
 ServiceCategorySchema.index({ name: 1, targetAudience: 1 }, { unique: true });

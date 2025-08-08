@@ -1,10 +1,11 @@
-// FILE: /app/crm/hooks/useCrm.ts - COMPLETE & FINAL
+// FILE: /app/crm/hooks/useCrm.ts - COMPLETE & MULTI-TENANT
 
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { CrmCustomer, PaginationInfo } from '../types';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
 interface CrmFilters {
   status: string;
@@ -42,6 +43,19 @@ export function useCrm() {
   const [panelKey, setPanelKey] = useState(0);
   const [isMembershipUpdating, setIsMembershipUpdating] = useState(false);
   
+  // 2. Create the tenant-aware fetch helper function
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const session = await getSession();
+    if (!session?.user?.tenantId) {
+      throw new Error("Your session is invalid. Please log in again.");
+    }
+    const headers = { ...options.headers, 'x-tenant-id': session.user.tenantId };
+    if (options.body) {
+      (headers as any)['Content-Type'] = 'application/json';
+    }
+    return fetch(url, { ...options, headers });
+  }, []);
+
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -57,9 +71,10 @@ export function useCrm() {
     Object.entries(appliedFilters).forEach(([key, value]) => { if (value) { params.append(key, value); } });
 
     try {
-      const response = await fetch(`/api/customer?${params.toString()}`);
+      // 3. Use the tenantFetch helper
+      const response = await tenantFetch(`/api/customer?${params.toString()}`);
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.message || 'Failed to fetch customers');
+      if (!response.ok) throw new Error(data.message || 'Failed to fetch customers');
       setCustomers(data.customers);
       setPagination(data.pagination);
     } catch (err: any) {
@@ -67,7 +82,7 @@ export function useCrm() {
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearchTerm, appliedFilters]);
+  }, [debouncedSearchTerm, appliedFilters, tenantFetch]); // 4. Add tenantFetch to dependencies
 
   useEffect(() => { fetchCustomers(pagination.currentPage); }, [fetchCustomers, pagination.currentPage, debouncedSearchTerm, appliedFilters]);
   
@@ -76,53 +91,56 @@ export function useCrm() {
   const clearFilters = () => { setFilters(initialFilters); setAppliedFilters(initialFilters); setPagination(prev => ({ ...prev, currentPage: 1 })); };
   const refreshData = () => { fetchCustomers(pagination.currentPage); };
 
-  const fetchCustomerDetails = async (customerId: string): Promise<CrmCustomer | null> => {
+  const fetchCustomerDetails = useCallback(async (customerId: string): Promise<CrmCustomer | null> => {
     try {
-        const response = await fetch(`/api/customer/${customerId}`, { cache: 'no-store' });
+        // 3. Use the tenantFetch helper
+        const response = await tenantFetch(`/api/customer/${customerId}`, { cache: 'no-store' });
         const apiResponse = await response.json();
-        if (!response.ok || !apiResponse.success) { throw new Error(apiResponse.message || 'Failed to fetch details'); }
+        if (!response.ok) { throw new Error(apiResponse.message || 'Failed to fetch details'); }
         return apiResponse.customer;
     } catch (error: any) { toast.error(`Error loading details: ${error.message}`); return null; }
-  };
+  }, [tenantFetch]); // 4. Add tenantFetch to dependencies
 
-  const handleDeleteCustomer = async (customerId: string, customerName: string) => {
+  const handleDeleteCustomer = useCallback(async (customerId: string, customerName: string) => {
     if (!confirm(`Are you sure you want to deactivate ${customerName}? Their history will be saved.`)) return;
     try {
-      const response = await fetch(`/api/customer/${customerId}`, { method: 'DELETE' });
+      // 3. Use the tenantFetch helper
+      const response = await tenantFetch(`/api/customer/${customerId}`, { method: 'DELETE' });
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || 'Failed to deactivate customer.');
+      if (!response.ok) throw new Error(result.message || 'Failed to deactivate customer.');
       toast.success('Customer deactivated successfully.');
       refreshData();
     } catch (err: any) { toast.error(err.message); }
-  };
+  }, [refreshData, tenantFetch]); // 4. Add tenantFetch to dependencies
 
   const handleViewCustomerDetails = useCallback(async (customer: CrmCustomer) => {
     if (isDetailPanelOpen && selectedCustomer?._id === customer._id) { setIsDetailPanelOpen(false); return; }
     setPanelKey(prevKey => prevKey + 1); setIsDetailPanelOpen(true); setSelectedCustomer(null);
     const detailedData = await fetchCustomerDetails(customer._id);
     setSelectedCustomer(detailedData);
-  }, [isDetailPanelOpen, selectedCustomer]);
+  }, [isDetailPanelOpen, selectedCustomer, fetchCustomerDetails]);
   
   const handleOpenAddModal = () => { setEditingCustomer(null); setIsAddEditModalOpen(true); };
   const handleOpenEditModal = (customer: CrmCustomer) => { setEditingCustomer(customer); setIsAddEditModalOpen(true); };
   const handleCloseAddEditModal = () => { setIsAddEditModalOpen(false); setEditingCustomer(null); };
 
-  const handleGrantMembership = async (customerId: string, barcode: string) => {
+  const handleGrantMembership = useCallback(async (customerId: string, barcode: string) => {
     setIsMembershipUpdating(true);
     try {
-      const response = await fetch(`/api/customer/${customerId}/toggle-membership`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // 3. Use the tenantFetch helper
+      const response = await tenantFetch(`/api/customer/${customerId}/toggle-membership`, {
+        method: 'POST',
         body: JSON.stringify({ isMembership: true, membershipBarcode: barcode }),
       });
       const result = await response.json();
-      if (!result.success || !result.customer) throw new Error(result.message || 'Failed to grant membership.');
+      if (!response.ok || !result.success || !result.customer) throw new Error(result.message || 'Failed to grant membership.');
       toast.success(`Membership granted successfully with barcode: ${result.customer.membershipBarcode}`);
       const freshCustomerData = result.customer;
       setSelectedCustomer(freshCustomerData);
       setCustomers(prev => prev.map(c => (c._id === customerId ? freshCustomerData : c)));
       setPanelKey(prevKey => prevKey + 1);
     } catch (err: any) { toast.error(err.message); } finally { setIsMembershipUpdating(false); }
-  };
+  }, [tenantFetch]); // 4. Add tenantFetch to dependencies
 
   const goToPage = (pageNumber: number) => { if (pageNumber >= 1 && pageNumber <= pagination.totalPages) { setPagination(prev => ({ ...prev, currentPage: pageNumber })); } };
 

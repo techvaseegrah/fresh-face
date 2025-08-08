@@ -1,12 +1,13 @@
-// /src/components/admin/ProductImportModal.tsx
+// /src/components/admin/ProductImportModal.tsx - CORRECTED VERSION (NO API CLIENT)
 
 "use client";
 
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { read, utils, WorkBook, WorkSheet } from 'xlsx';
-import { XIcon, UploadCloudIcon, FileTextIcon, AlertTriangleIcon, CheckCircleIcon } from 'lucide-react';
+import { XIcon, UploadCloudIcon, FileTextIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
 interface ProductImportModalProps {
   isOpen: boolean;
@@ -47,13 +48,18 @@ export default function ProductImportModal({ isOpen, onClose, onImportSuccess }:
     setIsProcessing(true);
     
     try {
+      // 2. Get the session from NextAuth
+      const session = await getSession();
+      if (!session?.user?.tenantId) {
+        throw new Error("Your session has expired or is invalid. Please log in again.");
+      }
+
       const arrayBuffer = await file.arrayBuffer();
       const workbook: WorkBook = read(arrayBuffer);
       const worksheetName = workbook.SheetNames[0];
       const worksheet: WorkSheet = workbook.Sheets[worksheetName];
       const data: any[] = utils.sheet_to_json(worksheet);
 
-      // --- Header Validation ---
       if (data.length > 0) {
         const headers = Object.keys(data[0]);
         const missingHeaders = REQUIRED_HEADERS.filter(h => !headers.includes(h));
@@ -62,15 +68,21 @@ export default function ProductImportModal({ isOpen, onClose, onImportSuccess }:
         }
       }
 
-      // --- Send to API ---
+      // 3. Manually add the 'x-tenant-id' header to the fetch request
       const response = await fetch('/api/products/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        },
         body: JSON.stringify(data),
       });
 
       const result = await response.json();
-      if (!result.success) throw new Error(result.message || "Import failed.");
+      // It's better to check response.ok for HTTP status success
+      if (!response.ok) {
+        throw new Error(result.message || result.error || "Import failed due to a server error.");
+      }
       
       onImportSuccess(result.report);
       onClose();
@@ -95,9 +107,8 @@ export default function ProductImportModal({ isOpen, onClose, onImportSuccess }:
           </button>
         </div>
         
-        {/* Body */}
+        {/* Body (No changes here) */}
         <div className="p-6 space-y-6 overflow-y-auto">
-          {/* Instructions */}
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
             <p className="font-semibold mb-2">Instructions:</p>
             <ol className="list-decimal list-inside space-y-1">
@@ -112,7 +123,6 @@ export default function ProductImportModal({ isOpen, onClose, onImportSuccess }:
             </a>
           </div>
 
-          {/* Dropzone */}
           <div {...getRootProps()}
                className={`p-10 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors
                ${isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-gray-400'}`}>
@@ -126,7 +136,6 @@ export default function ProductImportModal({ isOpen, onClose, onImportSuccess }:
             </div>
           </div>
           
-          {/* File Preview */}
           {file && (
             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -144,7 +153,7 @@ export default function ProductImportModal({ isOpen, onClose, onImportSuccess }:
           )}
         </div>
         
-        {/* Footer */}
+        {/* Footer (No changes here) */}
         <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
           <button onClick={onClose} disabled={isProcessing}
                   className="px-6 py-2.5 text-sm font-medium bg-white border rounded-lg hover:bg-gray-100">

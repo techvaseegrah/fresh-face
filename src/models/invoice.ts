@@ -50,6 +50,12 @@ const lineItemSchema = new Schema({
 }, { _id: false });
 
 const invoiceSchema = new Schema({
+  tenantId: { 
+    type: require('mongoose').Schema.Types.ObjectId, 
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   invoiceNumber: { 
     type: String,
     unique: true,

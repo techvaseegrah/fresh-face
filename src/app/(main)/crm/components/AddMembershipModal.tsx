@@ -1,10 +1,11 @@
-// FILE: /app/crm/components/AddMembershipModal.tsx
+// FILE: /app/crm/components/AddMembershipModal.tsx - MULTI-TENANT VERSION
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { CrmCustomer, MembershipPlanFE } from '../types';
 import { XMarkIcon } from '@heroicons/react/24/outline';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
 interface AddMembershipModalProps {
   isOpen: boolean;
@@ -24,23 +25,39 @@ const AddMembershipModal: React.FC<AddMembershipModalProps> = ({ isOpen, onClose
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 2. Update useEffect to be async and tenant-aware
   useEffect(() => {
-    if (isOpen && customer) {
-      // Reset state and fetch plans when modal opens
-      setError(null);
-      setSelectedPlanId('');
-      setIsSubmitting(false);
-      setIsLoadingPlans(true);
+    const fetchPlansForTenant = async () => {
+      if (isOpen && customer) {
+        setError(null);
+        setSelectedPlanId('');
+        setIsSubmitting(false);
+        setIsLoadingPlans(true);
 
-      fetch('/api/membership-plans')
-        .then(res => res.json())
-        .then(data => {
-          if (!data.success) throw new Error(data.message || 'Failed to fetch plans');
+        try {
+          const session = await getSession();
+          if (!session?.user?.tenantId) {
+            throw new Error("Your session is invalid. Please log in again.");
+          }
+
+          const response = await fetch('/api/membership-plans', {
+            headers: {
+              'x-tenant-id': session.user.tenantId,
+            },
+          });
+
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || 'Failed to fetch plans');
           setPlans(data.plans);
-        })
-        .catch(e => setError(e.message))
-        .finally(() => setIsLoadingPlans(false));
-    }
+        } catch (e: any) {
+          setError(e.message);
+        } finally {
+          setIsLoadingPlans(false);
+        }
+      }
+    };
+
+    fetchPlansForTenant();
   }, [isOpen, customer]);
 
   const handleSubmit = async () => {
@@ -50,14 +67,24 @@ const AddMembershipModal: React.FC<AddMembershipModalProps> = ({ isOpen, onClose
     setError(null);
 
     try {
+      // 3. Get session and add tenantId to the POST request
+      const session = await getSession();
+      if (!session?.user?.tenantId) {
+        throw new Error("Your session is invalid. Please log in again.");
+      }
+
       const response = await fetch('/api/customer-membership', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        },
         body: JSON.stringify({ customerId: customer.id, membershipPlanId: selectedPlanId }),
       });
+
       const result = await response.json();
 
-      if (!response.ok || !result.success) {
+      if (!response.ok) {
         throw new Error(result.message || "Failed to add membership.");
       }
       

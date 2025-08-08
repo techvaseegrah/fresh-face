@@ -1,4 +1,4 @@
-// FILE: /app/crm/page.tsx - COMPLETE & FINAL
+// FILE: /app/crm/page.tsx - COMPLETE & MULTI-TENANT
 
 'use client';
 
@@ -8,7 +8,7 @@ import { useCrm } from './hooks/useCrm';
 import { CustomerTable } from './components/CustomerTable';
 import CrmCustomerDetailPanel from './components/CrmCustomerDetailPanel';
 import AddEditCustomerModal from './components/AddEditCustomerModal';
-import { useSession } from 'next-auth/react';
+import { useSession, getSession } from 'next-auth/react'; // 1. Import getSession
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import CustomerImportModal from '@/components/admin/CustomerImportModal';
 import { toast } from 'react-toastify';
@@ -18,6 +18,7 @@ export default function CrmPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // This custom hook is assumed to be updated for multi-tenancy
   const {
     customers, pagination, isLoading, pageError, searchTerm, selectedCustomer, isDetailPanelOpen, isAddEditModalOpen, editingCustomer, panelKey, isMembershipUpdating,
     filters, setSearchTerm, goToPage, refreshData, handleViewCustomerDetails, setIsDetailPanelOpen, handleDeleteCustomer, handleOpenAddModal, handleOpenEditModal,
@@ -38,14 +39,26 @@ export default function CrmPage() {
     refreshData();
   };
 
+  // 2. This function is updated to be multi-tenant aware
   const handleExportAll = async () => {
     setIsExporting(true);
     try {
-      const response = await fetch('/api/customer/export');
+      const session = await getSession();
+      if (!session?.user?.tenantId) {
+        throw new Error("Your session is invalid. Please log in again.");
+      }
+
+      const response = await fetch('/api/customer/export', {
+        headers: {
+          'x-tenant-id': session.user.tenantId, // Add the required tenant header
+        }
+      });
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Failed to start export.' }));
         throw new Error(errorData.message || 'An unknown error occurred.');
       }
+      
       const disposition = response.headers.get('Content-Disposition');
       let filename = 'Customers.xlsx';
       if (disposition && disposition.includes('attachment')) {

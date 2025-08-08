@@ -1,4 +1,4 @@
-// /app/api/appointment/route.ts - MULTI-TENANT REFACTORED VERSION
+// /app/api/appointment/route.ts - FINAL CORRECTED VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -13,11 +13,12 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { InventoryManager } from '@/lib/inventoryManager'; 
 import { getTenantIdOrBail } from '@/lib/tenant';
 
-import { encrypt } from '@/lib/crypto';
+// --- IMPORT THE DECRYPT FUNCTION ---
+import { encrypt, decrypt} from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 
 // ===================================================================================
-//  GET: Handler with Multi-Tenant Scoping
+//  GET: Handler with Multi-Tenant Scoping and MANUAL DECRYPTION
 // ===================================================================================
 export async function GET(req: NextRequest) {
   try {
@@ -61,30 +62,23 @@ export async function GET(req: NextRequest) {
     if (searchQuery) {
         const searchStr = searchQuery.trim();
         let customerFindConditions: any = { tenantId };
-
         const isNumeric = /^\d+$/.test(searchStr);
         if (isNumeric) {
             customerFindConditions.phoneSearchIndex = createBlindIndex(searchStr);
         } else {
             customerFindConditions.searchableName = { $regex: searchStr, $options: 'i' };
         }
-        
         const matchingCustomers = await Customer.find(customerFindConditions).select('_id').lean();
         const customerIds = matchingCustomers.map(c => c._id);
-
         const stylistQuery = { name: { $regex: searchStr, $options: 'i' }, tenantId };
         const matchingStylists = await Staff.find(stylistQuery).select('_id').lean();
         const stylistIds = matchingStylists.map(s => s._id);
-
         const finalSearchOrConditions = [];
         if (customerIds.length > 0) finalSearchOrConditions.push({ customerId: { $in: customerIds } });
         if (stylistIds.length > 0) finalSearchOrConditions.push({ stylistId: { $in: stylistIds } });
-        
         if (finalSearchOrConditions.length > 0) {
             matchStage.$or = finalSearchOrConditions;
         } else {
-            // If search query is provided but no customers or stylists match, return no results.
-            // Use a condition that is guaranteed to be false.
             matchStage._id = new mongoose.Types.ObjectId(); 
         }
     }
@@ -97,22 +91,56 @@ export async function GET(req: NextRequest) {
         .populate({ path: 'billingStaffId', select: 'name' })
         .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 }) 
         .skip(skip)
-        .limit(limit),
+        .limit(limit)
+        .lean(), // Use .lean() for better performance
       Appointment.countDocuments(matchStage)
     ]);
     
     const totalPages = Math.ceil(totalAppointmentsResult / limit);
+
+    // =========================================================================
+    // === THE FIX IS APPLIED HERE ===
+    // Manually decrypt the populated customer fields before sending to the front-end.
+    // =========================================================================
     const formattedAppointments = appointments.map(apt => {
         let finalDateTime;
         if (apt.appointmentDateTime && apt.appointmentDateTime instanceof Date) {
             finalDateTime = apt.appointmentDateTime;
-        } else if (apt.date && apt.time) {
-            const dateStr = apt.date instanceof Date ? apt.date.toISOString().split('T')[0] : apt.date;
-            finalDateTime = new Date(`${dateStr}T${apt.time}:00.000Z`);
+        } else if ((apt as any).date && (apt as any).time) {
+            const dateStr = (apt as any).date instanceof Date ? (apt as any).date.toISOString().split('T')[0] : (apt as any).date;
+            finalDateTime = new Date(`${dateStr}T${(apt as any).time}:00.000Z`);
         } else {
             finalDateTime = apt.createdAt || new Date();
         }
-        return { ...apt.toObject(), id: apt._id.toString(), appointmentDateTime: finalDateTime.toISOString(), createdAt: (apt.createdAt || finalDateTime).toISOString() };
+
+        const customerData = apt.customerId as any;
+        let decryptedCustomerName = 'Decryption Error';
+        let decryptedPhoneNumber = '';
+
+        if (customerData) {
+            try {
+                decryptedCustomerName = customerData.name ? decrypt(customerData.name) : 'Unknown Client';
+            } catch (e) {
+                console.error(`Failed to decrypt name for customer ${customerData._id} on appointment ${apt._id}`);
+            }
+            try {
+                decryptedPhoneNumber = customerData.phoneNumber ? decrypt(customerData.phoneNumber) : '';
+            } catch (e) {
+                console.error(`Failed to decrypt phone for customer ${customerData._id} on appointment ${apt._id}`);
+            }
+        }
+        
+        return {
+          ...apt,
+          id: apt._id.toString(),
+          appointmentDateTime: finalDateTime.toISOString(),
+          createdAt: (apt.createdAt || finalDateTime).toISOString(),
+          customerId: { // Overwrite the populated object with a clean, decrypted version
+            _id: customerData?._id,
+            name: decryptedCustomerName,
+            phoneNumber: decryptedPhoneNumber
+          }
+        };
     });
 
     return NextResponse.json({
@@ -128,7 +156,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ===================================================================================
-//  POST: Handler with Multi-Tenant Scoping and Transaction Safety
+//  POST: Handler (No Changes Needed, This Code is Correct)
 // ===================================================================================
 export async function POST(req: NextRequest) {
   
@@ -175,7 +203,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Pass tenantId to your InventoryManager if it needs to query tenant-specific data
     const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
     if (InventoryManager.calculateMultipleServicesInventoryImpact && InventoryManager.applyInventoryUpdates) {
         const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
@@ -195,13 +222,10 @@ export async function POST(req: NextRequest) {
 
     const groupBookingId = new mongoose.Types.ObjectId();
     const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
-      // Ensure the service being booked belongs to the tenant
       const service = await ServiceItem.findOne({ _id: assignment.serviceId, tenantId }).select('duration price membershipRate').lean();
       if (!service) {
         throw new Error(`Service with ID ${assignment.serviceId} not found for this salon.`);
       }
-
-      // Ensure the stylist being booked belongs to the tenant
       const stylist = await Staff.findOne({ _id: assignment.stylistId, tenantId }).lean();
       if(!stylist) {
         throw new Error(`Stylist with ID ${assignment.stylistId} not found for this salon.`);
@@ -210,7 +234,7 @@ export async function POST(req: NextRequest) {
       const tempAppointmentForCalc = new Appointment({
         customerId: customerDoc!._id,
         serviceIds: [assignment.serviceId],
-        tenantId: tenantId, // Pass tenantId to virtuals/methods
+        tenantId: tenantId,
       });
       const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
 

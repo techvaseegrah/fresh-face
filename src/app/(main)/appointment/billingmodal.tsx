@@ -4,8 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { UserPlusIcon, ClockIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { QrCodeIcon } from 'lucide-react';
-
-const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
 // --- TYPE DEFINITIONS ---
 export interface BillLineItem {
@@ -88,23 +87,8 @@ interface BillingModalProps {
   onFinalizeAndPay: (payload: FinalizeBillingPayload) => Promise<any>;
 }
 
-interface AppointmentHistoryItem {
-  _id: string;
-  appointmentDateTime: string;
-  serviceIds: Array<{ name: string }>;
-  stylistId: { name: string };
-  status: 'Appointment' | 'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
-  finalAmount?: number;
-}
-
-interface CustomerDetailsWithHistory {
-  appointmentHistory: AppointmentHistoryItem[];
-  loyaltyPoints?: number;
-  isMembership?: boolean;
-}
-
+// Placeholder for CustomerHistoryModal which might have its own API calls
 const CustomerHistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; customer: CustomerForModal | null; }> = ({ isOpen, onClose, customer }) => {
-    // This component's code is fine
     return null; 
 };
 
@@ -141,43 +125,44 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
   const originalAmountPaid = useMemo(() => isCorrectionMode ? (appointment.finalAmount || 0) : 0, [appointment, isCorrectionMode]);
   const originalPaymentDetails = useMemo(() => isCorrectionMode ? (appointment.paymentDetails || { cash: 0, card: 0, upi: 0, other: 0 }) : { cash: 0, card: 0, upi: 0, other: 0 }, [appointment, isCorrectionMode]);
 
-  const fetchMembershipFee = useCallback(async () => { setIsLoadingFee(true); try { const res = await fetch('/api/settings/membership'); const data = await res.json(); if (data.success && typeof data.price === 'number') setMembershipFee(data.price); else setError('Error: Membership fee is not configured.'); } catch (err) { setError('Error: Membership fee is not configured.'); } finally { setIsLoadingFee(false); } }, []);
-  const fetchStaffMembers = useCallback(async () => { setIsLoadingStaff(true); try { const res = await fetch('/api/users/billing-staff'); const data = await res.json(); if (data.success) { setAvailableStaff(data.staff); if (data.staff.some((s: StaffMember) => s._id === stylist._id)) { setSelectedStaffId(stylist._id); } } } catch (err) { console.error('Failed to fetch staff:', err); } finally { setIsLoadingStaff(false); } }, [stylist._id]);
-  const fetchInventoryImpact = useCallback(async (currentBillItems: BillLineItem[]) => { const serviceItems = currentBillItems.filter(item => item.itemType === 'service'); if (serviceItems.length === 0 || !customer._id) { setInventoryImpact(null); return; } setIsLoadingInventory(true); try { const serviceIds = serviceItems.map(s => s.itemId); const response = await fetch('/api/billing/inventory-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serviceIds, customerId: customer._id }) }); const data = await response.json(); if (data.success) setInventoryImpact(data.data); } catch (err) { console.error('Failed to fetch inventory impact:', err); } finally { setIsLoadingInventory(false); } }, [customer._id]);
+  // 2. Tenant-aware fetch helper
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const session = await getSession();
+    if (!session?.user?.tenantId) {
+      throw new Error("Your session is invalid. Please log in again.");
+    }
+    const headers = { ...options.headers, 'x-tenant-id': session.user.tenantId };
+    if (options.body) {
+      (headers as any)['Content-Type'] = 'application/json';
+    }
+    return fetch(url, { ...options, headers });
+  }, []);
+
+  const fetchMembershipFee = useCallback(async () => { setIsLoadingFee(true); try { const res = await tenantFetch('/api/settings/membership'); const data = await res.json(); if (data.success && typeof data.price === 'number') setMembershipFee(data.price); else setError('Error: Membership fee is not configured.'); } catch (err) { setError('Error: Membership fee is not configured.'); } finally { setIsLoadingFee(false); } }, [tenantFetch]);
+  const fetchStaffMembers = useCallback(async () => { setIsLoadingStaff(true); try { const res = await tenantFetch('/api/users/billing-staff'); const data = await res.json(); if (data.success) { setAvailableStaff(data.staff); if (data.staff.some((s: StaffMember) => s._id === stylist._id)) { setSelectedStaffId(stylist._id); } } } catch (err) { console.error('Failed to fetch staff:', err); } finally { setIsLoadingStaff(false); } }, [stylist._id, tenantFetch]);
+  const fetchInventoryImpact = useCallback(async (currentBillItems: BillLineItem[]) => { const serviceItems = currentBillItems.filter(item => item.itemType === 'service'); if (serviceItems.length === 0 || !customer._id) { setInventoryImpact(null); return; } setIsLoadingInventory(true); try { const serviceIds = serviceItems.map(s => s.itemId); const response = await tenantFetch('/api/billing/inventory-preview', { method: 'POST', body: JSON.stringify({ serviceIds, customerId: customer._id }) }); const data = await response.json(); if (data.success) setInventoryImpact(data.data); } catch (err) { console.error('Failed to fetch inventory impact:', err); } finally { setIsLoadingInventory(false); } }, [customer._id, tenantFetch]);
 
   useEffect(() => {
     if (!isOpen) return;
-
     const initialize = async () => {
       fetchStaffMembers();
       fetchMembershipFee();
-      
       const isMember = customer?.isMembership || false;
       setCustomerIsMember(isMember);
       setShowMembershipGrantOption(!isMember);
-
       if (isCorrectionMode && appointment.invoiceId) {
         setIsLoadingBill(true);
         try {
-          const res = await fetch(`/api/billing/${appointment.invoiceId}`);
+          const res = await tenantFetch(`/api/billing/${appointment.invoiceId}`);
           const result = await res.json();
-          if (!result.success) throw new Error(result.message || 'Failed to fetch invoice.');
-          
+          if (!res.ok) throw new Error(result.message || 'Failed to fetch invoice.');
           const { invoice } = result;
           const itemsFromInvoice: BillLineItem[] = invoice.lineItems.map((item: any) => ({ ...item, isRemovable: true }));
-          
           setBillItems(itemsFromInvoice);
           setNotes(invoice.notes || '');
           if (invoice.billingStaffId) setSelectedStaffId(invoice.billingStaffId);
-          
-          if (invoice.manualDiscount) {
-            setDiscount(invoice.manualDiscount.value || 0);
-            setDiscountType(invoice.manualDiscount.type || 'fixed');
-          } else {
-            setDiscount(0);
-            setDiscountType('fixed');
-          }
-
+          setDiscount(invoice.manualDiscount?.value || 0);
+          setDiscountType(invoice.manualDiscount?.type || 'fixed');
           await fetchInventoryImpact(itemsFromInvoice);
         } catch (err: any) {
           setError(`Could not load bill: ${err.message}`);
@@ -195,69 +180,36 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
       }
     };
     initialize();
-  }, [isOpen, appointment.invoiceId, appointment.serviceIds, customer, isCorrectionMode, fetchStaffMembers, fetchMembershipFee, fetchInventoryImpact, stylist._id]);
+  }, [isOpen, appointment.invoiceId, appointment.serviceIds, customer, isCorrectionMode, fetchStaffMembers, fetchMembershipFee, fetchInventoryImpact, stylist._id, tenantFetch]);
 
   useEffect(() => { setBillItems(prevItems => prevItems.map(item => { if (item.itemType === 'service') { const unitPrice = (customerIsMember && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; return { ...item, finalPrice: unitPrice * item.quantity }; } return item; })); }, [customerIsMember]);
-  useEffect(() => { if (searchQuery.trim().length < 2) { setSearchResults([]); return; } const handler = setTimeout(async () => { setIsSearching(true); try { const res = await fetch(`/api/billing/search-items?query=${encodeURIComponent(searchQuery)}`); const data = await res.json(); if (data.success) setSearchResults(data.items); } catch (e) { console.error('Item search failed:', e); } finally { setIsSearching(false); } }, 400); return () => clearTimeout(handler); }, [searchQuery]);
-  useEffect(() => { if (!membershipBarcode.trim()) { setIsBarcodeValid(true); return; } const handler = setTimeout(async () => { setIsCheckingBarcode(true); try { const res = await fetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`); const data = await res.json(); setIsBarcodeValid(!data.exists); } catch (err) { setIsBarcodeValid(false); } finally { setIsCheckingBarcode(false); } }, 500); return () => clearTimeout(handler); }, [membershipBarcode]);
+  useEffect(() => { if (searchQuery.trim().length < 2) { setSearchResults([]); return; } const handler = setTimeout(async () => { setIsSearching(true); try { const res = await tenantFetch(`/api/billing/search-items?query=${encodeURIComponent(searchQuery)}`); const data = await res.json(); if (data.success) setSearchResults(data.items); } catch (e) { console.error('Item search failed:', e); } finally { setIsSearching(false); } }, 400); return () => clearTimeout(handler); }, [searchQuery, tenantFetch]);
+  useEffect(() => { if (!membershipBarcode.trim()) { setIsBarcodeValid(true); return; } const handler = setTimeout(async () => { setIsCheckingBarcode(true); try { const res = await tenantFetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`); const data = await res.json(); setIsBarcodeValid(!data.exists); } catch (err) { setIsBarcodeValid(false); } finally { setIsCheckingBarcode(false); } }, 500); return () => clearTimeout(handler); }, [membershipBarcode, tenantFetch]);
   
   const handleAddItemToBill = (item: SearchableItem) => { if (billItems.some(bi => bi.itemId === item.id)) { toast.info(`${item.name} is already in the bill.`); return; } const finalPrice = (customerIsMember && item.type === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.price; let displayName = item.name; if (item.type === 'product') { if (item.categoryName) displayName = `${item.categoryName} - ${displayName}`; if (item.unit) displayName = `${displayName} (${item.unit})`; } const newItem: BillLineItem = { itemType: item.type, itemId: item.id, name: displayName, unitPrice: item.price, membershipRate: item.membershipRate, quantity: 1, finalPrice: finalPrice, isRemovable: true }; const updatedBillItems = [...billItems, newItem]; setBillItems(updatedBillItems); fetchInventoryImpact(updatedBillItems); setSearchQuery(''); setSearchResults([]); searchInputRef.current?.focus(); };
   const handleRemoveItem = (indexToRemove: number) => { const updatedBillItems = billItems.filter((_, idx) => idx !== indexToRemove); setBillItems(updatedBillItems); fetchInventoryImpact(updatedBillItems); };
   const handleQuantityChange = (index: number, newQuantity: number) => { if (newQuantity < 1) return; setBillItems(prev => prev.map((item, idx) => { if (idx === index) { const unitPriceForCalc = (customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; return { ...item, quantity: newQuantity, finalPrice: unitPriceForCalc * newQuantity }; } return item; })); };
-  const handleGrantMembership = async () => { if (isLoadingFee || membershipFee === null) { toast.error("Membership fee not configured."); return; } if (!membershipBarcode.trim() || !isBarcodeValid) { setError('Please enter a unique, valid barcode.'); return; } if (billItems.some(item => item.itemId === MEMBERSHIP_FEE_ITEM_ID)) { toast.info("Membership fee is already in the bill."); return; } try { const response = await fetch(`/api/customer/${customer._id}/toggle-membership`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isMembership: true, membershipBarcode: membershipBarcode.trim() }) }); const result = await response.json(); if (result.success) { setCustomerIsMember(true); setShowMembershipGrantOption(false); setMembershipGranted(true); setIsGrantingMembership(false); toast.success(`Membership granted! Fee added to bill.`); const membershipFeeItem: BillLineItem = { itemType: 'fee', itemId: MEMBERSHIP_FEE_ITEM_ID, name: 'New Membership Fee', unitPrice: membershipFee, quantity: 1, finalPrice: membershipFee, isRemovable: false }; setBillItems(prevItems => [...prevItems, membershipFeeItem]); } else { setError(result.message || 'Failed to grant membership'); } } catch (err) { setError('An unexpected error occurred.'); } };
+  const handleGrantMembership = async () => { if (isLoadingFee || membershipFee === null) { toast.error("Membership fee not configured."); return; } if (!membershipBarcode.trim() || !isBarcodeValid) { setError('Please enter a unique, valid barcode.'); return; } if (billItems.some(item => item.itemId === 'MEMBERSHIP_FEE_PRODUCT_ID')) { toast.info("Membership fee is already in the bill."); return; } try { const response = await tenantFetch(`/api/customer/${customer._id}/toggle-membership`, { method: 'POST', body: JSON.stringify({ isMembership: true, membershipBarcode: membershipBarcode.trim() }) }); const result = await response.json(); if (result.success) { setCustomerIsMember(true); setShowMembershipGrantOption(false); setMembershipGranted(true); setIsGrantingMembership(false); toast.success(`Membership granted! Fee added to bill.`); const membershipFeeItem: BillLineItem = { itemType: 'fee', itemId: 'MEMBERSHIP_FEE_PRODUCT_ID', name: 'New Membership Fee', unitPrice: membershipFee, quantity: 1, finalPrice: membershipFee, isRemovable: false }; setBillItems(prevItems => [...prevItems, membershipFeeItem]); } else { setError(result.message || 'Failed to grant membership'); } } catch (err) { setError('An unexpected error occurred.'); } };
   const handlePaymentChange = (method: keyof typeof newPaymentDetails, amount: string) => { setNewPaymentDetails(prev => ({ ...prev, [method]: parseFloat(amount) || 0 })); };
 
   const totals = useMemo(() => {
     let serviceTotal = 0, productTotal = 0, membershipSavings = 0, feeTotal = 0;
     billItems.forEach(item => {
-        if (item.itemType === 'service') {
-            serviceTotal += item.finalPrice;
-            if (customerIsMember && typeof item.membershipRate === 'number') {
-                membershipSavings += (item.unitPrice - item.membershipRate) * item.quantity;
-            }
-        } else if (item.itemType === 'product') {
-            productTotal += item.finalPrice;
-        } else if (item.itemType === 'fee') {
-            feeTotal += item.finalPrice;
-        }
+        if (item.itemType === 'service') { serviceTotal += item.finalPrice; if (customerIsMember && typeof item.membershipRate === 'number') { membershipSavings += (item.unitPrice - item.membershipRate) * item.quantity; } } 
+        else if (item.itemType === 'product') { productTotal += item.finalPrice; } 
+        else if (item.itemType === 'fee') { feeTotal += item.finalPrice; }
     });
-
     const subtotalBeforeDiscount = serviceTotal + productTotal + feeTotal;
-    let calculatedDiscount = 0;
-    if (discountType === 'fixed') {
-        calculatedDiscount = discount;
-    } else {
-        calculatedDiscount = (subtotalBeforeDiscount * discount) / 100;
-    }
+    let calculatedDiscount = discountType === 'fixed' ? discount : (subtotalBeforeDiscount * discount) / 100;
     calculatedDiscount = Math.min(subtotalBeforeDiscount, calculatedDiscount);
-
     const trueGrandTotal = subtotalBeforeDiscount - calculatedDiscount;
-    
-    // Calculate the raw difference between the new total and what was paid
     const amountDifference = isCorrectionMode ? trueGrandTotal - originalAmountPaid : trueGrandTotal;
-
-    // Separate the difference into what's due vs. what needs to be refunded
     const amountDueForDisplay = Math.max(0, amountDifference);
     const refundDue = Math.max(0, -amountDifference);
-
     const totalNewPaid = Object.values(newPaymentDetails).reduce((sum, amount) => sum + amount, 0);
-    // Balance is calculated only against the amount that is actually due
     const balance = amountDueForDisplay - totalNewPaid;
     const changeDue = balance < 0 ? Math.abs(balance) : 0;
-
-    return {
-        serviceTotal,
-        productTotal,
-        subtotalBeforeDiscount,
-        membershipSavings,
-        calculatedDiscount,
-        trueGrandTotal,
-        displayTotal: amountDueForDisplay, // This is what the customer owes now
-        refundDue, // This is the new value for what should be refunded
-        totalNewPaid,
-        balance,
-        changeDue
-    };
+    return { serviceTotal, productTotal, subtotalBeforeDiscount, membershipSavings, calculatedDiscount, trueGrandTotal, displayTotal: amountDueForDisplay, refundDue, totalNewPaid, balance, changeDue };
   }, [billItems, customerIsMember, newPaymentDetails, discount, discountType, originalAmountPaid, isCorrectionMode]);
 
   const handleFinalizeClick = async () => { if (billItems.length === 0 || totals.trueGrandTotal < 0) { setError('Cannot finalize an empty or negative value bill.'); return; } if (!selectedStaffId) { setError('Please select a billing staff member.'); return; } if (totals.balance > 0.01) { setError(`Payment amount (₹${totals.totalNewPaid.toFixed(2)}) is less than the amount due (₹${totals.displayTotal.toFixed(2)}).`); return; } setIsLoading(true); setError(null); try { const finalPaymentDetails = { cash: (originalPaymentDetails.cash || 0) + newPaymentDetails.cash, card: (originalPaymentDetails.card || 0) + newPaymentDetails.card, upi: (originalPaymentDetails.upi || 0) + newPaymentDetails.upi, other: (originalPaymentDetails.other || 0) + newPaymentDetails.other, }; if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); } const finalPayload: FinalizeBillingPayload = { appointmentId: appointment._id, customerId: customer._id, stylistId: stylist._id, billingStaffId: selectedStaffId, items: billItems, serviceTotal: totals.serviceTotal, productTotal: totals.productTotal, subtotal: totals.subtotalBeforeDiscount, membershipDiscount: totals.membershipSavings, grandTotal: totals.trueGrandTotal, paymentDetails: finalPaymentDetails, notes, customerWasMember: customer?.isMembership || false, membershipGrantedDuringBilling: membershipGranted, manualDiscountType: discount > 0 ? discountType : null, manualDiscountValue: discount, finalManualDiscountApplied: totals.calculatedDiscount, }; await onFinalizeAndPay(finalPayload); } catch (err: any) { setError(err.message || "An unknown error occurred."); } finally { setIsLoading(false); } };

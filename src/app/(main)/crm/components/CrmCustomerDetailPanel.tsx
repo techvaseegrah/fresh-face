@@ -1,4 +1,4 @@
-// FILE: /app/crm/components/CrmCustomerDetailPanel.tsx - FINAL, WITH CONTACT INFO
+// FILE: /app/crm/components/CrmCustomerDetailPanel.tsx - MULTI-TENANT VERSION
 
 'use client';
 
@@ -9,9 +9,10 @@ import {
   SparklesIcon, 
   TagIcon, 
   QrCodeIcon,
-  PhoneIcon, // 1. IMPORT NEW ICONS
+  PhoneIcon,
   EnvelopeIcon 
 } from '@heroicons/react/24/outline';
+import { getSession } from 'next-auth/react'; // 1. Import getSession
 
 interface CrmCustomerDetailPanelProps {
   customer: CrmCustomer | null;
@@ -28,7 +29,6 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
   onClose,
   onGrantMembership,
 }) => {
-  // ... (all your existing state and hooks remain the same) ...
   const [showBarcodeInput, setShowBarcodeInput] = useState(false);
   const [membershipBarcode, setMembershipBarcode] = useState('');
   const [isCheckingBarcode, setIsCheckingBarcode] = useState(false);
@@ -43,26 +43,51 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
     }
   }, [customer, isOpen]);
 
+  // 2. Update the barcode check useEffect to be tenant-aware
   useEffect(() => {
-    if (!showBarcodeInput || !membershipBarcode.trim()) {
-      setBarcodeError('');
-      return;
-    }
-    const handler = setTimeout(async () => {
+    const checkBarcode = async () => {
+      if (!showBarcodeInput || !membershipBarcode.trim()) {
+        setBarcodeError('');
+        return;
+      }
+      
       setIsCheckingBarcode(true);
       setBarcodeError('');
+      
       try {
-        const res = await fetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`);
+        const session = await getSession();
+        if (!session?.user?.tenantId) {
+          throw new Error("Session is invalid. Please log in again.");
+        }
+
+        const res = await fetch(
+          `/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`,
+          {
+            headers: {
+              'x-tenant-id': session.user.tenantId, // Add the tenant header
+            },
+          }
+        );
+
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Could not validate barcode.');
+        }
+
         if (data.exists) {
           setBarcodeError('This barcode is already in use.');
         }
-      } catch (error) {
-        setBarcodeError('Could not validate barcode.');
+      } catch (error: any) {
+        setBarcodeError(error.message);
       } finally {
         setIsCheckingBarcode(false);
       }
+    };
+
+    const handler = setTimeout(() => {
+      checkBarcode();
     }, 500);
+
     return () => clearTimeout(handler);
   }, [membershipBarcode, showBarcodeInput]);
 
@@ -135,7 +160,6 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
               <PhoneIcon className="w-4 h-4 text-gray-500" />
               <a href={`tel:${customer!.phoneNumber}`} className="text-gray-800 hover:text-indigo-600">{customer!.phoneNumber}</a>
           </div>
-          {/* 2. CONDITIONALLY RENDER THE EMAIL */}
           {customer!.email && (
             <div className="flex items-center gap-3 text-sm">
                 <EnvelopeIcon className="w-4 h-4 text-gray-500" />

@@ -4,7 +4,7 @@ import type { IProduct } from "@/models/Product"
 import type { IProductBrand } from "@/models/ProductBrand"
 import type { IProductSubCategory } from "@/models/ProductSubCategory"
 import { useEffect, useState, useCallback } from "react"
-import { useSession } from "next-auth/react"
+import { useSession, getSession } from "next-auth/react" // 1. Import getSession
 import { hasPermission, PERMISSIONS } from "@/lib/permissions"
 import {
   PlusIcon,
@@ -49,6 +49,29 @@ export default function ProductManager() {
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_CREATE)
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_UPDATE)
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.PRODUCTS_DELETE)
+  
+  // 2. --- TENANT-AWARE FETCH HELPER ---
+  // This helper function wraps the native fetch, gets the session, and adds the
+  // required 'x-tenant-id' header to every request.
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const session = await getSession();
+    if (!session?.user?.tenantId) {
+      throw new Error("Your session is invalid. Please log in again.");
+    }
+
+    const headers = {
+      ...options.headers,
+      'x-tenant-id': session.user.tenantId,
+    };
+
+    // Automatically add Content-Type for requests with a body
+    if (options.body) {
+      (headers as any)['Content-Type'] = 'application/json';
+    }
+
+    const config = { ...options, headers };
+    return fetch(url, config);
+  }, []);
 
   // --- Data Fetching and Handling ---
   const resetSelections = useCallback(() => {
@@ -63,17 +86,18 @@ export default function ProductManager() {
       setIsLoadingBrands(true)
       resetSelections()
       try {
-        const res = await fetch(`/api/product-brands?type=${type}`)
+        // 3. Use tenantFetch instead of fetch
+        const res = await tenantFetch(`/api/product-brands?type=${type}`)
         const data = await res.json()
         setBrands(data.success ? data.data : [])
-      } catch (error) {
-        toast.error("Failed to load brands.")
+      } catch (error: any) {
+        toast.error(error.message || "Failed to load brands.")
         setBrands([])
       } finally {
         setIsLoadingBrands(false)
       }
     },
-    [resetSelections]
+    [resetSelections, tenantFetch]
   )
 
   const fetchSubCategories = useCallback(async (brandId: string) => {
@@ -81,31 +105,33 @@ export default function ProductManager() {
     setSelectedSubCategoryId(null)
     setProducts([])
     try {
-      const res = await fetch(`/api/product-sub-categories?brandId=${brandId}`)
+      // 3. Use tenantFetch instead of fetch
+      const res = await tenantFetch(`/api/product-sub-categories?brandId=${brandId}`)
       const data = await res.json()
       setSubCategories(data.success ? data.data : [])
-    } catch (error) {
-      toast.error("Failed to load sub-categories.")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load sub-categories.")
       setSubCategories([])
     } finally {
       setIsLoadingSubCategories(false)
     }
-  }, [])
+  }, [tenantFetch])
 
   const fetchProducts = useCallback(async (subCategoryId: string) => {
     setIsLoadingProducts(true)
     setProducts([])
     try {
-      const res = await fetch(`/api/products?subCategoryId=${subCategoryId}`)
+      // 3. Use tenantFetch instead of fetch
+      const res = await tenantFetch(`/api/products?subCategoryId=${subCategoryId}`)
       const data = await res.json()
       setProducts(data.success ? data.data : [])
-    } catch (error) {
-      toast.error("Failed to load products.")
+    } catch (error: any) {
+      toast.error(error.message || "Failed to load products.")
       setProducts([])
     } finally {
       setIsLoadingProducts(false)
     }
-  }, [])
+  }, [tenantFetch])
 
   useEffect(() => {
     fetchBrands(productType)
@@ -157,34 +183,29 @@ export default function ProductManager() {
       const url = isEditing ? `/api/${apiPath}/${data._id}` : `/api/${apiPath}`
 
       try {
-        const res = await fetch(url, {
+        // 3. Use tenantFetch instead of fetch
+        const res = await tenantFetch(url, {
           method,
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
         })
 
         const result = await res.json()
 
-        if (!res.ok || !result.success) {
-          throw new Error(result.message || "An unknown error occurred.")
+        if (!res.ok) { // Check HTTP status for failure
+          throw new Error(result.message || result.error || "An unknown error occurred.")
         }
 
         toast.success(`'${data.name}' saved successfully!`)
         setIsModalOpen(false)
 
-        // Refresh the relevant column's data
-        if (entityType === "brand") {
-          fetchBrands(productType)
-        } else if (entityType === "subcategory" && selectedBrand) {
-          fetchSubCategories(selectedBrand._id)
-        } else if (entityType === "product" && selectedSubCategoryId) {
-          fetchProducts(selectedSubCategoryId)
-        }
+        if (entityType === "brand") fetchBrands(productType)
+        else if (entityType === "subcategory" && selectedBrand) fetchSubCategories(selectedBrand._id)
+        else if (entityType === "product" && selectedSubCategoryId) fetchProducts(selectedSubCategoryId)
       } catch (error: any) {
         toast.error(`Save failed: ${error.message}`)
       }
     },
-    [productType, selectedBrand, selectedSubCategoryId, fetchBrands, fetchSubCategories, fetchProducts]
+    [productType, selectedBrand, selectedSubCategoryId, fetchBrands, fetchSubCategories, fetchProducts, tenantFetch]
   )
 
   const handleDelete = useCallback(
@@ -204,32 +225,31 @@ export default function ProductManager() {
       const url = `/api/${apiPath}/${id}`
 
       try {
-        const res = await fetch(url, { method: "DELETE" })
+        // 3. Use tenantFetch instead of fetch
+        const res = await tenantFetch(url, { method: "DELETE" })
         const result = await res.json()
 
-        if (!res.ok || !result.success) {
-          throw new Error(result.message || "An unknown error occurred.")
+        if (!res.ok) { // Check HTTP status for failure
+          throw new Error(result.message || result.error || "An unknown error occurred.")
         }
 
         toast.success(`'${entityName}' deleted successfully!`)
 
-        // Refresh the relevant data
-        if (entityType === "brand") {
-          fetchBrands(productType) // This will reset all columns
-        } else if (entityType === "subcategory" && selectedBrand) {
-          fetchSubCategories(selectedBrand._id) // This will reset the product column
-        } else if (entityType === "product" && selectedSubCategoryId) {
-          fetchProducts(selectedSubCategoryId)
-        }
+        if (entityType === "brand") fetchBrands(productType)
+        else if (entityType === "subcategory" && selectedBrand) fetchSubCategories(selectedBrand._id)
+        else if (entityType === "product" && selectedSubCategoryId) fetchProducts(selectedSubCategoryId)
+
       } catch (error: any) {
         toast.error(`Delete failed: ${error.message}`)
       }
     },
-    [productType, selectedBrand, selectedSubCategoryId, brands, subCategories, products, fetchBrands, fetchSubCategories, fetchProducts]
+    [productType, selectedBrand, selectedSubCategoryId, brands, subCategories, products, fetchBrands, fetchSubCategories, fetchProducts, tenantFetch]
   )
-
+  
+  // The rest of the JSX rendering remains exactly the same.
+  // ...
   return (
-    <div className="flex h-full flex-col rounded-xl bg-white shadow-lg">
+     <div className="flex h-full flex-col rounded-xl bg-white shadow-lg">
       <EntityFormModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

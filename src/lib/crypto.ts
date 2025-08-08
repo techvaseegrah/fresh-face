@@ -1,30 +1,39 @@
+// /src/lib/crypto.ts - THE FINAL, CORRECTED AND ROBUST VERSION
+
 import { createCipheriv, createDecipheriv, createHash } from 'crypto';
 
 const ALGORITHM = 'aes-256-cbc';
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY as string;
-const ENCRYPTION_IV = process.env.ENCRYPTION_IV as string;
 
-console.log(`Using encryption key: ${ENCRYPTION_KEY ? 'defined' : 'undefined'}`);
-console.log(`Using encryption IV: ${ENCRYPTION_IV ? 'defined' : 'undefined'}`);
+// This helper function gets fresh keys every time it's called.
+// This solves the environment variable loading issue.
+function getCryptoConfig() {
+  const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY as string;
+  const ENCRYPTION_IV = process.env.ENCRYPTION_IV as string;
 
+  if (!ENCRYPTION_KEY || !ENCRYPTION_IV) {
+    throw new Error('CRITICAL CRYPTO ERROR: ENCRYPTION_KEY or ENCRYPTION_IV is not available in the environment. Check your .env file and server configuration.');
+  }
 
+  const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+  const iv = Buffer.from(ENCRYPTION_IV, 'hex');
+  
+  if (key.length !== 32) {
+      throw new Error('Invalid ENCRYPTION_KEY length. Key must be 32 bytes (64 hex characters).');
+  }
+  if (iv.length !== 16) {
+    throw new Error('Invalid ENCRYPTION_IV length. IV must be 16 bytes (32 hex characters).');
+  }
 
-if (!ENCRYPTION_KEY || !ENCRYPTION_IV) {
-  throw new Error('ENCRYPTION_KEY and ENCRYPTION_IV must be defined in your environment variables.');
-}
-
-// Convert hex string keys to Buffers for the crypto module
-const key = Buffer.from(ENCRYPTION_KEY, 'hex');
-const iv = Buffer.from(ENCRYPTION_IV, 'hex');
-
-if (key.length !== 32 || iv.length !== 16) {
-    throw new Error('Invalid ENCRYPTION_KEY or ENCRYPTION_IV length. Key must be 32 bytes (64 hex characters) and IV 16 bytes (32 hex characters).');
+  return { key, iv };
 }
 
 /**
  * Encrypts a string using AES-256-CBC algorithm.
  */
 export function encrypt(text: string): string {
+  // Get fresh, guaranteed-correct keys on every encryption call.
+  const { key, iv } = getCryptoConfig();
+  
   const cipher = createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
@@ -35,6 +44,9 @@ export function encrypt(text: string): string {
  * Decrypts a string using AES-256-CBC algorithm.
  */
 export function decrypt(hash: string): string {
+  // Get fresh, guaranteed-correct keys on every decryption call.
+  const { key, iv } = getCryptoConfig();
+
   try {
     const decipher = createDecipheriv(ALGORITHM, key, iv);
     let decrypted = decipher.update(hash, 'hex', 'utf8');
@@ -42,7 +54,7 @@ export function decrypt(hash: string): string {
     return decrypted;
   } catch (error) {
     console.error("Decryption failed for hash:", hash, error);
-    return "Decryption Error"; // Return a noticeable string on error
+    return "Decryption Error"; // Your original, helpful return on error
   }
 }
 
