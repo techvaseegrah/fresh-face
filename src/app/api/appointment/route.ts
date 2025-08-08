@@ -1,4 +1,4 @@
-// /app/api/appointment/route.ts - FINAL CORRECTED VERSION (with sorting fix)
+// /app/api/appointment/route.ts - FINAL CORRECTED VERSION
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -11,6 +11,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { InventoryManager } from '@/lib/inventoryManager'; 
+import { whatsAppService } from '@/lib/whatsapp';
 
 // --- (1) IMPORT ALL THE NECESSARY FUNCTIONS ---
 import { encrypt } from '@/lib/crypto';
@@ -54,23 +55,18 @@ export async function GET(req: Request) {
         matchStage.appointmentDateTime = { $gte: startOfTodayUTC, $lte: endOfTodayUTC };
     }
 
-    // --- UPGRADED SEARCH LOGIC FOR CUSTOMERS ---
     if (searchQuery) {
         const searchStr = searchQuery.trim();
         let customerFindConditions: any = {};
-
         const isNumeric = /^\d+$/.test(searchStr);
         if (isNumeric) {
-            // Use the new fast index for phone numbers
             customerFindConditions.phoneSearchIndex = createBlindIndex(searchStr);
         } else {
-            // Use regex for names (customers and stylists)
             customerFindConditions.searchableName = { $regex: searchStr, $options: 'i' };
         }
         
         const matchingCustomers = await Customer.find(customerFindConditions).select('_id').lean();
         const customerIds = matchingCustomers.map(c => c._id);
-
         const stylistQuery = { name: { $regex: searchStr, $options: 'i' } };
         const matchingStylists = await Staff.find(stylistQuery).select('_id').lean();
         const stylistIds = matchingStylists.map(s => s._id);
@@ -92,7 +88,6 @@ export async function GET(req: Request) {
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
-        // --- FIX [2023-11-03]: Changed sorting for 'All Time' view to descending (-1) to show newest first. ---
         .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 }) 
         .skip(skip)
         .limit(limit),
@@ -112,7 +107,7 @@ export async function GET(req: Request) {
         }
         return { ...apt.toObject(), id: apt._id.toString(), appointmentDateTime: finalDateTime.toISOString(), createdAt: (apt.createdAt || finalDateTime).toISOString() };
     });
-      console.log("Data being sent to frontend:", JSON.stringify(formattedAppointments, null, 2));
+    console.log("Data being sent to frontend:", JSON.stringify(formattedAppointments, null, 2));
 
     return NextResponse.json({
       success: true,
@@ -130,7 +125,6 @@ export async function GET(req: Request) {
 //  POST: Handler with the "Bulletproof" fix for creating customers
 // ===================================================================================
 export async function POST(req: Request) {
-  
   const session = await mongoose.startSession();
   session.startTransaction();
   
@@ -147,9 +141,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields or services." }, { status: 400 });
     }
 
-    // --- Find or Create Customer (with corrected logic) ---
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
-    const phoneHashToFind = createBlindIndex(normalizedPhone); // Use the new blind index function
+    const phoneHashToFind = createBlindIndex(normalizedPhone);
     let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind }).session(session);
 
     if (!customerDoc) {
@@ -158,8 +151,6 @@ export async function POST(req: Request) {
         phoneNumber: encrypt(normalizedPhone),
         email: email ? encrypt(email.trim()) : undefined,
         gender: gender || 'other',
-
-        // Generate ALL required search and index fields
         phoneHash: phoneHashToFind,
         searchableName: customerName.trim().toLowerCase(),
         last4PhoneNumber: normalizedPhone.slice(-4),
@@ -168,15 +159,12 @@ export async function POST(req: Request) {
       
       const newCustomers = await Customer.create([customerDataForCreation], { session });
       customerDoc = newCustomers[0];
-      if (!customerDoc) {
-        throw new Error("Customer creation failed unexpectedly.");
-      }
+      if (!customerDoc) throw new Error("Customer creation failed unexpectedly.");
     }
 
     const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
     const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
-      serviceIdsForInventoryCheck,
-      gender
+      serviceIdsForInventoryCheck, gender
     );
     if (totalUpdates.length > 0) {
       await InventoryManager.applyInventoryUpdates(totalUpdates, session);
@@ -188,32 +176,20 @@ export async function POST(req: Request) {
     const appointmentDateUTC = new Date(correctUtcTimestamp);
 
     const groupBookingId = new mongoose.Types.ObjectId();
+    const serviceDetails = await ServiceItem.find({ _id: { $in: serviceIdsForInventoryCheck } }).select('name').lean();
+    
     const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
       const service = await ServiceItem.findById(assignment.serviceId).select('duration price membershipRate').lean();
-      if (!service) {
-        throw new Error(`Service with ID ${assignment.serviceId} not found.`);
-      }
-
-      const tempAppointmentForCalc = new Appointment({
-        customerId: customerDoc!._id,
-        serviceIds: [assignment.serviceId]
-      });
+      if (!service) throw new Error(`Service with ID ${assignment.serviceId} not found.`);
+      const tempAppointmentForCalc = new Appointment({ customerId: customerDoc!._id, serviceIds: [assignment.serviceId] });
       const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
-
       return {
-        customerId: customerDoc!._id,
-        stylistId: assignment.stylistId,
-        serviceIds: [assignment.serviceId],
-        guestName: assignment.guestName,
-        notes,
-        status,
-        appointmentType,
-        estimatedDuration: service.duration,
-        appointmentDateTime: appointmentDateUTC,
-        groupBookingId: groupBookingId,
-        finalAmount: grandTotal,
-        amount: grandTotal + membershipSavings,
-        membershipDiscount: membershipSavings,
+        customerId: customerDoc!._id, stylistId: assignment.stylistId,
+        serviceIds: [assignment.serviceId], guestName: assignment.guestName,
+        notes, status, appointmentType,
+        estimatedDuration: service.duration, appointmentDateTime: appointmentDateUTC,
+        groupBookingId: groupBookingId, finalAmount: grandTotal,
+        amount: grandTotal + membershipSavings, membershipDiscount: membershipSavings,
         checkInTime: status === 'Checked-In' ? new Date() : undefined,
       };
     });
@@ -225,7 +201,54 @@ export async function POST(req: Request) {
       throw new Error("Failed to create appointment records in the database.");
     }
     
+    // This must happen after insertMany so the records exist to be updated.
+    const stylistIds = serviceAssignments.map((a: any) => a.stylistId);
+    await Staff.updateMany({ _id: { $in: stylistIds } }, { isAvailable: false }, { session });
+
     await session.commitTransaction();
+    
+    // === WHATSAPP NOTIFICATION (POST-TRANSACTION) ===
+try {
+  console.log('=== STARTING WHATSAPP APPOINTMENT NOTIFICATION ===');
+  console.log('Environment check:');
+  console.log('- ENABLE_WHATSAPP_NOTIFICATIONS:', process.env.ENABLE_WHATSAPP_NOTIFICATIONS);
+  console.log('- WHATSAPP_ACCESS_TOKEN defined:', !!process.env.WHATSAPP_ACCESS_TOKEN);
+  console.log('- WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID);
+
+  const stylists = await Staff.find({ _id: { $in: stylistIds } }).select('name').lean();
+  const mainStylistName = stylists[0]?.name || 'Our Team';
+  const servicesText = serviceDetails.map(s => s.name).join(', ');
+  
+  const appointmentDateFormatted = new Date(date).toLocaleDateString('en-GB', { 
+    day: 'numeric', month: 'long', year: 'numeric' 
+  });
+  const appointmentTimeFormatted = new Date(`${date}T${time}:00`).toLocaleTimeString('en-IN', { 
+    hour: '2-digit', minute: '2-digit', hour12: true 
+  });
+
+  console.log('WhatsApp appointment data:', {
+    phoneNumber: normalizedPhone,
+    customerName: customerName.trim(),
+    appointmentDate: appointmentDateFormatted,
+    appointmentTime: appointmentTimeFormatted,
+    services: servicesText,
+    stylistName: mainStylistName,
+  });
+
+  await whatsAppService.sendAppointmentBooking({
+    phoneNumber: normalizedPhone,
+    customerName: customerName.trim(),
+    appointmentDate: appointmentDateFormatted,
+    appointmentTime: appointmentTimeFormatted,
+    services: servicesText,
+    stylistName: mainStylistName,
+  });
+
+  console.log('WhatsApp appointment booking notification sent successfully');
+} catch (whatsappError: any) {
+  console.error('Failed to send WhatsApp appointment notification:', whatsappError);
+  console.error('WhatsApp error details:', whatsappError?.message);
+}
     
     return NextResponse.json({ 
       success: true, 

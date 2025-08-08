@@ -7,6 +7,8 @@ import ServiceItem from '@/models/ServiceItem';
 import { getServerSession } from 'next-auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { authOptions } from '@/lib/auth';
+import { whatsAppService } from '@/lib/whatsapp';
+import { decrypt } from '@/lib/crypto';
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
     const session = await getServerSession(authOptions);
