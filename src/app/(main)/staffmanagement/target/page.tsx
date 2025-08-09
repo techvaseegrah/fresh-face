@@ -3,20 +3,23 @@ export const dynamic = 'force-dynamic';
 
 import TargetView from './TargetView';
 import type { TargetSheetData } from '@/models/TargetSheet';
+import { headers } from 'next/headers'; // 1. Import the headers function
 
 // Function to fetch target data from your internal API
-async function getTargetPageData(): Promise<TargetSheetData | null> {
+async function getTargetPageData(requestHeaders: Headers): Promise<TargetSheetData | null> {
   try {
-    // Use the base URL from env variable (configured in Vercel)
     const baseUrl = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
     const cacheBuster = `?time=${Date.now()}`;
 
+    // 2. Pass the headers along in the fetch request
     const res = await fetch(`${baseUrl}/api/target${cacheBuster}`, {
       cache: 'no-store',
+      headers: requestHeaders, // This sends the x-tenant-id to the API
     });
 
     if (!res.ok) {
-      console.error('Failed to fetch target data. Status:', res.status);
+      const errorBody = await res.text();
+      console.error(`Failed to fetch target data. Status: ${res.status}, Body: ${errorBody}`);
       return null;
     }
 
@@ -29,7 +32,9 @@ async function getTargetPageData(): Promise<TargetSheetData | null> {
 
 // The page component
 export default async function TargetPage() {
-  const data = await getTargetPageData();
+  // 3. Get the headers and pass them to the data fetching function
+  const requestHeaders = headers();
+  const data = await getTargetPageData(requestHeaders);
 
   if (!data) {
     return (

@@ -5,19 +5,36 @@ import mongoose, { Types } from 'mongoose';
 import dbConnect from '../../../../lib/mongodb';
 import AdvancePayment from '../../../../models/advance';
 import Staff from '../../../../models/staff';
-// NEW: Import permission tools
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+// NEW: Import tenant utility
+import { getTenantIdOrBail } from '@/lib/tenant';
 
 // --- Type Definitions (Consistent with the main route file) ---
-interface PopulatedStaffDetails { /* ... */ }
-interface LeanAdvancePaymentDocument { /* ... */ }
+interface PopulatedStaffDetails {
+    _id: Types.ObjectId;
+    name: string;
+    image?: string;
+    position?: string;
+}
+interface LeanAdvancePaymentDocument {
+    _id: Types.ObjectId;
+    staffId: PopulatedStaffDetails | null;
+    requestDate: Date;
+    amount: number;
+    reason: string;
+    repaymentPlan: string;
+    status: 'pending' | 'approved' | 'rejected';
+    approvedDate: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+}
 interface UpdateAdvanceStatusPayload {
     status: 'approved' | 'rejected';
 }
 
-// NEW: A reusable function to check permissions
+// A reusable function to check permissions
 async function checkPermissions(permission: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.role?.permissions) {
@@ -27,10 +44,10 @@ async function checkPermissions(permission: string) {
   if (!hasPermission(userPermissions, permission)) {
     return { error: 'You do not have permission to perform this action.', status: 403 };
   }
-  return null; 
+  return null;
 }
 
-// --- Helper Function (To format the response consistently) ---
+// Helper Function (To format the response consistently)
 const formatPaymentResponse = (payment: any) => ({
   id: payment._id.toString(),
   staffId: payment.staffId ? {
@@ -57,7 +74,10 @@ const formatPaymentResponse = (payment: any) => ({
  * @description Update the status of a specific advance payment (e.g., approve or reject it).
  */
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  // NEW: Add permission check at the top
+  // NEW: Add tenant and permission checks
+  const tenantId = getTenantIdOrBail(request);
+  if (tenantId instanceof NextResponse) return tenantId;
+
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ADVANCE_MANAGE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -72,7 +92,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     await dbConnect();
     const body = (await request.json()) as UpdateAdvanceStatusPayload;
-    
+
     if (!body.status || !['approved', 'rejected'].includes(body.status)) {
         return NextResponse.json({ success: false, error: 'Invalid status. Must be "approved" or "rejected".' }, { status: 400 });
     }
@@ -80,15 +100,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const updateFields: { status: 'approved' | 'rejected', approvedDate?: Date | null } = {
         status: body.status,
     };
-    
+
     if (body.status === 'approved') {
         updateFields.approvedDate = new Date();
     } else {
         updateFields.approvedDate = null;
     }
 
-    const updatedPayment = await AdvancePayment.findByIdAndUpdate(
-        paymentId,
+    // NEW: Query now includes tenantId to ensure data isolation
+    const updatedPayment = await AdvancePayment.findOneAndUpdate(
+        { _id: paymentId, tenantId }, // Ensure the record belongs to the tenant
         { $set: updateFields },
         { new: true, runValidators: true }
     )
@@ -96,7 +117,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .lean<LeanAdvancePaymentDocument>();
 
     if (!updatedPayment) {
-      return NextResponse.json({ success: false, error: 'Advance payment not found.' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Advance payment not found or you do not have permission to access it.' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, data: formatPaymentResponse(updatedPayment) });
@@ -112,7 +133,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
  * @description Delete a specific advance payment record.
  */
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-    // NEW: Add permission check at the top
+    // NEW: Add tenant and permission checks
+    const tenantId = getTenantIdOrBail(request);
+    if (tenantId instanceof NextResponse) return tenantId;
+
     const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ADVANCE_MANAGE);
     if (permissionCheck) {
       return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -123,17 +147,18 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (!mongoose.Types.ObjectId.isValid(paymentId)) {
       return NextResponse.json({ success: false, error: 'Invalid payment ID format.' }, { status: 400 });
     }
-  
+
     try {
       await dbConnect();
-      const deletedPayment = await AdvancePayment.findByIdAndDelete(paymentId);
-  
+      // NEW: Query now includes tenantId to ensure data isolation
+      const deletedPayment = await AdvancePayment.findOneAndDelete({ _id: paymentId, tenantId });
+
       if (!deletedPayment) {
-        return NextResponse.json({ success: false, error: 'Advance payment not found.' }, { status: 404 });
+        return NextResponse.json({ success: false, error: 'Advance payment not found or you do not have permission to access it.' }, { status: 404 });
       }
-  
+
       return NextResponse.json({ success: true, message: 'Advance payment deleted successfully.', data: { id: paymentId } });
-  
+
     } catch (error: any) {
       console.error(`API DELETE /api/advance-payments/${paymentId} Error:`, error);
       return NextResponse.json({ success: false, error: 'Server error deleting advance payment.' }, { status: 500 });

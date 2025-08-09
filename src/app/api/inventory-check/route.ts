@@ -1,4 +1,3 @@
-// src/app/api/inventory-check/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import { getServerSession } from 'next-auth';
@@ -6,12 +5,18 @@ import { authOptions } from '@/lib/auth';
 import InventoryCheck from '@/models/InventoryCheck';
 import Product from '@/models/Product';
 import Invoice from '@/models/invoice';
-import { InventoryManager, InventoryUpdate } from '@/lib/inventoryManager';
+import { InventoryManager } from '@/lib/inventoryManager';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant';
 
 // GET handler to fetch inventory check history
 export async function GET(req: NextRequest) {
   try {
+    const tenantId = getTenantIdOrBail(req);
+    if (tenantId instanceof NextResponse) {
+      return tenantId;
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.INVENTORY_CHECKER_READ)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -24,7 +29,7 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const query: any = {};
+    const query: any = { tenantId };
     if (productId) {
       query.product = productId;
     }
@@ -47,6 +52,11 @@ export async function GET(req: NextRequest) {
 // POST handler to create a new inventory check
 export async function POST(req: NextRequest) {
   try {
+    const tenantId = getTenantIdOrBail(req);
+    if (tenantId instanceof NextResponse) {
+      return tenantId;
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.INVENTORY_CHECKER_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -60,19 +70,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Product ID and actual quantity are required.' }, { status: 400 });
     }
 
-    const product = await Product.findById(productId);
+    const product = await Product.findOne({ _id: productId, tenantId });
     if (!product) {
       return NextResponse.json({ success: false, message: 'Product not found.' }, { status: 404 });
     }
 
     // Find the last check for this product
-    const lastCheck = await InventoryCheck.findOne({ product: productId }).sort({ date: -1 });
+    const lastCheck = await InventoryCheck.findOne({ product: productId, tenantId }).sort({ date: -1 });
     const lastCheckDate = lastCheck ? lastCheck.date : product.stockedDate;
 
     // Find all invoices since the last check
     const invoices = await Invoice.find({
       'lineItems.itemId': productId,
-      'createdAt': { $gte: lastCheckDate }
+      'createdAt': { $gte: lastCheckDate },
+      tenantId
     }).populate({
         path: 'appointmentId',
         select: 'serviceIds',
@@ -86,7 +97,7 @@ export async function POST(req: NextRequest) {
     for (const invoice of invoices) {
         if (invoice.appointmentId && Array.isArray(invoice.appointmentId.serviceIds)) {
             const serviceIds = invoice.appointmentId.serviceIds.map(s => s._id.toString());
-            const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds);
+            const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, tenantId);
             const productUpdate = totalUpdates.find(u => u.productId === productId);
             if (productUpdate) {
                 expectedUsage += productUpdate.quantityToDeduct;
@@ -97,6 +108,7 @@ export async function POST(req: NextRequest) {
     const discrepancy = actualQuantity - (product.totalQuantity - expectedUsage);
 
     const newCheck = await InventoryCheck.create({
+      tenantId,
       product: productId,
       checkedBy: session.user.id,
       date: new Date(),

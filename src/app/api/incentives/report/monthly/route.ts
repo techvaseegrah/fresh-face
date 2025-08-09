@@ -8,6 +8,7 @@ import IncentiveRule from '@/models/IncentiveRule';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant ID helper
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,14 @@ export async function GET(request: Request) {
 
   try {
     await dbConnect();
+
+    // --- Add Tenant ID Check ---
+    const tenantId = getTenantIdOrBail(request as any); // Cast to any to match NextRequest type for now
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if bail occurs
+    }
+    // --- End Tenant ID Check ---
+
     const { searchParams } = new URL(request.url);
     const startDateQuery = searchParams.get('startDate');
     const endDateQuery = searchParams.get('endDate');
@@ -86,15 +95,19 @@ export async function GET(request: Request) {
     const startDate = new Date(Date.UTC(parseInt(startDateQuery.split('-')[0]), parseInt(startDateQuery.split('-')[1]) - 1, parseInt(startDateQuery.split('-')[2])));
     const endDate = new Date(Date.UTC(parseInt(endDateQuery.split('-')[0]), parseInt(endDateQuery.split('-')[1]) - 1, parseInt(endDateQuery.split('-')[2]), 23, 59, 59));
 
-    const allStaff = await Staff.find({ salary: { $exists: true, $gt: 0 } }).lean();
-    const allSales: IDailySale[] = await DailySale.find({ date: { $gte: startDate, $lte: endDate } }).lean();
+    // Modify Staff query to include tenantId
+    const allStaff = await Staff.find({ salary: { $exists: true, $gt: 0 }, tenantId }).lean();
+    // Modify DailySale query to include tenantId
+    const allSales: IDailySale[] = await DailySale.find({ date: { $gte: startDate, $lte: endDate }, tenantId }).lean();
 
     const defaultDaily: IRule = { type: 'daily', target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
-    const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily' }).lean<IRule>();
+    // Modify IncentiveRule query to include tenantId
+    const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily', tenantId }).lean<IRule>();
     const currentDailyRule: IRule = dailyRuleDb ? { ...defaultDaily, ...dailyRuleDb, incentive: { ...defaultDaily.incentive, ...(dailyRuleDb.incentive || {}) } } : defaultDaily;
 
     const defaultMonthly: IRule = { type: 'monthly', target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: false, reviewNameValue: 0, reviewPhotoValue: 0 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'serviceSaleOnly' } };
-    const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly' }).lean<IRule>();
+    // Modify IncentiveRule query to include tenantId
+    const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly', tenantId }).lean<IRule>();
     const currentMonthlyRule: IRule = monthlyRuleDb ? { ...defaultMonthly, ...monthlyRuleDb, incentive: { ...defaultMonthly.incentive, ...(monthlyRuleDb.incentive || {}) } } : defaultMonthly;
     
     const reportData = [];

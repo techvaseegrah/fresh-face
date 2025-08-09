@@ -1,8 +1,7 @@
-// src/app/(main)/settings/staffid/page.tsx
-
 "use client";
 
 import React, { useState, useEffect, FormEvent, ChangeEvent } from 'react';
+import { useSession } from 'next-auth/react'; // 1. Import useSession
 import { Save, Settings as SettingsIcon, Badge } from 'lucide-react';
 import Button from '../../../../components/ui/Button';
 import { IShopSetting } from '../../../../models/ShopSetting';
@@ -11,28 +10,35 @@ import { Document } from 'mongoose';
 type SettingsFormData = Omit<IShopSetting, keyof Document | 'key'>;
 
 const StaffIdSettingsPage: React.FC = () => {
+  // 2. Get session data and loading status
+  const { data: session, status } = useSession();
+
   const [settings, setSettings] = useState<Partial<SettingsFormData>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // Default to true to show initial loading state
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // 3. useEffect now depends on the session status
   useEffect(() => {
-    const fetchSettings = async () => {
+    const fetchSettings = async (tenantId: string) => {
       setIsLoading(true);
       setError(null);
       try {
-        // --- THIS IS THE FIX ---
-        // Add { cache: 'no-store' } to force a fresh request every time.
-        const response = await fetch('/api/settings/staffid', { cache: 'no-store' });
-        
-        if (!response.ok) throw new Error('Failed to fetch settings data.');
+        const response = await fetch('/api/settings/staffid', {
+          headers: {
+            // 4. Send the X-Tenant-ID header
+            'X-Tenant-ID': tenantId,
+          },
+          cache: 'no-store', // Keep this to ensure data is always fresh
+        });
+
         const result = await response.json();
-        if (result.success) {
-          setSettings(result.data);
-        } else {
-          throw new Error(result.error || 'An unknown error occurred.');
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Failed to fetch settings data.');
         }
+        
+        setSettings(result.data);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -40,20 +46,42 @@ const StaffIdSettingsPage: React.FC = () => {
       }
     };
 
-    fetchSettings();
-  }, []);
+    // 5. Check if the session is loaded and authenticated before fetching
+    if (status === 'authenticated') {
+      const tenantId = session?.user?.tenantId;
+      if (tenantId) {
+        fetchSettings(tenantId);
+      } else {
+        setError('Tenant ID not found in session. Cannot load settings.');
+        setIsLoading(false);
+      }
+    } else if (status === 'unauthenticated') {
+        setError('You are not authenticated. Please log in.');
+        setIsLoading(false);
+    }
+    // If status is 'loading', the component will show the "Loading settings..." message
+    // and this effect will re-run when the status changes.
 
-  // ... (the rest of your component remains the same)
+  }, [session, status]); // The effect now correctly re-runs when the session is loaded
+
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target;
     setSettings(prev => ({
       ...prev,
-      [name]: type === 'number' ? Number(value) : value,
+      [name]: type === 'number' && value !== '' ? Number(value) : value,
     }));
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+
+    // 6. Get tenantId for the save operation
+    const tenantId = session?.user?.tenantId;
+    if (!tenantId) {
+      setError("Cannot save settings. User session is invalid.");
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     setSuccessMessage(null);
@@ -61,7 +89,11 @@ const StaffIdSettingsPage: React.FC = () => {
     try {
       const response = await fetch('/api/settings/staffid', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // 7. Send the X-Tenant-ID header on save as well
+          'X-Tenant-ID': tenantId,
+        },
         body: JSON.stringify({
           staffIdBaseNumber: settings.staffIdBaseNumber
         }),
@@ -74,14 +106,15 @@ const StaffIdSettingsPage: React.FC = () => {
       
       setSuccessMessage('Settings saved successfully!');
       setSettings(result.data); 
-    } catch (err: any)      {
+    } catch (err: any) {
       setError(err.message);
     } finally {
       setIsSaving(false);
     }
   };
 
-  if (isLoading) {
+  // Keep the initial loading check for a better user experience
+  if (isLoading && status === 'loading') {
     return (
       <div className="p-8 flex justify-center items-center h-screen">
         <p>Loading settings...</p>
@@ -109,9 +142,9 @@ const StaffIdSettingsPage: React.FC = () => {
       )}
 
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-8 max-w-2xl mx-auto">
+        {/* ... (Your form inputs remain the same) ... */}
         <div className="space-y-6">
           <h2 className="text-lg font-semibold text-gray-700 border-b pb-2">Staff Configuration</h2>
-          
           <div>
             <label htmlFor="staffIdBaseNumber" className="block text-sm font-medium text-gray-700 mb-1">
               <div className="flex items-center gap-2">
@@ -126,7 +159,7 @@ const StaffIdSettingsPage: React.FC = () => {
               value={settings.staffIdBaseNumber || ''}
               onChange={handleInputChange}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSaving}
+              disabled={isSaving || isLoading}
               placeholder="e.g., 4101"
               required
             />
@@ -134,15 +167,13 @@ const StaffIdSettingsPage: React.FC = () => {
               Set the number for the next new staff member if no staff exist or if existing IDs are lower than this number.
             </p>
           </div>
-          
         </div>
-
         <div className="mt-8 flex justify-end">
           <Button
             type="submit"
             variant="black"
             icon={<Save size={16} />}
-            disabled={isSaving}
+            disabled={isSaving || isLoading}
             isLoading={isSaving}
           >
             {isSaving ? 'Saving...' : 'Save Settings'}

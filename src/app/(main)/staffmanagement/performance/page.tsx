@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 // --- All necessary imports, including for export functionality ---
-import { createPortal } from 'react-dom'; // **FIX: Import createPortal**
+import { createPortal } from 'react-dom'; 
 import { Search, Star, TrendingUp, Users, IndianRupee, X, CalendarDays, Sheet, FileDown } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { useSession } from 'next-auth/react'; // **STEP 1: Import useSession**
 
 // Interface for main performance data (assuming backend provides this)
 interface PerformanceData {
@@ -71,7 +72,6 @@ const SummaryCard: React.FC<{
   </div>
 );
 
-// --- **FIX: New Portal Component to handle modal rendering** ---
 const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mounted, setMounted] = useState(false);
 
@@ -80,12 +80,12 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return () => setMounted(false);
   }, []);
 
-  // Render the modal into document.body, but only on the client-side
   return mounted ? createPortal(children, document.body) : null;
 };
 
 // --- Main Performance Page Component ---
 const PerformancePage: React.FC = () => {
+  const { data: session } = useSession(); // **STEP 2: Get the user session**
   const [searchTerm, setSearchTerm] = useState('');
   const [currentMonthIndex, setCurrentMonthIndex] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -108,11 +108,20 @@ const PerformancePage: React.FC = () => {
 
   useEffect(() => {
     const fetchPerformanceData = async () => {
+      // **STEP 3: Wait for session to be loaded**
+      if (!session?.user?.tenantId) {
+        return;
+      }
       setIsLoading(true);
       setError(null);
       try {
         const month = currentMonthIndex + 1;
-        const response = await fetch(`/api/performance?month=${month}&year=${currentYear}`);
+        // **STEP 4: Add headers to the fetch request**
+        const response = await fetch(`/api/performance?month=${month}&year=${currentYear}`, {
+          headers: {
+            'x-tenant-id': session.user.tenantId,
+          }
+        });
         if (!response.ok) throw new Error('Failed to fetch monthly performance data');
         const data = await response.json();
         if (!data.success) throw new Error(data.message || 'API returned an error');
@@ -130,7 +139,7 @@ const PerformancePage: React.FC = () => {
       }
     };
     fetchPerformanceData();
-  }, [currentMonthIndex, currentYear]);
+  }, [currentMonthIndex, currentYear, session]); // **STEP 5: Add session to dependency array**
 
   const filteredStaffPerformance = useMemo(() => 
     performanceData.filter((staff: PerformanceData) => 
@@ -149,13 +158,22 @@ const PerformancePage: React.FC = () => {
   }, [filteredStaffPerformance, daysEnded, projectionDays]);
 
   const handleOpenDetails = async (staff: PerformanceData) => {
+    // **STEP 6: Check for session and add headers to the second fetch request**
+    if (!session?.user?.tenantId) {
+        setErrorDetails('Session not found. Cannot fetch details.');
+        return;
+    }
     setSelectedStaff(staff);
     setIsLoadingDetails(true);
     setErrorDetails(null);
     setStaffDailyPerformance([]);
     try {
       const month = currentMonthIndex + 1;
-      const response = await fetch(`/api/performance?staffId=${staff.staffId}&month=${month}&year=${currentYear}`);
+      const response = await fetch(`/api/performance?staffId=${staff.staffId}&month=${month}&year=${currentYear}`, {
+          headers: {
+              'x-tenant-id': session.user.tenantId,
+          }
+      });
       if (!response.ok) throw new Error('Could not fetch daily details.');
       const data = await response.json();
       if (!data.success) throw new Error(data.message || 'API returned an error fetching details.');
@@ -260,8 +278,11 @@ const PerformancePage: React.FC = () => {
     doc.save(`Performance_Report_${months[currentMonthIndex]}_${currentYear}.pdf`);
   };
 
+  // --- JSX Remains the same ---
   return (
     <div className="bg-gray-50 min-h-screen p-4 sm:p-6 lg:p-8 space-y-8">
+      {/* ... The rest of your JSX is unchanged ... */}
+      {/* HEADER */}
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Performance Dashboard</h1>
@@ -293,6 +314,7 @@ const PerformancePage: React.FC = () => {
         </div>
       </header>
       
+      {/* SUMMARY CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {isLoading ? <><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /></> : 
          error ? <div className="col-span-full text-center p-10 bg-white rounded-xl shadow-sm text-red-500">{error}</div> :
@@ -305,6 +327,7 @@ const PerformancePage: React.FC = () => {
         }
       </div>
       
+      {/* MAIN TABLE */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
         <div className="p-4 sm:p-6 border-b border-gray-200 text-center">
             <div className="text-lg sm:text-xl font-bold text-gray-800 uppercase tracking-wider">Staff Service Sales and ABV Report</div>
@@ -363,7 +386,7 @@ const PerformancePage: React.FC = () => {
         </div>
       </div>
       
-      {/* **FIX: Wrap modal in the Portal component** */}
+      {/* MODAL */}
       {selectedStaff && (
         <ModalPortal>
             <div 

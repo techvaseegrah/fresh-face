@@ -5,6 +5,7 @@ import dbConnect from '@/lib/mongodb';
 import DailySale, { IDailySale } from '@/models/DailySale';
 import Staff from '@/models/staff';
 import IncentiveRule from '@/models/IncentiveRule';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant ID helper
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,14 @@ function calculateIncentiveWithDoubleTarget(achievedValue: number, targetValue: 
 export async function GET(request: Request, { params }: { params: { staffId: string } }) {
   try {
     await dbConnect();
+
+    // --- Add Tenant ID Check ---
+    const tenantId = getTenantIdOrBail(request as any); // Cast to any to match NextRequest type for now
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if bail occurs
+    }
+    // --- End Tenant ID Check ---
+
     const { staffId } = params;
     const { searchParams } = new URL(request.url);
     const dateQuery = searchParams.get('date');
@@ -50,14 +59,16 @@ export async function GET(request: Request, { params }: { params: { staffId: str
       return NextResponse.json({ message: 'Date query parameter is required.' }, { status: 400 });
     }
 
-    const staff = await Staff.findById(staffId).lean();
+    // Modify Staff query to include tenantId
+    const staff = await Staff.findOne({ _id: staffId, tenantId }).lean();
     if (!staff) return NextResponse.json({ message: 'Staff member not found.' }, { status: 404 });
     if (!staff.salary) return NextResponse.json({ message: 'Cannot calculate: Staff salary is not set.' }, { status: 400 });
 
     const [year, month, day] = dateQuery.split('-').map(Number);
     const targetDate = new Date(Date.UTC(year, month - 1, day));
 
-    const dailySaleRecord = await DailySale.findOne({ staff: staffId, date: targetDate }).lean<IDailySale>();
+    // Modify DailySale query to include tenantId
+    const dailySaleRecord = await DailySale.findOne({ staff: staffId, date: targetDate, tenantId }).lean<IDailySale>();
     
     // Rename to avoid confusion with the monthly result object
     let dailyCalculationResult = {};
@@ -77,7 +88,8 @@ export async function GET(request: Request, { params }: { params: { staffId: str
         console.warn(`[Incentive Calc] Fallback rule used for staff ${staffId} on ${dateQuery}. Record is missing 'appliedRule'.`);
         ruleUsedSource = 'Current Rule (Fallback)';
         const defaultDaily: IRule = { type: 'daily', target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
-        const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily' }).lean<IRule>();
+        // Modify IncentiveRule query to include tenantId
+        const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily', tenantId }).lean<IRule>();
         // Merge DB rule with default to prevent crashes if a field is missing
         dailyRuleToUse = dailyRuleDb ? { ...defaultDaily, ...dailyRuleDb, sales: {...defaultDaily.sales, ...(dailyRuleDb.sales || {})}, incentive: { ...defaultDaily.incentive, ...(dailyRuleDb.incentive || {}) } } : defaultDaily;
       }
@@ -110,13 +122,15 @@ export async function GET(request: Request, { params }: { params: { staffId: str
 
     // --- Incentive 2: Monthly Target Calculation (No changes needed here) ---
     const defaultMonthly: IRule = { type: 'monthly', target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: false, reviewNameValue: 0, reviewPhotoValue: 0 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'serviceSaleOnly' } };
-    const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly' }).lean<IRule>();
+    // Modify IncentiveRule query to include tenantId
+    const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly', tenantId }).lean<IRule>();
     const monthlyRule: IRule = monthlyRuleDb ? { ...defaultMonthly, ...monthlyRuleDb, sales: {...defaultMonthly.sales, ...(monthlyRuleDb.sales || {})}, incentive: { ...defaultMonthly.incentive, ...(monthlyRuleDb.incentive || {}) } } : defaultMonthly;
     
     const startDate = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), 1));
     const endDate = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 0, 23, 59, 59));
     
-    const monthlySalesData = await DailySale.find({ staff: staffId, date: { $gte: startDate, $lte: endDate } }).lean();
+    // Modify DailySale query to include tenantId
+    const monthlySalesData = await DailySale.find({ staff: staffId, date: { $gte: startDate, $lte: endDate }, tenantId }).lean();
     
     const totalMonthlyServiceSale = monthlySalesData.reduce((sum, sale) => sum + sale.serviceSale, 0);
     const totalMonthlyProductSale = monthlySalesData.reduce((sum, sale) => sum + sale.productSale, 0);

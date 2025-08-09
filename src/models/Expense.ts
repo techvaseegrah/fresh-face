@@ -1,20 +1,22 @@
-// src/models/Expense.ts
-
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IExpense extends Document {
+  tenantId: mongoose.Schema.Types.ObjectId; // <-- NEW
   type: string;
   description: string;
   amount: number;
   date: Date;
   frequency: 'Regular' | 'Once';
   paymentMethod: string;
-  billUrl?: string; // <-- NEW
+  billUrl?: string;
 }
 
 const ExpenseSchema: Schema = new Schema({
+  // --- NEW ---
+  // Add a required, indexed reference to the Tenant model.
+  // This is the core of the multi-tenant data architecture.
   tenantId: { 
-    type: require('mongoose').Schema.Types.ObjectId, 
+    type: mongoose.Schema.Types.ObjectId, 
     ref: 'Tenant', 
     required: true, 
     index: true 
@@ -48,7 +50,6 @@ const ExpenseSchema: Schema = new Schema({
     required: [true, 'Please provide a payment method.'],
     trim: true,
   },
-  // --- NEW FIELD ---
   billUrl: {
     type: String,
     required: false,

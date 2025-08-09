@@ -1,4 +1,3 @@
-// src/app/api/staff/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
@@ -7,7 +6,8 @@ import mongoose, { Types } from 'mongoose';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
-import cloudinary from '../../../lib/cloudinary'; 
+import cloudinary from '../../../lib/cloudinary';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Make sure the path is correct
 
 // Helper function to validate MongoDB ObjectId string
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
@@ -41,11 +41,12 @@ async function uploadImageToCloudinary(imageData: string | undefined | null, fol
 }
 
 /**
- * Reads the next available staff ID directly from the settings.
+ * Reads the next available staff ID directly from the settings for a specific tenant.
  */
-async function getNextStaffId(): Promise<string> {
+async function getNextStaffId(tenantId: string): Promise<string> {
     await dbConnect();
-    const settings = await ShopSetting.findOne({ key: 'defaultSettings' }).lean();
+    // Scope the settings lookup by tenantId
+    const settings = await ShopSetting.findOne({ key: 'defaultSettings', tenantId }).lean();
     const nextNumber = settings?.staffIdBaseNumber || 1;
     return nextNumber.toString();
 }
@@ -59,11 +60,16 @@ async function checkPermissions(permission: string) {
   if (!hasPermission(userPermissions, permission)) {
     return { error: 'You do not have permission to perform this action.', status: 403 };
   }
-  return null; 
+  return null;
 }
 
 export async function GET(request: NextRequest) {
-    
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_READ);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -75,31 +81,30 @@ export async function GET(request: NextRequest) {
 
   try {
     if (action === 'getNextId') {
-      const nextId = await getNextStaffId();
+      const nextId = await getNextStaffId(tenantId);
       return NextResponse.json({ success: true, data: { nextId } });
     }
 
     if (action === 'listForAssignment') {
         const assignableStaff = await Staff.find(
           {
+            tenantId, // Scope by tenant
             status: 'active',
-           position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] }
+            position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] }
           },
           '_id name'
         )
         .sort({ name: 'asc' })
         .lean<{ _id: Types.ObjectId, name: string }[]>();
 
-        return NextResponse.json({ 
-            success: true, 
-            stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name })) 
+        return NextResponse.json({
+            success: true,
+            stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name }))
         });
     }
 
     if (action === 'list') {
-      const staffList = await Staff.find({})
-        // Explicitly select all fields required by StaffCard AND StaffDetailSidebar.
-        // This is a minor optimization to make the projection explicit.
+      const staffList = await Staff.find({ tenantId }) // Scope by tenant
         .select('staffIdNumber name email phone aadharNumber position joinDate salary address image status aadharImage passbookImage agreementImage')
         .sort({ name: 'asc' })
         .lean<LeanStaffDocument[]>();
@@ -110,7 +115,8 @@ export async function GET(request: NextRequest) {
       if (!isValidObjectId(staffId)) {
         return NextResponse.json({ success: false, error: 'Invalid staff ID format' }, { status: 400 });
       }
-      const staffMember = await Staff.findById(staffId).lean<LeanStaffDocument>();
+      // Use findOne with tenantId to ensure the staff belongs to the tenant
+      const staffMember = await Staff.findOne({ _id: staffId, tenantId }).lean<LeanStaffDocument>();
       if (!staffMember) {
         return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
       }
@@ -125,6 +131,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_CREATE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -133,8 +145,7 @@ export async function POST(request: NextRequest) {
   await dbConnect();
   try {
     const body = await request.json();
-    
-    // Handle image uploads before validation
+
     const [
         uploadedImageUrl,
         uploadedAadharUrl,
@@ -146,20 +157,21 @@ export async function POST(request: NextRequest) {
         uploadImageToCloudinary(body.passbookImage, 'salon/staff_documents'),
         uploadImageToCloudinary(body.agreementImage, 'salon/staff_documents'),
     ]);
-    
-    const { 
-        staffIdNumber, 
+
+    const {
+        staffIdNumber,
         name, email, position, phone, salary, address, aadharNumber, joinDate,
     } = body;
 
     if (!staffIdNumber || !name || !phone || !position || !aadharNumber) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Staff ID, Name, phone, position, and Aadhar Number are required' 
+      return NextResponse.json({
+        success: false,
+        error: 'Staff ID, Name, phone, position, and Aadhar Number are required'
       }, { status: 400 });
     }
-    
+
     const existingStaff = await Staff.findOne({
+        tenantId, // Scope by tenant
         $or: [
             { staffIdNumber: staffIdNumber },
             ...(email ? [{ email }] : []),
@@ -180,8 +192,9 @@ export async function POST(request: NextRequest) {
     }
 
     const newStaffDoc = new Staff({
+      tenantId, // Add tenantId to the new document
       staffIdNumber,
-      name, 
+      name,
       email: email || null,
       position, phone, salary, address, aadharNumber, joinDate,
       image: uploadedImageUrl,
@@ -193,11 +206,11 @@ export async function POST(request: NextRequest) {
     const savedStaff = await newStaffDoc.save();
 
     await ShopSetting.updateOne(
-        { key: 'defaultSettings' },
+        { key: 'defaultSettings', tenantId }, // Scope by tenant
         { $inc: { staffIdBaseNumber: 1 } },
         { upsert: true }
     );
-    
+
     const staffObject = savedStaff.toObject();
     return NextResponse.json({ success: true, data: {...staffObject, id: savedStaff._id.toString()} }, { status: 201 });
   } catch (error: any) {
@@ -210,7 +223,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-   
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_UPDATE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -225,13 +243,12 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const updateData = await request.json(); 
+    const updateData = await request.json();
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 });
     }
 
-    // Handle potential image uploads for PUT request
     const [
         uploadedImageUrl,
         uploadedAadharUrl,
@@ -244,12 +261,11 @@ export async function PUT(request: NextRequest) {
         uploadImageToCloudinary(updateData.agreementImage, 'salon/staff_documents'),
     ]);
 
-    // Replace image data with URLs in the update payload
     updateData.image = uploadedImageUrl;
     updateData.aadharImage = uploadedAadharUrl;
     updateData.passbookImage = uploadedPassbookUrl;
     updateData.agreementImage = uploadedAgreementUrl;
-    
+
     const orConditions: any[] = [];
     if (updateData.staffIdNumber) orConditions.push({ staffIdNumber: updateData.staffIdNumber });
     if (updateData.email) orConditions.push({ email: updateData.email });
@@ -258,6 +274,7 @@ export async function PUT(request: NextRequest) {
     if (orConditions.length > 0) {
         const existingStaff = await Staff.findOne({
             _id: { $ne: staffId },
+            tenantId, // Scope by tenant
             $or: orConditions
         }).lean();
 
@@ -270,7 +287,8 @@ export async function PUT(request: NextRequest) {
         }
     }
 
-    const updatedStaff = await Staff.findByIdAndUpdate(staffId, { $set: updateData }, { new: true, runValidators: true }).lean<LeanStaffDocument>();
+    // Use findOneAndUpdate with tenantId to ensure the update happens on the correct document
+    const updatedStaff = await Staff.findOneAndUpdate({ _id: staffId, tenantId }, { $set: updateData }, { new: true, runValidators: true }).lean<LeanStaffDocument>();
     if (!updatedStaff) {
       return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
     }
@@ -292,8 +310,13 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
 
-    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_DELETE);
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_DELETE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
   }
@@ -307,8 +330,9 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const deactivatedStaff = await Staff.findByIdAndUpdate(
-      staffId,
+    // Use findOneAndUpdate to ensure the deactivation happens on a document belonging to the tenant
+    const deactivatedStaff = await Staff.findOneAndUpdate(
+      { _id: staffId, tenantId }, // Scope by tenant
       { status: 'inactive' },
       { new: true }
     ).lean<LeanStaffDocument>();

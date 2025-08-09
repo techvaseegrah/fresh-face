@@ -5,39 +5,28 @@ interface CostModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (cost: number) => void;
-  cost: number; // The current cost from the parent, used as an initial value
+  cost: number;
   isLoading: boolean;
-  // The `setCost` prop is no longer needed by this component
 }
 
 const CostModal: FC<CostModalProps> = ({ isOpen, onClose, onSave, cost, isLoading }) => {
-  // --- CHANGES START HERE ---
-
-  // 1. Local state to manage the input field value as a string.
-  // This allows the input to be empty ('').
   const [inputValue, setInputValue] = useState<string>('');
 
-  // 2. Use useEffect to set the initial value when the modal opens.
   useEffect(() => {
     if (isOpen) {
-      // If the initial cost from the parent is a valid number greater than 0, show it.
-      // Otherwise, start with a blank input field.
       setInputValue(cost > 0 ? String(cost) : '');
     }
-  }, [isOpen, cost]); // This effect runs whenever the modal opens or the initial cost changes.
+  }, [isOpen, cost]);
 
   const handleSave = () => {
     const numericCost = parseFloat(inputValue);
 
-    // 3. Validate that the parsed number is valid and not negative.
     if (isNaN(numericCost) || numericCost < 0) {
       alert('Please enter a valid, non-negative number for the cost.');
       return;
     }
     onSave(numericCost);
   };
-
-  // --- CHANGES END HERE ---
 
   if (!isOpen) return null;
 
@@ -60,13 +49,12 @@ const CostModal: FC<CostModalProps> = ({ isOpen, onClose, onSave, cost, isLoadin
               name="cost"
               id="cost"
               className="block w-full rounded-md border-gray-300 pl-10 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
-              placeholder="e.g., 8.50" // A better placeholder
+              placeholder="e.g., 8.50"
               step="0.01"
-              // 4. The input is now bound to our local string state.
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               disabled={isLoading}
-              autoFocus // Automatically focus the input when the modal opens
+              autoFocus
             />
           </div>
         </div>

@@ -1,3 +1,5 @@
+// /api/reports/daily-summary/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Invoice from '@/models/invoice';
@@ -14,6 +16,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     }
 
+    // --- TENANCY IMPLEMENTATION ---
+    const tenantId = session.user.tenantId;
+    // ----------------------------
+
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -28,9 +34,21 @@ export async function GET(request: NextRequest) {
     endDate.setUTCHours(23, 59, 59, 999);
 
     const [paidInvoices, lastClosingReport, dailyExpenses] = await Promise.all([
-      Invoice.find({ paymentStatus: 'Paid', createdAt: { $gte: startDate, $lte: endDate } }).lean(),
-      DayEndReport.findOne({ closingDate: { $lt: startDate } }).sort({ closingDate: -1 }).lean(),
-      Expense.find({ date: { $gte: startDate, $lte: endDate } }).lean()
+      // --- TENANCY IMPLEMENTATION ---
+      Invoice.find({ 
+        paymentStatus: 'Paid', 
+        createdAt: { $gte: startDate, $lte: endDate },
+        tenantId: tenantId // Filter by tenant
+      }).lean(),
+      DayEndReport.findOne({ 
+        closingDate: { $lt: startDate },
+        tenantId: tenantId // Filter by tenant
+      }).sort({ closingDate: -1 }).lean(),
+      Expense.find({ 
+        date: { $gte: startDate, $lte: endDate },
+        tenantId: tenantId // Filter by tenant
+      }).lean()
+      // ----------------------------
     ]);
 
     const expectedTotals = paidInvoices.reduce((acc, inv) => {
@@ -44,8 +62,7 @@ export async function GET(request: NextRequest) {
       }
       return acc;
     }, { cash: 0, card: 0, upi: 0, other: 0, total: 0 } as any);
-
-    // <-- THE FIX: Read the opening balance from the new, correct field name.
+    
     const openingBalance = lastClosingReport?.actualTotals?.totalCountedCash || 0;
     
     const totalCashExpenses = dailyExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);

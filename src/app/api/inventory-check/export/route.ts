@@ -1,5 +1,3 @@
-// FILE: src/app/api/inventory-check/export/route.ts (Corrected)
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -9,6 +7,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import ExcelJS from 'exceljs';
 import { IProduct } from '@/models/Product';
 import { IUser } from '@/models/user';
+import { getTenantIdOrBail } from '@/lib/tenant';
 
 // Import models to ensure they are registered for this specific API call.
 import '@/models/Product';
@@ -18,6 +17,11 @@ import '@/models/ProductSubCategory';
 
 export async function GET(req: NextRequest) {
   try {
+    const tenantId = getTenantIdOrBail(req);
+    if (tenantId instanceof NextResponse) {
+      return tenantId;
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.INVENTORY_CHECKER_READ)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -25,7 +29,7 @@ export async function GET(req: NextRequest) {
 
     await dbConnect();
     
-    const history = await InventoryCheck.find({})
+    const history = await InventoryCheck.find({ tenantId })
       .populate({
           path: 'product',
           populate: [ { path: 'brand' }, { path: 'subCategory' } ]
@@ -80,8 +84,6 @@ export async function GET(req: NextRequest) {
     headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
-    // --- FIX ---
-    // The string value must be wrapped in backticks (`) to create a template literal.
     headers.set('Content-Disposition', `attachment; filename="InventoryCheckReport-${timestamp}.xlsx"`);
 
     return new NextResponse(buffer, { status: 200, headers });

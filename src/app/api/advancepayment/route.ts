@@ -4,9 +4,11 @@ import { formatISO } from 'date-fns';
 import mongoose, { Types } from 'mongoose';
 import dbConnect from '../../../lib/mongodb';
 import AdvancePayment from '../../../models/advance';
-import Staff from '../../../models/staff'; // Assuming your staff model is here
+import Staff from '../../../models/staff';
+// NEW: Import tenant utility
+import { getTenantIdOrBail } from '@/lib/tenant';
 
-// --- Type Definitions (for clarity and safety) ---
+// --- Type Definitions ---
 interface PopulatedStaffDetails {
   _id: Types.ObjectId;
   name: string;
@@ -16,8 +18,7 @@ interface PopulatedStaffDetails {
 
 interface LeanAdvancePaymentDocument {
   _id: Types.ObjectId;
-  // FIX: staffId can now be null after a failed populate
-  staffId: PopulatedStaffDetails | null; 
+  staffId: PopulatedStaffDetails | null;
   requestDate: Date;
   amount: number;
   reason: string;
@@ -36,15 +37,14 @@ interface NewAdvancePaymentAPIPayload {
 }
 
 // --- Helper Function ---
-// FIX: This function now safely handles cases where payment.staffId is null.
 const formatPaymentResponse = (payment: LeanAdvancePaymentDocument) => ({
   id: payment._id.toString(),
-  staffId: payment.staffId ? { // Check if staffId exists
+  staffId: payment.staffId ? {
     id: payment.staffId._id.toString(),
     name: payment.staffId.name,
     image: payment.staffId.image,
     position: payment.staffId.position,
-  } : null, // If not, return null
+  } : null,
   requestDate: formatISO(payment.requestDate),
   amount: payment.amount,
   reason: payment.reason,
@@ -58,12 +58,17 @@ const formatPaymentResponse = (payment: LeanAdvancePaymentDocument) => ({
 // --- Route Handlers ---
 
 export async function GET(request: NextRequest) {
+  // NEW: Add tenant check
+  const tenantId = getTenantIdOrBail(request);
+  if (tenantId instanceof NextResponse) return tenantId;
+
   try {
     await dbConnect();
-    const query: mongoose.FilterQuery<any> = {};
+    // NEW: Filter query by tenantId
+    const query: mongoose.FilterQuery<any> = { tenantId };
 
     const payments = await AdvancePayment.find(query)
-      .populate< { staffId: PopulatedStaffDetails } >({
+      .populate<{ staffId: PopulatedStaffDetails }>({
         path: 'staffId',
         select: 'name image position',
         model: Staff,
@@ -71,7 +76,6 @@ export async function GET(request: NextRequest) {
       .sort({ requestDate: -1 })
       .lean<LeanAdvancePaymentDocument[]>();
 
-    // FIX: Filter out any payments where the staff member was deleted/not found
     const validPayments = payments.filter(payment => payment.staffId);
 
     const formattedPayments = validPayments.map(formatPaymentResponse);
@@ -83,11 +87,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // NEW: Add tenant check
+  const tenantId = getTenantIdOrBail(request);
+  if (tenantId instanceof NextResponse) return tenantId;
+
   try {
     await dbConnect();
     const body = (await request.json()) as NewAdvancePaymentAPIPayload;
 
-    // Robust Validation
+    // Validation
     if (!body.staffId || !mongoose.Types.ObjectId.isValid(body.staffId)) {
       return NextResponse.json({ success: false, error: 'Valid Staff ID is required.' }, { status: 400 });
     }
@@ -100,28 +108,26 @@ export async function POST(request: NextRequest) {
     if (!body.repaymentPlan || typeof body.repaymentPlan !== 'string' || body.repaymentPlan.trim() === '') {
       return NextResponse.json({ success: false, error: 'Repayment plan is required.' }, { status: 400 });
     }
-    
-    const staffExists = await Staff.findById(body.staffId);
+
+    // NEW: Ensure the staff member exists within the correct tenant
+    const staffExists = await Staff.findOne({ _id: body.staffId, tenantId });
     if (!staffExists) {
         return NextResponse.json({ success: false, error: 'Staff member not found.' }, { status: 404 });
     }
 
     const newPayment = await AdvancePayment.create({
-      staffId: body.staffId,
-      amount: body.amount,
-      reason: body.reason,
-      repaymentPlan: body.repaymentPlan,
+      ...body, // Use spread operator for cleaner assignment
+      tenantId, // NEW: Assign the tenantId to the new record
       status: 'pending',
       requestDate: new Date(),
     });
-    
-    // Re-fetch and populate to return the full object to the client
+
+    // Re-fetch and populate
     const populatedPayment = await AdvancePayment.findById(newPayment._id)
         .populate<{ staffId: PopulatedStaffDetails }>({ path: 'staffId', select: 'name image position', model: Staff })
         .lean<LeanAdvancePaymentDocument>();
-        
+
     if (!populatedPayment) {
-      // This case is unlikely but good to have
       return NextResponse.json({ success: false, error: 'Could not retrieve created record.' }, { status: 500 });
     }
 

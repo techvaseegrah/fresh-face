@@ -1,3 +1,5 @@
+// /api/reports/day-end-closing/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -12,6 +14,10 @@ export async function POST(request: NextRequest) {
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     }
+
+    // --- TENANCY IMPLEMENTATION ---
+    const tenantId = session.user.tenantId;
+    // ----------------------------
 
     const body = await request.json();
     const {
@@ -32,12 +38,22 @@ export async function POST(request: NextRequest) {
     
     await dbConnect();
     
-    const existingReport = await DayEndReport.findOne({ closingDate: new Date(closingDate) });
+    // --- TENANCY IMPLEMENTATION ---
+    // Check for a report on the same date for the same tenant
+    const existingReport = await DayEndReport.findOne({ 
+      closingDate: new Date(closingDate),
+      tenantId: tenantId 
+    });
+    // ----------------------------
+
     if (existingReport) {
       return NextResponse.json({ success: false, message: `A report for ${closingDate} already exists.` }, { status: 409 });
     }
 
     const newReport = new DayEndReport({
+      // --- TENANCY IMPLEMENTATION ---
+      tenantId: tenantId, // Tag the new report with the tenant's ID
+      // ----------------------------
       closingDate: new Date(closingDate),
       openingBalance,
       isOpeningBalanceManual,
@@ -46,9 +62,8 @@ export async function POST(request: NextRequest) {
         expenseIds: pettyCash.entries.map((entry: any) => entry._id),
       },
       expectedTotals,
-      // --- THE FIX: Map the incoming frontend data to the correct schema structure ---
       actualTotals: {
-        totalCountedCash: actualTotals.cash, // Map 'cash' from modal to 'totalCountedCash'
+        totalCountedCash: actualTotals.cash,
         card: actualTotals.card,
         upi: actualTotals.upi,
         other: actualTotals.other,

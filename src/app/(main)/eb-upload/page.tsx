@@ -11,11 +11,11 @@ import {
   PhotoIcon,
   XCircleIcon,
   CheckCircleIcon,
-  XMarkIcon as XMarkSolidIcon // Renamed for clarity
+  XMarkIcon as XMarkSolidIcon
 } from '@heroicons/react/24/solid';
 import Image from 'next/image';
 
-// --- Utility & Reusable Components (Keep these in separate files in a real app) ---
+// --- Utility & Reusable Components ---
 
 const formatBytes = (bytes: number, decimals = 2): string => {
   if (bytes === 0) return '0 Bytes';
@@ -169,6 +169,14 @@ export default function EBUploadPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const tenantId = session?.user?.tenantId;
+
+    if (!tenantId) {
+      setNotification({ show: true, message: 'Tenant identification failed. Please log out and try again.', type: 'error' });
+      return;
+    }
+
     if (!imageFile || !date) {
       setNotification({ show: true, message: 'Please select a date and an image file.', type: 'error' });
       return;
@@ -180,7 +188,15 @@ export default function EBUploadPage() {
     formData.append('date', date);
 
     try {
-      const response = await fetch('/api/eb', { method: 'POST', body: formData });
+      const headers = new Headers();
+      headers.append('x-tenant-id', tenantId);
+
+      const response = await fetch('/api/eb', { 
+        method: 'POST', 
+        headers: headers,
+        body: formData 
+      });
+
       if (response.ok) {
         setNotification({ show: true, message: `Morning reading uploaded successfully!`, type: 'success' });
         handleClearForm();

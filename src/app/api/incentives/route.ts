@@ -8,6 +8,7 @@ import IncentiveRule from '@/models/IncentiveRule';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant ID helper
 
 // Interface for a full rule object, used for fetching from the DB.
 interface IRule {
@@ -37,15 +38,25 @@ export async function POST(request: Request) {
 
   try {
     await dbConnect();
+
+    // --- Add Tenant ID Check ---
+    const tenantId = getTenantIdOrBail(request as any); // Cast to any to match NextRequest type for now
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if bail occurs
+    }
+    // --- End Tenant ID Check ---
+
     const body = await request.json();
     const { staffId, date, serviceSale = 0, productSale = 0, customerCount = 0, reviewsWithName = 0, reviewsWithPhoto = 0 } = body;
 
     if (!staffId || !date) {
       return NextResponse.json({ message: 'Staff ID and date are required.' }, { status: 400 });
     }
-    const staffExists = await Staff.findById(staffId);
+    // Ensure the staff exists and belongs to the current tenant
+    // Modify Staff query to include tenantId
+    const staffExists = await Staff.findOne({ _id: staffId, tenantId });
     if (!staffExists) {
-      return NextResponse.json({ message: 'Staff not found.' }, { status: 404 });
+      return NextResponse.json({ message: 'Staff not found or does not belong to your salon.' }, { status: 404 });
     }
 
     // ✨ --- START: Rule Snapshot Logic ---
@@ -54,8 +65,9 @@ export async function POST(request: Request) {
     // 1. Define a robust default rule as a fallback in case the DB rule is missing.
     const defaultDaily: Omit<IRule, 'type'> = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
     
-    // 2. Fetch the current daily rule from the database.
-    const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily' }).lean<IRule>();
+    // 2. Fetch the current daily rule from the database, filtered by tenantId.
+    // Modify IncentiveRule query to include tenantId
+    const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily', tenantId }).lean<IRule>();
     
     // 3. Create the clean snapshot object to be saved.
     //    It merges the DB rule over the default to ensure all fields are present.
@@ -70,8 +82,9 @@ export async function POST(request: Request) {
     const [year, month, day] = date.split('-').map(Number);
     const targetDate = new Date(Date.UTC(year, month - 1, day));
     
+    // Modify DailySale findOneAndUpdate query to include tenantId
     const updatedRecord = await DailySale.findOneAndUpdate(
-      { staff: staffId, date: targetDate },
+      { staff: staffId, date: targetDate, tenantId }, // Add tenantId to the query
       { 
         $inc: { 
           serviceSale, 
@@ -83,7 +96,9 @@ export async function POST(request: Request) {
         // ✨ KEY FIX: Use $set to save or update the rule snapshot every time data is logged.
         // This attaches the rule that was active AT THAT MOMENT to the record itself.
         $set: {
-          appliedRule: ruleSnapshot
+          appliedRule: ruleSnapshot,
+          // Ensure tenantId is set on insert if upserting a new record
+          tenantId: tenantId // Explicitly set tenantId for upserted documents
         }
       },
       { 

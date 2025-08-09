@@ -30,6 +30,7 @@ interface CustomSession extends Session {
         email?: string | null; 
         image?: string | null; 
         role: { permissions: string[] };
+        tenantId: string; // Ensure tenantId is part of the session type
     };
 }
 
@@ -131,12 +132,20 @@ export default function EBViewPage(): JSX.Element {
     [session]);
 
     const fetchPageData = useCallback(async () => {
+        const tenantId = session?.user?.tenantId;
+        if (!tenantId) {
+            setIsLoading(false);
+            alert('Could not identify your salon. Please refresh the page.');
+            return;
+        }
+
         setIsLoading(true);
         try {
+            const headers = { 'x-tenant-id': tenantId };
             const [ebRes, appointmentsRes, costRes] = await Promise.all([
-                fetch('/api/eb'), 
-                fetch('/api/appointment/summary'),
-                fetch('/api/settings/ebCostPerUnit')
+                fetch('/api/eb', { headers }), 
+                fetch('/api/appointment/summary', { headers }),
+                fetch('/api/settings/ebCostPerUnit', { headers })
             ]);
             const ebData = await ebRes.json();
             const appointmentsData = await appointmentsRes.json();
@@ -158,15 +167,24 @@ export default function EBViewPage(): JSX.Element {
         } finally { 
             setIsLoading(false); 
         }
-    }, []);
+    }, [session]);
 
     useEffect(() => {
         if(canViewCalculateEB) { fetchPageData(); } else if (session) { setIsLoading(false); }
     }, [session, canViewCalculateEB, fetchPageData]);
     
     const handleUnitUpdate = async (id: string, morningUnits: number | undefined) => {
+      const tenantId = session?.user?.tenantId;
+      if (!tenantId) {
+          alert('Could not identify your salon. Update failed.');
+          return;
+      }
       try {
-        const res = await fetch('/api/eb', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ readingId: id, morningUnits }) });
+        const res = await fetch('/api/eb', { 
+            method: 'PUT', 
+            headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, 
+            body: JSON.stringify({ readingId: id, morningUnits }) 
+        });
         if (!res.ok) { const errorData = await res.json(); throw new Error(errorData.message || "Failed to update reading."); }
         await fetchPageData();
       } catch (error) { 
@@ -175,11 +193,16 @@ export default function EBViewPage(): JSX.Element {
     };
     
     const handleSetGlobalCost = async (newCost: number) => {
+        const tenantId = session?.user?.tenantId;
+        if (!tenantId) {
+            alert('Could not identify your salon. Cost update failed.');
+            return;
+        }
         setIsSavingCost(true);
         try {
             const res = await fetch('/api/settings/ebCostPerUnit', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
                 body: JSON.stringify({ value: newCost }),
             });
 
@@ -205,11 +228,16 @@ export default function EBViewPage(): JSX.Element {
     };
 
     const handleDownloadEbReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }) => {
+        const tenantId = session?.user?.tenantId;
+        if (!tenantId) {
+            alert('Could not identify your salon. Report download failed.');
+            return;
+        }
         setIsDownloading(true);
         try {
             const response = await fetch('/api/eb/report', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
                 body: JSON.stringify({ 
                     startDate: params.startDate, 
                     endDate: params.endDate, 

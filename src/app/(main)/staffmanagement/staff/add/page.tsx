@@ -1,8 +1,8 @@
-// src/app/staffmanagement/staff/add/page.tsx
 "use client";
 
 import React, { useState, FormEvent, ChangeEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react"; // <-- 1. IMPORT useSession
 import {
   ArrowLeft,
   Save,
@@ -78,9 +78,8 @@ const DocumentViewerModal: React.FC<{
   );
 };
 
-// --- NEW HELPER FUNCTION FOR IMAGE COMPRESSION ---
 const compressImage = (file: File, maxWidth: number, maxHeight: number, quality: number): Promise<string> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (event) => {
@@ -107,16 +106,11 @@ const compressImage = (file: File, maxWidth: number, maxHeight: number, quality:
 
         const ctx = canvas.getContext("2d");
         ctx?.drawImage(img, 0, 0, width, height);
-
-        // Convert canvas to base64 image
-        resolve(canvas.toDataURL("image/jpeg", quality)); // Using JPEG for better compression
+        resolve(canvas.toDataURL("image/jpeg", quality));
       };
+      img.onerror = (error) => reject(error);
     };
-    reader.onerror = (error) => {
-      console.error("FileReader error: ", error);
-      toast.error("Failed to read file.");
-      resolve(file.type.startsWith('image/') ? '' : event?.target?.result as string); // Return empty or original if error
-    };
+    reader.onerror = (error) => reject(error);
   });
 };
 
@@ -137,22 +131,17 @@ const FileUploadInput: React.FC<{
         e.target.value = "";
         return;
       }
-
       if (file.type.startsWith('image/')) {
         try {
-          // Compress image documents (Aadhar, Passbook, Agreement) more aggressively
-          const compressedDataUrl = await compressImage(file, 1024, 1024, 0.7); // Max 1024px, 70% quality
+          const compressedDataUrl = await compressImage(file, 1024, 1024, 0.7);
           onFileChange(compressedDataUrl);
         } catch (error) {
-          console.error("Image compression failed:", error);
           toast.error("Failed to process image for upload.");
-          onFileChange(null); // Clear selection on error
+          onFileChange(null);
         }
       } else if (file.type === 'application/pdf') {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          onFileChange(reader.result as string);
-        };
+        reader.onloadend = () => onFileChange(reader.result as string);
         reader.readAsDataURL(file);
       } else {
         toast.error("Unsupported file type. Please upload an image or PDF.");
@@ -164,56 +153,20 @@ const FileUploadInput: React.FC<{
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">
-        <div className="flex items-center gap-2">
-          {icon}
-          <span>{label}</span>
-        </div>
+        <div className="flex items-center gap-2">{icon}<span>{label}</span></div>
       </label>
       <div className="mt-1 flex items-center gap-3 p-3 border border-gray-300 rounded-md">
-        <input
-          type="file"
-          id={id}
-          accept="image/*,application/pdf"
-          onChange={handleFileSelect}
-          className="hidden"
-          disabled={isSubmitting}
-        />
+        <input type="file" id={id} accept="image/*,application/pdf" onChange={handleFileSelect} className="hidden" disabled={isSubmitting}/>
         {fileData ? (
           <>
             <FileText className="h-8 w-8 text-indigo-500 flex-shrink-0" />
             <div className="flex-grow text-sm text-gray-700">File uploaded.</div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              icon={<Eye size={14} />}
-              onClick={onView}
-              disabled={isSubmitting}
-            >
-              View
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              icon={<Trash2 size={14} />}
-              onClick={() => onFileChange(null)}
-              className="text-red-500"
-              title="Remove File"
-              disabled={isSubmitting}
-            />
+            <Button type="button" variant="outline" size="sm" icon={<Eye size={14} />} onClick={onView} disabled={isSubmitting}>View</Button>
+            <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => onFileChange(null)} className="text-red-500" title="Remove File" disabled={isSubmitting}/>
           </>
         ) : (
           <>
-            <Button
-              type="button"
-              variant="outline"
-              icon={<Upload size={16} />}
-              onClick={() => document.getElementById(id)?.click()}
-              disabled={isSubmitting}
-            >
-              Upload File
-            </Button>
+            <Button type="button" variant="outline" icon={<Upload size={16} />} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting}>Upload File</Button>
             <p className="text-xs text-gray-500">Max 5MB (PNG, JPG, PDF)</p>
           </>
         )}
@@ -224,11 +177,10 @@ const FileUploadInput: React.FC<{
 
 const AddStaffPage: React.FC = () => {
   const router = useRouter();
-  const {
-    addStaffMember,
-    positionOptions: contextPositionOptions = [],
-    addPositionOption,
-  } = useStaff();
+  const { addStaffMember, positionOptions: contextPositionOptions = [], addPositionOption } = useStaff();
+  
+  // <-- 2. GET THE SESSION AND ITS LOADING STATUS
+  const { data: session, status: sessionStatus } = useSession();
 
   const [formData, setFormData] = useState<StaffFormData>({
     staffIdNumber: "Loading...",
@@ -247,22 +199,24 @@ const AddStaffPage: React.FC = () => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [positionOptions, setPositionOptions] = useState<PositionOption[]>(
-    contextPositionOptions
-  );
+  const [positionOptions, setPositionOptions] = useState<PositionOption[]>(contextPositionOptions);
   const [showAddPositionForm, setShowAddPositionForm] = useState(false);
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<{ src: string | null; title: string; }>({ src: null, title: "" });
 
-  const [viewingDocument, setViewingDocument] = useState<{
-    src: string | null;
-    title: string;
-  }>({ src: null, title: "" });
-
+  // <-- 3. CORRECTED useEffect FOR FETCHING THE STAFF ID
   useEffect(() => {
-    const fetchNextId = async () => {
+    const fetchNextId = async (tenantId: string) => {
       try {
-        const response = await fetch("/api/staff?action=getNextId");
+        const response = await fetch("/api/staff?action=getNextId", {
+          headers: {
+            // <-- 4. ADD THE X-TENANT-ID HEADER
+            'X-Tenant-ID': tenantId
+          },
+          cache: 'no-store'
+        });
+        
         if (!response.ok) {
           const errData = await response.json();
           throw new Error(errData.error || "Failed to fetch Staff ID from server.");
@@ -279,35 +233,38 @@ const AddStaffPage: React.FC = () => {
         console.error(err);
       }
     };
-    fetchNextId();
-  }, []);
+
+    // <-- 5. ONLY RUN FETCH LOGIC WHEN SESSION IS AUTHENTICATED
+    if (sessionStatus === 'authenticated') {
+      const tenantId = session?.user?.tenantId;
+      if (tenantId) {
+        fetchNextId(tenantId);
+      } else {
+        setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
+        toast.error("Could not load Staff ID: Tenant ID is missing from session.");
+      }
+    } else if (sessionStatus === 'unauthenticated') {
+        setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
+        toast.error("Could not load Staff ID: You are not logged in.");
+    }
+  }, [sessionStatus, session]); // <-- 6. DEPEND ON THE SESSION STATUS
 
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
     if (!formData.position && contextPositionOptions.length > 0) {
-      const firstSelectableOption =
-        contextPositionOptions.find((opt) => opt.value !== "")?.value ||
-        contextPositionOptions[0]?.value;
+      const firstSelectableOption = contextPositionOptions.find((opt) => opt.value !== "")?.value || contextPositionOptions[0]?.value;
       if (firstSelectableOption) {
         setFormData((prev) => ({ ...prev, position: firstSelectableOption }));
       }
     }
   }, [contextPositionOptions, formData.position]);
 
-  const handleInputChange = (
-    e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData((prevData) => ({
-      ...prevData,
-      [name]: value,
-    }));
+    setFormData((prevData) => ({ ...prevData, [name]: value }));
   };
 
-  const handleFileChange = (
-    fieldName: keyof StaffFormData,
-    fileData: string | null
-  ) => {
+  const handleFileChange = (fieldName: keyof StaffFormData, fileData: string | null) => {
     setFormData((prev) => ({ ...prev, [fieldName]: fileData }));
   };
 
@@ -319,15 +276,13 @@ const AddStaffPage: React.FC = () => {
         e.target.value = "";
         return;
       }
-      
       try {
-        // Compress profile photo more moderately
-        const compressedDataUrl = await compressImage(file, 800, 800, 0.8); // Max 800px, 80% quality
+        const compressedDataUrl = await compressImage(file, 800, 800, 0.8);
         setFormData((prev) => ({ ...prev, image: compressedDataUrl }));
       } catch (error) {
         console.error("Profile image compression failed:", error);
         toast.error("Failed to process profile image.");
-        setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE })); // Reset on error
+        setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE }));
       }
     }
   };
@@ -339,15 +294,10 @@ const AddStaffPage: React.FC = () => {
       return;
     }
     const formattedNewPosition = newPositionName.trim();
-    if (
-      positionOptions.some(
-        (option) => option.value.toLowerCase() === formattedNewPosition.toLowerCase()
-      )
-    ) {
+    if (positionOptions.some((option) => option.value.toLowerCase() === formattedNewPosition.toLowerCase())) {
       setNewPositionError("This position already exists.");
       return;
     }
-
     const newOption = { value: formattedNewPosition, label: formattedNewPosition };
     addPositionOption(newOption);
     setFormData((prevData) => ({ ...prevData, position: newOption.value }));
@@ -364,16 +314,8 @@ const AddStaffPage: React.FC = () => {
       setIsSubmitting(false);
       return;
     }
-
-    if (
-      !formData.name.trim() ||
-      !formData.phone.trim() ||
-      !formData.position.trim() ||
-      !formData.aadharNumber.trim()
-    ) {
-      toast.warn(
-        "Please fill in all required fields marked with * (Name, Phone, Aadhar Number, Position)."
-      );
+    if (!formData.name.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.aadharNumber.trim()) {
+      toast.warn("Please fill in all required fields marked with * (Name, Phone, Aadhar Number, Position).");
       setIsSubmitting(false);
       return;
     }
@@ -414,381 +356,102 @@ const AddStaffPage: React.FC = () => {
     }
   };
 
-  const IconLabel: React.FC<{
-    htmlFor: string;
-    icon: React.ReactNode;
-    text: string;
-  }> = ({ htmlFor, icon, text }) => (
+  const IconLabel: React.FC<{ htmlFor: string; icon: React.ReactNode; text: string; }> = ({ htmlFor, icon, text }) => (
     <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 mb-1">
-      <div className="flex items-center gap-2">
-        {icon}
-        <span>{text}</span>
-      </div>
+      <div className="flex items-center gap-2">{icon}<span>{text}</span></div>
     </label>
   );
 
   return (
     <div className="space-y-6 p-4 md:p-6 bg-gray-50 min-h-screen">
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-      />
-
-      <DocumentViewerModal
-        src={viewingDocument.src}
-        title={viewingDocument.title}
-        onClose={() => setViewingDocument({ src: null, title: "" })}
-      />
-
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light"/>
+      <DocumentViewerModal src={viewingDocument.src} title={viewingDocument.title} onClose={() => setViewingDocument({ src: null, title: "" })}/>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
-          <Button
-            variant="outline"
-            icon={<ArrowLeft size={16} />}
-            onClick={() => router.back()}
-            className="mr-4"
-            disabled={isSubmitting}
-          >
-            Back
-          </Button>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800">
-            Add New Staff Member
-          </h1>
+          <Button variant="outline" icon={<ArrowLeft size={16} />} onClick={() => router.back()} className="mr-4" disabled={isSubmitting}>Back</Button>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-800">Add New Staff Member</h1>
         </div>
       </div>
-
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 md:p-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
           <div className="md:col-span-2 mb-4">
-            <IconLabel
-              htmlFor="image-upload-input"
-              icon={<ImageIcon size={14} className="text-gray-500" />}
-              text="Profile Photo"
-            />
+            <IconLabel htmlFor="image-upload-input" icon={<ImageIcon size={14} className="text-gray-500" />} text="Profile Photo"/>
             <div className="flex items-center mt-1">
               <div className="flex-shrink-0 h-24 w-24 overflow-hidden rounded-full border-2 border-gray-300 bg-gray-100">
-                <img
-                  src={formData.image || DEFAULT_STAFF_IMAGE}
-                  alt="Staff Preview"
-                  className="h-full w-full object-cover"
-                />
+                <img src={formData.image || DEFAULT_STAFF_IMAGE} alt="Staff Preview" className="h-full w-full object-cover"/>
               </div>
               <div className="ml-5">
-                <input
-                  type="file"
-                  id="image-upload-input"
-                  accept="image/png, image/jpeg, image/webp"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  disabled={isSubmitting}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  icon={<Upload size={16} />}
-                  onClick={() => document.getElementById("image-upload-input")?.click()}
-                  disabled={isSubmitting}
-                >
-                  Upload Photo
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE }))
-                  }
-                  disabled={isSubmitting || formData.image === DEFAULT_STAFF_IMAGE}
-                  className="ml-2 text-xs text-gray-500 hover:text-red-500 p-1"
-                  title="Reset to Default Photo"
-                >
-                  Reset
-                </Button>
+                <input type="file" id="image-upload-input" accept="image/png, image/jpeg, image/webp" onChange={handleImageUpload} className="hidden" disabled={isSubmitting}/>
+                <Button type="button" variant="outline" icon={<Upload size={16} />} onClick={() => document.getElementById("image-upload-input")?.click()} disabled={isSubmitting}>Upload Photo</Button>
+                <Button type="button" variant="ghost" onClick={() => setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE }))} disabled={isSubmitting || formData.image === DEFAULT_STAFF_IMAGE} className="ml-2 text-xs text-gray-500 hover:text-red-500 p-1" title="Reset to Default Photo">Reset</Button>
                 <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP up to 2MB.</p>
               </div>
             </div>
           </div>
-
           <div>
-            <IconLabel
-              htmlFor="staffIdNumber"
-              icon={<Badge size={14} className="text-gray-500" />}
-              text="Staff ID*"
-            />
-            <input
-              id="staffIdNumber"
-              name="staffIdNumber"
-              type="text"
-              required
-              value={formData.staffIdNumber}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black bg-gray-100 cursor-not-allowed"
-              readOnly
-            />
+            <IconLabel htmlFor="staffIdNumber" icon={<Badge size={14} className="text-gray-500" />} text="Staff ID*"/>
+            <input id="staffIdNumber" name="staffIdNumber" type="text" required value={formData.staffIdNumber} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black bg-gray-100 cursor-not-allowed" readOnly/>
           </div>
           <div>
-            <IconLabel
-              htmlFor="name"
-              icon={<User size={14} className="text-gray-500" />}
-              text="Full Name*"
-            />
-            <input
-              id="name"
-              name="name"
-              type="text"
-              required
-              value={formData.name}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            />
+            <IconLabel htmlFor="name" icon={<User size={14} className="text-gray-500" />} text="Full Name*"/>
+            <input id="name" name="name" type="text" required value={formData.name} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel
-              htmlFor="email"
-              icon={<Mail size={14} className="text-gray-500" />}
-              text="Email Address"
-            />
-            <input
-              id="email"
-              name="email"
-              type="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            />
+            <IconLabel htmlFor="email" icon={<Mail size={14} className="text-gray-500" />} text="Email Address"/>
+            <input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel
-              htmlFor="phone"
-              icon={<Phone size={14} className="text-gray-500" />}
-              text="Phone Number*"
-            />
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              required
-              value={formData.phone}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            />
+            <IconLabel htmlFor="phone" icon={<Phone size={14} className="text-gray-500" />} text="Phone Number*"/>
+            <input id="phone" name="phone" type="tel" required value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel
-              htmlFor="aadharNumber"
-              icon={<Fingerprint size={14} className="text-gray-500" />}
-              text="Aadhar Number*"
-            />
-            <input
-              id="aadharNumber"
-              name="aadharNumber"
-              type="text"
-              required
-              pattern="\d{12}"
-              title="Aadhar number must be 12 digits"
-              maxLength={12}
-              value={formData.aadharNumber}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            />
+            <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number*"/>
+            <input id="aadharNumber" name="aadharNumber" type="text" required pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel
-              htmlFor="position"
-              icon={<Briefcase size={14} className="text-gray-500" />}
-              text="Position*"
-            />
+            <IconLabel htmlFor="position" icon={<Briefcase size={14} className="text-gray-500" />} text="Position*"/>
             <div className="flex items-center space-x-2">
-              <select
-                id="position"
-                name="position"
-                required
-                value={formData.position}
-                onChange={handleInputChange}
-                className="flex-grow w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-                disabled={isSubmitting || showAddPositionForm}
-              >
-                {positionOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+              <select id="position" name="position" required value={formData.position} onChange={handleInputChange} className="flex-grow w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting || showAddPositionForm}>
+                {positionOptions.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
               </select>
-              {!showAddPositionForm && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  icon={<PlusCircle size={20} />}
-                  onClick={() => setShowAddPositionForm(true)}
-                  disabled={isSubmitting}
-                  title="Add New Position"
-                  className="p-2 text-gray-600 hover:text-black"
-                />
-              )}
+              {!showAddPositionForm && (<Button type="button" variant="ghost" icon={<PlusCircle size={20} />} onClick={() => setShowAddPositionForm(true)} disabled={isSubmitting} title="Add New Position" className="p-2 text-gray-600 hover:text-black"/>)}
             </div>
             {showAddPositionForm && (
               <div className="mt-2 p-3 border border-gray-200 rounded-md bg-gray-50">
-                <label
-                  htmlFor="newPositionName"
-                  className="block text-xs font-medium text-gray-600 mb-1"
-                >
-                  New Position Name:
-                </label>
+                <label htmlFor="newPositionName" className="block text-xs font-medium text-gray-600 mb-1">New Position Name:</label>
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="text"
-                    id="newPositionName"
-                    value={newPositionName}
-                    onChange={(e) => {
-                      setNewPositionName(e.target.value);
-                      if (newPositionError) setNewPositionError(null);
-                    }}
-                    placeholder="Enter position name"
-                    className="flex-grow w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black"
-                    disabled={isSubmitting}
-                  />
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={handleAddNewPosition}
-                    disabled={isSubmitting || !newPositionName.trim()}
-                  >
-                    Add
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setShowAddPositionForm(false);
-                      setNewPositionName("");
-                      setNewPositionError(null);
-                    }}
-                    disabled={isSubmitting}
-                    className="p-1.5 text-gray-500 hover:text-red-600"
-                    icon={<XCircle size={18} />}
-                    title="Cancel Adding Position"
-                  />
+                  <input type="text" id="newPositionName" value={newPositionName} onChange={(e) => {setNewPositionName(e.target.value); if (newPositionError) setNewPositionError(null);}} placeholder="Enter position name" className="flex-grow w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black" disabled={isSubmitting}/>
+                  <Button type="button" variant="primary" size="sm" onClick={handleAddNewPosition} disabled={isSubmitting || !newPositionName.trim()}>Add</Button>
+                  <Button type="button" variant="ghost" onClick={() => {setShowAddPositionForm(false); setNewPositionName(""); setNewPositionError(null);}} disabled={isSubmitting} className="p-1.5 text-gray-500 hover:text-red-600" icon={<XCircle size={18} />} title="Cancel Adding Position"/>
                 </div>
                 {newPositionError && <p className="text-xs text-red-600 mt-1">{newPositionError}</p>}
               </div>
             )}
           </div>
           <div>
-            <IconLabel
-              htmlFor="joinDate"
-              icon={<Calendar size={14} className="text-gray-500" />}
-              text="Join Date*"
-            />
-            <input
-              id="joinDate"
-              name="joinDate"
-              type="date"
-              required
-              value={formData.joinDate}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            />
+            <IconLabel htmlFor="joinDate" icon={<Calendar size={14} className="text-gray-500" />} text="Join Date*"/>
+            <input id="joinDate" name="joinDate" type="date" required value={formData.joinDate} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
-            <IconLabel
-              htmlFor="salary"
-              icon={<IndianRupee size={14} className="text-gray-500" />}
-              text="Monthly Salary*"
-            />
-            <input
-              id="salary"
-              name="salary"
-              type="number"
-              required
-              min="0"
-              step="any"
-              value={formData.salary}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            />
+            <IconLabel htmlFor="salary" icon={<IndianRupee size={14} className="text-gray-500" />} text="Monthly Salary*"/>
+            <input id="salary" name="salary" type="number" required min="0" step="any" value={formData.salary} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div className="md:col-span-2">
-            <IconLabel
-              htmlFor="address"
-              icon={<MapPin size={14} className="text-gray-500" />}
-              text="Address"
-            />
-            <textarea
-              id="address"
-              name="address"
-              rows={3}
-              value={formData.address}
-              onChange={handleInputChange}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100"
-              disabled={isSubmitting}
-            ></textarea>
+            <IconLabel htmlFor="address" icon={<MapPin size={14} className="text-gray-500" />} text="Address"/>
+            <textarea id="address" name="address" rows={3} value={formData.address} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}></textarea>
           </div>
-
           <div className="md:col-span-2 border-t pt-5 mt-3 space-y-4">
             <h3 className="text-lg font-medium text-gray-900">Documents</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FileUploadInput
-                id="aadhar-upload"
-                label="Aadhar Card"
-                icon={<ShieldCheck size={16} className="text-gray-500" />}
-                fileData={formData.aadharImage}
-                onFileChange={(data) => handleFileChange("aadharImage", data)}
-                onView={() => setViewingDocument({ src: formData.aadharImage, title: "Aadhar Card" })}
-                isSubmitting={isSubmitting}
-              />
-              <FileUploadInput
-                id="passbook-upload"
-                label="Bank Passbook"
-                icon={<Banknote size={16} className="text-gray-500" />}
-                fileData={formData.passbookImage}
-                onFileChange={(data) => handleFileChange("passbookImage", data)}
-                onView={() => setViewingDocument({ src: formData.passbookImage, title: "Bank Passbook" })}
-                isSubmitting={isSubmitting}
-              />
-              <FileUploadInput
-                id="agreement-upload"
-                label="Agreement"
-                icon={<FileText size={16} className="text-gray-500" />}
-                fileData={formData.agreementImage}
-                onFileChange={(data) => handleFileChange("agreementImage", data)}
-                onView={() => setViewingDocument({ src: formData.agreementImage, title: "Agreement" })}
-                isSubmitting={isSubmitting}
-              />
+              <FileUploadInput id="aadhar-upload" label="Aadhar Card" icon={<ShieldCheck size={16} className="text-gray-500" />} fileData={formData.aadharImage} onFileChange={(data) => handleFileChange("aadharImage", data)} onView={() => setViewingDocument({ src: formData.aadharImage, title: "Aadhar Card" })} isSubmitting={isSubmitting}/>
+              <FileUploadInput id="passbook-upload" label="Bank Passbook" icon={<Banknote size={16} className="text-gray-500" />} fileData={formData.passbookImage} onFileChange={(data) => handleFileChange("passbookImage", data)} onView={() => setViewingDocument({ src: formData.passbookImage, title: "Bank Passbook" })} isSubmitting={isSubmitting}/>
+              <FileUploadInput id="agreement-upload" label="Agreement" icon={<FileText size={16} className="text-gray-500" />} fileData={formData.agreementImage} onFileChange={(data) => handleFileChange("agreementImage", data)} onView={() => setViewingDocument({ src: formData.agreementImage, title: "Agreement" })} isSubmitting={isSubmitting}/>
             </div>
           </div>
         </div>
-
         <div className="mt-8 flex justify-end space-x-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.back()}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="black"
-            icon={<Save size={16} />}
-            disabled={isSubmitting}
-            isLoading={isSubmitting}
-          >
-            {isSubmitting ? "Saving..." : "Save Staff Member"}
-          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={isSubmitting}>Cancel</Button>
+          <Button type="submit" variant="black" icon={<Save size={16} />} disabled={isSubmitting} isLoading={isSubmitting}>{isSubmitting ? "Saving..." : "Save Staff Member"}</Button>
         </div>
       </form>
     </div>

@@ -5,9 +5,15 @@ import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
 import Procurement from '@/models/Procurement';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant helper
 
 export async function GET(request: Request) {
   try {
+    const tenantId = getTenantIdOrBail(request as any);
+    if (tenantId instanceof NextResponse) {
+        return tenantId; // Return error response if tenant ID is missing
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_READ)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -20,8 +26,9 @@ export async function GET(request: Request) {
 
     await connectToDatabase();
 
-    const totalRecords = await Procurement.countDocuments();
-    const records = await Procurement.find({})
+    // Filter records by tenantId
+    const totalRecords = await Procurement.countDocuments({ tenantId });
+    const records = await Procurement.find({ tenantId })
       .sort({ date: -1 })
       .skip(skip)
       .limit(limit);
@@ -37,6 +44,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const tenantId = getTenantIdOrBail(request as any);
+    if (tenantId instanceof NextResponse) {
+        return tenantId; // Return error response if tenant ID is missing
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -54,6 +66,7 @@ export async function POST(request: Request) {
     await connectToDatabase();
 
     const record = await Procurement.create({
+      tenantId, // Add tenantId to the new record
       name,
       quantity,
       price,
@@ -76,6 +89,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const tenantId = getTenantIdOrBail(request as any);
+    if (tenantId instanceof NextResponse) {
+        return tenantId; // Return error response if tenant ID is missing
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_UPDATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -92,9 +110,10 @@ export async function PUT(request: Request) {
 
     await connectToDatabase();
 
-    const record = await Procurement.findById(recordId);
+    // Ensure the record belongs to the correct tenant before updating
+    const record = await Procurement.findOne({ _id: recordId, tenantId });
     if (!record) {
-      return NextResponse.json({ success: false, message: 'Record not found' }, { status: 404 });
+      return NextResponse.json({ success: false, message: 'Record not found or access denied' }, { status: 404 });
     }
 
     record.name = name;
@@ -121,6 +140,11 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const tenantId = getTenantIdOrBail(request as any);
+    if (tenantId instanceof NextResponse) {
+        return tenantId; // Return error response if tenant ID is missing
+    }
+
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_DELETE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
@@ -135,9 +159,10 @@ export async function DELETE(request: Request) {
 
     await connectToDatabase();
 
-    const record = await Procurement.findByIdAndDelete(recordId);
+    // Ensure the record is deleted only if it belongs to the correct tenant
+    const record = await Procurement.findOneAndDelete({ _id: recordId, tenantId });
     if (!record) {
-      return NextResponse.json({ success: false, message: 'Record not found' }, { status: 404 });
+      return NextResponse.json({ success: false, message: 'Record not found or access denied' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, message: 'Record deleted successfully' });

@@ -1,15 +1,30 @@
-// app/api/inventory/alerts/route.ts (New file)
-import { NextResponse } from 'next/server';
+// app/api/inventory/alerts/route.ts (Updated)
+import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Product from '@/models/Product';
+import { getTenantIdOrBail } from '@/lib/tenant';
+import mongoose from 'mongoose';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Get the tenant ID from the request or return an error response
+  const tenantId = getTenantIdOrBail(req);
+  if (tenantId instanceof NextResponse) {
+    return tenantId; // Bails out if tenant ID is missing
+  }
+
   try {
     await connectToDatabase();
 
-    // Find products where current quantity is less than 25% of quantityPerItem
+    // The aggregation pipeline now starts by matching the products to the tenantId
     const lowStockProducts = await Product.aggregate([
       {
+        // First, filter products by the current tenant
+        $match: {
+          tenantId: new mongoose.Types.ObjectId(tenantId)
+        }
+      },
+      {
+        // Then, proceed with your existing logic
         $addFields: {
           stockPercentage: {
             $multiply: [
@@ -46,7 +61,7 @@ export async function GET() {
   } catch (error: any) {
     console.error('Low stock alerts error:', error);
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: "An internal server error occurred while fetching stock alerts." },
       { status: 500 }
     );
   }

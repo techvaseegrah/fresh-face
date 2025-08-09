@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, FormEvent, useMemo, Fragment, ChangeEvent } from 'react';
+import { Session } from 'next-auth'; // <-- NEW: Import Session type
+import { useSession } from 'next-auth/react'; // <-- NEW: Import session hook
 
 // --- IMPORTS FOR UI & MODAL ---
 import {
@@ -17,8 +19,8 @@ import {
   ArrowPathIcon,
   DocumentArrowUpIcon,
   EyeIcon,
-  PencilIcon, // <-- NEW
-  TrashIcon,   // <-- NEW
+  PencilIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { Dialog, Transition } from '@headlessui/react';
 
@@ -30,8 +32,59 @@ import 'react-toastify/dist/ReactToastify.css';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// ====================================================================
+// --- NEW: API LOGIC FOR MULTI-TENANCY ---
+// This helper object adds the required 'x-tenant-id' header to every request.
+// ====================================================================
+const getApiHeaders = (tenantId?: string) => {
+    const headers = new Headers();
+    if (!tenantId) throw new Error('Tenant ID is missing. Cannot make API request.');
+    headers.append('x-tenant-id', tenantId);
+    return headers;
+};
 
-// --- INTERFACES ---
+const handleApiError = async (response: Response) => {
+    try {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        throw new Error(`An unexpected error occurred: ${response.statusText}`);
+    }
+};
+
+const api = {
+    get: async (url: string, session: Session | null) => {
+        if (!session?.user?.tenantId) throw new Error('Authentication session not found.');
+        const response = await fetch(url, { method: 'GET', headers: getApiHeaders(session.user.tenantId) });
+        if (!response.ok) await handleApiError(response);
+        return response.json();
+    },
+    post: async (url: string, body: FormData, session: Session | null) => {
+        if (!session?.user?.tenantId) throw new Error('Authentication session not found.');
+        const response = await fetch(url, { method: 'POST', headers: getApiHeaders(session.user.tenantId), body });
+        if (!response.ok) await handleApiError(response);
+        return response.json();
+    },
+    put: async (url: string, body: FormData, session: Session | null) => {
+        if (!session?.user?.tenantId) throw new Error('Authentication session not found.');
+        const response = await fetch(url, { method: 'PUT', headers: getApiHeaders(session.user.tenantId), body });
+        if (!response.ok) await handleApiError(response);
+        return response.json();
+    },
+    delete: async (url: string, session: Session | null) => {
+        if (!session?.user?.tenantId) throw new Error('Authentication session not found.');
+        const response = await fetch(url, { method: 'DELETE', headers: getApiHeaders(session.user.tenantId) });
+        if (!response.ok) await handleApiError(response);
+        return response.json();
+    }
+};
+// ====================================================================
+// --- END OF API LOGIC ---
+// ====================================================================
+
+
+// --- INTERFACES (Unchanged) ---
 interface IExpense {
   _id: string;
   type: string;
@@ -48,8 +101,8 @@ interface ExpenseDetailsModalProps {
   onClose: () => void;
   title: string;
   historyData: IExpense[];
-  onEdit: (expense: IExpense) => void;    // <-- NEW
-  onDelete: (expenseId: string) => void; // <-- NEW
+  onEdit: (expense: IExpense) => void;
+  onDelete: (expenseId: string) => void;
 }
 
 interface FilePreviewModalProps {
@@ -60,7 +113,7 @@ interface FilePreviewModalProps {
   fileType: string;
 }
 
-// --- CHILD COMPONENT: EXPENSE DETAILS MODAL (UPDATED) ---
+// --- CHILD COMPONENT: EXPENSE DETAILS MODAL (Unchanged) ---
 function ExpenseDetailsModal({ isOpen, onClose, title, historyData, onEdit, onDelete }: ExpenseDetailsModalProps) {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState<{ url: string; name: string; type: string } | null>(null);
@@ -254,7 +307,7 @@ function ExpenseDetailsModal({ isOpen, onClose, title, historyData, onEdit, onDe
 }
 
 
-// --- CHILD COMPONENT: FILE PREVIEW MODAL ---
+// --- CHILD COMPONENT: FILE PREVIEW MODAL (Unchanged) ---
 function FilePreviewModal({ isOpen, onClose, fileUrl, fileName, fileType }: FilePreviewModalProps) {
   return (
     <Transition appear show={isOpen} as={Fragment}>
@@ -296,11 +349,14 @@ function FilePreviewModal({ isOpen, onClose, fileUrl, fileName, fileType }: File
 
 // --- MAIN PAGE COMPONENT ---
 export default function ExpensesPage() {
+  // --- NEW: Get session data ---
+  const { data: session } = useSession();
+
   const [allExpenses, setAllExpenses] = useState<IExpense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
-  // --- Form State ---
+  // --- Form State (Unchanged) ---
   const [type, setType] = useState('Tea');
   const [expenseTypes, setExpenseTypes] = useState<string[]>(['Tea', 'Coffee', 'Snacks', 'General']);
   const [description, setDescription] = useState('');
@@ -321,48 +377,53 @@ export default function ExpensesPage() {
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [paymentMethodError, setPaymentMethodError] = useState<string | null>(null);
   
-  // --- Filtering State ---
+  // --- Filtering & Modal State (Unchanged) ---
   const [filterType, setFilterType] = useState('all');
   const [filterFrequency, setFilterFrequency] = useState('all');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
-  
-  // --- Modal State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState<{ title: string, data: IExpense[] }>({ title: '', data: [] });
   const [historyView, setHistoryView] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
 
 
-  useEffect(() => { fetchExpenses() }, []);
+  // --- UPDATED: useEffect now depends on the session ---
+  useEffect(() => {
+    // Only attempt to fetch data if the session object exists
+    if (session) {
+      fetchExpenses();
+    }
+  }, [session]); // This dependency array ensures the effect runs when session is loaded
 
   useEffect(() => {
     return () => {
-      if (billPreviewUrl && billFile) { // Only revoke URL if it's from a File object
+      if (billPreviewUrl && billFile) {
         URL.revokeObjectURL(billPreviewUrl);
       }
     };
   }, [billPreviewUrl, billFile]);
 
+  // --- UPDATED: This function now uses the tenant-aware API helper ---
   const fetchExpenses = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/expenses');
-      if (!res.ok) throw new Error('Failed to fetch expenses');
-      const data = await res.json();
-      setAllExpenses(data.data);
-      const fetchedTypes = data.data.map((exp: IExpense) => exp.type).filter(Boolean);
-      const initialTypes = ['Tea', 'Coffee', 'Snacks', 'General'];
-      setExpenseTypes(prev => Array.from(new Set([...initialTypes, ...fetchedTypes])));
+      const data = await api.get('/api/expenses', session); // <-- UPDATED LINE
+      if (data.success) {
+          setAllExpenses(data.data);
+          const fetchedTypes = data.data.map((exp: IExpense) => exp.type).filter(Boolean);
+          const initialTypes = ['Tea', 'Coffee', 'Snacks', 'General'];
+          setExpenseTypes(prev => Array.from(new Set([...initialTypes, ...fetchedTypes])));
 
-      const fetchedMethods = data.data.map((exp: IExpense) => exp.paymentMethod).filter(Boolean);
-      const initialMethods = ['Cash', 'UPI', 'Card'];
-      const allMethods = Array.from(new Set([...initialMethods, ...fetchedMethods]));
-      setPaymentMethods(allMethods);
+          const fetchedMethods = data.data.map((exp: IExpense) => exp.paymentMethod).filter(Boolean);
+          const initialMethods = ['Cash', 'UPI', 'Card'];
+          setPaymentMethods(Array.from(new Set([...initialMethods, ...fetchedMethods])));
 
-      if (!type) setType(initialTypes[0]);
-      if (!paymentMethod) setPaymentMethod(initialMethods[0]);
+      } else {
+        throw new Error(data.error || "An unknown error occurred while fetching data.");
+      }
     } catch (err) {
-      toast.error("Could not fetch expense data.");
+      const errorMessage = err instanceof Error ? err.message : "Could not fetch expense data.";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -400,6 +461,7 @@ export default function ExpensesPage() {
     }
   };
 
+  // --- UPDATED: This function now uses the tenant-aware API helper ---
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!type || !amount || !expenseDate || !expenseTime || !frequency || !paymentMethod) {
@@ -422,22 +484,21 @@ export default function ExpensesPage() {
         formData.append('billUrl', existingBillUrl);
     }
 
-    try {
-      const isEditing = !!editingExpenseId;
-      const url = isEditing ? `/api/expenses/${editingExpenseId}` : '/api/expenses';
-      const method = isEditing ? 'PUT' : 'POST';
+    const isEditing = !!editingExpenseId;
+    const toastId = toast.loading(`${isEditing ? 'Updating' : 'Submitting'} expense...`);
 
-      const res = await fetch(url, { method, body: formData });
-      if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || `${isEditing ? 'Update' : 'Submission'} failed`);
+    try {
+      if (isEditing) {
+        await api.put(`/api/expenses/${editingExpenseId}`, formData, session); // <-- UPDATED
+      } else {
+        await api.post('/api/expenses', formData, session); // <-- UPDATED
       }
-      toast.success(`Expense ${isEditing ? 'updated' : 'added'} successfully!`);
+      toast.update(toastId, { render: `Expense ${isEditing ? 'updated' : 'added'} successfully!`, type: 'success', isLoading: false, autoClose: 3000 });
       resetForm();
       await fetchExpenses();
     } catch (err) { 
-        const errorMessage = err instanceof Error ? err.message : `Failed to ${editingExpenseId ? 'update' : 'add'} expense.`;
-        toast.error(errorMessage);
+        const errorMessage = err instanceof Error ? err.message : `Failed to ${isEditing ? 'update' : 'add'} expense.`;
+        toast.update(toastId, { render: errorMessage, type: 'error', isLoading: false, autoClose: 5000 });
     }
   };
   
@@ -465,28 +526,24 @@ export default function ExpensesPage() {
     }
   };
 
+  // --- UPDATED: This function now uses the tenant-aware API helper ---
   const handleDeleteClick = async (expenseId: string) => {
     if (!window.confirm("Are you sure you want to delete this expense? This action cannot be undone.")) {
         return;
     }
+    const toastId = toast.loading("Deleting expense...");
     try {
-        const res = await fetch(`/api/expenses/${expenseId}`, { method: 'DELETE' });
-        if (!res.ok) {
-            const errorData = await res.json();
-            throw new Error(errorData.error || "Deletion failed");
-        }
-        toast.success("Expense deleted successfully!");
+        await api.delete(`/api/expenses/${expenseId}`, session); // <-- UPDATED
+        toast.update(toastId, { render: "Expense deleted successfully!", type: "success", isLoading: false, autoClose: 3000 });
         setIsModalOpen(false);
         await fetchExpenses();
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Failed to delete expense.";
-        toast.error(errorMessage);
+        toast.update(toastId, { render: errorMessage, type: "error", isLoading: false, autoClose: 5000 });
     }
   };
   
-  // All other handlers (handleAddType, handleAddPaymentMethod, handleViewHistory, etc.) and memoized values remain the same...
-  // Omitted for brevity, but they should be in your final code.
-  // ... (todayStats, filteredExpenses, grouped expenses, etc.) ...
+  // All other handlers and memoized values remain the same...
   const todayStats = useMemo(() => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -530,7 +587,7 @@ export default function ExpensesPage() {
   const groupedAndSortedExpenses = useMemo(() => {
     const groupedByDate = filteredExpenses.reduce((acc, expense) => {
       const dateKey = new Date(expense.date).toDateString();
-      if (!acc[dateKey]) acc[dateKey] = { total: 0, count: 0, records: [] };
+      if (!acc[dateKey]) acc[dateKey] = { total: 0, count: 0, records: [] as IExpense[] };
       acc[dateKey].total += expense.amount;
       acc[dateKey].count += 1;
       acc[dateKey].records.push(expense);
@@ -551,7 +608,7 @@ export default function ExpensesPage() {
     const groupedByWeek = filteredExpenses.reduce((acc, expense) => {
       const weekStart = getStartOfWeek(new Date(expense.date));
       const weekKey = weekStart.toISOString();
-      if (!acc[weekKey]) acc[weekKey] = { total: 0, count: 0, records: [] };
+      if (!acc[weekKey]) acc[weekKey] = { total: 0, count: 0, records: [] as IExpense[] };
       acc[weekKey].total += expense.amount;
       acc[weekKey].count += 1;
       acc[weekKey].records.push(expense);
@@ -565,7 +622,7 @@ export default function ExpensesPage() {
       const expenseDate = new Date(expense.date);
       const monthStart = new Date(expenseDate.getFullYear(), expenseDate.getMonth(), 1);
       const monthKey = monthStart.toISOString();
-      if (!acc[monthKey]) acc[monthKey] = { total: 0, count: 0, records: [] };
+      if (!acc[monthKey]) acc[monthKey] = { total: 0, count: 0, records: [] as IExpense[] };
       acc[monthKey].total += expense.amount;
       acc[monthKey].count += 1;
       acc[monthKey].records.push(expense);

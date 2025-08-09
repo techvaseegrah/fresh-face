@@ -4,11 +4,19 @@ import DailySale from '@/models/DailySale'; // Your DailySale model
 import Staff from '@/models/staff'; // Corrected capitalization for convention
 import { NextRequest } from 'next/server';
 import mongoose from 'mongoose';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant function
 
 const MONTHLY_TARGET_MULTIPLIER = 3.0;
 
 export async function GET(request: NextRequest) {
   try {
+    // --- TENANT ID INTEGRATION ---
+    const tenantId = getTenantIdOrBail(request);
+    if (tenantId instanceof NextResponse) {
+        return tenantId; // Return the error response if tenantId is missing
+    }
+    // ---------------------------
+
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
@@ -39,6 +47,7 @@ export async function GET(request: NextRequest) {
       }
 
       const dailyRecords = await DailySale.find({
+        tenantId: new mongoose.Types.ObjectId(tenantId), // <-- Tenant ID filter added
         staff: new mongoose.Types.ObjectId(staffId),
         date: { $gte: startDate, $lte: endDate }
       }).sort({ date: -1 }).lean();
@@ -59,19 +68,20 @@ export async function GET(request: NextRequest) {
     // --- Logic for monthly summary (for the main page) ---
     // ====================================================================
     const staffPerformance = await DailySale.aggregate([
-      // 1. Filter sales records for the selected month and year
+      // 1. Filter sales records for the selected month, year, AND tenant
       { 
-        $match: { date: { $gte: startDate, $lte: endDate } } 
+        $match: { 
+            date: { $gte: startDate, $lte: endDate },
+            tenantId: new mongoose.Types.ObjectId(tenantId) // <-- Tenant ID filter added
+        } 
       },
       // 2. Group by staff to sum up their sales and customer counts
       {
         $group: {
           _id: '$staff',
           totalSales: { $sum: { $add: ['$serviceSale', '$productSale'] } },
-          // --- **THIS IS THE FIX**: We now also sum service and product sales separately ---
           totalServiceSales: { $sum: '$serviceSale' },
           totalProductSales: { $sum: '$productSale' },
-          // ----------------------------------------------------------------------------
           totalCustomers: { $sum: '$customerCount' },
         },
       },
@@ -107,10 +117,8 @@ export async function GET(request: NextRequest) {
           position: '$staffDetails.position',
           image: '$staffDetails.image',
           sales: '$totalSales',
-          // --- **THIS IS THE FIX**: Include the new fields in the final output ---
           totalServiceSales: '$totalServiceSales',
           totalProductSales: '$totalProductSales',
-          // -----------------------------------------------------------------------
           customers: '$totalCustomers',
           
           rating: {

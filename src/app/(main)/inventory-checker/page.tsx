@@ -1,4 +1,3 @@
-// src/app/(main)/inventory-checker/page.tsx
 'use client';
 
 import { useState, useEffect, useRef, Fragment } from 'react';
@@ -77,22 +76,30 @@ export default function InventoryCheckerPage() {
   
   useEffect(() => {
     const fetchProducts = async () => {
+      if (!session) return; // Wait for the session to be available
       setIsProductsLoading(true);
       try {
-        const res = await fetch('/api/products');
-        if (!res.ok) throw new Error('Network response was not ok');
+        const res = await fetch('/api/products', {
+          headers: {
+            'x-tenant-id': session.user.tenantId,
+          },
+        });
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.message || 'Network response was not ok');
+        }
         const data = await res.json();
         if (data.success) { setProducts(data.data); } 
         else { toast.error(data.message || "Failed to load products."); }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to fetch products:', error);
-        toast.error("An error occurred while fetching products.");
+        toast.error(error.message || "An error occurred while fetching products.");
       } finally {
         setIsProductsLoading(false);
       }
     };
     fetchProducts();
-  }, []);
+  }, [session]); // --- MODIFIED: Added session as a dependency
 
   const handleToggleCheckForm = (productId: string) => {
     setExpandedProductId(prevId => (prevId === productId ? null : productId));
@@ -101,10 +108,15 @@ export default function InventoryCheckerPage() {
   };
 
   const handleViewHistory = async (product: Product) => {
+    if (!session) return; // Guard clause
     setHistoryModalProduct(product);
     setIsHistoryLoading(true);
     try {
-      const res = await fetch(`/api/inventory-check?productId=${product._id}`);
+      const res = await fetch(`/api/inventory-check?productId=${product._id}`, {
+        headers: {
+          'x-tenant-id': session.user.tenantId,
+        },
+      });
       const data = await res.json();
       if (data.success) { setHistory(data.history); } 
       else { toast.error(data.message || 'Failed to fetch history.'); }
@@ -115,14 +127,19 @@ export default function InventoryCheckerPage() {
     }
   };
 
-   // --- NEW: Function to handle the export ---
   const handleExport = async () => {
+    if (!session) return; // Guard clause
     setIsExporting(true);
     toast.loading('Generating your report...', { id: 'export-toast' });
     try {
-      const response = await fetch('/api/inventory-check/export');
+      const response = await fetch('/api/inventory-check/export', {
+        headers: {
+          'x-tenant-id': session.user.tenantId,
+        },
+      });
       if (!response.ok) {
-        throw new Error('Failed to generate report. Please try again.');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate report. Please try again.');
       }
       
       const blob = await response.blob();
@@ -154,6 +171,8 @@ export default function InventoryCheckerPage() {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!session) return; // Guard clause
+
     const product = products.find(p => p._id === expandedProductId);
     if (!product || actualNumberOfItems === '') return;
     
@@ -171,7 +190,10 @@ export default function InventoryCheckerPage() {
       const newTotalQuantity = actualCount * product.quantityPerItem;
       const response = await fetch('/api/inventory-check', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        },
         body: JSON.stringify({ productId: expandedProductId, actualQuantity: newTotalQuantity, notes }),
       });
       const result = await response.json();
@@ -213,7 +235,6 @@ export default function InventoryCheckerPage() {
   }
 
   const renderProductTable = (title: string, icon: React.ReactNode, productList: Product[]) => {
-    // --- NEW: Helper function to determine if the submit button should be disabled ---
     const isSubmitDisabled = (product: Product) => {
         if (isSubmitting || !actualNumberOfItems) {
             return true;
@@ -224,7 +245,7 @@ export default function InventoryCheckerPage() {
         }
         const hasDiscrepancy = product.numberOfItems !== actualCount;
         if (hasDiscrepancy && !notes.trim()) {
-            return true; // Disable if discrepancy exists and notes are empty
+            return true;
         }
         return false;
     };
@@ -270,12 +291,10 @@ export default function InventoryCheckerPage() {
                                 <input id={`actualNumberOfItems-${product._id}`} type="number" step="1" value={actualNumberOfItems} onChange={(e) => setActualNumberOfItems(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2" required autoFocus placeholder="e.g., 10" />
                               </div>
                               <div>
-                                {/* --- MODIFIED: Notes UI --- */}
                                 <label htmlFor={`notes-${product._id}`} className="block text-sm font-medium text-gray-700">Notes <span className="text-red-500">*</span></label>
                                 <textarea id={`notes-${product._id}`} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2" placeholder="e.g., Damaged item, expired stock, etc." required={product.numberOfItems !== parseInt(actualNumberOfItems || '0', 10)}></textarea>
                                 <p className="text-xs text-gray-500 mt-1">Required if there is a discrepancy between expected ({product.numberOfItems}) and actual count.</p>
                               </div>
-                              {/* --- MODIFIED: Button's disabled logic --- */}
                               <button type="submit" disabled={isSubmitDisabled(product)} className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">{isSubmitting ? 'Submitting...' : 'Submit Count'}</button>
                             </form>
                           </div>
@@ -320,6 +339,7 @@ export default function InventoryCheckerPage() {
         {renderProductTable('In-House Stock', <Warehouse className="h-7 w-7 mr-3 text-green-600" />, inHouseProducts)}
       </div>
 
-        {historyModalProduct && (<HistoryModal onClose={() => setHistoryModalProduct(null)} history={history} productName={historyModalProduct.name} />)}    </>
+        {historyModalProduct && (<HistoryModal onClose={() => setHistoryModalProduct(null)} history={history} productName={historyModalProduct.name} />)}
+    </>
   );
 }

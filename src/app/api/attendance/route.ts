@@ -10,6 +10,8 @@ import { differenceInMinutes, startOfDay, endOfDay, startOfMonth, endOfMonth, pa
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+// TENANT ID: Import the tenant helper function.
+import { getTenantIdOrBail } from '../../../lib/tenant';
 
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
 
@@ -28,6 +30,13 @@ async function checkPermissions(permission: string) {
 
 // --- GET Handler ---
 export async function GET(request: NextRequest) {
+  // TENANT ID: Get the tenant ID or return an error response immediately.
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_READ);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -39,12 +48,13 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
     
-    // ... other actions like 'getToday' and 'getMonthly' are unchanged ...
     if (action === 'getToday') {
         const todayDate = new Date();
         const todayStartBoundary = startOfDay(todayDate);
         const todayEndBoundary = endOfDay(todayDate);
+        // TENANT ID: Add tenantId to the query filter.
         const records = await Attendance.find({
+          tenantId,
           date: { $gte: todayStartBoundary, $lte: todayEndBoundary },
         })
           .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
@@ -68,7 +78,11 @@ export async function GET(request: NextRequest) {
         const localMonthDate = new Date(parsedYear, parsedMonth - 1, 1);
         const startDate = startOfMonth(localMonthDate);
         const endDate = endOfMonth(localMonthDate);
-        const records = await Attendance.find({ date: { $gte: startDate, $lte: endDate } })
+        // TENANT ID: Add tenantId to the query filter.
+        const records = await Attendance.find({ 
+            tenantId, 
+            date: { $gte: startDate, $lte: endDate } 
+        })
           .populate<{ staffId: Pick<IStaff, '_id' | 'name' | 'image' | 'position' | 'staffIdNumber'> | null }>({ path: 'staffId', model: Staff, select: 'name image position staffIdNumber' })
           .populate<{ temporaryExits: ITemporaryExit[] }>({ path: 'temporaryExits', model: TemporaryExit })
           .sort({ date: 'asc', checkIn: 'asc' })
@@ -76,11 +90,10 @@ export async function GET(request: NextRequest) {
         const validRecords = records.filter(record => record.staffId);
         return NextResponse.json({ success: true, data: validRecords });
     }
-    // START: MODIFIED LOGIC FOR SALARY PAGE
     else if (action === 'getOvertimeTotal' || action === 'getTotalHoursForMonth') {
       const staffId = searchParams.get('staffId');
       const yearStr = searchParams.get('year');
-      const monthStr = searchParams.get('month'); // Expecting month name e.g., "July"
+      const monthStr = searchParams.get('month');
       
       if (!staffId || !isValidObjectId(staffId)) {
         return NextResponse.json({ success: false, error: 'Valid staffId is required' }, { status: 400 });
@@ -101,20 +114,20 @@ export async function GET(request: NextRequest) {
       const startDate = startOfMonth(localMonthDate);
       const endDate = endOfMonth(localMonthDate);
 
-      // Find all records where the staff actually worked (or was expected to)
+      // TENANT ID: Add tenantId to the query filter.
       const records = await Attendance.find({
+        tenantId,
         staffId: new Types.ObjectId(staffId),
         date: { $gte: startDate, $lte: endDate },
         status: { $in: ['present', 'incomplete'] }
       }).lean();
 
       if (action === 'getTotalHoursForMonth') {
-        // Calculate BOTH achieved and required hours from the same records
         const totalMinutes = records.reduce((sum, record) => sum + (record.totalWorkingMinutes || 0), 0);
         const requiredMinutes = records.reduce((sum, record) => sum + (record.requiredMinutes || 0), 0);
 
-        const totalWorkingHours = totalMinutes / 60; // Convert to decimal hours
-        const totalRequiredHours = requiredMinutes / 60; // Convert to decimal hours
+        const totalWorkingHours = totalMinutes / 60;
+        const totalRequiredHours = requiredMinutes / 60;
 
         return NextResponse.json({ success: true, data: { totalWorkingHours, totalRequiredHours } });
       }
@@ -124,7 +137,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: true, data: { totalOtHours } });
       }
     }
-    // END: MODIFIED LOGIC FOR SALARY PAGE
     return NextResponse.json({ success: false, error: 'Invalid or missing GET action specified' }, { status: 400 });
 
   } catch (error: any) {
@@ -133,12 +145,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// --- POST, PUT, DELETE Handlers are unchanged ---
-// ... (rest of the file)
 // --- POST Handler ---
-// ... (POST handler is unchanged)
 export async function POST(request: NextRequest) {
-  // NEW: Protect all POST actions with MANAGE permission
+  // TENANT ID: Get the tenant ID or return an error response immediately.
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+  
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_MANAGE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -150,7 +165,6 @@ export async function POST(request: NextRequest) {
   try {
     await dbConnect();
     
-    // ... rest of POST handler is unchanged ...
     if (action === 'checkIn') {
         const body = await request.json();
         const { staffId, requiredHours } = body;
@@ -162,7 +176,9 @@ export async function POST(request: NextRequest) {
         }
         const todayStartBoundary = startOfDay(new Date());
         const todayEndBoundary = endOfDay(new Date());
+        // TENANT ID: Add tenantId to the query filter.
         const existingRecord = await Attendance.findOne({
+            tenantId,
             staffId: new Types.ObjectId(staffId),
             date: { $gte: todayStartBoundary, $lte: todayEndBoundary },
         });
@@ -179,6 +195,8 @@ export async function POST(request: NextRequest) {
         }
         const now = new Date();
         const newAttendance = new Attendance({
+            // TENANT ID: Add tenantId when creating a new record.
+            tenantId,
             staffId: new Types.ObjectId(staffId),
             date: now,
             checkIn: now,
@@ -192,7 +210,8 @@ export async function POST(request: NextRequest) {
     else if (action === 'checkOut') {
       const attendanceIdParam = searchParams.get('attendanceId');
       if (!attendanceIdParam || !isValidObjectId(attendanceIdParam)) { return NextResponse.json({ success: false, error: 'Invalid or missing attendanceId for checkOut' }, { status: 400 }); }
-      const attendance = await Attendance.findById(attendanceIdParam).populate('temporaryExits');
+      // TENANT ID: Scope the find operation to the specific tenant.
+      const attendance = await Attendance.findOne({ _id: attendanceIdParam, tenantId }).populate('temporaryExits');
       if (!attendance) return NextResponse.json({ success: false, error: 'Attendance record not found' }, { status: 404 });
       if (attendance.checkOut) return NextResponse.json({ success: false, error: 'Already checked out' }, { status: 400 });
       if (!attendance.checkIn) return NextResponse.json({ success: false, error: 'Cannot check-out without a check-in record' }, { status: 400 });
@@ -220,7 +239,8 @@ export async function POST(request: NextRequest) {
         if (!attendanceIdParam || !isValidObjectId(attendanceIdParam)) { return NextResponse.json({ success: false, error: 'Invalid or missing attendanceId for startTempExit' }, { status: 400 }); }
         const { reason } = body; 
         if (!reason || typeof reason !== 'string' || reason.trim() === '') { return NextResponse.json({ success: false, error: 'A valid reason is required.' }, { status: 400 }); }
-        const currentAttendance = await Attendance.findById(attendanceIdParam).populate('temporaryExits');
+        // TENANT ID: Scope the find operation to the specific tenant.
+        const currentAttendance = await Attendance.findOne({ _id: attendanceIdParam, tenantId }).populate('temporaryExits');
         if (!currentAttendance) return NextResponse.json({ success: false, error: 'Attendance record not found' }, { status: 404 });
         if (currentAttendance.checkOut) return NextResponse.json({ success: false, error: 'Cannot start temp exit after check-out' }, { status: 400 });
         if (!currentAttendance.checkIn) return NextResponse.json({ success: false, error: 'Cannot start temp exit before check-in' }, { status: 400 });
@@ -244,6 +264,8 @@ export async function POST(request: NextRequest) {
       const bulkOps = staffIds.map(staffId => ({
         updateOne: {
           filter: {
+            // TENANT ID: Add tenantId to the bulk operation filter.
+            tenantId,
             staffId: new Types.ObjectId(staffId),
             date: { $gte: targetDateStart, $lte: targetDateEnd }
           },
@@ -259,6 +281,8 @@ export async function POST(request: NextRequest) {
               notes: "Manually applied week off."
             },
             $setOnInsert: {
+              // TENANT ID: Add tenantId when upserting a new record.
+              tenantId,
               staffId: new Types.ObjectId(staffId),
               date: targetDateStart
             }
@@ -269,7 +293,9 @@ export async function POST(request: NextRequest) {
       if (bulkOps.length > 0) {
         await Attendance.bulkWrite(bulkOps);
       }
+      // TENANT ID: Add tenantId to the final find query.
       const updatedRecords = await Attendance.find({
+        tenantId,
         staffId: { $in: staffIds.map(id => new Types.ObjectId(id)) },
         date: { $gte: targetDateStart, $lte: targetDateEnd },
       }).populate('staffId', 'name image position staffIdNumber').populate('temporaryExits').lean();
@@ -285,9 +311,14 @@ export async function POST(request: NextRequest) {
 
 
 // --- PUT Handler ---
-// ... (PUT handler is unchanged)
 export async function PUT(request: NextRequest) {
-    // NEW: Protect all PUT actions with MANAGE permission
+    // TENANT ID: Get the tenant ID or return an error response immediately.
+    const tenantIdOrResponse = getTenantIdOrBail(request);
+    if (tenantIdOrResponse instanceof NextResponse) {
+        return tenantIdOrResponse;
+    }
+    const tenantId = tenantIdOrResponse;
+
     const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_MANAGE);
     if (permissionCheck) {
       return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -297,7 +328,6 @@ export async function PUT(request: NextRequest) {
     const action = searchParams.get('action');
     const tempExitId = searchParams.get('tempExitId');
 
-    // ... rest of PUT handler is unchanged ...
     if (action === 'endTempExit') {
         if (!tempExitId || !isValidObjectId(tempExitId)) { return NextResponse.json({ success: false, error: "Valid tempExitId is required" }, { status: 400 }); }
         try {
@@ -305,6 +335,13 @@ export async function PUT(request: NextRequest) {
             const existingExit = await TemporaryExit.findById(tempExitId);
             if (!existingExit) return NextResponse.json({ success: false, error: "Temporary exit not found"}, { status: 404 });
             if (existingExit.endTime) return NextResponse.json({ success: false, error: "Temporary exit already ended"}, { status: 400 });
+            
+            // TENANT ID: Add a security check to ensure the exit belongs to an attendance record of the correct tenant.
+            const parentAttendance = await Attendance.findOne({ _id: existingExit.attendanceId, tenantId });
+            if (!parentAttendance) {
+                return NextResponse.json({ success: false, error: "Attendance record for this exit not found or access denied." }, { status: 404 });
+            }
+
             const endTime = new Date();
             const duration = differenceInMinutes(endTime, existingExit.startTime);
             existingExit.endTime = endTime;
@@ -321,9 +358,14 @@ export async function PUT(request: NextRequest) {
 }
 
 // --- DELETE Handler ---
-// ... (DELETE handler is unchanged)
 export async function DELETE(request: NextRequest) {
-  // NEW: Protect DELETE action with MANAGE permission
+  // TENANT ID: Get the tenant ID or return an error response immediately.
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_ATTENDANCE_MANAGE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -335,11 +377,11 @@ export async function DELETE(request: NextRequest) {
   try {
     await dbConnect();
     
-    // ... rest of DELETE handler is unchanged ...
     if (!attendanceId || !isValidObjectId(attendanceId)) {
       return NextResponse.json({ success: false, error: "A valid 'id' query parameter is required." }, { status: 400 });
     }
-    const deletedRecord = await Attendance.findByIdAndDelete(attendanceId);
+    // TENANT ID: Scope the delete operation to the specific tenant for security.
+    const deletedRecord = await Attendance.findOneAndDelete({ _id: attendanceId, tenantId });
     if (!deletedRecord) {
       return NextResponse.json({ success: false, error: "Attendance record not found to delete." }, { status: 404 });
     }

@@ -1,3 +1,5 @@
+// app/api/incentives/reset/route.ts
+
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
@@ -5,6 +7,7 @@ import Staff from '@/models/staff';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant ID helper
 
 async function checkPermissions(permission: string) {
   const session = await getServerSession(authOptions);
@@ -27,6 +30,13 @@ export async function POST(request: Request) {
   try {
     await dbConnect();
     
+    // --- Add Tenant ID Check ---
+    const tenantId = getTenantIdOrBail(request as any); // Cast to any to match NextRequest type for now
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if bail occurs
+    }
+    // --- End Tenant ID Check ---
+
     const body = await request.json();
     const { staffId, date } = body;
 
@@ -35,10 +45,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Staff ID and date are required to reset data.' }, { status: 400 });
     }
 
-    // Ensure the staff member exists
-    const staffExists = await Staff.findById(staffId);
+    // Ensure the staff member exists and belongs to the current tenant
+    // Modify Staff query to include tenantId
+    const staffExists = await Staff.findOne({ _id: staffId, tenantId });
     if (!staffExists) {
-        return NextResponse.json({ message: 'Staff not found.' }, { status: 404 });
+        return NextResponse.json({ message: 'Staff not found or does not belong to your salon.' }, { status: 404 });
     }
     
     // ====================================================================
@@ -49,10 +60,12 @@ export async function POST(request: Request) {
     // This creates a UTC date that will precisely match the record in the database.
     const targetDate = new Date(Date.UTC(year, month - 1, day));
 
-    // Find and delete the specific daily sale record using the correct UTC date
+    // Find and delete the specific daily sale record using the correct UTC date and tenantId
+    // Modify DailySale query to include tenantId
     const deleteResult = await DailySale.deleteOne({ 
       staff: staffId, 
-      date: targetDate 
+      date: targetDate,
+      tenantId 
     });
 
     // If no document was deleted, it means none was found for that specific UTC date.

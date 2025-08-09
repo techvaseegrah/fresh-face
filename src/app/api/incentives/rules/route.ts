@@ -6,6 +6,7 @@ import IncentiveRule from '@/models/IncentiveRule';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant ID helper
 
 // The interface for our Rule object, ensuring type safety.
 interface IRule {
@@ -37,7 +38,7 @@ async function checkPermissions(permission: string) {
 }
 
 // GET: Fetch the current rules
-export async function GET() {
+export async function GET(request: Request) { // Add request parameter to GET
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_INCENTIVES_READ);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
@@ -45,8 +46,16 @@ export async function GET() {
   
   await dbConnect();
   try {
-    const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily' }).lean<IRule>();
-    const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly' }).lean<IRule>();
+    // --- Add Tenant ID Check ---
+    const tenantId = getTenantIdOrBail(request as any); // Cast to any to match NextRequest type for now
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if bail occurs
+    }
+    // --- End Tenant ID Check ---
+
+    // Modify queries to include tenantId
+    const dailyRuleDb = await IncentiveRule.findOne({ type: 'daily', tenantId }).lean<IRule>();
+    const monthlyRuleDb = await IncentiveRule.findOne({ type: 'monthly', tenantId }).lean<IRule>();
 
     // Define complete default objects to act as a fallback and ensure a full object is always returned.
     const defaultDaily: IRule = {
@@ -95,14 +104,29 @@ export async function POST(request: Request) {
   
   await dbConnect();
   try {
+    // --- Add Tenant ID Check ---
+    const tenantId = getTenantIdOrBail(request as any); // Cast to any to match NextRequest type for now
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if bail occurs
+    }
+    // --- End Tenant ID Check ---
+
     const { daily, monthly } = await request.json();
 
     // Use findOneAndUpdate with upsert to create the rule if it doesn't exist, or update it if it does.
     if (daily) {
-      await IncentiveRule.findOneAndUpdate({ type: 'daily' }, daily, { upsert: true, new: true, setDefaultsOnInsert: true });
+      await IncentiveRule.findOneAndUpdate(
+        { type: 'daily', tenantId }, // Filter by tenantId
+        { ...daily, tenantId }, // Ensure tenantId is set for new/updated documents
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
     }
     if (monthly) {
-      await IncentiveRule.findOneAndUpdate({ type: 'monthly' }, monthly, { upsert: true, new: true, setDefaultsOnInsert: true });
+      await IncentiveRule.findOneAndUpdate(
+        { type: 'monthly', tenantId }, // Filter by tenantId
+        { ...monthly, tenantId }, // Ensure tenantId is set for new/updated documents
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
     }
 
     return NextResponse.json({ message: 'Incentive rules saved successfully!' }, { status: 200 });

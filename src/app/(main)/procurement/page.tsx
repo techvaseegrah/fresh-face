@@ -106,7 +106,6 @@ const DetailPanel = ({ isOpen, onClose, record, history }: {
   );
 };
 
-
 export default function ProcurementPage() {
   const { data: session } = useSession();
   const [records, setRecords] = useState<ProcurementRecord[]>([]);
@@ -119,7 +118,6 @@ export default function ProcurementPage() {
   const [selectedRecord, setSelectedRecord] = useState<ProcurementRecord | null>(null);
   const [purchaseHistory, setPurchaseHistory] = useState<ProcurementRecord[]>([]);
   
-  // Changed state to use string for numeric inputs to avoid type errors
   const [formData, setFormData] = useState({
     name: '',
     quantity: '',
@@ -140,21 +138,53 @@ export default function ProcurementPage() {
   const canDeleteProcurement = session && hasPermission(session.user.role.permissions, PERMISSIONS.PROCUREMENT_DELETE);
 
   useEffect(() => {
-    if (canReadProcurement) fetchRecords();
-  }, [page, canReadProcurement]);
+    if (canReadProcurement) {
+      fetchRecords();
+    } else if (session) { // If there's a session but no permission, stop loading
+        setIsLoading(false);
+    }
+  }, [page, session]); // Depend on session to re-run when it loads
 
   const fetchRecords = async () => {
-    try { setIsLoading(true); const response = await fetch(`/api/procurement?page=${page}&limit=10`); const data = await response.json(); if (data.success) { setRecords(data.records); setTotalPages(data.totalPages || 1); } } 
-    catch (error) { console.error('Error fetching procurement records:', error); } 
-    finally { setIsLoading(false); }
+    // FIX: Ensure session and tenantId exist before fetching
+    if (!session?.user?.tenantId) {
+        setIsLoading(false);
+        return;
+    }
+    
+    try {
+      setIsLoading(true);
+      // FIX: Add headers with tenantId to the fetch request
+      const response = await fetch(`/api/procurement?page=${page}&limit=10`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setRecords(data.records);
+        setTotalPages(data.totalPages || 1);
+      }
+    } catch (error) {
+      console.error('Error fetching procurement records:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // FIX: Ensure session and tenantId exist before submitting
+    if (!session?.user?.tenantId) {
+        alert('Tenant identification failed. Please try logging in again.');
+        return;
+    }
+
     try {
-      const url = editingRecord ? '/api/procurement' : '/api/procurement';
+      const url = '/api/procurement';
       const method = editingRecord ? 'PUT' : 'POST';
-      // Convert string form state back to numbers for the API
       const body = {
         ...(editingRecord && { recordId: editingRecord._id }),
         ...formData,
@@ -163,25 +193,34 @@ export default function ProcurementPage() {
         unitPerItem: parseFloat(formData.unitPerItem) || 0,
         expiryDate: formData.expiryDate || undefined,
       };
-      const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+      // FIX: Add headers with tenantId to the fetch request
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        },
+        body: JSON.stringify(body)
+      });
+      
       if (response.ok) {
         setIsFormOpen(false);
         setEditingRecord(null);
-        fetchRecords();
+        fetchRecords(); // Refresh data
       } else {
         const errorData = await response.json();
-        alert(errorData.message);
+        alert(`Error: ${errorData.message}`);
       }
     } catch (error) {
       console.error('Error saving procurement record:', error);
-      alert('Failed to save record');
+      alert('An unexpected error occurred. Failed to save record.');
     }
   };
 
   const handleEdit = (record: ProcurementRecord) => {
     setIsDetailPanelOpen(false); 
     setEditingRecord(record);
-    // Convert numbers from the record to strings for the form state
     setFormData({ 
       name: record.name, 
       quantity: String(record.quantity), 
@@ -197,9 +236,35 @@ export default function ProcurementPage() {
   };
 
   const handleDelete = async (recordId: string) => {
+    // FIX: Ensure session and tenantId exist before deleting
+    if (!session?.user?.tenantId) {
+        alert('Tenant identification failed. Please try logging in again.');
+        return;
+    }
+
     if (!confirm('Are you sure you want to delete this record?')) return;
-    try { const response = await fetch(`/api/procurement?recordId=${recordId}`, { method: 'DELETE' }); if (response.ok) { setRecords(records.filter((r) => r._id !== recordId)); setIsDetailPanelOpen(false); } else { const errorData = await response.json(); alert(errorData.message); } } 
-    catch (error) { console.error('Error deleting procurement record:', error); alert('Failed to delete record'); }
+
+    try {
+      // FIX: Add headers with tenantId to the fetch request
+      const response = await fetch(`/api/procurement?recordId=${recordId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId,
+        }
+      });
+      
+      if (response.ok) {
+        setRecords(records.filter((r) => r._id !== recordId));
+        setIsDetailPanelOpen(false);
+      } else {
+        const errorData = await response.json();
+        alert(`Error: ${errorData.message}`);
+      }
+    } catch (error) {
+      console.error('Error deleting procurement record:', error);
+      alert('An unexpected error occurred. Failed to delete record.');
+    }
   };
   
   const handleAddNew = () => {
@@ -210,11 +275,24 @@ export default function ProcurementPage() {
 
   const handleRowClick = (record: ProcurementRecord) => {
       const historyOnPage = records.filter(r => r.vendorName === record.vendorName);
-      setSelectedRecord(record); setPurchaseHistory(historyOnPage); setIsDetailPanelOpen(true);
+      setSelectedRecord(record);
+      setPurchaseHistory(historyOnPage);
+      setIsDetailPanelOpen(true);
   };
 
+  if (!session) {
+      return <div className="p-6 text-center">Loading session...</div>;
+  }
+
   if (!canReadProcurement) {
-    return ( <div className="p-6 bg-gray-50 min-h-screen"><p className="text-red-500">You do not have permission to view procurement records.</p></div> );
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen">
+          <div className="text-center bg-white p-10 rounded-lg shadow">
+            <h2 className="text-xl font-semibold text-red-600">Access Denied</h2>
+            <p className="text-gray-600 mt-2">You do not have the required permissions to view procurement records.</p>
+          </div>
+      </div>
+    );
   }
 
   return (

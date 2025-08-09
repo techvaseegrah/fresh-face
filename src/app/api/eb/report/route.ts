@@ -3,9 +3,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEbReportData } from "@/lib/data/ebReportData";
 import { createEbExcelReport } from "@/lib/reportGeneratorEb";
+import { getTenantIdOrBail } from "@/lib/tenant";
 
 export async function POST(request: NextRequest) {
   try {
+    const tenantId = getTenantIdOrBail(request);
+    if (tenantId instanceof NextResponse) {
+        return tenantId;
+    }
+
     const body = await request.json();
     const { startDate, endDate, format } = body;
 
@@ -19,30 +25,20 @@ export async function POST(request: NextRequest) {
     const normalizedEndDate = new Date(endDate);
     normalizedEndDate.setHours(23, 59, 59, 999);
 
-    const reportData = await getEbReportData(normalizedStartDate, normalizedEndDate);
+    // This line now correctly passes the tenantId.
+    // You must now update the getEbReportData function to accept it.
+    const reportData = await getEbReportData(normalizedStartDate, normalizedEndDate, tenantId);
 
     if (format === "excel") {
       const fileBuffer = await createEbExcelReport(reportData);
       const filename = `eb_report_${new Date().toISOString().split("T")[0]}.xlsx`;
-
-      // Create a new Headers object
+      
       const headers = new Headers();
-
-      // Set headers for the file type and download behavior
       headers.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       headers.set("Content-Disposition", `attachment; filename="${filename}"`);
-      
-      // --- THIS IS THE MOST IMPORTANT LINE ---
-      // This tells the browser: "It's safe to let the JavaScript on the page
-      // read the 'Content-Disposition' header from this response."
       headers.set("Access-Control-Expose-Headers", "Content-Disposition");
-      // --- END OF IMPORTANT LINE ---
 
-      // Return the response with the file buffer and the headers
-      return new NextResponse(fileBuffer, {
-        status: 200,
-        headers,
-      });
+      return new NextResponse(fileBuffer, { status: 200, headers });
     }
 
     if (format === "pdf") {

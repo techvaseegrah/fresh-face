@@ -1,12 +1,22 @@
+// /app/api/eb/history/route.ts
+
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
-import EBReading from '@/models/ebReadings'; // Make sure this matches your model import
+import EBReading from '@/models/ebReadings';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // --- MODIFICATION: Import tenant helper
 
 export async function GET(request: Request) {
   try {
+    // --- MODIFICATION: Get tenantId or exit early ---
+    const tenantId = getTenantIdOrBail(request as any);
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Return the error response if tenantId is missing
+    }
+    // --- END MODIFICATION ---
+
     const session = await getServerSession(authOptions);
 
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE)) {
@@ -16,7 +26,8 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    const queryFilter: any = {};
+    // --- MODIFICATION: Add tenantId to the query filter ---
+    const queryFilter: any = { tenantId: tenantId };
     if (startDate || endDate) {
       queryFilter.date = {};
       if (startDate) {
@@ -30,6 +41,7 @@ export async function GET(request: Request) {
     }
 
     await connectToDatabase();
+    // The query now automatically includes the tenantId
     const readings = await EBReading.find(queryFilter).sort({ date: -1 });
 
     return NextResponse.json({ success: true, readings });

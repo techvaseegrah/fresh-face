@@ -1,3 +1,5 @@
+// models/TargetSheet.ts
+
 import { Schema, model, models, Document } from 'mongoose';
 
 export interface SummaryMetrics {
@@ -22,6 +24,7 @@ export interface TargetSheetData {
 
 interface ITargetSheet extends Document {
   month: string;
+  tenantId: Schema.Types.ObjectId;
   target: {
     service: number;
     retail: number;
@@ -33,12 +36,6 @@ interface ITargetSheet extends Document {
 }
 
 const TargetMetricsSchema = new Schema({
-  tenantId: { 
-    type: require('mongoose').Schema.Types.ObjectId, 
-    ref: 'Tenant', 
-    required: true, 
-    index: true 
-  },
   service: { type: Number, default: 0 },
   retail: { type: Number, default: 0 },
   bills: { type: Number, default: 0 },
@@ -47,10 +44,26 @@ const TargetMetricsSchema = new Schema({
   appointments: { type: Number, default: 0 },
 }, { _id: false });
 
+
 const TargetSheetSchema = new Schema<ITargetSheet>({
-  month: { type: String, required: true, unique: true, trim: true },
+  // --- CORRECTED ---
+  // The "unique: true" property has been REMOVED from this line.
+  // This was the cause of the E11000 error.
+  month: { type: String, required: true, trim: true },
+
+  tenantId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Tenant',
+    required: true,
+    index: true
+  },
   target: { type: TargetMetricsSchema, default: () => ({}) },
 }, { timestamps: true });
+
+// --- CORRECTED ---
+// This line creates the proper COMPOUND unique index.
+// It ensures that the combination of 'month' and 'tenantId' is unique.
+TargetSheetSchema.index({ month: 1, tenantId: 1 }, { unique: true });
 
 const TargetSheet = models.TargetSheet || model<ITargetSheet>('TargetSheet', TargetSheetSchema);
 

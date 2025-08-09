@@ -3,8 +3,8 @@
 import React, { useState, useEffect, ReactNode, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { IndianRupee, Calendar, CheckCircle, XCircle, RefreshCcw, Users, Star, Gift, BarChartBig, Settings, ShoppingBag, Truck, PlusCircle, Download } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card'; // Assuming this path is correct
+import Button from '@/components/ui/Button'; // Assuming this path is correct
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -12,13 +12,18 @@ import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
-//  Interfaces and Helper Components (NO CHANGES NEEDED HERE)
+// Interfaces and Helper Components
 
 interface StaffMember { id: string; name: string; }
 interface Rule { target: { multiplier: number; }; sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; }; incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };}
-interface SettingsProps { onClose: () => void; }
+
+// Modified SettingsProps to include tenantId
+interface SettingsProps { onClose: () => void; tenantId: string; }
+
 const defaultRule: Rule = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' }};
-function IncentiveSettingsModal({ onClose }: SettingsProps) { /* ... no changes ... */
+
+// Updated IncentiveSettingsModal to accept tenantId prop
+function IncentiveSettingsModal({ onClose, tenantId }: SettingsProps) {
   const [dailyRule, setDailyRule] = useState<Rule>(defaultRule);
   const [monthlyRule, setMonthlyRule] = useState<Rule>({ ...defaultRule, sales: {...defaultRule.sales, includeProductSale: false }, incentive: {...defaultRule.incentive, applyOn: 'serviceSaleOnly' }});
   const [loading, setLoading] = useState(true);
@@ -27,8 +32,17 @@ function IncentiveSettingsModal({ onClose }: SettingsProps) { /* ... no changes 
   useEffect(() => {
     async function fetchRules() {
       setLoading(true);
+      if (!tenantId) { // Added tenantId check
+          toast.error('Tenant information not available. Cannot load rules.');
+          setLoading(false);
+          return;
+      }
       try {
-        const res = await fetch('/api/incentives/rules');
+        const res = await fetch('/api/incentives/rules', {
+          headers: {
+            'X-Tenant-ID': tenantId, // Send tenantId header
+          },
+        });
         const data = await res.json();
         if (res.ok) {
           setDailyRule(data.daily);
@@ -42,15 +56,26 @@ function IncentiveSettingsModal({ onClose }: SettingsProps) { /* ... no changes 
         setLoading(false);
       }
     }
-    fetchRules();
-  }, []);
+    // Only fetch if tenantId is available
+    if (tenantId) {
+      fetchRules();
+    }
+  }, [tenantId]); // Dependency array includes tenantId
 
   const handleSave = async () => {
     setSaving(true);
+    if (!tenantId) { // Added tenantId check
+      toast.error('Tenant information not available. Cannot save rules.');
+      setSaving(false);
+      return;
+    }
     try {
         const res = await fetch('/api/incentives/rules', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Tenant-ID': tenantId, // Send tenantId header
+            },
             body: JSON.stringify({ daily: dailyRule, monthly: monthlyRule })
         });
         const data = await res.json();
@@ -99,7 +124,8 @@ function IncentiveSettingsModal({ onClose }: SettingsProps) { /* ... no changes 
     </div>
   );
 }
-const RuleEditor = ({ title, rule, onChange }: { title: string; rule: Rule; onChange: (path: string, value: any) => void; }) => ( /* ... no changes ... */
+
+const RuleEditor = ({ title, rule, onChange }: { title: string; rule: Rule; onChange: (path: string, value: any) => void; }) => (
     <Card title={title}>
         <div className="space-y-4 p-2">
             <div><label className="font-semibold text-gray-700 block mb-1">Target Multiplier (of Salary)</label><input type="number" value={rule.target.multiplier} onChange={(e) => onChange('target.multiplier', Number(e.target.value))} className="w-full p-2 border rounded text-black"/></div>
@@ -120,8 +146,9 @@ const RuleEditor = ({ title, rule, onChange }: { title: string; rule: Rule; onCh
         </div>
     </Card>
 );
+
 interface InputWithIconProps { icon: ReactNode; placeholder: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; type?: string; required?: boolean; }
-const InputWithIcon = ({ icon, ...props }: InputWithIconProps) => ( /* ... no changes ... */
+const InputWithIcon = ({ icon, ...props }: InputWithIconProps) => (
   <div className="relative">
     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
       {icon}
@@ -133,7 +160,8 @@ const InputWithIcon = ({ icon, ...props }: InputWithIconProps) => ( /* ... no ch
     />
   </div>
 );
-const IncentiveResultCard = ({ title, data }: { title: string; data: any }) => { /* ... no changes ... */
+
+const IncentiveResultCard = ({ title, data }: { title: string; data: any }) => {
     if (!data || Object.keys(data).length === 0) {
         return (
             <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-gray-300">
@@ -172,8 +200,9 @@ const IncentiveResultCard = ({ title, data }: { title: string; data: any }) => {
         </div>
     );
 };
+
 interface IncentiveResultsModalProps { isOpen: boolean; onClose: () => void; data: any; }
-const IncentiveResultsModal = ({ isOpen, onClose, data }: IncentiveResultsModalProps) => { /* ... no changes ... */
+const IncentiveResultsModal = ({ isOpen, onClose, data }: IncentiveResultsModalProps) => {
     if (!isOpen || !data) return null;
 
     const totalIncentive = (data.incentive1_daily?.incentiveAmount || 0) + (data.incentive2_monthly?.incentiveAmount || 0);
@@ -219,9 +248,11 @@ const IncentiveResultsModal = ({ isOpen, onClose, data }: IncentiveResultsModalP
 // MAIN PAGE COMPONENT
 
 export default function IncentivesPage() {
-   //  Get session data to check for permissions
+   // Get session data to check for permissions and tenantId
   const { data: session } = useSession();
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+  // Extract tenantId from session
+  const currentTenantId = session?.user?.tenantId; 
   
   // Create a specific permission variable for managing incentives
   const canManageIncentives = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_INCENTIVES_MANAGE), [userPermissions]);
@@ -255,10 +286,20 @@ export default function IncentivesPage() {
   useEffect(() => {
     const fetchStaff = async () => {
       setLoadingStaff(true);
+      if (!currentTenantId) { // Added check for tenantId
+          toast.error('Tenant information not available. Cannot load staff.');
+          setLoadingStaff(false);
+          return;
+      }
       try {
-        const response = await fetch('/api/staff?action=list'); 
+        const response = await fetch('/api/staff?action=list', {
+            headers: {
+                'X-Tenant-ID': currentTenantId, // IMPORTANT: Send X-Tenant-ID header
+            },
+        }); 
         if (!response.ok) {
-            toast.error(`Error: Could not load staff. Status: ${response.status}`);
+            const errorData = await response.json(); // Parse error response
+            toast.error(`Error: Could not load staff. Status: ${response.status}. Message: ${errorData.message || 'Unknown error'}`);
             return;
         }
         const result = await response.json();
@@ -274,8 +315,11 @@ export default function IncentivesPage() {
         setLoadingStaff(false);
       }
     };
-    fetchStaff();
-  }, []);
+    // Only fetch staff if tenantId is available
+    if (currentTenantId) {
+      fetchStaff();
+    }
+  }, [currentTenantId]); // Dependency array includes currentTenantId
 
   const isValidDateString = (dateStr: any) => {
     return typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
@@ -287,11 +331,18 @@ export default function IncentivesPage() {
         toast.error('Please select a staff member.');
         return;
     }
+    if (!currentTenantId) { // Added check for tenantId
+        toast.error('Tenant information not available. Cannot log data.');
+        return;
+    }
     setLoading(true);
     try {
         const response = await fetch('/api/incentives', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Tenant-ID': currentTenantId, // IMPORTANT: Send X-Tenant-ID header
+            },
             body: JSON.stringify({
                 staffId: selectedStaffId, date: logDate,
                 serviceSale: Number(serviceSale) || 0,
@@ -328,10 +379,18 @@ export default function IncentivesPage() {
         toast.error('A valid date must be selected for calculation.');
         return;
     }
+    if (!currentTenantId) { // Added check for tenantId
+        toast.error('Tenant information not available. Cannot calculate incentives.');
+        return;
+    }
     setLoading(true);
     setResults(null); 
     try {
-        const response = await fetch(`/api/incentives/${selectedStaffId}?date=${logDate}`);
+        const response = await fetch(`/api/incentives/${selectedStaffId}?date=${logDate}`, {
+            headers: {
+                'X-Tenant-ID': currentTenantId, // IMPORTANT: Send X-Tenant-ID header
+            },
+        });
         const data = await response.json();
         if (response.ok) {
             setResults(data);
@@ -356,6 +415,10 @@ export default function IncentivesPage() {
         toast.error('A valid date must be selected to reset data.');
         return;
     }
+    if (!currentTenantId) { // Added check for tenantId
+        toast.error('Tenant information not available. Cannot reset data.');
+        return;
+    }
     const staffName = staffList.find(s => s.id === selectedStaffId)?.name || 'the selected staff member';
     const isConfirmed = window.confirm(`Are you sure you want to reset all logged sales and reviews for ${staffName} on ${logDate}? This action cannot be undone.`);
     
@@ -364,9 +427,13 @@ export default function IncentivesPage() {
     setLoading(true);
     setResults(null);
     try {
-        const response = await fetch('/api/incentives/reset', {
+        // Assuming this is the correct endpoint for reset, and it's tenant-scoped
+        const response = await fetch('/api/incentives/reset', { 
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Tenant-ID': currentTenantId, // IMPORTANT: Send X-Tenant-ID header
+            },
             body: JSON.stringify({ staffId: selectedStaffId, date: logDate }),
         });
         const data = await response.json();
@@ -396,9 +463,18 @@ export default function IncentivesPage() {
 
   const fetchAllEmployeeReportData = async () => {
     setIsDownloading(true);
+    if (!currentTenantId) { // Added check for tenantId
+        toast.error('Tenant information not available. Cannot download reports.');
+        setIsDownloading(false);
+        return null;
+    }
     try {
-        // MODIFIED: Pointing to the correct API endpoint
-        const response = await fetch(`/api/incentives/report/monthly?startDate=${reportStartDate}&endDate=${reportEndDate}`);
+        // MODIFIED: Pointing to the correct API endpoint and adding header
+        const response = await fetch(`/api/incentives/report/monthly?startDate=${reportStartDate}&endDate=${reportEndDate}`, {
+            headers: {
+                'X-Tenant-ID': currentTenantId, // IMPORTANT: Send X-Tenant-ID header
+            },
+        });
         const result = await response.json();
         if (!response.ok) {
             toast.error(result.message || 'Failed to fetch report data.');
@@ -415,7 +491,7 @@ export default function IncentivesPage() {
 
   const handleDownloadAllPdf = async () => {
     if (!validateReportDates()) return;
-
+    // currentTenantId check is inside fetchAllEmployeeReportData
     const allData = await fetchAllEmployeeReportData();
     if (!allData || allData.length === 0) {
         toast.info("No data available for the selected date range to generate a report.");
@@ -461,7 +537,7 @@ export default function IncentivesPage() {
 
   const handleDownloadAllExcel = async () => {
     if (!validateReportDates()) return;
-
+    // currentTenantId check is inside fetchAllEmployeeReportData
     const allData = await fetchAllEmployeeReportData();
     if (!allData || allData.length === 0) {
         toast.info("No data available for the selected date range to generate a report.");
@@ -493,7 +569,13 @@ export default function IncentivesPage() {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      {isSettingsModalOpen && <IncentiveSettingsModal onClose={() => setIsSettingsModalOpen(false)} />}
+      {/* Pass currentTenantId to IncentiveSettingsModal */}
+      {isSettingsModalOpen && currentTenantId && (
+        <IncentiveSettingsModal 
+          onClose={() => setIsSettingsModalOpen(false)} 
+          tenantId={currentTenantId} 
+        />
+      )}
       
       <IncentiveResultsModal 
         isOpen={isResultsModalOpen}

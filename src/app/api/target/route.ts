@@ -1,34 +1,42 @@
-// src/app/api/target/route.ts - (FINAL CORRECTED VERSION)
+// src/app/api/target/route.ts
 
 import { NextResponse } from 'next/server';
+import { getServerSession } from "next-auth/next";
+import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import TargetSheet from '@/models/TargetSheet';
-import Invoice from '@/models/invoice';
-import Appointment from '@/models/Appointment';
+import Invoice from '@/models/invoice'; // Assuming this model also has tenantId
+import Appointment from '@/models/Appointment'; // Assuming this model also has tenantId
+import mongoose from 'mongoose';
+
 
 export const dynamic = 'force-dynamic';
 
-// --- HELPER FUNCTION FOR FINANCIAL PRECISION ---
-// This ensures any number is rounded to exactly two decimal places for clean API responses.
 const roundToTwo = (num: number): number => {
     if (isNaN(num) || num === null) return 0;
-    // The Number() wrapper handles potential floating point inaccuracies.
     return Number(Math.round(Number(num + 'e+2')) + 'e-2');
 };
 
 export async function GET(request: Request) {
     try {
         await dbConnect();
+        const session = await getServerSession(authOptions);
+
+        if (!session?.user?.tenantId) {
+            return NextResponse.json({ message: 'Authentication failed or tenant not found.' }, { status: 401 });
+        }
+        const tenantId = new mongoose.Types.ObjectId(session.user.tenantId);
 
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        let targetSheet = await TargetSheet.findOne({ month: monthIdentifier });
+        
+        // --- CORRECTED ---: Query now includes tenantId.
+        let targetSheet = await TargetSheet.findOne({ month: monthIdentifier, tenantId: tenantId });
 
         if (!targetSheet) {
-            targetSheet = { target: {} };
+            targetSheet = { target: {} } as any;
         }
 
         const targets = {
@@ -41,9 +49,13 @@ export async function GET(request: Request) {
             netSales: (targetSheet.target?.service || 0) + (targetSheet.target?.retail || 0),
         };
 
-        // This aggregation pipeline correctly reads decimal values from the database.
+        // --- CORRECTED ---: Aggregation now matches by tenantId.
         const invoiceAggregation = await Invoice.aggregate([
-            { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth }, paymentStatus: 'Paid' } },
+            { $match: { 
+                tenantId: tenantId, 
+                createdAt: { $gte: startOfMonth, $lte: endOfMonth }, 
+                paymentStatus: 'Paid' 
+            }},
             { $project: {
                 grandTotal: { $toDouble: "$grandTotal" },
                 serviceTotal: { $toDouble: "$serviceTotal" },
@@ -66,14 +78,15 @@ export async function GET(request: Request) {
 
         const achievedResult = invoiceAggregation[0] || {};
         
+        // --- CORRECTED ---: Query now includes tenantId.
         const achievedAppointmentsCount = await Appointment.countDocuments({
+            tenantId: tenantId,
             appointmentDateTime: { $gte: startOfMonth, $lte: endOfMonth },
             status: { $nin: ['Cancelled', 'No-Show'] }
         });
 
         const achievedNetSales = (achievedResult.totalService || 0) + (achievedResult.totalRetail || 0);
 
-        // Apply precision rounding to all financial outputs.
         const achieved = {
             service: roundToTwo(achievedResult.totalService || 0),
             retail: roundToTwo(achievedResult.totalRetail || 0),
@@ -113,16 +126,23 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
     await dbConnect();
     try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.tenantId) {
+            return NextResponse.json({ message: 'Authentication failed or tenant not found.' }, { status: 401 });
+        }
+        const tenantId = session.user.tenantId;
+
         const body = await request.json();
         const now = new Date();
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
-        // This logic correctly saves the decimal values sent from the corrected frontend.
-        // `Number()` handles both integers and floats perfectly.
+        // --- CORRECTED ---: The query to find the document now includes tenantId.
         await TargetSheet.findOneAndUpdate(
-            { month: monthIdentifier },
+            { month: monthIdentifier, tenantId: tenantId },
             { 
                 $set: {
+                    // --- CORRECTED ---: Ensure tenantId is set when creating a new document.
+                    tenantId: tenantId,
                     'target.service': Number(body.service) || 0,
                     'target.retail': Number(body.retail) || 0,
                     'target.bills': Number(body.bills) || 0,
@@ -137,6 +157,7 @@ export async function PUT(request: Request) {
         return NextResponse.json({ success: true, message: "Targets updated successfully." });
     } catch (error) {
         const detailedErrorMessage = error instanceof Error ? error.message : "An unknown server error occurred.";
+        console.error("API Error PUT /api/target:", error);
         return NextResponse.json({ message: "Error updating targets", error: detailedErrorMessage }, { status: 500 });
     }
 }

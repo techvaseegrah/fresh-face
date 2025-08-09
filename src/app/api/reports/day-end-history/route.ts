@@ -1,3 +1,5 @@
+// /api/reports/day-end-history/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth'; 
@@ -15,11 +17,14 @@ export async function GET(request: NextRequest) {
     
     await dbConnect();
     
+    // --- TENANCY IMPLEMENTATION ---
+    const tenantId = session.user.tenantId;
+    const query: any = { tenantId: tenantId }; // Start query with tenantId
+    // ----------------------------
+    
     const { searchParams } = request.nextUrl;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-
-    const query: any = {};
 
     if (startDate && endDate) {
         const startDateObj = new Date(startDate);
@@ -39,13 +44,9 @@ export async function GET(request: NextRequest) {
       .populate('closedBy', 'name')
       .lean();
       
-    // --- THE FIX: Add a data transformation layer for backward compatibility ---
-    // This ensures that reports saved before the schema fix are also displayed correctly.
     const cleanedReports = reports.map(report => {
       const newReport = { ...report };
-      // Check if this is an old report with the 'cash' field
       if (newReport.actualTotals && newReport.actualTotals.cash !== undefined) {
-          // If so, create the 'totalCountedCash' field that the frontend expects
           newReport.actualTotals.totalCountedCash = newReport.actualTotals.cash;
       }
       return newReport;
