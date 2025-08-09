@@ -181,7 +181,7 @@ export default function ServiceFormModal({ isOpen, onClose, onSave, entityType, 
   const getTitle = () => {
     const action = entityToEdit ? "Edit" : "Add New";
     switch (entityType) {
-      case "service-category": return `${action} ${context.audience} Category`;
+      case "service-category": return `${action} Category`;
       case "service-sub-category": return `${action} Sub-Category for "${context.mainCategory?.name || ""}"`;
       case "service-item": return `${action} Service`;
       default: return "";

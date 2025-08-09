@@ -1,20 +1,41 @@
 // /app/settings/membership/page.tsx
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
+// TENANT-AWARE: Import useSession to get the tenant ID
+import { useSession } from 'next-auth/react';
 
 export default function MembershipSettingsPage() {
+  // TENANT-AWARE: Get session to extract tenantId
+  const { data: session } = useSession();
+  const tenantId = useMemo(() => session?.user?.tenantId, [session]);
+
   const [price, setPrice] = useState<string>('');
   const [initialPrice, setInitialPrice] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
+  // TENANT-AWARE: Create a centralized fetch wrapper
+  const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    if (!tenantId) {
+      throw new Error("Your session is missing tenant information. Please log out and log back in.");
+    }
+    const headers = new Headers(options.headers || {});
+    headers.set('x-tenant-id', tenantId);
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return fetch(url, { ...options, headers });
+  }, [tenantId]);
+
+  // TENANT-AWARE: Guard the initial fetch until tenantId is available
   useEffect(() => {
     const fetchSettings = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch('/api/settings/membership');
+        // Use the tenant-aware wrapper
+        const res = await tenantAwareFetch('/api/settings/membership');
         const data = await res.json();
         if (data.success) {
           const priceString = String(data.price || '0');
@@ -30,8 +51,11 @@ export default function MembershipSettingsPage() {
         setIsLoading(false);
       }
     };
-    fetchSettings();
-  }, []);
+    
+    if (tenantId) {
+        fetchSettings();
+    }
+  }, [tenantId, tenantAwareFetch]); // Add dependencies
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -45,7 +69,8 @@ export default function MembershipSettingsPage() {
     }
 
     try {
-      const res = await fetch('/api/settings/membership', {
+      // TENANT-AWARE: Use the tenant-aware wrapper
+      const res = await tenantAwareFetch('/api/settings/membership', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ price: numericPrice }),

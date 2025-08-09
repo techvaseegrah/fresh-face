@@ -17,7 +17,7 @@ const ServiceCategorySchema: Schema<IServiceCategory> = new Schema({
   targetAudience: { type: String, enum: ['male', 'female', 'Unisex'] },
 }, { timestamps: true });
 
-ServiceCategorySchema.index({ name: 1, targetAudience: 1 }, { unique: true });
+ServiceCategorySchema.index({ name: 1, tenantId: 1 }, { unique: true });
 
 const ServiceCategoryModel: Model<IServiceCategory> = models.ServiceCategory || mongoose.model<IServiceCategory>('ServiceCategory', ServiceCategorySchema);
 export default ServiceCategoryModel;

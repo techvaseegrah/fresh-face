@@ -2,7 +2,7 @@
 
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-// --- SUB-DOCUMENT: From your "new" model ---
+// --- SUB-DOCUMENT: IPositionRateSetting ---
 // Defines the structure for a single position's RATE settings.
 export interface IPositionRateSetting {
   positionName: string;
@@ -11,33 +11,31 @@ export interface IPositionRateSetting {
 }
 
 const PositionRateSettingSchema: Schema<IPositionRateSetting> = new Schema({
-  tenantId: { 
-    type: require('mongoose').Schema.Types.ObjectId, 
-    ref: 'Tenant', 
-    required: true, 
-    index: true 
+  // --- REMOVED ---
+  // The 'tenantId' field has been removed from this sub-document schema.
+  // It is now defined on the main ShopSettingSchema.
+
+  positionName: {
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
   },
-    positionName: {
-        type: String,
-        required: true,
-        trim: true,
-        unique: true, // Note: This ensures uniqueness within the array for a single document.
-    },
-    otRate: {
-        type: Number,
-        required: true,
-        default: 0,
-    },
-    extraDayRate: {
-        type: Number,
-        required: true,
-        default: 0,
-    }
-}, { _id: false }); // We don't need a separate _id for each sub-document.
+  otRate: {
+      type: Number,
+      required: true,
+      default: 0,
+  },
+  extraDayRate: {
+      type: Number,
+      required: true,
+      default: 0,
+  }
+}, { _id: false });
 
 
-// --- SUB-DOCUMENT: From your "old" model ---
-// Defines the structure for a single position's HOUR settings.
+// --- SUB-DOCUMENT: IPositionHourSetting ---
+// This schema remains unchanged.
 export interface IPositionHourSetting {
   positionName: string;
   requiredHours: number;
@@ -54,12 +52,13 @@ const PositionHourSettingSchema: Schema<IPositionHourSetting> = new Schema({
         required: true,
         default: 8,
     }
-}, { _id: false }); // We don't need a separate _id for each sub-document.
+}, { _id: false });
 
 
 // --- COMBINED MAIN INTERFACE ---
-// This interface now includes all fields from both versions.
+// This interface now includes tenantId at the top level.
 export interface IShopSetting extends Document {
+  tenantId: mongoose.Schema.Types.ObjectId; // <-- ADDED: tenantId now belongs to the main document.
   key: string; 
   defaultDailyHours: number;
   defaultOtRate: number;
@@ -67,13 +66,21 @@ export interface IShopSetting extends Document {
   loyaltyPointPerPrice: number;
   loyaltyPointsAwarded: number;
   staffIdBaseNumber: number;
-  positionRates: IPositionRateSetting[]; // Field from your "new" model
-  positionHours: IPositionHourSetting[]; // Field from your "old" model
+  positionRates: IPositionRateSetting[];
+  positionHours: IPositionHourSetting[];
 }
 
 // --- COMBINED MAIN SCHEMA ---
-// The final schema containing all fields.
+// The final schema containing all fields, with tenantId at the root level.
 const ShopSettingSchema: Schema<IShopSetting> = new Schema({
+  // --- MOVED HERE ---
+  // The tenantId now applies to the entire ShopSetting document, which is the correct approach.
+  tenantId: { 
+    type: mongoose.Schema.Types.ObjectId, // Corrected to use the imported mongoose object
+    ref: 'Tenant', 
+    required: true, 
+    index: true 
+  },
   key: {
     type: String,
     unique: true,
@@ -108,19 +115,20 @@ const ShopSettingSchema: Schema<IShopSetting> = new Schema({
     required: [true, 'Staff ID base number is required.'],
     default: 3101,
   },
-  
-  // --- Field from your "new" model ---
   positionRates: {
       type: [PositionRateSettingSchema],
       default: [],
   },
-
-  // --- Field from your "old" model (now added back in) ---
   positionHours: {
       type: [PositionHourSettingSchema],
       default: [],
   }
 }, { timestamps: true });
+
+// Note on indexing: If the 'key' should be unique *per tenant* instead of globally unique,
+// you should change the index like this:
+// ShopSettingSchema.index({ tenantId: 1, key: 1 }, { unique: true });
+// And remove `unique: true` from the `key` field definition itself.
 
 // Prevent recompilation of the model if it already exists
 const ShopSetting: Model<IShopSetting> = mongoose.models.ShopSetting || mongoose.model<IShopSetting>('ShopSetting', ShopSettingSchema);

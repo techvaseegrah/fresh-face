@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent, useCallback, useMemo } from 'react';
 import { PlusCircle, Edit, Trash2 } from 'lucide-react';
+// TENANT-AWARE: Import useSession to get the tenant ID
+import { useSession } from 'next-auth/react';
 
 // --- Types ---
 interface IPositionRateSetting {
@@ -14,7 +16,7 @@ interface AttendanceSettings {
     positionRates: IPositionRateSetting[];
 }
 
-// --- Reusable UI Components ---
+// --- Reusable UI Components (Unchanged) ---
 const Button = ({ children, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button
         className={`inline-flex items-center justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
@@ -31,7 +33,7 @@ const InputField = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     />
 );
 
-// --- MODAL for Adding/Editing Position Rates ---
+// --- MODAL for Adding/Editing Position Rates (Unchanged) ---
 const PositionRateModal = ({
     isOpen,
     onClose,
@@ -47,32 +49,23 @@ const PositionRateModal = ({
     existingRates: IPositionRateSetting[];
     editingRate: IPositionRateSetting | null;
 }) => {
-    // --- MODIFIED: State for rate fields will now be 'string' to avoid type errors on input.
     const [rateData, setRateData] = useState<{
         positionName: string;
         otRate: string;
         extraDayRate: string;
     }>({ positionName: '', otRate: '', extraDayRate: '' });
 
-    // --- MODIFIED: useEffect now converts incoming numbers to strings for the form state.
     useEffect(() => {
         if (!isOpen) return;
-
         if (editingRate) {
-            // If editing, convert the numbers to strings to populate the form state.
             setRateData({
                 positionName: editingRate.positionName,
                 otRate: String(editingRate.otRate),
                 extraDayRate: String(editingRate.extraDayRate),
             });
         } else {
-            // If adding, initialize with empty strings.
             const availablePosition = positions.find(p => !existingRates.some(r => r.positionName === p));
-            setRateData({
-                positionName: availablePosition || '',
-                otRate: '',
-                extraDayRate: ''
-            });
+            setRateData({ positionName: availablePosition || '', otRate: '', extraDayRate: '' });
         }
     }, [isOpen, editingRate, positions, existingRates]);
 
@@ -80,7 +73,6 @@ const PositionRateModal = ({
 
     const handleSave = (e: FormEvent) => {
         e.preventDefault();
-        // Convert the string state back to numbers on save.
         onSave({
             positionName: rateData.positionName,
             otRate: Number(rateData.otRate) || 0,
@@ -101,13 +93,7 @@ const PositionRateModal = ({
                         <div className="mt-4 space-y-4">
                             <div>
                                 <label htmlFor="positionName" className="block text-sm font-medium text-gray-700">Position</label>
-                                <select
-                                    id="positionName"
-                                    value={rateData.positionName}
-                                    onChange={(e) => setRateData({ ...rateData, positionName: e.target.value })}
-                                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900"
-                                    disabled={!!editingRate}
-                                >
+                                <select id="positionName" value={rateData.positionName} onChange={(e) => setRateData({ ...rateData, positionName: e.target.value })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900" disabled={!!editingRate}>
                                     <option value="">Select a position</option>
                                     {availablePositions.map(p => <option key={p} value={p}>{p}</option>)}
                                     {editingRate && !availablePositions.includes(editingRate.positionName) && <option value={editingRate.positionName}>{editingRate.positionName}</option>}
@@ -115,12 +101,10 @@ const PositionRateModal = ({
                             </div>
                             <div>
                                 <label htmlFor="modalOtRate" className="block text-sm font-medium text-gray-700">OT Rate per Hour (₹)</label>
-                                {/* This now works without error because e.target.value (string) matches the state type (string) */}
                                 <InputField type="number" id="modalOtRate" value={rateData.otRate} onChange={(e) => setRateData({ ...rateData, otRate: e.target.value })} min="0" />
                             </div>
                             <div>
                                 <label htmlFor="modalExtraDayRate" className="block text-sm font-medium text-gray-700">Extra Day Rate (₹)</label>
-                                {/* This now works without error because e.target.value (string) matches the state type (string) */}
                                 <InputField type="number" id="modalExtraDayRate" value={rateData.extraDayRate} onChange={(e) => setRateData({ ...rateData, extraDayRate: e.target.value })} min="0" />
                             </div>
                         </div>
@@ -135,8 +119,12 @@ const PositionRateModal = ({
     );
 };
 
-
+// --- Form Component (Now Tenant-Aware) ---
 const AttendanceSettingsForm: React.FC = () => {
+    // TENANT-AWARE: Get session to extract tenantId
+    const { data: session } = useSession();
+    const tenantId = useMemo(() => session?.user?.tenantId, [session]);
+
     const [settings, setSettings] = useState<AttendanceSettings | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -144,11 +132,26 @@ const AttendanceSettingsForm: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRate, setEditingRate] = useState<IPositionRateSetting | null>(null);
 
+    // TENANT-AWARE: Create a centralized fetch wrapper
+    const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+        if (!tenantId) {
+          throw new Error("Your session is missing tenant information. Please log out and log back in.");
+        }
+        const headers = new Headers(options.headers || {});
+        headers.set('x-tenant-id', tenantId);
+        if (options.body && !headers.has('Content-Type')) {
+          headers.set('Content-Type', 'application/json');
+        }
+        return fetch(url, { ...options, headers });
+    }, [tenantId]);
+
+    // TENANT-AWARE: Guard the initial fetch until tenantId is available
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const response = await fetch('/api/settings');
+                // Use the tenant-aware wrapper
+                const response = await tenantAwareFetch('/api/settings');
                 const result = await response.json();
                 
                 if (result.success) {
@@ -167,8 +170,11 @@ const AttendanceSettingsForm: React.FC = () => {
                 setIsLoading(false);
             }
         };
-        fetchData();
-    }, []);
+
+        if (tenantId) {
+            fetchData();
+        }
+    }, [tenantId, tenantAwareFetch]); // Depend on tenantId and the fetch wrapper
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (settings) {
@@ -178,17 +184,14 @@ const AttendanceSettingsForm: React.FC = () => {
 
     const handleSavePositionRate = (rateToSave: IPositionRateSetting) => {
         if (!settings) return;
-        
         let updatedRates;
         const existingIndex = settings.positionRates.findIndex(r => r.positionName === rateToSave.positionName);
-
         if (existingIndex > -1) {
             updatedRates = [...settings.positionRates];
             updatedRates[existingIndex] = rateToSave;
         } else {
             updatedRates = [...settings.positionRates, rateToSave];
         }
-
         setSettings({ ...settings, positionRates: updatedRates });
         setIsModalOpen(false);
         setEditingRate(null);
@@ -206,9 +209,9 @@ const AttendanceSettingsForm: React.FC = () => {
         if (!settings) return;
         setIsSaving(true);
         try {
-            const response = await fetch('/api/settings', {
+            // TENANT-AWARE: Use the tenant-aware wrapper for saving
+            const response = await tenantAwareFetch('/api/settings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings),
             });
             const result = await response.json();
@@ -239,10 +242,8 @@ const AttendanceSettingsForm: React.FC = () => {
                 existingRates={settings.positionRates}
                 editingRate={editingRate}
             />
-
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Attendance Requirements</h2>
             <p className="text-sm text-gray-600 mb-8">Set defaults and position-specific rates for salary calculations.</p>
-            
             <form onSubmit={handleSubmit} className="space-y-12">
                 <div>
                     <h3 className="text-lg font-medium text-gray-900">Default Settings</h3>
@@ -250,34 +251,20 @@ const AttendanceSettingsForm: React.FC = () => {
                     <div className="max-w-md space-y-6">
                         <div>
                             <label htmlFor="defaultDailyHours" className="block text-sm font-medium text-gray-700">Default Daily Working Hours</label>
-                            <InputField 
-                                type="number" 
-                                id="defaultDailyHours" 
-                                name="defaultDailyHours" 
-                                value={settings.defaultDailyHours === 0 ? '' : settings.defaultDailyHours} 
-                                onChange={handleChange} 
-                                min="0" 
-                            />
+                            <InputField type="number" id="defaultDailyHours" name="defaultDailyHours" value={settings.defaultDailyHours === 0 ? '' : settings.defaultDailyHours} onChange={handleChange} min="0" />
                         </div>
                     </div>
                 </div>
-
                 <div>
                     <div className="flex justify-between items-center">
                         <div>
                            <h3 className="text-lg font-medium text-gray-900">Position-Specific Rates</h3>
                            <p className="text-xs text-gray-500 mt-1">Set specific OT and Extra Day rates for different job roles.</p>
                         </div>
-                        <Button
-                            type="button"
-                            className="bg-gray-700 hover:bg-gray-800 focus:ring-gray-600 text-xs"
-                            onClick={() => { setEditingRate(null); setIsModalOpen(true); }}
-                        >
-                            <PlusCircle size={16} className="mr-2" />
-                            Add Position Rate
+                        <Button type="button" className="bg-gray-700 hover:bg-gray-800 focus:ring-gray-600 text-xs" onClick={() => { setEditingRate(null); setIsModalOpen(true); }}>
+                            <PlusCircle size={16} className="mr-2" /> Add Position Rate
                         </Button>
                     </div>
-
                     <div className="mt-4 space-y-3">
                         {settings.positionRates.length === 0 ? (
                             <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-md">
@@ -302,7 +289,6 @@ const AttendanceSettingsForm: React.FC = () => {
                         )}
                     </div>
                 </div>
-                
                 <div className="mt-8 pt-5 border-t border-gray-200 flex justify-end">
                     <Button type="submit" disabled={isSaving || isLoading} className="bg-black hover:bg-gray-800 focus:ring-gray-500">
                         {isSaving ? 'Saving...' : 'Save All Settings'}
@@ -313,7 +299,7 @@ const AttendanceSettingsForm: React.FC = () => {
     );
 };
 
-// --- Main Page Component ---
+// --- Main Page Component (Unchanged) ---
 const SettingsPage = () => {
     const [activeTab, setActiveTab] = useState('attendance');
     const settingsTabs = [

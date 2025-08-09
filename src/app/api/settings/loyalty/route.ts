@@ -1,23 +1,29 @@
-import { NextResponse } from 'next/server';
+// app/api/settings/loyalty/route.ts
+
+import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Setting, { ILoyaltySettings } from '@/models/Setting';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { getServerSession } from 'next-auth';
 
-// Helper to get settings with a fallback default for the UI
-async function getLoyaltySettings(): Promise<ILoyaltySettings> {
+// TENANT-AWARE: Import the tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
+
+// Helper to get settings with a fallback default, now tenant-aware
+async function getLoyaltySettings(tenantId: string): Promise<ILoyaltySettings> {
   const defaultSettings: ILoyaltySettings = { rupeesForPoints: 100, pointsAwarded: 6 };
   try {
-    const settingDoc = await Setting.findOne({ key: 'loyalty' });
+    // TENANT-AWARE: Filter by key AND tenantId
+    const settingDoc = await Setting.findOne({ key: 'loyalty', tenantId: tenantId });
     if (settingDoc) {
       return settingDoc.value;
     }
-    // If no setting exists yet, we can create one with the defaults
-    await Setting.create({ key: 'loyalty', value: defaultSettings });
+    // TENANT-AWARE: Create the default setting FOR THIS TENANT if it doesn't exist
+    await Setting.create({ key: 'loyalty', value: defaultSettings, tenantId: tenantId });
     return defaultSettings;
   } catch (error) {
-    console.error("Error fetching/creating loyalty settings, using default.", error);
+    console.error(`Error fetching/creating loyalty settings for tenant ${tenantId}, using default.`, error);
     return defaultSettings;
   }
 }
@@ -25,16 +31,26 @@ async function getLoyaltySettings(): Promise<ILoyaltySettings> {
 // ===================================================================
 //  GET: Handler for fetching current loyalty settings for the admin page
 // ===================================================================
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const session = await getServerSession(authOptions);
   if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.LOYALTY_SETTINGS_READ)) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
   }
+
   try {
     await connectToDatabase();
-    const settings = await getLoyaltySettings();
+    // TENANT-AWARE: Pass tenantId to the helper
+    const settings = await getLoyaltySettings(tenantId);
     return NextResponse.json({ success: true, settings });
   } catch (error: any) {
+    console.error(`Error in GET /api/settings/loyalty for tenant ${tenantId}:`, error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }
@@ -42,24 +58,32 @@ export async function GET(req: Request) {
 // ===================================================================
 //  PUT: Handler for UPDATING the loyalty settings from the admin page
 // ===================================================================
-export async function PUT(req: Request) {
+export async function PUT(req: NextRequest) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   const session = await getServerSession(authOptions);
   if (!session || !session.user || !hasPermission(session.user.role.permissions, PERMISSIONS.LOYALTY_SETTINGS_UPDATE)) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
   }
+
   try {
     await connectToDatabase();
     const body: ILoyaltySettings = await req.json();
 
-    // Validate the incoming data
+    // Validation remains the same
     if (typeof body.rupeesForPoints !== 'number' || typeof body.pointsAwarded !== 'number' || body.rupeesForPoints <= 0) {
       return NextResponse.json({ success: false, message: 'Invalid settings values provided.' }, { status: 400 });
     }
 
-    // Find the setting by its key and update it. 'upsert: true' creates it if it doesn't exist.
+    // TENANT-AWARE: Update the filter and the $set operator to be tenant-scoped
     const updatedSetting = await Setting.findOneAndUpdate(
-      { key: 'loyalty' },
-      { $set: { value: body } },
+      { key: 'loyalty', tenantId: tenantId }, // Filter by key AND tenantId
+      { $set: { value: body, key: 'loyalty', tenantId: tenantId } }, // Ensure tenantId is written on create/update
       { new: true, upsert: true, runValidators: true }
     );
 
@@ -70,7 +94,7 @@ export async function PUT(req: Request) {
     });
 
   } catch (error: any) {
-    console.error("Error updating loyalty settings:", error);
+    console.error(`Error updating loyalty settings for tenant ${tenantId}:`, error);
     return NextResponse.json({ success: false, message: 'Failed to update settings.' }, { status: 500 });
   }
 }

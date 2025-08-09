@@ -1,8 +1,12 @@
+
+
 import { NextResponse, NextRequest } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Staff from '@/models/staff';
 import ShopSetting, { IShopSetting } from '@/models/ShopSetting';
 import Attendance, { IAttendance } from '@/models/Attendance';
+// TENANT-AWARE: Import the tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
 
 interface SalaryCalculationPayload {
   staffId: string;
@@ -17,16 +21,31 @@ interface SalaryCalculationPayload {
 
 export async function POST(req: NextRequest) {
   try {
+    // TENANT-AWARE: Get tenant ID or exit if it's missing
+    const tenantIdOrResponse = getTenantIdOrBail(req);
+    if (tenantIdOrResponse instanceof NextResponse) {
+        return tenantIdOrResponse;
+    }
+    const tenantId = tenantIdOrResponse;
+
     await dbConnect();
     const payload: SalaryCalculationPayload = await req.json();
 
+    // TENANT-AWARE: Scope all database lookups with the tenantId
     const [staff, settings] = await Promise.all([
-        Staff.findById(payload.staffId).lean(),
-        ShopSetting.findOne({ key: 'defaultSettings' }).lean<IShopSetting>()
+        // Ensure the staff member belongs to the correct tenant
+        Staff.findOne({ _id: payload.staffId, tenantId: tenantId }).lean(),
+        // Find the settings specific to this tenant
+        ShopSetting.findOne({ key: 'defaultSettings', tenantId: tenantId }).lean<IShopSetting>()
     ]);
 
-    if (!staff) { return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 }); }
-    if (!settings) { return NextResponse.json({ success: false, error: 'Shop settings are not configured.' }, { status: 400 }); }
+    if (!staff) { 
+        // This now correctly handles "not found" or "not authorized"
+        return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 }); 
+    }
+    if (!settings) { 
+        return NextResponse.json({ success: false, error: 'Shop settings are not configured for this tenant.' }, { status: 400 }); 
+    }
 
     // --- Rate Calculation (Correct) ---
     const positionRate = settings.positionRates?.find(p => p.positionName === staff.position);
@@ -40,36 +59,25 @@ export async function POST(req: NextRequest) {
         const startDate = new Date(payload.year, monthIndex, 1);
         const endDate = new Date(payload.year, monthIndex + 1, 0, 23, 59, 59);
 
+        // TENANT-AWARE: Scope the attendance query with the tenantId as well
         const attendanceRecords = await Attendance.find({
             staffId: staff._id,
+            tenantId: tenantId, // Important for defense in depth
             date: { $gte: startDate, $lte: endDate }
         }).lean<IAttendance[]>();
 
         const requiredDailyHours = settings.defaultDailyHours || 8;
 
-        // --- THE FIX FOR THE TYPESCRIPT ERROR ---
-        // We now calculate total overtime by manually checking clock-in and clock-out times,
-        // which are guaranteed to be in your IAttendance type.
         const totalOt = attendanceRecords.reduce((total, record) => {
-            // Use 'any' to bypass the strict type check just for this calculation,
-            // as we know the fields exist on the raw data from the DB.
             const recordData = record as any; 
-
-            // Check if clockInTime and clockOutTime exist and are valid dates
             if (recordData.clockInTime && recordData.clockOutTime) {
                 const clockIn = new Date(recordData.clockInTime);
                 const clockOut = new Date(recordData.clockOutTime);
-
-                // Calculate total hours worked for that day
                 const durationMs = clockOut.getTime() - clockIn.getTime();
                 const dailyTotalHours = durationMs / (1000 * 60 * 60);
-
-                // Calculate overtime for this specific day using the setting
                 const dailyOvertime = Math.max(0, dailyTotalHours - requiredDailyHours);
                 return total + dailyOvertime;
             }
-            
-            // If there's no valid clock-in/out, just return the current total
             return total;
         }, 0);
         

@@ -1,6 +1,5 @@
 'use client';
 
-// ... (imports are unchanged)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import {
@@ -19,7 +18,6 @@ import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '../../../../lib/permissions';
 
-// ... (Interface definitions and Sidebar component are unchanged and remain the same as your provided code)
 interface SalaryInputs {
   otHours: string;
   extraDays: string;
@@ -142,7 +140,7 @@ const calculateMonthlyTargetHours = (year: number, monthIndex: number): { target
 
   for (let day = 1; day <= totalDays; day++) {
     const date = new Date(year, monthIndex, day);
-    const dayOfWeek = getDay(date); // 0=Sun, 1=Mon, ..., 6=Sat
+    const dayOfWeek = getDay(date);
 
     if (dayOfWeek === 0 || dayOfWeek === 6) {
       numWeekends++;
@@ -151,7 +149,6 @@ const calculateMonthlyTargetHours = (year: number, monthIndex: number): { target
     }
   }
 
-  // Assuming 4 week-offs in a month, which are subtracted from weekdays.
   const workingWeekdays = Math.max(0, numWeekdays - 4);
   const targetHours = (workingWeekdays * 9) + (numWeekends * 10);
   
@@ -160,19 +157,14 @@ const calculateMonthlyTargetHours = (year: number, monthIndex: number): { target
 
 // --- Main Salary Component ---
 const Salary: React.FC = () => {
-    // ... (State and hooks are unchanged)
     const { data: session } = useSession();
+    // TENANT-AWARE: Extract tenantId from the user's session.
+    const tenantId = useMemo(() => session?.user?.tenantId, [session]);
     const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
     const canManageSalary = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_SALARY_MANAGE), [userPermissions]);
     
     const {
-      staffMembers,
-      salaryRecords,
-      processSalary, 
-      markSalaryAsPaid,
-      advancePayments,
-      fetchSalaryRecords,
-      loadingSalary
+      staffMembers, salaryRecords, processSalary, markSalaryAsPaid, advancePayments, fetchSalaryRecords, loadingSalary
     } = useStaff();
   
     const [searchTerm, setSearchTerm] = useState('');
@@ -194,6 +186,23 @@ const Salary: React.FC = () => {
       const startYear = new Date().getFullYear() - 5;
       return Array.from({ length: 10 }, (_, i) => startYear + i);
     }, []);
+
+    // TENANT-AWARE: Create a fetch wrapper to automatically include the tenant ID in headers.
+    const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+      if (!tenantId) {
+          const errorMsg = "Your session is missing tenant information. Please log out and log back in.";
+          toast.error(errorMsg);
+          throw new Error(errorMsg);
+      }
+
+      const headers = new Headers(options.headers || {});
+      headers.set('x-tenant-id', tenantId);
+      if (options.body && !headers.has('Content-Type')) {
+          headers.set('Content-Type', 'application/json');
+      }
+
+      return fetch(url, { ...options, headers });
+    }, [tenantId]);
   
     useEffect(() => {
       if (fetchSalaryRecords) {
@@ -201,32 +210,24 @@ const Salary: React.FC = () => {
       }
     }, [fetchSalaryRecords]);
     
-    // **OPTIMIZATION 1 START**: Use a Map for faster staff lookups when enriching salary records.
-    // This changes the operation from O(N*M) to O(N+M), which is much faster for large data sets.
     const enrichedSalaryRecords = useMemo(() => {
       if (!salaryRecords.length || !staffMembers.length) {
         return salaryRecords;
       }
-      
       const staffMap = new Map(staffMembers.map(staff => [staff.id, staff]));
-
       return salaryRecords.map(record => {
         const recordStaffId = typeof record.staffId === 'string' ? record.staffId : (record.staffId as any)?.id;
         const fullStaffDetails = staffMap.get(recordStaffId);
-  
         if (fullStaffDetails) {
           return { ...record, staffDetails: fullStaffDetails };
         }
         return record;
       });
     }, [salaryRecords, staffMembers]);
-    // **OPTIMIZATION 1 END**
   
     const filteredStaff = useMemo(() => {
       const activeStaff = staffMembers.filter(staff => staff.status === 'active');
-      if (!searchTerm) {
-          return activeStaff;
-      }
+      if (!searchTerm) return activeStaff;
       const lowercasedFilter = searchTerm.toLowerCase();
       return activeStaff.filter(staff =>
           staff.name.toLowerCase().includes(lowercasedFilter) ||
@@ -236,9 +237,6 @@ const Salary: React.FC = () => {
     
     const currentMonthProcessedRecords = useMemo(() => enrichedSalaryRecords.filter(r => r.month === months[currentMonthIndex] && r.year === currentYear), [enrichedSalaryRecords, months, currentMonthIndex, currentYear]);
     
-    // **OPTIMIZATION 2 START**: Create a lookup map for the current month's salary records.
-    // This avoids a slow `find()` operation inside the render loop for each staff member.
-    // Lookups are now O(1) instead of O(N), making the UI much more responsive.
     const salaryRecordMapForCurrentMonth = useMemo(() => {
         const recordMap = new Map<string, SalaryRecordType>();
         for (const record of currentMonthProcessedRecords) {
@@ -249,7 +247,6 @@ const Salary: React.FC = () => {
         }
         return recordMap;
     }, [currentMonthProcessedRecords]);
-    // **OPTIMIZATION 2 END**
 
     const currentMonthPaidRecords = useMemo(() => currentMonthProcessedRecords.filter(r => r.isPaid), [currentMonthProcessedRecords]);
     const allPaidRecords = useMemo(() => enrichedSalaryRecords.filter(r => r.isPaid).sort((a, b) => { if (!a.paidDate || !b.paidDate) return 0; return parseISO(b.paidDate).getTime() - parseISO(a.paidDate).getTime(); }), [enrichedSalaryRecords]);
@@ -257,11 +254,7 @@ const Salary: React.FC = () => {
     const processedSalariesCount = useMemo(() => currentMonthProcessedRecords.length, [currentMonthProcessedRecords]);
     const paidSalariesCount = useMemo(() => currentMonthPaidRecords.length, [currentMonthPaidRecords]);
     const pendingPaymentsCount = useMemo(() => processedSalariesCount - paidSalariesCount, [processedSalariesCount, paidSalariesCount]);
-
-    // **FIX START**: Create a robust loading state to prevent race conditions.
-    // The page is considered "loading" if the salary API is running, OR if salaries have loaded but staff haven't yet.
     const isDataLoading = loadingSalary || (salaryRecords.length > 0 && staffMembers.length === 0);
-    // **FIX END**
 
     const openProcessingModal = async (staff: StaffMember, recordToEdit: SalaryRecordType | null = null) => {
       setProcessingStaff(staff);
@@ -270,7 +263,8 @@ const Salary: React.FC = () => {
       setIsModalLoading(true);
   
       try {
-        const settingsRes = await fetch('/api/settings');
+        // TENANT-AWARE: Use the tenant-aware fetch wrapper.
+        const settingsRes = await tenantAwareFetch('/api/settings');
         const settingsResult = await settingsRes.json();
         if (!settingsResult.success) throw new Error(settingsResult.error || "Failed to fetch shop settings.");
         setShopSettings(settingsResult.data.settings); 
@@ -283,7 +277,8 @@ const Salary: React.FC = () => {
             recurExpense: recordToEdit.recurExpense.toString(),
           });
         } else {
-          const attendanceRes = await fetch(`/api/attendance?action=getOvertimeTotal&staffId=${staff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
+          // TENANT-AWARE: Use the tenant-aware fetch wrapper.
+          const attendanceRes = await tenantAwareFetch(`/api/attendance?action=getOvertimeTotal&staffId=${staff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
           const attendanceResult = await attendanceRes.json();
           let otHours = '0';
           if (attendanceResult.success && attendanceResult.data.totalOtHours > 0) {
@@ -291,9 +286,11 @@ const Salary: React.FC = () => {
           }
           setSalaryInputs({ otHours, extraDays: '0', foodDeduction: '0', recurExpense: '0' });
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Failed to fetch initial salary data:", error);
-        toast.error("Could not fetch required data. Please check settings and try again.");
+        if (!error.message?.includes("tenant information")) {
+          toast.error("Could not fetch required data. Please check settings and try again.");
+        }
         setIsModalOpen(false);
       } finally {
         setIsModalLoading(false);
@@ -313,7 +310,8 @@ const Salary: React.FC = () => {
   
       let actualHoursWorkedFromAPI = 0;
       try {
-        const res = await fetch(`/api/attendance?action=getTotalHoursForMonth&staffId=${processingStaff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
+        // TENANT-AWARE: Use the tenant-aware fetch wrapper.
+        const res = await tenantAwareFetch(`/api/attendance?action=getTotalHoursForMonth&staffId=${processingStaff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
         const result = await res.json();
         if (result.success) {
           actualHoursWorkedFromAPI = result.data.totalWorkingHours || 0;
@@ -529,9 +527,7 @@ const Salary: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><IndianRupee className="absolute -right-4 -bottom-4 h-28 w-28 text-purple-500/10" /><div className="inline-block p-3 bg-purple-100 rounded-xl mb-4"><IndianRupee className="h-7 w-7 text-purple-600"/></div><p className="text-sm text-slate-500">Total Paid this Month</p><p className="text-3xl font-bold text-slate-800">₹{totalSalaryExpense.toLocaleString('en-IN', {maximumFractionDigits: 0})}</p></Card>
                 <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><CheckCircle className="absolute -right-4 -bottom-4 h-28 w-28 text-teal-500/10" /><div className="inline-block p-3 bg-teal-100 rounded-xl mb-4"><CheckCircle className="h-7 w-7 text-teal-600"/></div><p className="text-sm text-slate-500">Processed Salaries</p>
-                    {/* **FIX START**: Prevent showing "X / 0" during the loading race condition. */}
                     <p className="text-3xl font-bold text-slate-800">{processedSalariesCount} <span className="text-lg font-medium text-slate-500">/ {isDataLoading && filteredStaff.length === 0 ? '...' : filteredStaff.length}</span></p>
-                    {/* **FIX END** */}
                 </Card>
                 <Card className="p-6 relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-1"><Clock className="absolute -right-4 -bottom-4 h-28 w-28 text-amber-500/10" /><div className="inline-block p-3 bg-amber-100 rounded-xl mb-4"><Clock className="h-7 w-7 text-amber-600"/></div><p className="text-sm text-slate-500">Pending Payments</p><p className="text-3xl font-bold text-slate-800">{pendingPaymentsCount}</p></Card>
             </div>
@@ -549,7 +545,6 @@ const Salary: React.FC = () => {
                 {isDataLoading ? (<div className="text-center py-20 text-slate-500 font-medium">Loading Data...</div>) :
                  filteredStaff.length > 0 ? (
                     filteredStaff.map((staff) => {
-                        // **OPTIMIZATION**: Use the pre-calculated Map for an instant O(1) lookup.
                         const record = salaryRecordMapForCurrentMonth.get(staff.id);
                         const isPaying = buttonLoadingStates[staff.id]?.paying;
                         const isProcessing = buttonLoadingStates[staff.id]?.processing;

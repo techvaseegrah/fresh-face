@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, ChangeEvent } from 'react';
+import React, { useState, useEffect, ChangeEvent, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, 
@@ -11,7 +11,9 @@ import {
   Loader2, 
   Info 
 } from 'lucide-react';
-import Button from '../../../../components/ui/Button'; // Assuming this is your custom button
+import Button from '../../../../components/ui/Button';
+// TENANT-AWARE: Import useSession to get the tenant ID
+import { useSession } from 'next-auth/react';
 
 // --- Data Interface ---
 interface PositionHourSetting {
@@ -19,9 +21,7 @@ interface PositionHourSetting {
   requiredHours: number | ''; 
 }
 
-
-// --- Reusable UI Components (No changes here) ---
-
+// --- Reusable UI Components (Unchanged) ---
 const PositionCard = ({ 
   positionName, 
   requiredHours, 
@@ -35,7 +35,6 @@ const PositionCard = ({
 }) => (
   <div className="bg-white rounded-lg shadow-md border border-gray-200/80 overflow-hidden transition-all duration-300 ease-in-out hover:shadow-xl hover:-translate-y-1 flex flex-col">
     <div className="border-t-4 border-indigo-500"></div>
-    
     <div className="p-6 flex-grow">
       <div className="flex items-start gap-4 mb-6">
         <div className="flex-shrink-0 bg-indigo-100 p-3 rounded-full">
@@ -46,7 +45,6 @@ const PositionCard = ({
           <p className="text-sm text-gray-500">Required monthly hours</p>
         </div>
       </div>
-      
       <div className="bg-gray-50 rounded-md p-4">
         <label htmlFor={`hours-${positionName}`} className="block text-sm font-medium text-gray-600 mb-2">
           Set Hours
@@ -84,22 +82,41 @@ const StateInfoCard = ({ icon, title, children }: { icon: React.ReactNode, title
 );
 
 
-// --- Main Page Component ---
+// --- Main Page Component (Tenant-Aware) ---
 const PositionHoursSettingsPage: React.FC = () => {
   const router = useRouter();
+  // TENANT-AWARE: Get session to extract tenantId
+  const { data: session } = useSession();
+  const tenantId = useMemo(() => session?.user?.tenantId, [session]);
+
   const [settings, setSettings] = useState<PositionHourSetting[]>([]);
   const [initialSettings, setInitialSettings] = useState<PositionHourSetting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // TENANT-AWARE: Create a centralized fetch wrapper
+  const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    if (!tenantId) {
+      throw new Error("Your session is missing tenant information. Please log out and log back in.");
+    }
+    const headers = new Headers(options.headers || {});
+    headers.set('x-tenant-id', tenantId);
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return fetch(url, { ...options, headers });
+  }, [tenantId]);
+
+  // TENANT-AWARE: Guard the initial fetch until tenantId is available
   useEffect(() => {
     const fetchSettings = async () => {
       setIsLoading(true);
       setError(null);
       try {
         await new Promise(resolve => setTimeout(resolve, 500)); 
-        const response = await fetch('/api/settings/position-hours');
+        // Use the tenant-aware wrapper
+        const response = await tenantAwareFetch('/api/settings/position-hours');
         if (!response.ok) throw new Error('Failed to fetch settings from the server.');
         
         const result = await response.json();
@@ -116,8 +133,11 @@ const PositionHoursSettingsPage: React.FC = () => {
         setIsLoading(false);
       }
     };
-    fetchSettings();
-  }, []);
+    
+    if (tenantId) {
+        fetchSettings();
+    }
+  }, [tenantId, tenantAwareFetch]); // Add dependencies
 
   const handleHourChange = (e: ChangeEvent<HTMLInputElement>, positionName: string) => {
     const value = e.target.value;
@@ -133,7 +153,6 @@ const PositionHoursSettingsPage: React.FC = () => {
   
   const hasChanges = JSON.stringify(settings) !== JSON.stringify(initialSettings);
 
-  // --- MODIFIED: The fix is in this function ---
   const handleSave = async () => {
     setIsSaving(true);
     setError(null);
@@ -143,10 +162,9 @@ const PositionHoursSettingsPage: React.FC = () => {
         requiredHours: setting.requiredHours === '' ? 0 : setting.requiredHours,
       }));
 
-      const response = await fetch('/api/settings/position-hours', {
+      // TENANT-AWARE: Use the tenant-aware wrapper
+      const response = await tenantAwareFetch('/api/settings/position-hours', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // *** FIX: Send the array directly, not nested in an object ***
         body: JSON.stringify(settingsToSave),
       });
 

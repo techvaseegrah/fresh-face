@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-// 1. UPDATE INTERFACE: Allow number or an empty string for controlled inputs
+// Interface allows number or an empty string for controlled inputs
 interface LoyaltySettings {
   rupeesForPoints: number | '';
   pointsAwarded: number | '';
@@ -12,7 +12,9 @@ interface LoyaltySettings {
 
 export default function LoyaltySettingsPage() {
   const { data: session } = useSession();
-  // 2. UPDATE INITIAL STATE: Start with empty strings for empty fields
+  // TENANT-AWARE: Get tenantId from the session
+  const tenantId = useMemo(() => session?.user?.tenantId, [session]);
+  
   const [settings, setSettings] = useState<LoyaltySettings>({ rupeesForPoints: '', pointsAwarded: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -20,41 +22,50 @@ export default function LoyaltySettingsPage() {
   const canViewLoyaltySettings = hasPermission(session?.user?.role?.permissions || [], PERMISSIONS.LOYALTY_SETTINGS_READ);
   const canUpdateLoyaltySettings = hasPermission(session?.user?.role?.permissions || [], PERMISSIONS.LOYALTY_SETTINGS_UPDATE);
 
+  // TENANT-AWARE: Create a centralized fetch wrapper
+  const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    if (!tenantId) {
+      throw new Error("Your session is missing tenant information. Please log out and log back in.");
+    }
+    const headers = new Headers(options.headers || {});
+    headers.set('x-tenant-id', tenantId);
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return fetch(url, { ...options, headers });
+  }, [tenantId]);
+
+
   useEffect(() => {
-    if (canViewLoyaltySettings) {
-      const fetchSettings = async () => {
-        setIsLoading(true);
-        try {
-          const response = await fetch('/api/settings/loyalty');
-          const data = await response.json();
-          if (data.success && data.settings) {
-            // The API will return numbers, which is fine. The state will update and display them.
-            setSettings(data.settings);
-          } else {
-            // If settings don't exist, fields will remain empty, which is the desired behavior.
-            setMessage({ type: 'error', text: 'Failed to load settings.' });
-          }
-        } catch (error) {
-          setMessage({ type: 'error', text: 'An error occurred while loading settings.' });
-        } finally {
-          setIsLoading(false);
+    const fetchSettings = async () => {
+      setIsLoading(true);
+      try {
+        // TENANT-AWARE: Use the tenant-aware wrapper
+        const response = await tenantAwareFetch('/api/settings/loyalty');
+        const data = await response.json();
+        if (data.success && data.settings) {
+          setSettings(data.settings);
+        } else {
+          setMessage({ type: 'error', text: data.message || 'Failed to load settings.' });
         }
-      };
+      } catch (error) {
+        setMessage({ type: 'error', text: 'An error occurred while loading settings.' });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    // TENANT-AWARE: Guard the fetch until tenantId and permissions are available
+    if (canViewLoyaltySettings && tenantId) {
       fetchSettings();
     } else {
       setIsLoading(false);
     }
-  }, [canViewLoyaltySettings]);
+  }, [canViewLoyaltySettings, tenantId, tenantAwareFetch]); // Add dependencies
 
-  // 3. UPDATE INPUT HANDLER: Store the raw string value to allow empty inputs
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    // Set the state with the string value. `type="number"` on the input
-    // already helps prevent non-numeric characters.
-    setSettings(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setSettings(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -64,7 +75,6 @@ export default function LoyaltySettingsPage() {
         return;
     }
 
-    // Add validation for empty fields before submitting
     if (settings.rupeesForPoints === '' || settings.pointsAwarded === '') {
         setMessage({ type: 'error', text: 'Both fields are required.' });
         return;
@@ -73,17 +83,16 @@ export default function LoyaltySettingsPage() {
     setIsLoading(true);
     setMessage(null);
 
-    // 4. UPDATE SUBMISSION LOGIC: Convert state back to numbers for the API
     const payload = {
       rupeesForPoints: Number(settings.rupeesForPoints),
       pointsAwarded: Number(settings.pointsAwarded),
     };
 
     try {
-      const response = await fetch('/api/settings/loyalty', {
+      // TENANT-AWARE: Use the tenant-aware wrapper
+      const response = await tenantAwareFetch('/api/settings/loyalty', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload), // Send the numeric payload
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -100,7 +109,7 @@ export default function LoyaltySettingsPage() {
     }
   };
 
-  if (!canViewLoyaltySettings) {
+  if (!canViewLoyaltySettings && !isLoading) {
       return (
           <div className="p-6 max-w-2xl mx-auto bg-white rounded-lg shadow-md">
               <h1 className="text-2xl font-bold mb-4 text-red-600">Access Denied</h1>
@@ -109,7 +118,6 @@ export default function LoyaltySettingsPage() {
       );
   }
   
-  // Simplified loading state
   if (isLoading) {
     return <div>Loading settings...</div>;
   }
@@ -133,7 +141,7 @@ export default function LoyaltySettingsPage() {
               onChange={handleInputChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               required
-              min="0" // Good practice to prevent negative numbers
+              min="0"
               disabled={!canUpdateLoyaltySettings}
             />
             <p className="text-xs text-gray-500 mt-1">The number of points to award.</p>
@@ -151,13 +159,12 @@ export default function LoyaltySettingsPage() {
               onChange={handleInputChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               required
-              min="1" // A value of 0 doesn't make sense here
+              min="1"
               disabled={!canUpdateLoyaltySettings}
             />
             <p className="text-xs text-gray-500 mt-1">Award points for every specified amount spent.</p>
           </div>
 
-          {/* 5. REFINE DISPLAY: Use Number() or a fallback to prevent display errors with empty strings */}
           <p className="text-center text-gray-800 font-semibold p-3 bg-gray-100 rounded-md">
             Current Rule: Award {Number(settings.pointsAwarded) || 0} points for every ₹{Number(settings.rupeesForPoints) || 0} spent.
           </p>

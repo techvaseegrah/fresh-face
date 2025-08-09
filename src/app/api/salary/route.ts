@@ -9,6 +9,9 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
+// TENANT-AWARE: Import the tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
+
 // --- Interfaces for Payloads and Responses ---
 
 // Interface updated to match the new schema and frontend payload
@@ -127,10 +130,16 @@ async function checkPermissions(permission: string) {
   return null; 
 }
 
-// --- POST Handler (No changes needed here, as it's flexible) ---
+// --- POST Handler (Tenant-Aware) ---
 export async function POST(req: NextRequest) {
+  // TENANT-AWARE: Get tenant ID or exit if it's missing.
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
 
-    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_SALARY_MANAGE);
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_SALARY_MANAGE);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
   }
@@ -143,20 +152,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid staff ID format' }, { status: 400 });
     }
     
-    // Convert to ObjectId for DB operations
     const staffObjectId = new mongoose.Types.ObjectId(payload.staffId);
     
+    // TENANT-AWARE: Add tenantId to the data being inserted/updated.
     const salaryDataForDb = {
       ...payload,
       staffId: staffObjectId, 
       paidDate: payload.paidDate ? new Date(payload.paidDate) : null,
+      tenantId: tenantId, // Include tenantId in the document.
     };
 
     const salaryRecordDb = await SalaryRecord.findOneAndUpdate(
+      // TENANT-AWARE: Ensure the query is scoped to the current tenant.
       {
         staffId: staffObjectId,
         month: payload.month,
         year: payload.year,
+        tenantId: tenantId, // <-- Crucial for data isolation.
       },
       salaryDataForDb,
       { new: true, upsert: true, runValidators: true }
@@ -170,6 +182,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: responseRecord }, { status: 201 });
   } catch (error: any) {
     console.error('Error processing salary [POST /api/salary]:', error);
+    // Note: A unique index on (staffId, month, year, tenantId) is recommended.
     if (error.code === 11000) {
       return NextResponse.json({ success: false, error: 'A salary record for this staff, month, and year already exists.' }, { status: 409 });
     }
@@ -177,15 +190,20 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// --- GET Handler (No changes needed here, as formatRecordForResponse is updated) ---
+// --- GET Handler (Tenant-Aware) ---
 export async function GET(req: NextRequest) {
+  // TENANT-AWARE: Get tenant ID or exit if it's missing.
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
 
-    const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_SALARY_READ);
+  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_SALARY_READ);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
   }
                               
-  // This function remains the same as your original, as the heavy lifting is done in the updated `formatRecordForResponse` helper.
   try {
     await dbConnect();
     const { searchParams } = new URL(req.url);
@@ -194,7 +212,9 @@ export async function GET(req: NextRequest) {
     const monthParam = searchParams.get('month');
     const populateStaffQuery = searchParams.get('populateStaff');
 
-    const filterQuery: any = {};
+    // TENANT-AWARE: Initialize filter with tenantId for data isolation.
+    const filterQuery: any = { tenantId: tenantId };
+    
     if (staffIdParam) {
         if (!mongoose.Types.ObjectId.isValid(staffIdParam)) {
             return NextResponse.json({ success: false, error: 'Invalid staff ID format for filter' }, { status: 400 });
@@ -216,7 +236,11 @@ export async function GET(req: NextRequest) {
       ].map(id => new mongoose.Types.ObjectId(id));
 
       if (uniqueStaffIds.length > 0) {
-        const staffDocs = await Staff.find({ _id: { $in: uniqueStaffIds } })
+        // TENANT-AWARE: Ensure staff population is also scoped to the tenant.
+        const staffDocs = await Staff.find({ 
+                                      _id: { $in: uniqueStaffIds }, 
+                                      tenantId: tenantId // <-- Crucial for preventing data leakage.
+                                    })
                                      .select('name image position')
                                      .lean();
         staffDocs.forEach(staff => {

@@ -1,3 +1,5 @@
+// app/api/salary/[recordId]/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth/next';
@@ -6,6 +8,9 @@ import SalaryRecord, { ISalaryRecord } from '../../../../models/SalaryRecord';
 import Staff, { IStaff } from '../../../../models/staff';
 import { authOptions } from '../../../../lib/auth';
 import { PERMISSIONS, hasPermission } from '../../../../lib/permissions';
+
+// TENANT-AWARE: Import the tenant helper
+import { getTenantIdOrBail } from '../../../../lib/tenant';
 
 // --- Interfaces for Payloads and Responses ---
 interface MarkAsPaidPayloadFE {
@@ -46,6 +51,7 @@ type SalaryDbRecord = ISalaryRecord & {
     otAmount?: number;
     totalDeductions?: number;
     staffId: IStaff | mongoose.Types.ObjectId | string;
+    tenantId: string; // TENANT-AWARE: Acknowledge tenantId in type
 };
 
 
@@ -117,12 +123,19 @@ function formatRecordForResponse(
 // --- API Handlers ---
 
 /**
- * GET handler to fetch a single salary record by its ID.
+ * GET handler to fetch a single salary record by its ID, scoped to the tenant.
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: { recordId: string } }
 ) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   try {
     const permissionError = await checkPermissions(PERMISSIONS.READ_SALARY);
     if (permissionError) {
@@ -138,15 +151,18 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Invalid record ID format' }, { status: 400 });
     }
 
-    const salaryRecordDb = await SalaryRecord.findById(recordId).lean() as SalaryDbRecord | null;
+    // TENANT-AWARE: Use findOne with tenantId to ensure data isolation
+    const salaryRecordDb = await SalaryRecord.findOne({ _id: recordId, tenantId: tenantId }).lean() as SalaryDbRecord | null;
 
     if (!salaryRecordDb) {
+      // This correctly returns 404 if the record doesn't exist OR belongs to another tenant
       return NextResponse.json({ success: false, error: 'Salary record not found' }, { status: 404 });
     }
 
     let populatedStaff: IStaff | null = null;
     if (populateStaffQuery === 'true' && salaryRecordDb.staffId && mongoose.Types.ObjectId.isValid(salaryRecordDb.staffId.toString())) {
-        populatedStaff = await Staff.findById(salaryRecordDb.staffId)
+        // TENANT-AWARE: Ensure staff is also fetched from the same tenant
+        populatedStaff = await Staff.findOne({ _id: salaryRecordDb.staffId, tenantId: tenantId })
                                     .select('name image position')
                                     .lean();
     }
@@ -161,12 +177,19 @@ export async function GET(
 }
 
 /**
- * PATCH handler to mark a salary record as paid.
+ * PATCH handler to mark a salary record as paid, scoped to the tenant.
  */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { recordId: string } }
 ) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   try {
     const permissionError = await checkPermissions(PERMISSIONS.UPDATE_SALARY);
     if (permissionError) {
@@ -191,8 +214,9 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Invalid "paidDate" format.' }, { status: 400 });
     }
 
-    const updatedSalaryRecordDb = await SalaryRecord.findByIdAndUpdate(
-      recordId,
+    // TENANT-AWARE: Use findOneAndUpdate to scope the update to the correct tenant
+    const updatedSalaryRecordDb = await SalaryRecord.findOneAndUpdate(
+      { _id: recordId, tenantId: tenantId },
       { 
         isPaid: true,
         paidDate: new Date(payload.paidDate)
@@ -204,7 +228,8 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Salary record not found' }, { status: 404 });
     }
     
-    const populatedStaff = await Staff.findById(updatedSalaryRecordDb.staffId)
+    // TENANT-AWARE: Ensure staff is populated from the same tenant
+    const populatedStaff = await Staff.findOne({ _id: updatedSalaryRecordDb.staffId, tenantId: tenantId })
                                       .select('name image position')
                                       .lean();
     
@@ -218,12 +243,19 @@ export async function PATCH(
 }
 
 /**
- * DELETE handler to delete a salary record.
+ * DELETE handler to delete a salary record, scoped to the tenant.
  */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { recordId: string } }
 ) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(req);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   try {
     const permissionError = await checkPermissions(PERMISSIONS.DELETE_SALARY);
     if (permissionError) {
@@ -237,7 +269,8 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Invalid record ID format' }, { status: 400 });
     }
 
-    const deletedRecord = await SalaryRecord.findByIdAndDelete(recordId).lean();
+    // TENANT-AWARE: Use findOneAndDelete to ensure we only delete from the correct tenant
+    const deletedRecord = await SalaryRecord.findOneAndDelete({ _id: recordId, tenantId: tenantId }).lean();
 
     if (!deletedRecord) {
       return NextResponse.json({ success: false, error: 'Salary record not found or already deleted' }, { status: 404 });

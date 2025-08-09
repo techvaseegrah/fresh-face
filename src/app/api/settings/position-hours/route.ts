@@ -1,10 +1,12 @@
 // src/app/api/settings/position-hours/route.ts
-// A simplified and corrected version to clear the error.
 
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../../lib/mongodb';
 import ShopSetting, { IPositionHourSetting } from '../../../../models/ShopSetting';
 import Staff from '../../../../models/staff';
+
+// TENANT-AWARE: Import the tenant helper
+import { getTenantIdOrBail } from '../../../../lib/tenant';
 
 interface PositionHourData {
   positionName: string;
@@ -12,14 +14,24 @@ interface PositionHourData {
 }
 
 export async function GET(request: NextRequest) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+  
   await dbConnect();
 
   try {
+    // TENANT-AWARE: Scope the distinct query to the current tenant
     const allPositionsInUse: string[] = await Staff.distinct('position', { 
-      position: { $ne: null, $ne: '' } 
+      position: { $ne: null, $ne: '' },
+      tenantId: tenantId 
     });
 
-    const settingsDoc = await ShopSetting.findOne({ key: 'defaultSettings' }).lean();
+    // TENANT-AWARE: Find the settings document for the current tenant
+    const settingsDoc = await ShopSetting.findOne({ key: 'defaultSettings', tenantId: tenantId }).lean();
 
     const savedPositionSettings: IPositionHourSetting[] = settingsDoc?.positionHours || [];
     const shopDefaultHours = settingsDoc?.defaultDailyHours ?? 8;
@@ -31,6 +43,7 @@ export async function GET(request: NextRequest) {
 
     const responseData: PositionHourData[] = allPositionsInUse.map(position => ({
       positionName: position,
+      // Default to monthly hours if not set (e.g., 8 hours * 22 working days)
       requiredHours: settingsMap.get(position) ?? (shopDefaultHours * 22),
     }));
     
@@ -39,13 +52,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: responseData });
 
   } catch (error) {
-    console.error('API Error in GET /api/settings/position-hours:', error);
+    console.error(`API Error in GET /api/settings/position-hours for tenant ${tenantId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown server error occurred';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  // TENANT-AWARE: Get tenant ID or exit
+  const tenantIdOrResponse = getTenantIdOrBail(request);
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
+  const tenantId = tenantIdOrResponse;
+
   await dbConnect();
 
   try {
@@ -55,9 +75,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid request body. Expected an array.' }, { status: 400 });
     }
 
+    // TENANT-AWARE: Scope the update operation to the current tenant
     await ShopSetting.findOneAndUpdate(
-        { key: 'defaultSettings' },
-        { $set: { positionHours: body } },
+        { key: 'defaultSettings', tenantId: tenantId },
+        { $set: { 
+            positionHours: body,
+            key: 'defaultSettings', // Explicitly set key on upsert
+            tenantId: tenantId      // Explicitly set tenantId on upsert
+          } 
+        },
         { new: true, upsert: true }
     );
 
@@ -67,7 +93,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('API Error in POST /api/settings/position-hours:', error);
+    console.error(`API Error in POST /api/settings/position-hours for tenant ${tenantId}:`, error);
     const message = error instanceof Error ? error.message : 'An unknown server error occurred';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }

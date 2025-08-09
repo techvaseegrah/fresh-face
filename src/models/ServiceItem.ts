@@ -1,10 +1,10 @@
-// FILE: src/models/ServiceItem.ts
+// /models/ServiceItem.ts - FINAL CORRECTED VERSION
 
-// The main mongoose import is sufficient. We don't need to destructure 'models'.
-import mongoose, { Document, Schema, Model } from 'mongoose';
+import mongoose, { Document, Schema, Model, models } from 'mongoose';
 
+// Interface for the embedded consumable document
 export interface IServiceConsumable {
-  product: mongoose.Types.ObjectId | any;
+  product: mongoose.Types.ObjectId;
   quantity: {
     male?: number;
     female?: number;
@@ -13,32 +13,34 @@ export interface IServiceConsumable {
   unit: string;
 }
 
+// Interface for the main ServiceItem document
 export interface IServiceItem extends Document {
-  _id: string;
-  tenantId: mongoose.Schema.Types.ObjectId; // <-- ADDED tenantId
+  tenantId: mongoose.Types.ObjectId;
   serviceCode: string;
   name: string;
   price: number;
   membershipRate?: number;
   duration: number;
-  subCategory: mongoose.Types.ObjectId | any;
+  subCategory: mongoose.Types.ObjectId;
   consumables: IServiceConsumable[];
 }
 
-// NOTE: The consumables sub-schema does NOT need a tenantId,
-// as it is an embedded part of the parent ServiceItem which has the tenantId.
-const serviceConsumableSchema = new Schema({
+// Schema for the embedded consumable
+const serviceConsumableSchema = new Schema<IServiceConsumable>({
+  // NO tenantId here. It's inherited from the parent.
   product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
   quantity: {
-    male: { type: Number, min: 0, required: false },
-    female: { type: Number, min: 0, required: false },
+    male: { type: Number, min: 0 },
+    female: { type: Number, min: 0 },
     default: { type: Number, min: 0, required: true }
   },
   unit: { type: String, required: true, trim: true }
 }, { _id: false });
 
-const serviceItemSchema = new Schema({
-  tenantId: { // <-- ADDED tenantId to the main schema
+
+// Schema for the main ServiceItem
+const serviceItemSchema = new Schema<IServiceItem>({
+  tenantId: { 
     type: Schema.Types.ObjectId, 
     ref: 'Tenant', 
     required: true, 
@@ -49,27 +51,23 @@ const serviceItemSchema = new Schema({
     required: [true, 'Service Code is required.'],
     trim: true,
     uppercase: true,
-    index: true,
   },
   name: { type: String, required: true, trim: true },
   price: { type: Number, required: true, min: 0 },
-  membershipRate: { type: Number, min: 0, sparse: true },
+  membershipRate: { type: Number, min: 0 },
   duration: { type: Number, required: true, min: 1 },
   subCategory: { type: Schema.Types.ObjectId, ref: 'ServiceSubCategory', required: true },
   consumables: [serviceConsumableSchema]
 }, { timestamps: true });
 
-// --- MODIFIED EXPORT LOGIC ---
-// This pattern is more resilient to Next.js hot-reloading issues.
-let ServiceItem: Model<IServiceItem>;
 
-try {
-  // Throws an error if "ServiceItem" hasn't been registered
-  ServiceItem = mongoose.model<IServiceItem>('ServiceItem');
-} catch {
-  // Defines the model only if it doesn't exist
-  ServiceItem = mongoose.model<IServiceItem>('ServiceItem', serviceItemSchema);
-}
-// --- END MODIFICATION ---
+// =========================================================================
+// === THE DATABASE-LEVEL FIX IS HERE ===
+// This index ensures that the combination of serviceCode and tenantId is unique.
+// This is what allows your error message to be so specific.
+// =========================================================================
+serviceItemSchema.index({ serviceCode: 1, tenantId: 1 }, { unique: true });
+
+const ServiceItem: Model<IServiceItem> = models.ServiceItem || mongoose.model<IServiceItem>('ServiceItem', serviceItemSchema);
 
 export default ServiceItem;
