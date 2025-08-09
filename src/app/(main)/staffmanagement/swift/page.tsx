@@ -1,0 +1,587 @@
+"use client";
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ArrowLeft, ArrowRight, Save, Loader2, AlertCircle, Edit, XCircle, User, CalendarDays, Search, Moon } from 'lucide-react';
+import Button from '@/components/ui/Button'; // Assuming this is a custom Button component
+
+// --- TYPE DEFINITIONS ---
+interface StaffMember {
+  _id: string;
+  staffIdNumber: string;
+  name: string;
+  status: 'active' | 'inactive';
+}
+
+interface Shift {
+  _id?: string;
+  employeeId: string;
+  date: string; // YYYY-MM-DD format for consistency
+  isWeekOff: boolean;
+  shiftTiming: string;
+}
+
+// Optimized structure for ShiftScheduleState: Record for faster lookups
+type ShiftScheduleState = Record<string, Record<string, Shift>>;
+
+interface StaffShiftCardProps {
+  staff: StaffMember;
+  weekDays: Date[];
+  shifts: Record<string, Shift>; // Changed to not allow null, as fetchData populates defaults
+  isEditing: boolean;
+  isSaving: boolean;
+  canEdit: boolean;
+  onEdit: (id: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onTempChange: (date: string, field: 'shiftTiming' | 'isWeekOff', value: any) => void;
+}
+
+// --- HELPER FUNCTIONS ---
+const getWeekDateRange = (date: Date) => {
+  const start = new Date(date);
+  // Monday as start of week (1 for Monday, 0 for Sunday)
+  start.setDate(start.getDate() - (start.getDay() === 0 ? 6 : start.getDay() - 1));
+  start.setUTCHours(0, 0, 0, 0); // Normalize to start of day UTC
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setUTCHours(23, 59, 59, 999); // Normalize to end of day UTC
+  return { startDate: start, endDate: end };
+};
+
+const getDaysOfWeek = (startDate: Date) => {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(startDate);
+    day.setDate(startDate.getDate() + i);
+    days.push(day);
+  }
+  return days;
+};
+
+// Helper to format date into YYYY-MM-DD string for consistent keys
+const formatDateToISOString = (date: Date) => date.toISOString().split('T')[0];
+
+const parseShiftTiming = (timing: string) => {
+    if (!timing || !timing.includes('-')) {
+        return { startTime: '', startPeriod: 'AM' as const, endTime: '', endPeriod: 'PM' as const };
+    }
+    const [startStr, endStr] = timing.split('-').map(s => s.trim());
+    const parsePart = (part: string, defaultPeriod: 'AM' | 'PM') => {
+        if (!part) return { time: '', period: defaultPeriod };
+        const match = part.match(/(\d{1,2}(?::\d{2})?)\s*(AM|PM)?/i);
+        if (!match) return { time: '', period: defaultPeriod };
+        const time = match[1] || '';
+        let period: 'AM' | 'PM' = defaultPeriod;
+        const periodStr = match[2]?.toUpperCase();
+        if (periodStr === 'AM' || periodStr === 'PM') {
+            period = periodStr; 
+        }
+        return { time, period };
+    };
+    const { time: startTime, period: startPeriod } = parsePart(startStr, 'AM');
+    const { time: endTime, period: endPeriod } = parsePart(endStr, 'PM');
+    return { startTime, startPeriod, endTime, endPeriod };
+};
+
+const nameToColor = (name: string) => {
+  const colors = [
+    'bg-orange-200 text-orange-800', 'bg-green-200 text-green-800', 'bg-purple-200 text-purple-800',
+    'bg-blue-200 text-blue-800', 'bg-red-200 text-red-800', 'bg-teal-200 text-teal-800',
+    'bg-yellow-200 text-yellow-800', 'bg-pink-200 text-pink-800', 'bg-cyan-200 text-cyan-800',
+    'bg-indigo-200 text-indigo-800',
+  ];
+  if (!name) return colors[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash & hash;
+  }
+  const index = Math.abs(hash % colors.length);
+  return colors[index];
+};
+
+const Avatar = ({ name }: { name: string }) => {
+  const initials = name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+  const colorClasses = nameToColor(name);
+  return (
+    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${colorClasses}`}>
+      {initials || <User size={20}/>}
+    </div>
+  );
+};
+
+// --- Shift Day Cell Component ---
+interface ShiftDayCellProps {
+  day: Date;
+  shift: Shift | undefined; // Shift can be undefined if data is still loading/not found
+  isEditing: boolean;
+  onTempChange: (date: string, field: 'shiftTiming' | 'isWeekOff', value: any) => void;
+}
+
+const ShiftDayCell: React.FC<ShiftDayCellProps> = ({ day, shift, isEditing, onTempChange }) => {
+  // Use local state for inputs, and propagate changes up
+  const [startTime, setStartTime] = useState('');
+  const [startPeriod, setStartPeriod] = useState<'AM' | 'PM'>('AM');
+  const [endTime, setEndTime] = useState('');
+  const [endPeriod, setEndPeriod] = useState<'AM' | 'PM'>('PM');
+  const endTimeRef = useRef<HTMLInputElement>(null);
+
+  const dateStr = formatDateToISOString(day); // Consistent date string
+
+  // Initialize local state when editing starts or shift prop changes
+  useEffect(() => {
+    // Defensive check: only proceed if shift is defined
+    if (!shift) return; 
+
+    if (isEditing) {
+      const { startTime: sT, startPeriod: sP, endTime: eT, endPeriod: eP } = parseShiftTiming(shift.shiftTiming);
+      setStartTime(sT);
+      setStartPeriod(sP);
+      setEndTime(eT);
+      setEndPeriod(eP);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing, shift]); // Removed shift dependencies from here for clarity, they are covered in timing effect
+
+  // Propagate shiftTiming changes up when local state for timing changes
+  // This ensures `tempRowData` in parent is always up-to-date
+  useEffect(() => {
+    // Defensive check: only proceed if shift is defined
+    if (!shift) return; 
+
+    if (isEditing && !shift.isWeekOff) { // Only update if not a week off
+      const newShiftTiming = (startTime || endTime) 
+        ? `${startTime} ${startPeriod} - ${endTime} ${endPeriod}`
+        : '';
+      // Only call onTempChange if the timing actually changed
+      if (newShiftTiming !== shift.shiftTiming) {
+        onTempChange(dateStr, 'shiftTiming', newShiftTiming);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startTime, startPeriod, endTime, endPeriod, isEditing, dateStr, onTempChange, shift?.isWeekOff]); // <-- FIX for TypeError: use optional chaining
+
+  // Handle week-off toggle
+  const handleWeekOffToggle = useCallback(() => {
+    // Defensive check: only proceed if shift is defined
+    if (!shift) return; 
+
+    const newIsWeekOff = !shift.isWeekOff;
+    onTempChange(dateStr, 'isWeekOff', newIsWeekOff);
+    // If setting to week off, clear timing
+    if (newIsWeekOff) {
+      setStartTime('');
+      setStartPeriod('AM');
+      setEndTime('');
+      setEndPeriod('PM');
+      onTempChange(dateStr, 'shiftTiming', ''); // Explicitly clear timing in parent
+    }
+  }, [dateStr, onTempChange, shift?.isWeekOff, shift]); // Add shift as dependency as well
+
+  // This early return handles the case where shift prop is undefined or null
+  if (!shift) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 p-3 rounded-lg border bg-gray-50 min-h-[120px]">
+        <Loader2 className="animate-spin text-gray-400" size={20} />
+      </div>
+    );
+  }
+
+  const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
+  const dayOfMonth = day.getDate();
+
+  const AmPmButton = ({ period, selected, onClick }: { period: 'AM' | 'PM', selected: boolean, onClick: () => void }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-1/2 py-1 text-xs font-semibold rounded-md transition-colors ${
+        selected 
+          ? 'bg-black text-white' 
+          : 'bg-white text-black hover:bg-gray-100'
+      }`}
+    >
+      {period}
+    </button>
+  );
+
+  const handleStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setStartTime(value);
+
+    // Auto-focus logic: If 2 digits or a colon, try to jump
+    if (value.length >= 2 || value.includes(':')) {
+      endTimeRef.current?.focus();
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 p-3 rounded-lg border bg-white min-h-[120px] transition-all">
+      <div className="flex justify-between items-center">
+        <span className="font-bold text-black">{dayName}</span>
+        <span className="text-sm font-semibold text-gray-500 bg-gray-200 rounded-full w-6 h-6 flex items-center justify-center">{dayOfMonth}</span>
+      </div>
+      <div className="flex-grow flex items-center justify-center">
+        {isEditing ? (
+          <div className="w-full space-y-2">
+            <fieldset disabled={shift.isWeekOff} className="space-y-2 group">
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  placeholder="Start"
+                  value={startTime}
+                  onChange={handleStartTimeChange}
+                  className="w-full p-1.5 text-center border-gray-300 border rounded-md text-sm focus:ring-2 focus:ring-black focus:border-black group-disabled:bg-gray-100 group-disabled:cursor-not-allowed"
+                />
+                <div className="flex w-16 shrink-0 rounded-md border border-gray-300 bg-gray-200 p-0.5">
+                  <AmPmButton period="AM" selected={startPeriod === 'AM'} onClick={() => setStartPeriod('AM')} />
+                  <AmPmButton period="PM" selected={startPeriod === 'PM'} onClick={() => setStartPeriod('PM')} />
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <input
+                  ref={endTimeRef}
+                  type="text"
+                  placeholder="End"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="w-full p-1.5 text-center border-gray-300 border rounded-md text-sm focus:ring-2 focus:ring-black focus:border-black group-disabled:bg-gray-100 group-disabled:cursor-not-allowed"
+                />
+                 <div className="flex w-16 shrink-0 rounded-md border border-gray-300 bg-gray-200 p-0.5">
+                  <AmPmButton period="AM" selected={endPeriod === 'AM'} onClick={() => setEndPeriod('AM')} />
+                  <AmPmButton period="PM" selected={endPeriod === 'PM'} onClick={() => setEndPeriod('PM')} />
+                </div>
+              </div>
+            </fieldset>
+            <button
+              onClick={handleWeekOffToggle}
+              className={`w-full py-1 px-2 text-xs rounded-md flex items-center justify-center gap-1.5 transition-colors ${shift.isWeekOff ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              <Moon size={12} /> {shift.isWeekOff ? 'Day Off' : 'Set as Off'}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center font-semibold">
+            {shift.isWeekOff ? (
+              <span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full text-sm">
+                <Moon size={14} /> OFF
+              </span>
+            ) : shift.shiftTiming ? (
+              <span className="text-black text-lg">{shift.shiftTiming}</span>
+            ) : (
+              <span className="text-gray-400 text-lg">--</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- StaffShiftCard Component ---
+const StaffShiftCard: React.FC<StaffShiftCardProps> = React.memo(({ staff, weekDays, shifts, isEditing, isSaving, canEdit, onEdit, onCancel, onSave, onTempChange }) => {
+  // `shifts` prop is now guaranteed to be `Record<string, Shift>` by parent's data fetching logic
+  const blackButtonClasses = "inline-flex items-center justify-center h-9 px-3 rounded-md text-sm font-medium bg-black text-white hover:bg-black/90 disabled:pointer-events-none disabled:opacity-50 transition-colors";
+  return (
+    <div className="bg-white rounded-xl shadow-sm mb-6 overflow-hidden border border-gray-200/80">
+      {/* --- THIS IS THE ADDED DECORATIVE LINE --- */}
+      <div className="h-2 bg-indigo-500"></div>
+      
+      <div className={`p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${isEditing ? 'bg-gray-100' : 'bg-white'} border-b border-gray-200/80`}>
+        <div className="flex items-center gap-4">
+          <Avatar name={staff.name} />
+          <div>
+            <h3 className="font-bold text-lg text-black">{staff.name}</h3>
+            <p className="text-sm text-gray-500">ID: {staff.staffIdNumber}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isEditing ? (
+            <>
+              <button onClick={onSave} disabled={isSaving} className={blackButtonClasses}>
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save size={16} className="mr-2 h-4 w-4" />}
+                Save Changes
+              </button>
+              <Button variant="ghost" size="sm" icon={<XCircle size={16} />} onClick={onCancel} disabled={isSaving} className="text-red-600 hover:bg-red-50 hover:text-red-700">Cancel</Button>
+            </>
+          ) : (
+            <button onClick={() => onEdit(staff._id)} disabled={!canEdit} className={blackButtonClasses}>
+              <Edit size={16} className="mr-2 h-4 w-4" />
+              Edit Shifts
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 bg-gray-50">
+        {weekDays.map((day: Date) => (
+          <ShiftDayCell
+            key={formatDateToISOString(day)} // Use consistent key
+            day={day}
+            shift={shifts[formatDateToISOString(day)]} // Pass the specific shift for the day
+            isEditing={isEditing}
+            onTempChange={onTempChange}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+StaffShiftCard.displayName = 'StaffShiftCard';
+
+// --- MAIN COMPONENT ---
+export default function ShiftManagementPage() {
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [shifts, setShifts] = useState<ShiftScheduleState>({});
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [tempRowData, setTempRowData] = useState<Record<string, Shift> | null>(null); // Still can be null before editing
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const { startDate, endDate } = useMemo(() => getWeekDateRange(currentDate), [currentDate]);
+  const weekDays = useMemo(() => getDaysOfWeek(startDate), [startDate]);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setEditingRowId(null); // Ensure no editing state when refetching
+
+    try {
+      const { startDate: weekStart, endDate: weekEnd } = getWeekDateRange(currentDate);
+      const shiftApiUrl = `/api/shifts?startDate=${weekStart.toISOString()}&endDate=${weekEnd.toISOString()}`;
+
+      // Parallelize API calls using Promise.all
+      const [staffResponse, shiftResponse] = await Promise.all([
+        fetch('/api/staff?action=list'),
+        fetch(shiftApiUrl)
+      ]);
+
+      if (!staffResponse.ok) throw new Error('Failed to fetch staff list');
+      if (!shiftResponse.ok) throw new Error('Failed to fetch shift data');
+
+      const staffData = await staffResponse.json();
+      const shiftData = await shiftResponse.json();
+      
+      const activeStaff: StaffMember[] = staffData.data.filter((s: StaffMember) => s.status === 'active');
+      setStaffList(activeStaff);
+
+      const currentWeekDays = getDaysOfWeek(weekStart);
+      const schedule: ShiftScheduleState = {};
+
+      // Create a map for quick shift lookup
+      const shiftsByEmployeeAndDate = new Map<string, Map<string, Shift>>();
+      if (shiftData.data) {
+        shiftData.data.forEach((s: Shift) => {
+          const dateKey = formatDateToISOString(new Date(s.date)); // Ensure consistent date string
+          if (!shiftsByEmployeeAndDate.has(s.employeeId)) {
+            shiftsByEmployeeAndDate.set(s.employeeId, new Map());
+          }
+          shiftsByEmployeeAndDate.get(s.employeeId)?.set(dateKey, { 
+            ...s, 
+            date: dateKey // Ensure date is always the YYYY-MM-DD string for internal consistency
+          });
+        });
+      }
+
+      activeStaff.forEach(staff => {
+        schedule[staff._id] = {};
+        currentWeekDays.forEach(day => {
+          const dateStr = formatDateToISOString(day);
+          const existingShift = shiftsByEmployeeAndDate.get(staff._id)?.get(dateStr);
+          
+          schedule[staff._id][dateStr] = existingShift || {
+            employeeId: staff._id,
+            date: dateStr, // Store as YYYY-MM-DD string
+            isWeekOff: false,
+            shiftTiming: '',
+          };
+        });
+      });
+      setShifts(schedule);
+
+    } catch (err: any) {
+      setError(err.message);
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentDate]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+  
+  const filteredStaffList = useMemo(() => {
+    if (!searchQuery) {
+        return staffList;
+    }
+    const lowercasedQuery = searchQuery.toLowerCase().trim();
+    return staffList.filter(staff =>
+        staff.name?.toLowerCase().includes(lowercasedQuery) ||
+        staff.staffIdNumber?.toLowerCase().includes(lowercasedQuery)
+    );
+  }, [staffList, searchQuery]);
+
+  const handleEditStart = useCallback((employeeId: string) => {
+    setEditingRowId(employeeId);
+    // Deep copy current shifts for this employee to temp state
+    setTempRowData(JSON.parse(JSON.stringify(shifts[employeeId])));
+  }, [shifts]);
+
+  const handleCancelClick = useCallback(() => {
+    setEditingRowId(null);
+    setTempRowData(null);
+  }, []);
+  
+  const handleTempRowChange = useCallback((date: string, field: 'shiftTiming' | 'isWeekOff', value: string | boolean) => {
+    setTempRowData(prev => {
+      if (!prev) return prev; // Should not happen if called correctly
+      const newRowData = { ...prev };
+      newRowData[date] = { ...newRowData[date], [field]: value };
+      // If setting to week off, ensure shiftTiming is cleared in temp data immediately
+      if (field === 'isWeekOff' && value === true) {
+        newRowData[date].shiftTiming = '';
+      }
+      return newRowData;
+    });
+  }, []);
+
+  const handleSaveRow = useCallback(async () => {
+    if (!editingRowId || !tempRowData) return;
+    setIsSaving(true);
+    setError(null);
+
+    // Prepare payload, ensuring _id is included for existing shifts for direct update
+    const payload: Shift[] = Object.values(tempRowData).map(shift => ({
+      _id: shift._id, // Include _id if exists for update
+      employeeId: shift.employeeId,
+      date: shift.date,
+      isWeekOff: shift.isWeekOff,
+      shiftTiming: shift.shiftTiming,
+    }));
+
+    try {
+        const response = await fetch('/api/shifts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Failed to save changes.');
+        }
+        await fetchData(); // Re-fetch to update the main state from DB
+    } catch (err: any) {
+        setError(err.message);
+    } finally {
+        setIsSaving(false);
+        setEditingRowId(null);
+        setTempRowData(null);
+    }
+  }, [editingRowId, tempRowData, fetchData]);
+
+  // Navigation handlers
+  const goToPreviousWeek = useCallback(() => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() - 7);
+      return newDate;
+    });
+  }, []);
+
+  const goToNextWeek = useCallback(() => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() + 7);
+      return newDate;
+    });
+  }, []);
+
+  // Format date range for display
+  const dateRangeDisplay = useMemo(() => {
+    const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
+    const startDay = startDate.getDate();
+    const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
+    const endDay = endDate.getDate();
+    const year = startDate.getFullYear();
+    return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`;
+  }, [startDate, endDate]);
+
+
+  return (
+    <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-6 bg-white p-6 rounded-xl shadow-sm border border-gray-200/80">
+          <h1 className="text-3xl font-bold text-black">Shift Management</h1>
+          <p className="text-gray-500 mt-1">Assign and manage weekly shifts for your active staff.</p>
+
+          <div className="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-2 text-sm font-medium text-gray-700">
+              <CalendarDays size={16} className="text-gray-500" />
+              <span>{dateRangeDisplay}</span>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={goToPreviousWeek} variant="outline" size="sm" icon={<ArrowLeft size={16} />}>Previous Week</Button>
+              <Button onClick={goToNextWeek} variant="outline" size="sm" icon={<ArrowRight size={16} />}>Next Week</Button>
+            </div>
+          </div>
+        </header>
+        
+        <div className="mb-6 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+                type="text"
+                placeholder="Search by name or ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full max-w-sm pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black"
+            />
+        </div>
+        
+        {error && (
+          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md mb-6 flex items-center gap-3">
+            <AlertCircle size={20} /> <div><strong className="font-bold">Error:</strong> {error}</div>
+          </div>
+        )}
+
+        <main>
+          {isLoading ? (
+            <div className="text-center p-16 bg-white rounded-xl shadow-sm border border-gray-200/80">
+              <div className="flex justify-center items-center gap-3 text-gray-500 text-lg">
+                <Loader2 className="animate-spin" size={24} /> Loading Schedule...
+              </div>
+            </div>
+          ) : filteredStaffList.length === 0 ? (
+            <div className="text-center p-16 bg-white rounded-xl shadow-sm border border-gray-200/80">
+              <h3 className="text-xl font-semibold text-black">{searchQuery ? 'No Staff Found' : 'No Active Staff'}</h3>
+              <p className="text-gray-500 mt-2">
+                {searchQuery ? `No staff member matches "${searchQuery}". Try a different search.` : 'Please add active staff members to the system to manage their shifts.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {filteredStaffList.map(staff => (
+                <StaffShiftCard
+                  key={staff._id}
+                  staff={staff}
+                  weekDays={weekDays}
+                  // Pass the correct shifts based on editing state
+                  // Ensure shifts[staff._id] is always an object, even if empty
+                  shifts={editingRowId === staff._id ? (tempRowData || {}) : (shifts[staff._id] || {})}
+                  isEditing={editingRowId === staff._id}
+                  isSaving={isSaving && editingRowId === staff._id}
+                  canEdit={editingRowId === null}
+                  onEdit={handleEditStart}
+                  onCancel={handleCancelClick}
+                  onSave={handleSaveRow}
+                  onTempChange={handleTempRowChange} // Pass the memoized callback
+                />
+              ))}
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
