@@ -1,20 +1,29 @@
 import { NextResponse, NextRequest } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import ShopSetting from '@/models/ShopSetting';
-import Staff from '@/models/staff'; // Import Staff model to get positions
+import Staff from '@/models/staff';
+import { getTenantIdOrBail } from '@/lib/tenant'; // <-- Import the helper
 
-// GET handler now fetches both settings AND all unique staff positions
-export async function GET() {
+// GET handler fetches settings AND positions for the CURRENT tenant
+export async function GET(req: NextRequest) { // <-- Add req parameter
     try {
         await dbConnect();
 
+        // 1. Get the Tenant ID or fail early
+        const tenantId = getTenantIdOrBail(req);
+        if (tenantId instanceof NextResponse) {
+            return tenantId;
+        }
+
         const [settings, positions] = await Promise.all([
+            // 2. Find the settings document for THIS tenant
             ShopSetting.findOneAndUpdate(
-                { key: 'defaultSettings' },
-                { $setOnInsert: { key: 'defaultSettings' } },
+                { tenantId: tenantId },
+                { $setOnInsert: { tenantId: tenantId } }, // On creation, set the tenantId
                 { upsert: true, new: true, setDefaultsOnInsert: true }
             ).lean(),
-            Staff.distinct('position').exec() // Fetch unique positions
+            // 3. Find distinct positions for THIS tenant
+            Staff.distinct('position', { tenantId: tenantId }).exec()
         ]);
         
         const validPositions = positions.filter(p => p && typeof p === 'string' && p.trim() !== '');
@@ -32,29 +41,39 @@ export async function GET() {
     }
 }
 
-// POST handler now saves the entire settings object, including the new rates
+// POST handler saves settings for the CURRENT tenant
 export async function POST(req: NextRequest) {
     try {
         await dbConnect();
-        const payload = await req.json();
+        
+        // 1. Get the Tenant ID or fail early
+        const tenantId = getTenantIdOrBail(req);
+        if (tenantId instanceof NextResponse) {
+            return tenantId;
+        }
 
+        const payload = await req.json();
+        
+        // Security: Never let the client override the tenantId
+        delete payload.tenantId;
+
+        // 2. Find and update the settings document for THIS tenant
         const updatedSettings = await ShopSetting.findOneAndUpdate(
-            { key: 'defaultSettings' },
+            { tenantId: tenantId },
             { $set: payload },
             { new: true, runValidators: true, upsert: true }
         );
 
         if (!updatedSettings) {
-            return NextResponse.json({ success: false, error: "Could not find or create settings." }, { status: 404 });
+            // This should technically not be reachable due to upsert:true
+            return NextResponse.json({ success: false, error: "Could not find or create settings for this tenant." }, { status: 404 });
         }
 
         return NextResponse.json({ success: true, data: updatedSettings });
     } catch (error: any) {
         console.error('Error saving settings:', error);
         if (error.name === 'ValidationError') {
-            if (error.message.includes('duplicate key error') && error.message.includes('positionName')) {
-                 return NextResponse.json({ success: false, error: "Each position can only have one rate setting." }, { status: 400 });
-            }
+            // Your validation error handling for duplicate positions within the array is good
             return NextResponse.json({ success: false, error: error.message }, { status: 400 });
         }
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });

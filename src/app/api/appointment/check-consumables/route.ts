@@ -1,7 +1,8 @@
 // FILE: src/api/appointment/check-consumables/route.ts
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'; // CHANGED: Imported NextRequest
 import dbConnect from '@/lib/dbConnect';
+import { getTenantIdOrBail } from '@/lib/tenant'; // CHANGED: Imported the tenant helper
 import ServiceItem from '@/models/ServiceItem';
 import Product from '@/models/Product';
 import { Gender } from '@/types/gender';
@@ -11,9 +12,19 @@ interface CheckRequestBody {
   customerGender?: 'male' | 'female' | 'other';
 }
 
-export async function POST(req: Request) {
+// CHANGED: The request type is now NextRequest to work with the tenant helper
+export async function POST(req: NextRequest) {
   try {
     await dbConnect();
+
+    // CHANGED: Step 1 - Get the Tenant ID or stop execution
+    // This is the most critical step. It ensures all subsequent operations
+    // are for the correct tenant.
+    const tenantId = getTenantIdOrBail(req);
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Bail out if tenantId is missing
+    }
+
     const { serviceIds, customerGender = 'other' }: CheckRequestBody = await req.json();
 
     if (!serviceIds || serviceIds.length === 0) {
@@ -21,8 +32,14 @@ export async function POST(req: Request) {
     }
 
     const requiredConsumables = new Map<string, { required: number, unit: string, name: string }>();
-    const services = await ServiceItem.find({ _id: { $in: serviceIds } }).populate('consumables.product', 'name');
 
+    // CHANGED: Step 2 - Add tenantId to the ServiceItem query
+    const services = await ServiceItem.find({
+      _id: { $in: serviceIds },
+      tenantId: tenantId, // Ensures we only find services belonging to this tenant
+    }).populate('consumables.product', 'name');
+
+    // The logic for calculating consumables remains the same, as it's in-memory
     for (const service of services) {
       if (!service.consumables || service.consumables.length === 0) continue;
 
@@ -56,8 +73,14 @@ export async function POST(req: Request) {
     }
 
     const productIds = Array.from(requiredConsumables.keys());
-    const productsInDb = await Product.find({ _id: { $in: productIds } }).select('totalQuantity name');
     
+    // CHANGED: Step 3 - Add tenantId to the Product query
+    const productsInDb = await Product.find({
+      _id: { $in: productIds },
+      tenantId: tenantId, // Ensures we only check stock for this tenant's products
+    }).select('totalQuantity name');
+    
+    // The logic for checking for issues remains the same
     const issues: any[] = [];
     for (const dbProduct of productsInDb) {
       const required = requiredConsumables.get(dbProduct._id.toString());

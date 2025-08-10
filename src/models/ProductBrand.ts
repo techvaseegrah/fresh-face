@@ -10,18 +10,18 @@
 
     const BrandSchema: Schema<IProductBrand> = new Schema({
   tenantId: { 
-    type: require('mongoose').Schema.Types.ObjectId, 
+    type: mongoose.Schema.Types.ObjectId, // Simplified for consistency
     ref: 'Tenant', 
     required: true, 
-    index: true 
+    // index: true is not needed here as it's part of the compound index below
   },
-    name: { type: String, required: true, trim: true },
-    type: { type: String, enum: ['Retail', 'In-House'], required: true },
-    }, { timestamps: true });
+  name: { type: String, required: true, trim: true },
+  type: { type: String, enum: ['Retail', 'In-House'], required: true },
+}, { timestamps: true });
 
-    BrandSchema.index({ name: 1, type: 1 }, { unique: true });
+// THE FIX: The unique index must include tenantId.
+BrandSchema.index({ tenantId: 1, name: 1, type: 1 }, { unique: true });
 
-    const BrandModel: Model<IProductBrand> = models.ProductBrand || mongoose.model<IProductBrand>('ProductBrand', BrandSchema);
+const BrandModel: Model<IProductBrand> = models.ProductBrand || mongoose.model<IProductBrand>('ProductBrand', BrandSchema);
 
-    // FIX: Changed back to a default export for the model itself
-    export default BrandModel;
+export default BrandModel;

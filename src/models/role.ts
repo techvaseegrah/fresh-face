@@ -6,12 +6,10 @@ const roleSchema = new mongoose.Schema({
     type: require('mongoose').Schema.Types.ObjectId, 
     ref: 'Tenant', 
     required: true, 
-    index: true 
   },
   name: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
     uppercase: true
   },
@@ -47,6 +45,7 @@ const roleSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
+roleSchema.index({ tenantId: 1, name: 1 }, { unique: true });
 // Index for faster permission checks
 roleSchema.index({ name: 1, isActive: 1 });
 

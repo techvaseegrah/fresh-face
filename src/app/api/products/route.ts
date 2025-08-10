@@ -72,39 +72,54 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  // 1. Get Tenant ID or bail if not present
+  // 1. Get Tenant ID (no change)
   const tenantId = getTenantIdOrBail(req);
-  if (tenantId instanceof NextResponse) {
-    return tenantId;
-  }
+  if (tenantId instanceof NextResponse) return tenantId;
 
-  // 2. Check user permissions
+  // 2. Check permissions (no change)
   const session = await checkPermission(PERMISSIONS.PRODUCTS_CREATE);
-  if (!session) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   await dbConnect();
   try {
     const body = await req.json();
+    const { sku } = body; // Destructure for the check
 
-    // 3. Enforce the tenantId on the new document before creation
-    const productData = { ...body, tenantId };
-    
+    // Add validation for required fields
+    if (!sku || !body.name || !body.brand || !body.subCategory) {
+        return NextResponse.json({ success: false, error: 'SKU, name, brand, and sub-category are required.' }, { status: 400 });
+    }
+
+    // --- START OF REFINEMENT ---
+    // 3. Explicitly check if the SKU already exists for this tenant.
+    const existingProduct = await Product.findOne({ sku, tenantId });
+    if (existingProduct) {
+      return NextResponse.json({
+        success: false,
+        error: `A product with the SKU '${sku}' already exists in this salon.`
+      }, { status: 409 });
+    }
+    // --- END OF REFINEMENT ---
+
+    // 4. Enforce the tenantId and create the new document.
+    const productData = { ...body, tenantId, createdBy: session.user.id };
     const product = await Product.create(productData);
 
-    console.log("API PRODUCT CREATION:", product);
-    
     return NextResponse.json({ success: true, data: product }, { status: 201 });
+
   } catch (error: any) {
-    console.error("API PRODUCT CREATION ERROR:", error);
-    // 4. Provide specific feedback for unique constraint violations (e.g., duplicate SKU)
+    // 5. Keep the unique constraint handler as a final defense against race conditions.
     if (error.code === 11000) {
       return NextResponse.json({
         success: false,
         error: 'A product with this SKU already exists for this tenant.'
-      }, { status: 409 }); // 409 Conflict is a good status code here
+      }, { status: 409 });
     }
-    return NextResponse.json({ success: false, error: error.message || 'Failed to create product' }, { status: 400 });
+    if (error.name === 'ValidationError') {
+        return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
+    
+    console.error("API PRODUCT CREATION ERROR:", error);
+    return NextResponse.json({ success: false, error: 'Server Error' }, { status: 500 });
   }
 }

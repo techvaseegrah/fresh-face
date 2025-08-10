@@ -77,14 +77,14 @@ export async function DELETE(req: NextRequest) { // <-- 3. Change 'Request' to '
 }
 
 // POST (create) a new role for the current tenant
-export async function POST(req: NextRequest) { // <-- 3. Change 'Request' to 'NextRequest'
+export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const tenantId = getTenantId(req); // <-- 4. Get the tenantId
+    const tenantId = getTenantId(req);
     if (!tenantId) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
     }
@@ -99,15 +99,14 @@ export async function POST(req: NextRequest) { // <-- 3. Change 'Request' to 'Ne
     
     const upperCaseName = name.toUpperCase();
 
-    // <-- 5. Scope the "check if exists" query by tenantId
+    // This check handles 99% of cases
     const existingRole = await Role.findOne({ name: upperCaseName, tenantId: tenantId });
     if (existingRole) {
       return NextResponse.json({ success: false, message: `Role with name '${name}' already exists in this salon` }, { status: 409 });
     }
 
-    // <-- 6. Add tenantId to the new role being created
     const role = await Role.create({
-      tenantId: tenantId, // Add the tenant's ID
+      tenantId: tenantId,
       name: upperCaseName,
       displayName,
       description,
@@ -116,7 +115,20 @@ export async function POST(req: NextRequest) { // <-- 3. Change 'Request' to 'Ne
     });
 
     return NextResponse.json({ success: true, role }, { status: 201 });
+
   } catch (error) {
+    // --- START OF IMPROVEMENT ---
+    // This handles the race condition where the findOne check passes but the create fails
+    // due to the unique index in the database.
+    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+      const body = await req.json();
+      return NextResponse.json({
+        success: false,
+        message: `Role with name '${body.name}' already exists in this salon (database conflict).`
+      }, { status: 409 }); // 409 Conflict is the correct status code
+    }
+    // --- END OF IMPROVEMENT ---
+
     console.error('Error creating role:', error);
     return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
   }

@@ -77,14 +77,14 @@ export async function DELETE(req: NextRequest) { // <-- 3. Change 'Request' to '
 }
 
 // POST (create) a new user for the current tenant
-export async function POST(req: NextRequest) { // <-- 3. Change 'Request' to 'NextRequest'
+export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.USERS_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    const tenantId = getTenantId(req); // <-- 4. Get the tenantId
+    const tenantId = getTenantId(req);
      if (!tenantId) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
     }
@@ -99,38 +99,43 @@ export async function POST(req: NextRequest) { // <-- 3. Change 'Request' to 'Ne
     
     const lowerCaseEmail = email.toLowerCase();
 
-    // <-- 5. Scope the "check if user exists" query by tenantId
     const existingUser = await User.findOne({ email: lowerCaseEmail, tenantId: tenantId });
     if (existingUser) {
       return NextResponse.json({ success: false, message: `User with email '${email}' already exists in this salon` }, { status: 409 });
     }
 
-    // <-- 5. Verify the role exists AND belongs to the current tenant
     const role = await Role.findOne({ _id: roleId, tenantId: tenantId });
     if (!role) {
       return NextResponse.json({ success: false, message: 'Invalid role for this salon' }, { status: 400 });
     }
 
-    // <-- 6. Add tenantId to the new user being created
     const user = await User.create({
       tenantId: tenantId,
       name,
       email: lowerCaseEmail,
-      password, // Remember to hash this in the model pre-save hook!
+      password,
       roleId,
       createdBy: session.user.id
     });
 
-    // The findById is implicitly secure because we just created the user
     const userWithRole = await User.findById(user._id)
-      .populate({
-        path: 'roleId',
-        select: 'name displayName'
-      })
+      .populate({ path: 'roleId', select: 'name displayName' })
       .select('-password');
 
     return NextResponse.json({ success: true, user: userWithRole }, { status: 201 });
+
   } catch (error) {
+    // --- START OF IMPROVEMENT ---
+    // Gracefully handle the race condition where the database's unique index is violated.
+    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+        // We don't need to re-read the body here because the message is generic enough.
+        return NextResponse.json({
+            success: false,
+            message: `A user with that email already exists in this salon.`
+        }, { status: 409 }); // 409 Conflict is the correct status code.
+    }
+    // --- END OF IMPROVEMENT ---
+    
     console.error('Error creating user:', error);
     return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
   }

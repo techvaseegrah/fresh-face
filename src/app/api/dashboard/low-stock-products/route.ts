@@ -1,6 +1,7 @@
-// FILE: src/app/api/dashboard/low-stock-products/route.ts - MULTI-TENANT REFACTORED VERSION
+// FILE: src/app/api/dashboard/low-stock-products/route.ts - CORRECTED VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
+import { Types } from 'mongoose'; // CHANGED: Import the 'Types' utility from Mongoose
 import dbConnect from '@/lib/dbConnect';
 import Setting from '@/models/Setting';
 import Product from '@/models/Product';
@@ -26,24 +27,26 @@ export async function GET(request: NextRequest) {
     await dbConnect();
 
     // --- MT: 1. Fetch the tenant-specific threshold setting ---
-    // Each tenant can have their own low stock threshold.
-    const thresholdSetting = await Setting.findOne({ key: 'lowStockThreshold', tenantId }).lean();
+    const thresholdSetting = await Setting.findOne({
+      key: 'lowStockThreshold',
+      // CHANGED: Cast the string tenantId to a Mongoose ObjectId
+      tenantId: new Types.ObjectId(tenantId) 
+    }).lean();
     
-    // Use the tenant's setting, or fall back to a reasonable default (e.g., 10).
     const tenantThreshold = thresholdSetting ? parseInt(thresholdSetting.value, 10) : 10;
     
     if (isNaN(tenantThreshold)) {
-      // This indicates a data issue for this specific tenant's setting.
       console.warn(`Warning: Low stock threshold for tenant ${tenantId} is not a valid number. Defaulting to 10.`);
     }
 
     // --- MT: 2. Find all products for THIS TENANT that are at or below the threshold ---
     const lowStockProducts = await Product.find({
-      tenantId: tenantId, // The crucial tenant scope
-      numberOfItems: { $gt: 0, $lte: tenantThreshold } // Also check that stock is > 0
+      // CHANGED: Cast the string tenantId to a Mongoose ObjectId here as well
+      tenantId: new Types.ObjectId(tenantId), 
+      numberOfItems: { $gt: 0, $lte: tenantThreshold }
     })
-    .select('name numberOfItems sku') // Select only the necessary fields
-    .sort({ numberOfItems: 1 }) // Show the lowest stock items first
+    .select('name numberOfItems sku')
+    .sort({ numberOfItems: 1 })
     .lean();
 
     // 3. Return the data in a structured format
@@ -55,6 +58,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
+    // Your server terminal will show the full error here, which is very helpful for debugging.
     console.error('[API /dashboard/low-stock-products] Error:', error);
     return NextResponse.json({ success: false, message: 'Server error.', error: error.message }, { status: 500 });
   }

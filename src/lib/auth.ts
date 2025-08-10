@@ -1,8 +1,10 @@
 // lib/auth.ts
+
 import { NextAuthOptions } from 'next-auth';
+import { NextRequest } from 'next/server'; // Import for type hints if needed, though req is any
 import CredentialsProvider from 'next-auth/providers/credentials';
+import { getToken } from 'next-auth/jwt';
 import connectToDatabase from '@/lib/mongodb';
-import { getToken } from 'next-auth/jwt'; 
 import User from '@/models/user';
 import Tenant from '@/models/Tenant';
 
@@ -11,23 +13,39 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        // We now expect the form to send a 'subdomain'
         subdomain: { label: 'Salon ID', type: 'text' },
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' }
       },
-      async authorize(credentials) {
-        // We now require all three fields
+      async authorize(credentials, req) {
         if (!credentials?.subdomain || !credentials?.email || !credentials?.password) {
           throw new Error('Salon ID, email, and password are required.');
         }
 
+        // --- THE DEFINITIVE FIX ---
+        // 1. Get the actual host the user is on from the request headers.
+        // The 'req' object is provided by NextAuth in the authorize function.
+        const host = (req.headers as Record<string, string> | undefined)?.host;
+        if (!host) {
+          // This is a server-side fail-safe and should rarely happen.
+          throw new Error('Could not determine the request host.');
+        }
+        const subdomainFromUrl = host.split('.')[0];
+
+        // 2. This is the CRITICAL VALIDATION:
+        // Compare the subdomain from the URL with the one the user typed in the form.
+        // They MUST match to prevent cross-domain login attempts.
+        if (subdomainFromUrl.toLowerCase() !== credentials.subdomain.toLowerCase()) {
+            throw new Error('The Salon ID entered does not match the website URL.');
+        }
+        // --- END OF THE DEFINITIVE FIX ---
+
+        // If the check passes, we can safely proceed with the credentials.
         const { subdomain, email, password } = credentials;
 
         try {
           await connectToDatabase();
           
-          // The subdomain now comes dynamically from the form
           const tenant = await Tenant.findOne({ subdomain: subdomain.toLowerCase() }).lean();
 
           if (!tenant) {
@@ -44,7 +62,8 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (!user || !user.roleId || !user.roleId.isActive) {
-            throw new Error('Invalid credentials for this salon.');
+            // This error is intentionally vague for security.
+            throw new Error('Invalid credentials or inactive account for this salon.');
           }
 
           const isPasswordValid = await user.comparePassword(password);
@@ -52,8 +71,10 @@ export const authOptions: NextAuthOptions = {
             throw new Error('Invalid credentials.');
           }
 
+          // Update last login time, but don't wait for it to complete.
           User.findByIdAndUpdate(user._id, { lastLogin: new Date() }).exec();
 
+          // Return the complete user object for the session token.
           return {
             id: user._id.toString(),
             email: user.email,
@@ -66,16 +87,20 @@ export const authOptions: NextAuthOptions = {
               permissions: user.roleId.permissions
             }
           };
-        } catch (error) {
+        } catch (error: any) {
+          // Re-throw specific, user-friendly errors from our checks
+          if (error.message.includes('Invalid') || error.message.includes('match')) {
+              throw new Error(error.message);
+          }
+          // Log the full error for debugging but return a generic message to the user
           console.error('Authorization Error:', error);
-          throw new Error('An unexpected error occurred.');
+          throw new Error('An unexpected server error occurred during login.');
         }
       }
     })
   ],
-  // --- COOKIE CONFIGURATION IS NO LONGER NEEDED FOR MODHEADER ---
-  // We can remove this block as we are always on the same 'localhost' domain.
   callbacks: {
+    // This callback runs after authorize and populates the JWT.
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
@@ -85,6 +110,7 @@ export const authOptions: NextAuthOptions = {
       }
       return token;
     },
+    // This callback runs after the JWT is created and populates the client-side session object.
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
@@ -103,8 +129,16 @@ export const authOptions: NextAuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
+
+
+// The helper functions below are not part of authOptions,
+// but they are correctly placed in this file for co-location.
+
+/**
+ * Extracts the raw JWT string from the request cookies.
+ * Used by the middleware to get the token for decoding.
+ */
 export function extractTokenFromRequest(req: NextRequest): string | null {
-  // Logic to determine the cookie name based on environment
   const cookieName = process.env.NODE_ENV === 'production'
     ? '__Secure-next-auth.session-token'
     : 'next-auth.session-token';
@@ -120,18 +154,19 @@ export function extractTokenFromRequest(req: NextRequest): string | null {
 export async function getUserFromToken(token: string): Promise<any | null> {
   try {
     const decodedToken = await getToken({
-      req: null, // Pass null because we are providing the raw token
+      req: null, // We pass null because we are providing the raw token string
       secret: process.env.NEXTAUTH_SECRET!,
       raw: token,
     });
 
     if (decodedToken) {
-      // Reshape the decoded token to a simple object the middleware can use
+      // Reshape the decoded token into a simple object the middleware can use
       return {
         id: decodedToken.id,
         email: decodedToken.email,
         tenantId: decodedToken.tenantId,
         permissions: (decodedToken.role as any)?.permissions || [],
+        subdomain: decodedToken.subdomain, // Make sure to return the subdomain
       };
     }
     return null;

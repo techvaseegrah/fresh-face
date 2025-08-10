@@ -1,44 +1,54 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'; // 1. Import NextRequest
 import dbConnect from '@/lib/dbConnect';
-import Appointment from '@/models/Appointment'; // Your Appointment model
+import Appointment from '@/models/Appointment';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 2. Import your helper
+import mongoose from 'mongoose'; // 3. Import mongoose for ObjectId conversion
 
-export async function GET() {
+export async function GET(req: NextRequest) { // 4. Add 'req' to the function signature
   try {
     await dbConnect();
 
-    // The aggregation pipeline efficiently groups appointments by day in the database.
+    // 5. Get the Tenant ID or fail early
+    const tenantId = getTenantIdOrBail(req);
+    if (tenantId instanceof NextResponse) {
+      // If the helper returns a response, it means the tenant ID was missing.
+      // We return that response immediately.
+      return tenantId;
+    }
+
     const dailyCounts = await Appointment.aggregate([
       {
-        // Stage 1: Group documents by the date part of the 'appointmentDateTime' field.
+        // 6. **THE FIX**: Add a $match stage as the FIRST step.
+        // This filters for documents belonging ONLY to the current tenant.
+        $match: {
+          tenantId: new mongoose.Types.ObjectId(tenantId)
+        }
+      },
+      {
+        // Stage 2: Group the filtered documents by date (this logic is unchanged)
         $group: {
           _id: {
-            // ** THIS IS THE CORRECTED LINE **
-            // We now use '$appointmentDateTime' to match your schema.
             $dateToString: { format: "%Y-%m-%d", date: "$appointmentDateTime" }
           },
-          // Count the number of documents in each group (i.e., appointments per day)
           count: { $sum: 1 } 
         }
       },
       {
-        // Stage 2: Sort by date descending (optional but good practice)
+        // Stage 3: Sort the results (unchanged)
         $sort: { _id: -1 }
       }
     ]);
 
-    // The result from aggregation is an array like: [{ _id: '2023-10-25', count: 8 }]
-    // We transform it into an object like: { '2023-10-25': 8 } for easy lookup on the frontend.
+    // The rest of your logic for transforming the data is perfect and requires no changes.
     const countsMap = dailyCounts.reduce((acc, item) => {
       acc[item._id] = item.count;
       return acc;
     }, {} as Record<string, number>);
 
-
     return NextResponse.json({ success: true, counts: countsMap });
 
   } catch (error) {
     console.error("Failed to fetch appointment summary:", error);
-    // Provide a more detailed error log on the server for debugging
     const errorMessage = error instanceof Error ? error.message : 'Unknown server error';
     return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   }

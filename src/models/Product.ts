@@ -35,7 +35,6 @@ const ProductSchema: Schema<IProduct> = new Schema({
   sku: {
     type: String,
     required: true,
-    unique: true,
     trim: true,
     uppercase: true
   },
@@ -107,6 +106,7 @@ const ProductSchema: Schema<IProduct> = new Schema({
   }
 }, { timestamps: true });
 
+
 ProductSchema.pre('save', function(next) {
   if (this.isNew || this.isModified('numberOfItems') || this.isModified('quantityPerItem')) {
     if (!this.isModified('totalQuantity')) {
@@ -115,6 +115,7 @@ ProductSchema.pre('save', function(next) {
   }
   next();
 });
+ProductSchema.index({ tenantId: 1, sku: 1 }, { unique: true });
 
 const ProductModel: Model<IProduct> = models.Product || mongoose.model<IProduct>('Product', ProductSchema);
 

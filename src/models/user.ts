@@ -7,15 +7,12 @@ const userSchema = new mongoose.Schema({
     type: require('mongoose').Schema.Types.ObjectId, 
     ref: 'Tenant', 
     required: true, 
-    index: true 
   },
   email: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true,
-    index: true
   },
   password: {
     type: String,
@@ -66,5 +63,6 @@ userSchema.methods.toJSON = function() {
   delete userObject.password;
   return userObject;
 };
+userSchema.index({ tenantId: 1, email: 1 }, { unique: true });
 
 export default mongoose.models.User || mongoose.model('User', userSchema);

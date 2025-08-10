@@ -48,12 +48,10 @@ const customerSchema = new Schema({
   email: { 
     type: String, 
     required: false,
-    unique: true,
-    sparse: true
   },
 
   // --- Search & Index Fields ---
-  phoneHash: { type: String, required: true, unique: true, index: true },
+  phoneHash: { type: String, required: true},
   searchableName: { type: String, required: true,index: true, lowercase: true },
   last4PhoneNumber: { type: String, index: true },
 
@@ -122,6 +120,9 @@ customerSchema.statics.checkBarcodeExists = function (this: ICustomerModel, barc
     isActive: true
   }).then(result => !!result);
 };
+customerSchema.index({ tenantId: 1, phoneHash: 1 }, { unique: true });
+customerSchema.index({ tenantId: 1, email: 1 }, { unique: true, sparse: true });
+customerSchema.index({ tenantId: 1, membershipBarcode: 1 }, { unique: true, sparse: true });
 let Customer: ICustomerModel;
 try {
   // Attempt to use the existing model

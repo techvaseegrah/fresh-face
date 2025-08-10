@@ -19,7 +19,6 @@ const PositionRateSettingSchema: Schema<IPositionRateSetting> = new Schema({
       type: String,
       required: true,
       trim: true,
-      unique: true,
   },
   otRate: {
       type: Number,
@@ -83,7 +82,6 @@ const ShopSettingSchema: Schema<IShopSetting> = new Schema({
   },
   key: {
     type: String,
-    unique: true,
     required: true,
     default: 'defaultSettings', 
   },
@@ -129,7 +127,7 @@ const ShopSettingSchema: Schema<IShopSetting> = new Schema({
 // you should change the index like this:
 // ShopSettingSchema.index({ tenantId: 1, key: 1 }, { unique: true });
 // And remove `unique: true` from the `key` field definition itself.
-
+ShopSettingSchema.index({ key: 1, tenantId: 1 }, { unique: true });
 // Prevent recompilation of the model if it already exists
 const ShopSetting: Model<IShopSetting> = mongoose.models.ShopSetting || mongoose.model<IShopSetting>('ShopSetting', ShopSettingSchema);
 
