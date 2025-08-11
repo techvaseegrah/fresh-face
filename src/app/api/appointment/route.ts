@@ -12,6 +12,7 @@ import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { InventoryManager } from '@/lib/inventoryManager'; 
 import { getTenantIdOrBail } from '@/lib/tenant';
+import { whatsAppService } from '@/lib/whatsapp';
 
 // --- IMPORT THE DECRYPT FUNCTION ---
 import { encrypt, decrypt} from '@/lib/crypto';
@@ -142,6 +143,7 @@ export async function GET(req: NextRequest) {
           }
         };
     });
+    console.log("Data being sent to frontend:", JSON.stringify(formattedAppointments, null, 2));
 
     return NextResponse.json({
       success: true,
@@ -198,9 +200,7 @@ export async function POST(req: NextRequest) {
       
       const newCustomers = await Customer.create([customerDataForCreation], { session });
       customerDoc = newCustomers[0];
-      if (!customerDoc) {
-        throw new Error("Customer creation failed unexpectedly.");
-      }
+      if (!customerDoc) throw new Error("Customer creation failed unexpectedly.");
     }
 
     const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
@@ -221,6 +221,8 @@ export async function POST(req: NextRequest) {
     const appointmentDateUTC = new Date(correctUtcTimestamp);
 
     const groupBookingId = new mongoose.Types.ObjectId();
+    const serviceDetails = await ServiceItem.find({ _id: { $in: serviceIdsForInventoryCheck } }).select('name').lean();
+    
     const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
       const service = await ServiceItem.findOne({ _id: assignment.serviceId, tenantId }).select('duration price membershipRate').lean();
       if (!service) {
@@ -237,7 +239,6 @@ export async function POST(req: NextRequest) {
         tenantId: tenantId,
       });
       const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
-
       return {
         tenantId: tenantId,
         customerId: customerDoc!._id,
@@ -264,7 +265,54 @@ export async function POST(req: NextRequest) {
       throw new Error("Failed to create appointment records in the database.");
     }
     
+    // This must happen after insertMany so the records exist to be updated.
+    const stylistIds = serviceAssignments.map((a: any) => a.stylistId);
+    await Staff.updateMany({ _id: { $in: stylistIds } }, { isAvailable: false }, { session });
+
     await session.commitTransaction();
+    
+    // === WHATSAPP NOTIFICATION (POST-TRANSACTION) ===
+try {
+  console.log('=== STARTING WHATSAPP APPOINTMENT NOTIFICATION ===');
+  console.log('Environment check:');
+  console.log('- ENABLE_WHATSAPP_NOTIFICATIONS:', process.env.ENABLE_WHATSAPP_NOTIFICATIONS);
+  console.log('- WHATSAPP_ACCESS_TOKEN defined:', !!process.env.WHATSAPP_ACCESS_TOKEN);
+  console.log('- WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID);
+
+  const stylists = await Staff.find({ _id: { $in: stylistIds } }).select('name').lean();
+  const mainStylistName = stylists[0]?.name || 'Our Team';
+  const servicesText = serviceDetails.map(s => s.name).join(', ');
+  
+  const appointmentDateFormatted = new Date(date).toLocaleDateString('en-GB', { 
+    day: 'numeric', month: 'long', year: 'numeric' 
+  });
+  const appointmentTimeFormatted = new Date(`${date}T${time}:00`).toLocaleTimeString('en-IN', { 
+    hour: '2-digit', minute: '2-digit', hour12: true 
+  });
+
+  console.log('WhatsApp appointment data:', {
+    phoneNumber: normalizedPhone,
+    customerName: customerName.trim(),
+    appointmentDate: appointmentDateFormatted,
+    appointmentTime: appointmentTimeFormatted,
+    services: servicesText,
+    stylistName: mainStylistName,
+  });
+
+  await whatsAppService.sendAppointmentBooking({
+    phoneNumber: normalizedPhone,
+    customerName: customerName.trim(),
+    appointmentDate: appointmentDateFormatted,
+    appointmentTime: appointmentTimeFormatted,
+    services: servicesText,
+    stylistName: mainStylistName,
+  });
+
+  console.log('WhatsApp appointment booking notification sent successfully');
+} catch (whatsappError: any) {
+  console.error('Failed to send WhatsApp appointment notification:', whatsappError);
+  console.error('WhatsApp error details:', whatsappError?.message);
+}
     
     return NextResponse.json({ 
       success: true, 

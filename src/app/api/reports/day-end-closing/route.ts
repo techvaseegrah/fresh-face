@@ -1,23 +1,30 @@
-// /api/reports/day-end-closing/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/dbConnect';
+import connectToDatabase from '@/lib/mongodb'; // Assuming this is your DB connection helper
 import DayEndReport from '@/models/DayEndReport';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { sendClosingReportEmail } from '@/lib/mail';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 👈 CHANGED: Import the tenant helper
 
 export async function POST(request: NextRequest) {
   try {
+    // --- STEP 1: Get Tenant ID first using the standard helper ---
+    const tenantId = getTenantIdOrBail(request);
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Bail out if the tenant header is missing
+    }
+    // -------------------------------------------------------------
+
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     }
 
-    // --- TENANCY IMPLEMENTATION ---
-    const tenantId = session.user.tenantId;
-    // ----------------------------
+    // Safeguard: Ensure the session tenant matches the header tenant
+    if (session.user.tenantId !== tenantId) {
+        return NextResponse.json({ success: false, message: 'Session-Tenant mismatch.' }, { status: 403 });
+    }
 
     const body = await request.json();
     const {
@@ -36,24 +43,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Closing date is required" }, { status: 400 });
     }
     
-    await dbConnect();
+    await connectToDatabase();
     
-    // --- TENANCY IMPLEMENTATION ---
     // Check for a report on the same date for the same tenant
+    // This logic was already correct, now it just uses the consistent `tenantId` variable
     const existingReport = await DayEndReport.findOne({ 
       closingDate: new Date(closingDate),
       tenantId: tenantId 
     });
-    // ----------------------------
 
     if (existingReport) {
-      return NextResponse.json({ success: false, message: `A report for ${closingDate} already exists.` }, { status: 409 });
+      return NextResponse.json({ success: false, message: `A report for ${new Date(closingDate).toLocaleDateString()} already exists.` }, { status: 409 });
     }
 
     const newReport = new DayEndReport({
-      // --- TENANCY IMPLEMENTATION ---
       tenantId: tenantId, // Tag the new report with the tenant's ID
-      // ----------------------------
       closingDate: new Date(closingDate),
       openingBalance,
       isOpeningBalanceManual,
@@ -77,11 +81,14 @@ export async function POST(request: NextRequest) {
 
     await newReport.save();
 
-    sendClosingReportEmail(body);
+    // 👈 CHANGED & CRITICAL: Make the email function tenant-aware
+    // Do not just pass the `body`. The email function needs the tenantId
+    // to look up the correct recipients from the database.
+    await sendClosingReportEmail(newReport, tenantId);
     
     return NextResponse.json({
       success: true,
-      message: `Day-end report for ${closingDate} submitted successfully.`,
+      message: `Day-end report for ${new Date(closingDate).toLocaleDateString()} submitted successfully.`,
       reportId: newReport._id,
     }, { status: 201 });
 

@@ -1,31 +1,42 @@
-// /api/reports/day-end-history/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth'; 
-import dbConnect from '@/lib/dbConnect';
+import connectToDatabase from '@/lib/mongodb'; // Corrected import name for consistency
 import DayEndReport from '@/models/DayEndReport';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import { getTenantIdOrBail } from '@/lib/tenant'; // 👈 IMPORTED: The standard tenant helper
 
 export async function GET(request: NextRequest) {
   try {
+    // --- 1. Get Tenant ID using the standard helper FIRST ---
+    const tenantId = getTenantIdOrBail(request);
+    if (tenantId instanceof NextResponse) {
+      return tenantId; // Bail out if the tenant header is missing
+    }
+    // --------------------------------------------------------
+
     const session = await getServerSession(authOptions);
-  
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     }
     
-    await dbConnect();
+    // --- 2. Security Safeguard: Verify session tenant matches header tenant ---
+    if (session.user.tenantId !== tenantId) {
+      console.warn(`Security Alert: Session tenant (${session.user.tenantId}) does not match header tenant (${tenantId}).`);
+      return NextResponse.json({ success: false, message: 'Session-Tenant mismatch.' }, { status: 403 });
+    }
+    // -----------------------------------------------------------------------
     
-    // --- TENANCY IMPLEMENTATION ---
-    const tenantId = session.user.tenantId;
-    const query: any = { tenantId: tenantId }; // Start query with tenantId
-    // ----------------------------
+    await connectToDatabase();
+    
+    // Start the query object with the validated tenantId. This is the core of the tenancy implementation.
+    const query: any = { tenantId: tenantId }; 
     
     const { searchParams } = request.nextUrl;
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    // Date filtering logic remains the same, but it's now appended to the tenant-scoped query.
     if (startDate && endDate) {
         const startDateObj = new Date(startDate);
         startDateObj.setUTCHours(0, 0, 0, 0);
@@ -41,12 +52,15 @@ export async function GET(request: NextRequest) {
     
     const reports = await DayEndReport.find(query)
       .sort({ closingDate: -1 })
-      .populate('closedBy', 'name')
+      .populate('closedBy', 'name') // Populate the user's name
       .lean();
       
+    // Your data cleaning logic remains unchanged.
     const cleanedReports = reports.map(report => {
       const newReport = { ...report };
       if (newReport.actualTotals && newReport.actualTotals.cash !== undefined) {
+          // This line appears to be aliasing 'cash' to 'totalCountedCash'.
+          // It's not a tenancy issue and is preserved.
           newReport.actualTotals.totalCountedCash = newReport.actualTotals.cash;
       }
       return newReport;

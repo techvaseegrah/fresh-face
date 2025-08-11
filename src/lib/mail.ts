@@ -2,11 +2,14 @@
 
 import nodemailer from 'nodemailer';
 import { format } from 'date-fns';
-import dbConnect from '@/lib/dbConnect';
+import connectToDatabase from '@/lib/mongodb';
 import Setting from '@/models/Setting';
+import DayEndReport from '@/models/DayEndReport'; // 👈 IMPORT the actual model for strong typing
 
+// This interface can be removed if DayEndReport model's type is used directly.
+// We'll keep it for the createEmailHtml function for now.
 interface DayEndReportData {
-  closingDate: string;
+  closingDate: Date; // Use Date object for consistency
   expectedTotals: { cash: number; card: number; upi: number; };
   actualTotals: { cash: number; card: number; upi: number; };
   discrepancies: { cash: number; card: number; upi: number; total: number; };
@@ -25,37 +28,52 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-// --- Your Original Function (Unchanged) ---
-export async function sendClosingReportEmail(reportData: DayEndReportData) {
+// --- 👇 CORRECTED TENANT-AWARE FUNCTION 👇 ---
+export async function sendClosingReportEmail(
+    reportDocument: InstanceType<typeof DayEndReport>, // 👈 CHANGED: Accept the full Mongoose document for type safety
+    tenantId: string                                   // 👈 CHANGED: Accept the tenantId
+) {
     try {
-        await dbConnect();
+        await connectToDatabase();
         const settingKey = 'dayEndReportRecipients';
-        const settingDoc = await Setting.findOne({ key: settingKey });
+
+        // ❗ CRITICAL: The query now includes `tenantId` to get the correct recipients.
+        const settingDoc = await Setting.findOne({ key: settingKey, tenantId: tenantId }).lean();
+
         const recipientEmails = settingDoc?.value;
         if (!Array.isArray(recipientEmails) || recipientEmails.length === 0) {
-            console.log(`No recipients configured for '${settingKey}'. Skipping day-end report email.`);
-            return;
+            console.log(`No recipients configured for '${settingKey}' for tenant ${tenantId}. Skipping email.`);
+            return; // Exit gracefully, this is not an error.
         }
-        const emailHtml = createEmailHtml(reportData);
-        const formattedDate = format(new Date(reportData.closingDate + 'T00:00:00'), 'MMMM dd, yyyy');
+
+        // The HTML function now receives the Mongoose document directly.
+        const emailHtml = createEmailHtml(reportDocument); 
+        
+        const formattedDate = format(reportDocument.closingDate, 'MMMM dd, yyyy');
+
         const mailOptions = {
             from: `"${process.env.EMAIL_FROM_NAME || 'Fresh-Face System'}" <${process.env.EMAIL_FROM}>`,
             to: recipientEmails,
             subject: `Day-End Closing Report for ${formattedDate}`,
             html: emailHtml,
         };
+
         await transporter.sendMail(mailOptions);
-        console.log(`Day-end report email sent successfully to: ${recipientEmails.join(', ')}`);
+        console.log(`Day-end report email sent successfully for tenant ${tenantId} to: ${recipientEmails.join(', ')}`);
+
     } catch (error) {
-        console.error("Failed to send day-end report email:", error);
-        throw new Error("Failed to send confirmation email.");
+        // ❗ CHANGED: Do not throw an error. The report is already saved.
+        // Crashing here would give a false error to the user. Just log it.
+        console.error(`Failed to send day-end report email for tenant ${tenantId}:`, error);
     }
 }
 
-// --- The HTML creation function (Unchanged) ---
+// --- The HTML creation function (Minor type adjustment) ---
 function createEmailHtml(report: DayEndReportData): string {
     const { closingDate, expectedTotals, actualTotals, discrepancies, notes, cashDenominations } = report;
-    const formattedDate = format(new Date(closingDate + 'T00:00:00'), 'EEEE, MMMM dd, yyyy');
+    const formattedDate = format(closingDate, 'EEEE, MMMM dd, yyyy'); // Use the Date object directly
+
+    // The rest of this function's logic remains exactly the same...
     const renderRow = (label: string, expected: number, actual: number, discrepancy: number) => {
         const discrepancyColor = discrepancy < 0 ? '#dc2626' : (discrepancy > 0 ? '#f59e0b' : '#16a34a');
         const discrepancyText = discrepancy < 0 ? `(Shortage)` : (discrepancy > 0 ? `(Overage)` : `(Match)`);
