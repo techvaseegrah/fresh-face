@@ -18,9 +18,7 @@ const SettingSchema: Schema = new Schema({
   },
   key: { 
     type: String, 
-    required: true, 
-    unique: true, // Ensures no duplicate setting keys
-    index: true   // Improves lookup performance
+    required: true,   // Improves lookup performance
   },
   value: { 
     type: Schema.Types.Mixed, // Allows for flexible value types
@@ -30,6 +28,7 @@ const SettingSchema: Schema = new Schema({
   category: { type: String, default: 'General' }
 }, { timestamps: true });
 
+SettingSchema.index({ key: 1, tenantId: 1 }, { unique: true });
 // Create and export the model
 const Setting: Model<ISetting> = mongoose.models.Setting || mongoose.model<ISetting>('Setting', SettingSchema);
 export default Setting;
