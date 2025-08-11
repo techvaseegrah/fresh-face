@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
+        .populate({  path: 'invoiceId', select: 'invoiceNumber'})
         .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 }) 
         .skip(skip)
         .limit(limit)
@@ -131,17 +132,20 @@ export async function GET(req: NextRequest) {
             }
         }
         
-        return {
-          ...apt,
-          id: apt._id.toString(),
-          appointmentDateTime: finalDateTime.toISOString(),
-          createdAt: (apt.createdAt || finalDateTime).toISOString(),
-          customerId: { // Overwrite the populated object with a clean, decrypted version
-            _id: customerData?._id,
-            name: decryptedCustomerName,
-            phoneNumber: decryptedPhoneNumber
-          }
-        };
+       return {
+              ...apt,
+              id: apt._id.toString(),
+              // 1. Add the invoiceId
+              appointmentDateTime: finalDateTime.toISOString(),
+              createdAt: (apt.createdAt || finalDateTime).toISOString(),
+              customerId: { // Overwrite with decrypted data BUT preserve needed fields
+                _id: customerData?._id,
+                name: decryptedCustomerName,
+                phoneNumber: decryptedPhoneNumber,
+                // 2. Add isMembership back in
+                isMembership: customerData?.isMembership || false 
+              }
+            };
     });
     console.log("Data being sent to frontend:", JSON.stringify(formattedAppointments, null, 2));
 
@@ -181,6 +185,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Missing required fields or services." }, { status: 400 });
     }
 
+    // --- 1. Customer Logic (Remains the same) ---
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
     const phoneHashToFind = createBlindIndex(normalizedPhone);
     let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind, tenantId }).session(session);
@@ -197,16 +202,26 @@ export async function POST(req: NextRequest) {
         last4PhoneNumber: normalizedPhone.slice(-4),
         phoneSearchIndex: generateNgrams(normalizedPhone).map(ngram => createBlindIndex(ngram)), 
       };
-      
       const newCustomers = await Customer.create([customerDataForCreation], { session });
       customerDoc = newCustomers[0];
-      if (!customerDoc) throw new Error("Customer creation failed unexpectedly.");
     }
 
-    const serviceIdsForInventoryCheck = serviceAssignments.map((a: any) => a.serviceId);
+    // --- 2. Aggregate Data from Service Assignments (This is the new core logic) ---
+    const allServiceIds = serviceAssignments.map((a: any) => a.serviceId);
+    
+    // IMPORTANT: We assume a single stylist for the entire appointment
+    const primaryStylistId = serviceAssignments[0].stylistId; 
+
+    // Fetch details for all selected services at once
+    const serviceDetails = await ServiceItem.find({ _id: { $in: allServiceIds } }).lean();
+    if (serviceDetails.length !== allServiceIds.length) {
+      throw new Error("One or more selected services could not be found.");
+    }
+
+    // --- 3. Inventory Logic (Updated to use the aggregated service list) ---
     if (InventoryManager.calculateMultipleServicesInventoryImpact && InventoryManager.applyInventoryUpdates) {
         const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
-          serviceIdsForInventoryCheck,
+          allServiceIds, // Use the aggregated list of service IDs
           gender,
           tenantId
         );
@@ -215,109 +230,74 @@ export async function POST(req: NextRequest) {
         }
     }
 
+    // --- 4. Calculate Totals (Duration and Price) ---
+    const totalEstimatedDuration = serviceDetails.reduce((sum, service) => sum + service.duration, 0);
+    
+    // Reuse your existing model logic to calculate financials
+    const tempAppointmentForCalc = new Appointment({
+      customerId: customerDoc!._id,
+      serviceIds: allServiceIds, // Use all service IDs for calculation
+      tenantId: tenantId,
+    });
+    const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
+
+    // --- 5. Prepare and Create ONE Appointment Document ---
     const assumedUtcDate = new Date(`${date}T${time}:00.000Z`);
     const istOffsetInMinutes = 330;
     const correctUtcTimestamp = assumedUtcDate.getTime() - (istOffsetInMinutes * 60 * 1000);
     const appointmentDateUTC = new Date(correctUtcTimestamp);
 
-    const groupBookingId = new mongoose.Types.ObjectId();
-    const serviceDetails = await ServiceItem.find({ _id: { $in: serviceIdsForInventoryCheck } }).select('name').lean();
-    
-    const newAppointmentsDataPromises = serviceAssignments.map(async (assignment: any) => {
-      const service = await ServiceItem.findOne({ _id: assignment.serviceId, tenantId }).select('duration price membershipRate').lean();
-      if (!service) {
-        throw new Error(`Service with ID ${assignment.serviceId} not found for this salon.`);
-      }
-      const stylist = await Staff.findOne({ _id: assignment.stylistId, tenantId }).lean();
-      if(!stylist) {
-        throw new Error(`Stylist with ID ${assignment.stylistId} not found for this salon.`);
-      }
+    const newAppointmentData = {
+      tenantId: tenantId,
+      customerId: customerDoc!._id,
+      stylistId: primaryStylistId, // Use the single stylist ID
+      serviceIds: allServiceIds, // Assign the array of all service IDs
+      notes,
+      status,
+      appointmentType,
+      estimatedDuration: totalEstimatedDuration,
+      appointmentDateTime: appointmentDateUTC,
+      finalAmount: grandTotal,
+      amount: grandTotal + membershipSavings,
+      membershipDiscount: membershipSavings,
+      checkInTime: status === 'Checked-In' ? new Date() : undefined,
+    };
 
-      const tempAppointmentForCalc = new Appointment({
-        customerId: customerDoc!._id,
-        serviceIds: [assignment.serviceId],
-        tenantId: tenantId,
-      });
-      const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
-      return {
-        tenantId: tenantId,
-        customerId: customerDoc!._id,
-        stylistId: assignment.stylistId,
-        serviceIds: [assignment.serviceId],
-        guestName: assignment.guestName,
-        notes,
-        status,
-        appointmentType,
-        estimatedDuration: service.duration,
-        appointmentDateTime: appointmentDateUTC,
-        groupBookingId: groupBookingId,
-        finalAmount: grandTotal,
-        amount: grandTotal + membershipSavings,
-        membershipDiscount: membershipSavings,
-        checkInTime: status === 'Checked-In' ? new Date() : undefined,
-      };
-    });
+    const [createdAppointment] = await Appointment.create([newAppointmentData], { session });
     
-    const newAppointmentsData = await Promise.all(newAppointmentsDataPromises);
-    const createdAppointments = await Appointment.insertMany(newAppointmentsData, { session });
-
-    if (!createdAppointments || createdAppointments.length === 0) {
-      throw new Error("Failed to create appointment records in the database.");
+    if (!createdAppointment) {
+      throw new Error("Failed to create the appointment record in the database.");
     }
     
-    // This must happen after insertMany so the records exist to be updated.
-    const stylistIds = serviceAssignments.map((a: any) => a.stylistId);
-    await Staff.updateMany({ _id: { $in: stylistIds } }, { isAvailable: false }, { session });
+    // --- 6. Update Stylist Status ---
+    await Staff.updateOne({ _id: primaryStylistId }, { isAvailable: false }, { session });
 
     await session.commitTransaction();
     
-    // === WHATSAPP NOTIFICATION (POST-TRANSACTION) ===
-try {
-  console.log('=== STARTING WHATSAPP APPOINTMENT NOTIFICATION ===');
-  console.log('Environment check:');
-  console.log('- ENABLE_WHATSAPP_NOTIFICATIONS:', process.env.ENABLE_WHATSAPP_NOTIFICATIONS);
-  console.log('- WHATSAPP_ACCESS_TOKEN defined:', !!process.env.WHATSAPP_ACCESS_TOKEN);
-  console.log('- WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID);
+    // --- 7. WhatsApp Notification (Updated for new logic) ---
+    try {
+      const stylist = await Staff.findById(primaryStylistId).select('name').lean();
+      const servicesText = serviceDetails.map(s => s.name).join(', ');
+      
+      const appointmentDateFormatted = new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+      const appointmentTimeFormatted = new Date(`${date}T${time}:00`).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-  const stylists = await Staff.find({ _id: { $in: stylistIds } }).select('name').lean();
-  const mainStylistName = stylists[0]?.name || 'Our Team';
-  const servicesText = serviceDetails.map(s => s.name).join(', ');
-  
-  const appointmentDateFormatted = new Date(date).toLocaleDateString('en-GB', { 
-    day: 'numeric', month: 'long', year: 'numeric' 
-  });
-  const appointmentTimeFormatted = new Date(`${date}T${time}:00`).toLocaleTimeString('en-IN', { 
-    hour: '2-digit', minute: '2-digit', hour12: true 
-  });
-
-  console.log('WhatsApp appointment data:', {
-    phoneNumber: normalizedPhone,
-    customerName: customerName.trim(),
-    appointmentDate: appointmentDateFormatted,
-    appointmentTime: appointmentTimeFormatted,
-    services: servicesText,
-    stylistName: mainStylistName,
-  });
-
-  await whatsAppService.sendAppointmentBooking({
-    phoneNumber: normalizedPhone,
-    customerName: customerName.trim(),
-    appointmentDate: appointmentDateFormatted,
-    appointmentTime: appointmentTimeFormatted,
-    services: servicesText,
-    stylistName: mainStylistName,
-  });
-
-  console.log('WhatsApp appointment booking notification sent successfully');
-} catch (whatsappError: any) {
-  console.error('Failed to send WhatsApp appointment notification:', whatsappError);
-  console.error('WhatsApp error details:', whatsappError?.message);
-}
+      await whatsAppService.sendAppointmentBooking({
+        phoneNumber: normalizedPhone,
+        customerName: customerName.trim(),
+        appointmentDate: appointmentDateFormatted,
+        appointmentTime: appointmentTimeFormatted,
+        services: servicesText,
+        stylistName: stylist?.name || 'Our Team',
+      });
+    } catch (whatsappError: any) {
+      console.error('Failed to send WhatsApp appointment notification:', whatsappError);
+    }
     
     return NextResponse.json({ 
       success: true, 
-      message: `${createdAppointments.length} service(s) booked successfully!`,
-      appointments: createdAppointments 
+      message: `Appointment booked successfully!`, // Simplified message
+      appointment: createdAppointment // Return the single appointment object
     }, { status: 201 });
 
   } catch (err: any) {

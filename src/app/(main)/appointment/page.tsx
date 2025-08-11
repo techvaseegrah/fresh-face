@@ -1,4 +1,4 @@
-// src/app/appointment/page.tsx - MULTI-TENANT VERSION
+// src/app/appointment/page.tsx - FINAL VERSION WITH INVOICE ID DISPLAY
 
 'use client';
 
@@ -14,14 +14,12 @@ import {
 } from '@heroicons/react/24/outline';
 import { toast } from 'react-toastify';
 import EditAppointmentForm from '@/components/EditAppointmentForm';
-import { useSession, getSession } from 'next-auth/react'; // 1. Import getSession
+import { useSession, getSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
 import { Tooltip } from 'react-tooltip';
 import 'react-tooltip/dist/react-tooltip.css';
 
-// Interfaces remain the same...
-// ...
 interface AppointmentWithCustomer {
   _id: string;
   id: string;
@@ -40,7 +38,10 @@ interface AppointmentWithCustomer {
   paymentDetails?: Record<string, number>;
   finalAmount?: number;
   membershipDiscount?: number;
-  invoiceId?: string;
+ invoiceId?: {
+    _id: string;
+    invoiceNumber: string;
+  } | null;  // This was already correctly added.
 }
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -73,8 +74,6 @@ export default function AppointmentPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalAppointmentsCount, setTotalAppointmentsCount] = useState(0);
 
-  // 2. --- TENANT-AWARE FETCH HELPER ---
-  // This helper function wraps fetch to automatically add the tenant ID header.
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const session = await getSession();
     if (!session?.user?.tenantId) {
@@ -101,7 +100,6 @@ export default function AppointmentPage() {
         params.append('date', 'today');
       }
 
-      // 3. Use tenantFetch instead of native fetch
       const res = await tenantFetch(`/api/appointment?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to fetch appointments');
@@ -116,7 +114,7 @@ export default function AppointmentPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, currentPage, searchTerm, dateFilter, tenantFetch]); // 4. Add tenantFetch to dependency array
+  }, [statusFilter, currentPage, searchTerm, dateFilter, tenantFetch]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -133,7 +131,6 @@ export default function AppointmentPage() {
 
   const handleBookNewAppointment = async (bookingData: NewBookingData) => {
     try {
-      // 3. Use tenantFetch
       const response = await tenantFetch('/api/appointment', { method: 'POST', body: JSON.stringify(bookingData) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Failed to book appointment.');
@@ -158,7 +155,6 @@ export default function AppointmentPage() {
 
   const handleUpdateAppointment = async (appointmentId: string, updateData: any) => {
     try {
-      // 3. Use tenantFetch
       const response = await tenantFetch(`/api/appointment/${appointmentId}`, { method: 'PUT', body: JSON.stringify(updateData) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message);
@@ -185,7 +181,6 @@ export default function AppointmentPage() {
     const method = isUpdating ? 'PUT' : 'POST';
 
     try {
-      // 3. Use tenantFetch
       const response = await tenantFetch(url, {
         method: method,
         body: JSON.stringify(finalPayload)
@@ -207,8 +202,6 @@ export default function AppointmentPage() {
   const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
-  // The JSX rendering part remains exactly the same.
-  // ...
   return (
     <div className="bg-gray-50/50 p-6">
        <div className="flex justify-between items-center mb-8">
@@ -267,6 +260,23 @@ export default function AppointmentPage() {
                         <div>{customerName}</div>
                         <div className="text-xs text-gray-500 font-normal">{customerPhone}</div>
                         {appointment.customerId?.isMembership && (<div className="text-xs text-yellow-600 font-semibold">Member</div>)}
+                        
+                        {/* ========================================================== */}
+                        {/* === THE CHANGE IS HERE: Conditionally display invoice ID === */}
+                        {/* ========================================================== */}
+                        {appointment.invoiceId && (
+                          <div 
+                            className="mt-1 text-xs text-gray-500 font-mono cursor-pointer hover:text-black"
+                            onClick={() => {
+                              navigator.clipboard.writeText(appointment.invoiceId!.invoiceNumber);
+                              toast.success('Invoice ID copied!');
+                            }}
+                            title="Click to copy Invoice ID"
+                          >
+                            Inv: {appointment.invoiceId.invoiceNumber}
+                          </div>
+                        )}
+                        {/* ========================================================== */}
                       </td>
                       <td className="px-6 py-4">{serviceNames}</td>
                       <td className="px-6 py-4"><div>{stylistName}</div></td>

@@ -1,134 +1,151 @@
 // models/customermodel.ts
 import mongoose, { Document, Model, Schema } from 'mongoose';
-import { encrypt, decrypt, createSearchHash } from '@/lib/crypto';
+import { encrypt, decrypt } from '@/lib/crypto'; // Assuming crypto has these exports
 
+// Interface for the document instance
 export interface ICustomer extends Document {
+  tenantId: mongoose.Types.ObjectId;
+
   // --- Encrypted Fields ---
   name: string;
   phoneNumber: string;
   email?: string;
      
   // --- Search & Index Fields ---
-  phoneHash: string;
-  searchableName: string;
+  phoneHash: string; // Blind index of the full phone number
+  searchableName: string; // Lowercase, unencrypted version of the name for searching
   last4PhoneNumber?: string;
-  phoneSearchIndex: string[]; // --- ADD THIS --- For type safety
+  phoneSearchIndex: string[]; // N-gram blind indexes for partial phone number search
 
-  // --- Other Existing Fields ---
+  // --- Other Data Fields ---
   dob?: Date;
+  gender?: 'male' | 'female' | 'other';
   survey?: string;
   loyaltyPoints: number;
+  
+  // --- Membership Fields ---
   isMembership: boolean;
-  membershipBarcode?: string;
+  membershipBarcode?: string; // This will be unique PER TENANT
   membershipPurchaseDate?: Date;
+
+  // --- Status and Timestamps ---
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-  gender?: 'male' | 'female' | 'other';
 
   // --- Methods ---
   toggleMembership(status?: boolean, customBarcode?: string): Promise<ICustomer>;
 }
 
+// Interface for the model itself (for static methods)
 export interface ICustomerModel extends Model<ICustomer> {
-  findByBarcode(barcode: string): Promise<ICustomer | null>;
-  checkBarcodeExists(barcode: string): Promise<boolean>;
+  findByBarcode(barcode: string, tenantId: string): Promise<ICustomer | null>;
+  checkBarcodeExists(barcode: string, tenantId: string): Promise<boolean>;
 }
 
-const customerSchema = new Schema({
+const customerSchema = new Schema<ICustomer, ICustomerModel>({
   tenantId: { 
-    type: require('mongoose').Schema.Types.ObjectId, 
+    type: Schema.Types.ObjectId, 
     ref: 'Tenant', 
-    required: true, 
-    index: true 
+    required: true,
   },
-  // --- Sensitive Fields ---
+  
+  // --- Sensitive Fields (to be encrypted in application logic before saving) ---
   name: { type: String, required: true },
   phoneNumber: { type: String, required: true },
-  email: { 
-    type: String, 
-    required: false,
-  },
+  email: { type: String }, // Not required
 
-  // --- Search & Index Fields ---
-  phoneHash: { type: String, required: true},
-  searchableName: { type: String, required: true,index: true, lowercase: true },
-  last4PhoneNumber: { type: String, index: true },
+  // --- Search & Index Fields (do not encrypt these) ---
+  phoneHash: { type: String, required: true },
+  searchableName: { type: String, required: true, lowercase: true },
+  last4PhoneNumber: { type: String },
+  phoneSearchIndex: { type: [String] },
 
-  // --- ADD THIS ---
-  // This new field will store the array of searchable hashes.
-  // The 'index: true' is critical for making searches fast.
-  phoneSearchIndex: {
-    type: [String],
-    index: true,
-  },
-
-  // --- Other Existing Fields ---
-  dob: { type: Date, required: false },
-  survey: { type: String, required: false, trim: true },
+  // --- Other Data Fields ---
+  dob: { type: Date },
+  survey: { type: String, trim: true },
   loyaltyPoints: { type: Number, default: 0, min: 0 },
-  isMembership: { type: Boolean, default: false, index: true },
-  membershipBarcode: { type: String, unique: true, sparse: true, index: true },
-  membershipPurchaseDate: { type: Date, sparse: true },
-  isActive: { type: Boolean, default: true, index: true },
-  gender: { type: String, enum: ['male', 'female', 'other'], required: false, lowercase: true },
-}, { timestamps: true });
+  gender: { type: String, enum: ['male', 'female', 'other'], lowercase: true },
 
-// --- Mongoose Middleware for Decryption (NO CHANGES NEEDED HERE) ---
-// The phoneSearchIndex field contains hashes, not encrypted data,
-// so it does NOT need to be added to this decryption logic.
-const decryptFields = (doc: any) => {
-  if (doc) {
-    if (doc.name) doc.name = decrypt(doc.name);
-    if (doc.email) doc.email = decrypt(doc.email);
-    if (doc.phoneNumber) doc.phoneNumber = decrypt(doc.phoneNumber);
-  }
-};
+  // --- Membership Fields ---
+  isMembership: { type: Boolean, default: false },
+  // CORRECT: Inline indexing options removed. The multi-tenant index is defined below.
+  membershipBarcode: { type: String }, 
+  membershipPurchaseDate: { type: Date },
 
-// customerSchema.post('findOne', decryptFields);
-// customerSchema.post('find', (docs) => docs.forEach(decryptFields));
-// customerSchema.post('findOneAndUpdate', decryptFields);
+  // --- Status ---
+  isActive: { type: Boolean, default: true },
+}, 
+{ 
+  timestamps: true // Automatically adds createdAt and updatedAt
+});
 
-// --- Existing Methods & Statics (Unchanged) ---
+// =========================================================================
+// === EXPLICIT INDEX DEFINITIONS (Best Practice for Multi-Tenancy) ======
+// =========================================================================
+
+// Ensures a phone number is unique FOR EACH TENANT.
+customerSchema.index({ tenantId: 1, phoneHash: 1 }, { unique: true });
+
+// Ensures an email is unique FOR EACH TENANT, but allows multiple customers
+// without an email (sparse: true).
+customerSchema.index({ tenantId: 1, email: 1 }, { unique: true, sparse: true });
+
+// Ensures a membership barcode is unique FOR EACH TENANT, but allows multiple
+// customers without a barcode. THIS FIXES YOUR ORIGINAL ERROR.
+customerSchema.index({ tenantId: 1, membershipBarcode: 1 }, { unique: true, sparse: true });
+
+// --- Performance Indexes for Common Queries ---
+customerSchema.index({ searchableName: 1 });
+customerSchema.index({ phoneSearchIndex: 1 });
+customerSchema.index({ isActive: 1, isMembership: 1 });
+
+
+// =========================================================================
+// =================== STATIC & INSTANCE METHODS =========================
+// =========================================================================
+
+// NOTE: Decryption logic is best handled in the API layer (`/api/...`) right before
+// sending the data to the client, not in a global Mongoose hook. This gives you
+// more control and prevents decrypted data from being accidentally logged or used internally.
+
 customerSchema.methods.toggleMembership = function (this: ICustomer, status = true, customBarcode?: string): Promise<ICustomer> {
-  // ... (no changes here)
   this.isMembership = status;
   if (status) {
     this.membershipPurchaseDate = new Date();
     if (customBarcode) {
+      // It's good practice to normalize barcodes (e.g., uppercase, trimmed)
       this.membershipBarcode = customBarcode.trim().toUpperCase();
     }
   } else {
-    this.membershipBarcode = undefined;
+    // Set to undefined to remove it completely, works well with sparse indexes
+    this.membershipBarcode = undefined; 
   }
   return this.save();
 };
 
-customerSchema.statics.findByBarcode = function (this: ICustomerModel, barcode: string): Promise<ICustomer | null> {
-  // ... (no changes here)
+customerSchema.statics.findByBarcode = function (this: ICustomerModel, barcode: string, tenantId: string): Promise<ICustomer | null> {
   return this.findOne({
+    tenantId: tenantId,
     membershipBarcode: barcode.trim().toUpperCase(),
     isMembership: true,
     isActive: true
   });
 };
 
-customerSchema.statics.checkBarcodeExists = function (this: ICustomerModel, barcode: string): Promise<boolean> {
-  // ... (no changes here)
+customerSchema.statics.checkBarcodeExists = function (this: ICustomerModel, barcode: string, tenantId: string): Promise<boolean> {
   return this.exists({
+    tenantId: tenantId,
     membershipBarcode: barcode.trim().toUpperCase(),
-    isActive: true
   }).then(result => !!result);
 };
-customerSchema.index({ tenantId: 1, phoneHash: 1 }, { unique: true });
-customerSchema.index({ tenantId: 1, email: 1 }, { unique: true, sparse: true });
-customerSchema.index({ tenantId: 1, membershipBarcode: 1 }, { unique: true, sparse: true });
-let Customer: ICustomerModel;
-try {
-  // Attempt to use the existing model
-  Customer = mongoose.model<ICustomer, ICustomerModel>('Customer');
-} catch (error) {
-  // If it doesn't exist, create a new one
-  Customer = mongoose.model<ICustomer, ICustomerModel>('Customer', customerSchema);
-}
+
+
+// =========================================================================
+// ============================ MODEL EXPORT ===============================
+// =========================================================================
+
+// This pattern prevents "OverwriteModelError" in Next.js hot-reload environments
+const Customer = (mongoose.models.Customer as ICustomerModel) || mongoose.model<ICustomer, ICustomerModel>('Customer', customerSchema);
+
 export default Customer;

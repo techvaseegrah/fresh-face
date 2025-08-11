@@ -34,7 +34,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
-  
+
   const tenantId = getTenantIdOrBail(req as any);
   if (tenantId instanceof NextResponse) {
     return tenantId;
@@ -46,23 +46,33 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   try {
     await connectToDatabase();
-    
+
     const customer = await Customer.findOne({ _id: customerId, tenantId }).lean<LeanCustomer>();
     if (!customer) {
       return NextResponse.json({ success: false, message: 'Customer not found for this tenant.' }, { status: 404 });
     }
 
     const [allRecentAppointments, loyaltyData] = await Promise.all([
-      Appointment.find({ customerId: customer._id, tenantId })
-        .sort({ appointmentDateTime: -1, date: -1 })
+      // =========================================================================
+      // === THE CHANGE IS HERE ===
+      // We now fetch only appointments with the status 'Paid'.
+      // =========================================================================
+      Appointment.find({
+        customerId: customer._id,
+        tenantId,
+        status: 'Paid' // Filter for paid appointments only
+      })
+        .sort({ appointmentDateTime: -1, date: -1 }) // Get the most recent paid appointments
         .limit(20)
         .lean(),
+      // =========================================================================
       LoyaltyTransaction.aggregate([
         { $match: { customerId: customer._id, tenantId: new mongoose.Types.ObjectId(tenantId) } },
         { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
       ])
     ]);
-    
+
+    // The rest of the logic remains the same, but now operates on the filtered 'Paid' appointments.
     let activityStatus: 'Active' | 'Inactive' | 'New' = 'New';
     let lastVisit: string | null = null;
     const twoMonthsAgo = new Date();
@@ -80,31 +90,24 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
     const appointmentIds = allRecentAppointments.map(apt => (apt as any)._id);
-    
+
     const populatedHistory = await Appointment.find({ _id: { $in: appointmentIds }, tenantId })
       .sort({ appointmentDateTime: -1, date: -1 })
       .populate({ path: 'stylistId', model: Staff, select: 'name' })
       .populate({ path: 'serviceIds', model: ServiceItem, select: 'name price' })
       .lean();
 
-    // =========================================================================
-    // === DEBUGGING BLOCK START ===
-    // This block safely decrypts each field. If a field is corrupted, it
-    // logs a detailed error to your console instead of crashing the app.
-    // =========================================================================
-    
+    // ... The rest of the function (decryption block and response object) is unchanged ...
+    // ... It will now correctly use the filtered data ...
     let decryptedName = 'Error: Corrupted Data';
     let decryptedEmail: string | undefined = undefined;
     let decryptedPhoneNumber = 'Error: Corrupted Data';
 
-    // --- Safely decrypt name ---
     try {
         decryptedName = decrypt(customer.name);
     } catch (e) {
         console.error(`🔴 DECRYPTION FAILED for field 'name' on customer ID ${customer._id}. Raw value: "${customer.name}"`);
     }
-
-    // --- Safely decrypt email (if it exists) ---
     if (customer.email) {
         try {
             decryptedEmail = decrypt(customer.email);
@@ -112,8 +115,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             console.error(`🔴 DECRYPTION FAILED for field 'email' on customer ID ${customer._id}. Raw value: "${customer.email}"`);
         }
     }
-
-    // --- Safely decrypt phone number ---
     try {
         decryptedPhoneNumber = decrypt(customer.phoneNumber);
     } catch (e) {
@@ -126,7 +127,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       name: decryptedName,
       email: decryptedEmail,
       phoneNumber: decryptedPhoneNumber,
-      // ... rest of your object is the same
       gender: customer.gender,
       isMember: customer.isMembership,
       membershipBarcode: customer.membershipBarcode,
@@ -157,8 +157,6 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         };
       })
     };
-    
-    // === DEBUGGING BLOCK END ===
 
     return NextResponse.json({ success: true, customer: customerDetails });
 
