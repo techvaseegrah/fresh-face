@@ -9,10 +9,12 @@ import { hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 import {
   HomeIcon, CalendarDaysIcon, UserGroupIcon, UsersIcon, CogIcon, Cog6ToothIcon, PowerIcon,
   LightBulbIcon, DocumentTextIcon, ShoppingCartIcon, BuildingStorefrontIcon, BanknotesIcon,
-  BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon
+  BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon,
+  ChartBarIcon
 } from '@heroicons/react/24/outline';
 
 import { BeakerIcon } from 'lucide-react';
+
 const AttendanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg> );
 const AdvanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01M12 18v-2m0-8a6 6 0 100 12 6 6 0 000-12z"></path></svg> );
 const PerformanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg> );
@@ -26,7 +28,6 @@ interface NavSubItem { href: string; label: string; icon: JSX.Element; show: boo
 interface NavItemConfig { href: string; label: string; icon: JSX.Element; show: boolean; subItems?: NavSubItem[]; }
 
 const Sidebar = () => {
-  // ✅ FIX: All hooks are called at the top, unconditionally.
   const pathname = usePathname();
   const { data: session, status } = useSession(); 
   const [openItemKey, setOpenItemKey] = useState<string | null>(null);
@@ -47,7 +48,9 @@ const Sidebar = () => {
 
     const adminSubItems: NavSubItem[] = [
       { href: '/admin/users', label: 'Users', icon: <UsersIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ]) },
-      { href: '/admin/roles', label: 'Roles', icon: <CogIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ROLES_READ]) }
+      { href: '/admin/roles', label: 'Roles', icon: <CogIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ROLES_READ]) },
+      // <<< FIX #1: The link must match your folder structure, which is '/admin/tenants'
+      { href: '/admin/tenants', label: 'Stores', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TENANTS_CREATE]) }
     ];
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
@@ -58,6 +61,7 @@ const Sidebar = () => {
       { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.APPOINTMENTS_READ, PERMISSIONS.APPOINTMENTS_CREATE]) },
       { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_CREATE]) },
       { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PRODUCTS_READ, PERMISSIONS.SERVICES_READ]) },
+      { href: '/sales-report', label: 'Sales Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) },
       { href: '/staffmanagement', label: 'Staff Management', icon: <UsersIcon className="h-5 w-5" />, show: canSeeStaffManagement, subItems: staffSubItems.filter(item => item.show) },
       { href: '/DayendClosing', label:'Day-end Closing', icon: <BanknotesIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]) },
       { href: '/alerts', label: 'Alerts', icon: <BellAlertIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ALERTS_READ]) },
@@ -66,11 +70,12 @@ const Sidebar = () => {
       { href: '/eb-view', label: 'EB View & Calculate', icon: <DocumentTextIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EB_VIEW_CALCULATE]) },
       { href: '/inventory-checker', label: 'Inventory Checker', icon: <BeakerIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) },
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
+      // <<< FIX #2: The main link must also match the folder structure to highlight correctly.
       { href: '/admin', label: 'Administration', icon: <Cog6ToothIcon className="h-5 w-5" />, show: canSeeAdministration, subItems: adminSubItems.filter(item => item.show) },
       { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [ PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, PERMISSIONS.ATTENDANCE_SETTINGS_READ, PERMISSIONS.LOYALTY_SETTINGS_READ, ])},
     ];
   }, [userPermissions]);
-
+  
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
@@ -80,7 +85,6 @@ const Sidebar = () => {
     setOpenItemKey(activeParent?.href || null);
   }, [pathname, navItems, status]);
   
-  // ✅ FIX: The conditional return is moved AFTER all hooks.
   if (status === 'loading') {
     return <div className="w-64 h-screen bg-white fixed" />;
   }
@@ -100,13 +104,14 @@ const Sidebar = () => {
 
   return (
     <div className="w-64 h-screen bg-white text-black fixed left-0 top-0 shadow-lg flex flex-col">
-        {/* The rest of your JSX code is correct and does not need changes */}
+        {/* Header */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">FF</div>
             <div><h1 className="text-xl font-semibold text-gray-800">Fresh Face</h1><p className="text-xs text-gray-500">Salon Management</p></div>
           </div>
         </div>
+        {/* Navigation */}
         <div className="flex-1 overflow-y-auto">
           <nav className="p-4 space-y-1">
             {navItems.filter(item => item.show).map((item) => {
@@ -145,6 +150,7 @@ const Sidebar = () => {
             })}
           </nav>
         </div>
+        {/* Footer */}
         <div className="p-4 border-t border-gray-200">
           {session && (
             <div className="space-y-3">

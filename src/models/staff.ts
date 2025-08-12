@@ -22,7 +22,7 @@ export interface IStaff extends Document {
 }
 
 const staffSchema = new Schema<IStaff>({
-    tenantId: { 
+  tenantId: { 
     type: Schema.Types.ObjectId, 
     ref: 'Tenant', 
     required: true, 
@@ -31,14 +31,14 @@ const staffSchema = new Schema<IStaff>({
   staffIdNumber: {
     type: String,
     required: [true, 'Staff ID number is required.'],
-    unique: true,
+    // unique: true, // <<< REMOVED THIS
     trim: true,
   },
   name: { type: String, required: true, trim: true },
   email: {
     type: String,
     unique: true,
-    sparse: true,
+    sparse: true, // This is fine, email should be globally unique
     trim: true,
     lowercase: true,
   },
@@ -46,7 +46,7 @@ const staffSchema = new Schema<IStaff>({
   aadharNumber: {
     type: String,
     required: true,
-    unique: true,
+    // unique: true, // <<< REMOVED THIS
     trim: true,
   },
   position: { type: String, required: true, trim: true },
@@ -60,20 +60,19 @@ const staffSchema = new Schema<IStaff>({
   agreementImage: { type: String },
 }, { timestamps: true });
 
+// --- THIS IS THE FIX ---
+// Create compound indexes to ensure uniqueness is scoped to each tenant.
+staffSchema.index({ tenantId: 1, staffIdNumber: 1 }, { unique: true });
+staffSchema.index({ tenantId: 1, aadharNumber: 1 }, { unique: true });
+
 staffSchema.index({ status: 1, name: 1 });
 
-
-// --- MODIFIED EXPORT LOGIC ---
-// This pattern is more resilient to Next.js hot-reloading issues.
 let Staff: Model<IStaff>;
 
 try {
-  // Throws an error if "Staff" hasn't been registered
   Staff = mongoose.model<IStaff>('Staff');
 } catch {
-  // Defines the model only if it doesn't exist
   Staff = mongoose.model<IStaff>('Staff', staffSchema);
 }
-// --- END MODIFICATION ---
 
 export default Staff;

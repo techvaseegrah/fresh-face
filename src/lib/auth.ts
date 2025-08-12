@@ -1,12 +1,12 @@
 // lib/auth.ts
 
 import { NextAuthOptions } from 'next-auth';
-import { NextRequest } from 'next/server'; // Import for type hints if needed, though req is any
+import { NextRequest } from 'next/server';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { getToken } from 'next-auth/jwt';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/user';
-import Tenant from '@/models/Tenant';
+import Tenant from '@/models/Tenant'; // Ensure this path is correct
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -22,25 +22,16 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Salon ID, email, and password are required.');
         }
 
-        // --- THE DEFINITIVE FIX ---
-        // 1. Get the actual host the user is on from the request headers.
-        // The 'req' object is provided by NextAuth in the authorize function.
         const host = (req.headers as Record<string, string> | undefined)?.host;
         if (!host) {
-          // This is a server-side fail-safe and should rarely happen.
           throw new Error('Could not determine the request host.');
         }
         const subdomainFromUrl = host.split('.')[0];
 
-        // 2. This is the CRITICAL VALIDATION:
-        // Compare the subdomain from the URL with the one the user typed in the form.
-        // They MUST match to prevent cross-domain login attempts.
         if (subdomainFromUrl.toLowerCase() !== credentials.subdomain.toLowerCase()) {
             throw new Error('The Salon ID entered does not match the website URL.');
         }
-        // --- END OF THE DEFINITIVE FIX ---
-
-        // If the check passes, we can safely proceed with the credentials.
+        
         const { subdomain, email, password } = credentials;
 
         try {
@@ -58,11 +49,11 @@ export const authOptions: NextAuthOptions = {
             isActive: true 
           }).populate({
             path: 'roleId',
-            select: 'name permissions isActive'
+            // <<< CORRECTION 1 of 2: Added 'displayName' to the database query.
+            select: 'name displayName permissions isActive'
           });
 
           if (!user || !user.roleId || !user.roleId.isActive) {
-            // This error is intentionally vague for security.
             throw new Error('Invalid credentials or inactive account for this salon.');
           }
 
@@ -71,10 +62,8 @@ export const authOptions: NextAuthOptions = {
             throw new Error('Invalid credentials.');
           }
 
-          // Update last login time, but don't wait for it to complete.
           User.findByIdAndUpdate(user._id, { lastLogin: new Date() }).exec();
 
-          // Return the complete user object for the session token.
           return {
             id: user._id.toString(),
             email: user.email,
@@ -84,15 +73,15 @@ export const authOptions: NextAuthOptions = {
             role: {
               id: user.roleId._id.toString(),
               name: user.roleId.name,
+              // <<< CORRECTION 2 of 2: Added 'displayName' to the returned role object.
+              displayName: user.roleId.displayName, 
               permissions: user.roleId.permissions
             }
           };
         } catch (error: any) {
-          // Re-throw specific, user-friendly errors from our checks
           if (error.message.includes('Invalid') || error.message.includes('match')) {
               throw new Error(error.message);
           }
-          // Log the full error for debugging but return a generic message to the user
           console.error('Authorization Error:', error);
           throw new Error('An unexpected server error occurred during login.');
         }
@@ -100,7 +89,6 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    // This callback runs after authorize and populates the JWT.
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
@@ -110,7 +98,6 @@ export const authOptions: NextAuthOptions = {
       }
       return token;
     },
-    // This callback runs after the JWT is created and populates the client-side session object.
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
@@ -154,19 +141,18 @@ export function extractTokenFromRequest(req: NextRequest): string | null {
 export async function getUserFromToken(token: string): Promise<any | null> {
   try {
     const decodedToken = await getToken({
-      req: null, // We pass null because we are providing the raw token string
+      req: null, 
       secret: process.env.NEXTAUTH_SECRET!,
       raw: token,
     });
 
     if (decodedToken) {
-      // Reshape the decoded token into a simple object the middleware can use
       return {
         id: decodedToken.id,
         email: decodedToken.email,
         tenantId: decodedToken.tenantId,
         permissions: (decodedToken.role as any)?.permissions || [],
-        subdomain: decodedToken.subdomain, // Make sure to return the subdomain
+        subdomain: decodedToken.subdomain,
       };
     }
     return null;
@@ -183,10 +169,8 @@ export function hasPermission(userPermissions: string[] | undefined, requiredPer
   if (!userPermissions) {
     return false;
   }
-  // Check for wildcard (super admin)
   if (userPermissions.includes('*')) {
     return true;
   }
-  // Check for the specific permission
   return userPermissions.includes(requiredPermission);
 }

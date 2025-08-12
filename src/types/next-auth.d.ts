@@ -1,53 +1,47 @@
-  // types/next-auth.d.ts
-  import NextAuth, { DefaultSession } from 'next-auth';
-  import { JWT as DefaultJWT } from 'next-auth/jwt';
+// types/next-auth.d.ts
 
-  declare module 'next-auth' {
-    /**
-     * The user object returned from the `authorize` callback.
-     * We add our custom properties to it.
-     */
-    interface User {
-      tenantId: string;
-      subdomain: string;
-      role: {
-        id: string;
-        name: string;
-        permissions: string[];
-      };
-    }
+import NextAuth, { DefaultSession } from 'next-auth';
+import { JWT as DefaultJWT } from 'next-auth/jwt';
 
-    /**
-     * The session object available on the client (`useSession`).
-     * We add our custom properties to the `user` object within the session.
-     */
-    interface Session {
-      user: {
-        id: string; // The user's database ID
-        tenantId: string; // The tenant the user belongs to
-        subdomain: string; // The tenant's subdomain for redirects
-        role: {
-          id: string;
-          name: string;
-          permissions: string[];
-        };
-      } & DefaultSession['user']; // This keeps the default properties like name, email, image
-    }
+// Define the shape of your role once
+interface IUserRole {
+  id: string;
+  name: string;
+  displayName?: string; // Add this optional property
+  permissions: string[];
+}
+
+declare module 'next-auth' {
+  /**
+   * The user object returned from the `authorize` callback.
+   */
+  interface User {
+    tenantId: string;
+    subdomain: string;
+    role: IUserRole; // Use the interface
   }
 
-  declare module 'next-auth/jwt' {
-    /**
-     * The JWT token that is stored and passed between server-side functions.
-     * We add our custom properties here to persist them across requests.
-     */
-    interface JWT extends DefaultJWT {
+  /**
+   * The session object available on the client (`useSession`).
+   */
+  interface Session {
+    user: {
       id: string;
       tenantId: string;
       subdomain: string;
-      role: {
-        id: string;
-        name: string;
-        permissions: string[];
-      };
-    }
+      role: IUserRole; // Use the interface
+    } & DefaultSession['user'];
   }
+}
+
+declare module 'next-auth/jwt' {
+  /**
+   * The JWT token that is stored and passed between server-side functions.
+   */
+  interface JWT extends DefaultJWT {
+    id: string;
+    tenantId: string;
+    subdomain: string;
+    role: IUserRole; // Use the interface
+  }
+}

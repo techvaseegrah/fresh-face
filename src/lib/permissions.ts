@@ -13,11 +13,19 @@ export const PERMISSIONS = {
   ROLES_DELETE: 'roles:delete',
   ROLES_MANAGE: 'roles:manage',
 
+  // Store management
+  STORES_CREATE: 'stores:create',
+  STORES_READ: 'stores:read',
+  STORES_UPDATE: 'stores:update',
+  STORES_DELETE: 'stores:delete',
+
   // Customer management
   CUSTOMERS_CREATE: 'customers:create',
   CUSTOMERS_READ: 'customers:read',
   CUSTOMERS_UPDATE: 'customers:update',
   CUSTOMERS_DELETE: 'customers:delete',
+  CUSTOMERS_IMPORT: 'customers:import', // <-- Permission for the "Import" button
+  CUSTOMERS_EXPORT: 'customers:export', // <-- Permission for the "Export" button
   CUSTOMERS_MANAGE: 'customers:manage',
 
   // Appointment management
@@ -26,8 +34,6 @@ export const PERMISSIONS = {
   APPOINTMENTS_UPDATE: 'appointments:update',
   APPOINTMENTS_DELETE: 'appointments:delete',
   APPOINTMENTS_MANAGE: 'appointments:manage',
-
-  // ** NEW PERMISSIONS FOR SHOP MODULE **
 
   // Stylist Management
   STYLISTS_CREATE: 'stylists:create',
@@ -89,7 +95,6 @@ export const PERMISSIONS = {
   ALERTS_READ: 'alerts:read',
   ALERTS_DELETE: 'alerts:delete',
 
- 
   // Staff Management Permissions
   STAFF_LIST_READ: 'staff-list:read',
   STAFF_LIST_CREATE: 'staff-list:create',
@@ -116,12 +121,16 @@ export const PERMISSIONS = {
   EXPENSES_DELETE: 'expenses:delete',
   EXPENSES_MANAGE: 'expenses:manage',
 
+  SALES_REPORT_READ: 'sales:report:read',
+  TENANTS_CREATE: 'tenants:create',
+
   ALL: '*'
 } as const;
 
 export const PERMISSION_CATEGORIES = {
   USER_MANAGEMENT: 'User Management',
   ROLE_MANAGEMENT: 'Role Management',
+  STORE_MANAGEMENT: 'Store Management', // Added Category
   CUSTOMER_MANAGEMENT: 'Customer Management',
   APPOINTMENT_MANAGEMENT: 'Appointment Management',
   BILLING_MANAGEMENT: 'Billing Management',
@@ -148,30 +157,32 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.USERS_READ, description: 'View user information', category: PERMISSION_CATEGORIES.USER_MANAGEMENT },
   { permission: PERMISSIONS.USERS_UPDATE, description: 'Update user information', category: PERMISSION_CATEGORIES.USER_MANAGEMENT },
   { permission: PERMISSIONS.USERS_DELETE, description: 'Delete users', category: PERMISSION_CATEGORIES.USER_MANAGEMENT },
-  //{ permission: PERMISSIONS.USERS_MANAGE, description: 'Full user management access', category: PERMISSION_CATEGORIES.USER_MANAGEMENT },
 
   // Role Management
   { permission: PERMISSIONS.ROLES_CREATE, description: 'Create new roles', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
   { permission: PERMISSIONS.ROLES_READ, description: 'View role information', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
   { permission: PERMISSIONS.ROLES_UPDATE, description: 'Update role information', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
   { permission: PERMISSIONS.ROLES_DELETE, description: 'Delete roles', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
-  //{ permission: PERMISSIONS.ROLES_MANAGE, description: 'Full role management access', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
+
+  // Store Management (New Section)
+  { permission: PERMISSIONS.STORES_CREATE, description: 'Create new stores', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
+  { permission: PERMISSIONS.STORES_READ, description: 'View store information', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
+  { permission: PERMISSIONS.STORES_UPDATE, description: 'Update store information', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
+  { permission: PERMISSIONS.STORES_DELETE, description: 'Delete stores', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
 
   // Customer Management
   { permission: PERMISSIONS.CUSTOMERS_CREATE, description: 'Create new customers', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
   { permission: PERMISSIONS.CUSTOMERS_READ, description: 'View customer information', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
   { permission: PERMISSIONS.CUSTOMERS_UPDATE, description: 'Update customer information', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
   { permission: PERMISSIONS.CUSTOMERS_DELETE, description: 'Delete customers', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
-  //{ permission: PERMISSIONS.CUSTOMERS_MANAGE, description: 'Full customer management access', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
+  { permission: PERMISSIONS.CUSTOMERS_IMPORT, description: 'Import customers from a file', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
+  { permission: PERMISSIONS.CUSTOMERS_EXPORT, description: 'Export all customers to a file', category: PERMISSION_CATEGORIES.CUSTOMER_MANAGEMENT },
 
   // Appointment Management
   { permission: PERMISSIONS.APPOINTMENTS_CREATE, description: 'Create new appointments', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
   { permission: PERMISSIONS.APPOINTMENTS_READ, description: 'View appointment information', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
   { permission: PERMISSIONS.APPOINTMENTS_UPDATE, description: 'Update appointment information', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
   { permission: PERMISSIONS.APPOINTMENTS_DELETE, description: 'Delete appointments', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
-  //{ permission: PERMISSIONS.APPOINTMENTS_MANAGE, description: 'Full appointment management access', category: PERMISSION_CATEGORIES.APPOINTMENT_MANAGEMENT },
-
-
 
   // Dashboard Access
   { permission: PERMISSIONS.DASHBOARD_READ, description: 'View dashboard information', category: PERMISSION_CATEGORIES.DASHBOARD_ACCESS },
@@ -192,7 +203,6 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.DAYEND_READ, description: 'View day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
   { permission: PERMISSIONS.DAYEND_UPDATE, description: 'Update day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
   { permission: PERMISSIONS.DAYEND_DELETE, description: 'Delete day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
-  //{ permission: PERMISSIONS.DAYEND_MANAGE, description: 'Full day-end closing management access', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
 
   // Stylist Management
   { permission: PERMISSIONS.STYLISTS_CREATE, description: 'Create new stylists', category: PERMISSION_CATEGORIES.STYLIST_MANAGEMENT },
@@ -308,15 +318,12 @@ export const ROLE_TEMPLATES = {
       PERMISSIONS.ROLES_READ,
       PERMISSIONS.CUSTOMERS_MANAGE,
       PERMISSIONS.APPOINTMENTS_MANAGE,
-
       PERMISSIONS.DASHBOARD_READ,
-
       PERMISSIONS.EB_VIEW_CALCULATE,
-      PERMISSIONS.PROCUREMENT_CREATE, // Added
-      PERMISSIONS.PROCUREMENT_READ,   // Added
-      PERMISSIONS.PROCUREMENT_UPDATE, // Added
-      PERMISSIONS.PROCUREMENT_DELETE, // Added
-
+      PERMISSIONS.PROCUREMENT_CREATE,
+      PERMISSIONS.PROCUREMENT_READ,
+      PERMISSIONS.PROCUREMENT_UPDATE,
+      PERMISSIONS.PROCUREMENT_DELETE,
       PERMISSIONS.DAYEND_MANAGE
     ]
   },
@@ -328,14 +335,13 @@ export const ROLE_TEMPLATES = {
       PERMISSIONS.APPOINTMENTS_MANAGE,
       PERMISSIONS.DASHBOARD_READ,
       PERMISSIONS.EB_UPLOAD,
-      PERMISSIONS.PROCUREMENT_CREATE, // Added
-      PERMISSIONS.PROCUREMENT_READ,   // Added
-      PERMISSIONS.PROCUREMENT_UPDATE, // Added
-      PERMISSIONS.PROCUREMENT_DELETE,  // Added
-
-      PERMISSIONS.DAYEND_CREATE, // Added
-      PERMISSIONS.DAYEND_READ,   // Added
-      PERMISSIONS.DAYEND_UPDATE  // Added
+      PERMISSIONS.PROCUREMENT_CREATE,
+      PERMISSIONS.PROCUREMENT_READ,
+      PERMISSIONS.PROCUREMENT_UPDATE,
+      PERMISSIONS.PROCUREMENT_DELETE,
+      PERMISSIONS.DAYEND_CREATE,
+      PERMISSIONS.DAYEND_READ,
+      PERMISSIONS.DAYEND_UPDATE
     ]
   },
   STAFF: {
@@ -348,7 +354,7 @@ export const ROLE_TEMPLATES = {
       PERMISSIONS.APPOINTMENTS_UPDATE,
       PERMISSIONS.DASHBOARD_READ,
       PERMISSIONS.PROCUREMENT_READ,
-      PERMISSIONS.DAYEND_READ // Added
+      PERMISSIONS.DAYEND_READ
     ]
   },
   RECEPTIONIST: {
@@ -359,7 +365,7 @@ export const ROLE_TEMPLATES = {
       PERMISSIONS.APPOINTMENTS_MANAGE,
       PERMISSIONS.DASHBOARD_READ,
       PERMISSIONS.EB_UPLOAD,
-      PERMISSIONS.DAYEND_CREATE, // Added
+      PERMISSIONS.DAYEND_CREATE,
       PERMISSIONS.DAYEND_READ
     ]
   }

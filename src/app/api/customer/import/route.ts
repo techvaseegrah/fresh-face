@@ -1,4 +1,4 @@
-// /app/api/customers/import/route.ts - MULTI-TENANT VERSION
+// /app/api/customers/import/route.ts - MULTI-TENANT VERSION (Corrected Permission)
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -8,7 +8,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import Customer from '@/models/customermodel';
 import { encrypt } from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
-import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
 
 interface CustomerImportRow {
   Name: string;
@@ -23,11 +23,15 @@ interface CustomerImportRow {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE)) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  
+  // --- MODIFIED SECTION START ---
+  // The permission check is now updated to use CUSTOMERS_IMPORT,
+  // ensuring only users with this specific permission can import data.
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_IMPORT)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized: Missing import permission.' }, { status: 403 }); // Using 403 Forbidden is more specific here
   }
+  // --- MODIFIED SECTION END ---
 
-  // 2. Get the Tenant ID right at the start or fail.
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) {
     return tenantId;
@@ -68,7 +72,6 @@ export async function POST(req: NextRequest) {
             throw new Error('MembershipBarcode is required if IsMembership is TRUE.');
         }
         
-        // 3. Add tenantId to the customer payload.
         const customerPayload = {
           name: encrypt(row.Name.trim()),
           phoneNumber: encrypt(normalizedPhoneNumber),
@@ -86,13 +89,11 @@ export async function POST(req: NextRequest) {
           tenantId: tenantId, // Enforce the tenantId
         };
         
-        // 4. Scope the check for an existing customer to the current tenant.
         const existingCustomer = await Customer.findOne({ phoneHash, tenantId });
 
         if (existingCustomer) {
           // UPDATE LOGIC
           if (barcode) {
-              // 5. Scope the barcode conflict check to the current tenant.
               const barcodeExists = await Customer.findOne({ 
                 membershipBarcode: barcode, 
                 _id: { $ne: existingCustomer._id },
@@ -102,18 +103,15 @@ export async function POST(req: NextRequest) {
                   throw new Error(`MembershipBarcode "${barcode}" is already in use by another customer.`);
               }
           }
-          // 6. Scope the update operation to the current tenant.
           await Customer.findOneAndUpdate({ _id: existingCustomer._id, tenantId }, { $set: customerPayload });
         } else {
           // CREATE LOGIC
           if (barcode) {
-              // 5. Scope the barcode conflict check to the current tenant.
               const barcodeExists = await Customer.findOne({ membershipBarcode: barcode, tenantId });
               if (barcodeExists) {
                   throw new Error(`MembershipBarcode "${barcode}" is already in use by another customer.`);
               }
           }
-          // The customerPayload already includes the tenantId, so create is safe.
           await Customer.create(customerPayload);
         }
 
