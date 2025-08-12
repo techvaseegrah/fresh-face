@@ -103,11 +103,16 @@ export default function AlertsPage() {
   const [isDayEndSaving, setIsDayEndSaving] = useState(false)
 
   useEffect(() => {
-    if (canReadAlerts) {
+    if (canReadAlerts && session?.user?.tenantId) {
       const fetchDayEndSettings = async () => {
         setIsLoading(true)
         try {
-          const res = await fetch("/api/settings/dayEndReportRecipients")
+          // FIX: Added headers object with x-tenant-id
+          const res = await fetch("/api/settings/dayEndReportRecipients", {
+            headers: {
+                'x-tenant-id': session.user.tenantId,
+            }
+          })
           const data = await res.json()
           if (data.success) {
             setDayEndRecipients(data.setting.value || [])
@@ -125,7 +130,7 @@ export default function AlertsPage() {
     } else {
       setIsLoading(false)
     }
-  }, [canReadAlerts])
+  }, [canReadAlerts, session])
 
   const showToast = (message: string, isError = false) => {
     setToast({ message, show: true, isError })
@@ -153,11 +158,22 @@ export default function AlertsPage() {
 
   const handleSaveDayEndSettings = async (e: FormEvent) => {
     e.preventDefault()
+
+    // FIX: Guard against missing tenantId
+    if (!session?.user?.tenantId) {
+        showToast("Cannot save. User session is not available.", true);
+        return;
+    }
+    console.log(`--- SAVING SETTINGS for tenantId: ${session.user.tenantId} ---`);
     setIsDayEndSaving(true)
     try {
+      // FIX: Added x-tenant-id to the headers
       const res = await fetch("/api/settings/dayEndReportRecipients", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "x-tenant-id": session.user.tenantId,
+        },
         body: JSON.stringify({ value: dayEndRecipients }),
       })
       const data = await res.json()
@@ -169,7 +185,7 @@ export default function AlertsPage() {
     } finally {
       setIsDayEndSaving(false)
     }
-  }
+}
 
   if (isLoading) {
     return <LoadingSkeleton />

@@ -7,6 +7,8 @@ import dbConnect from '@/lib/dbConnect';
 import DayEndReport from '@/models/DayEndReport';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { sendClosingReportEmail } from '@/lib/mail';
+import Setting from '@/models/Setting';
+import mongoose from 'mongoose'; 
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +20,8 @@ export async function POST(request: NextRequest) {
     // --- TENANCY IMPLEMENTATION ---
     const tenantId = session.user.tenantId;
     // ----------------------------
+
+    console.log(`--- RUNNING REPORT for tenantId: ${tenantId} ---`);
 
     const body = await request.json();
     const {
@@ -77,7 +81,26 @@ export async function POST(request: NextRequest) {
 
     await newReport.save();
 
-    sendClosingReportEmail(body);
+    // STEP 2: Fetch the list of email recipients for this tenant
+    const emailSetting = await Setting.findOne({
+      key: 'dayEndReportRecipients',
+      tenantId: new mongoose.Types.ObjectId(tenantId),
+    }).lean();
+
+    // STEP 3: Check if the list exists and has emails in it
+    if (emailSetting && Array.isArray(emailSetting.value) && emailSetting.value.length > 0) {
+      const recipients = emailSetting.value;
+      console.log('Recipients found, sending email to:', recipients); // Added a success log
+
+      // STEP 4: Call the email function with BOTH the recipients and the report data
+      // This will run in the background.
+      sendClosingReportEmail(recipients, newReport.toObject())
+        .catch(emailError => {
+          // Log any errors from the mail function itself for debugging
+          console.error("Error sending closing report email:", emailError);
+        });
+    }
+
     
     return NextResponse.json({
       success: true,
