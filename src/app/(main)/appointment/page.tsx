@@ -105,6 +105,7 @@ export default function AppointmentPage() {
       const res = await tenantFetch(`/api/appointment?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to fetch appointments');
+      console.log("APPOINTMENTS DATA RECEIVED:", data.appointments); // <-- ADD THIS LINE
       
       setAllAppointments(data.appointments);
       setTotalPages(data.pagination.totalPages);
