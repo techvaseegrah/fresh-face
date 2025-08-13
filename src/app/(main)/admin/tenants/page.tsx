@@ -18,6 +18,13 @@ interface Tenant {
 
 // --- HELPER ICON COMPONENTS ---
 
+// Search icon for the search bar
+const SearchIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-gray-400">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+);
+
 // Eye icon for showing password
 const EyeIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -53,6 +60,7 @@ const Modal: FC<{ show: boolean; onClose: () => void; title: string; children: R
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [listLoading, setListLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Modal states
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
@@ -93,6 +101,12 @@ export default function TenantsPage() {
   useEffect(() => {
     fetchTenants();
   }, []);
+
+  // Filter tenants based on search query
+  const filteredTenants = tenants.filter(tenant =>
+    tenant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    tenant.subdomain.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Reset all form and message states
   const resetAllStates = () => {
@@ -222,22 +236,37 @@ export default function TenantsPage() {
 
   // --- JSX RENDER ---
   return (
-    <div className="p-8">
+    <div className="p-8 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Store Management</h1>
-        <button onClick={handleOpenCreateModal} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg">
+        <h1 className="text-3xl font-bold text-gray-800">Store Management</h1>
+        <button onClick={handleOpenCreateModal} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
           Create New Store
         </button>
       </div>
+      
+      <div className="mb-8">
+          <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+                  <SearchIcon />
+              </span>
+              <input
+                  type="text"
+                  placeholder="Search for a store by name or subdomain..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+          </div>
+      </div>
 
       <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-2xl font-semibold mb-4">Existing Stores</h2>
+        <h2 className="text-2xl font-semibold mb-4 text-gray-700">Existing Stores</h2>
         {listLoading ? <p>Loading stores...</p> : (
-          <ul className="divide-y divide-gray-200">
-            {tenants.length === 0 ? (
+          <div className="space-y-4">
+            {filteredTenants.length === 0 ? (
               <p className='text-center py-4 text-gray-500'>No stores found.</p>
-            ) : tenants.map((tenant) => (
-              <li key={tenant._id} className="py-4 flex items-center justify-between">
+            ) : filteredTenants.map((tenant) => (
+              <div key={tenant._id} className="p-4 border border-gray-200 rounded-lg hover:shadow-lg transition-shadow duration-300 flex items-center justify-between">
                 <div>
                   <p className="text-lg font-medium text-gray-900">{tenant.name}</p>
                   <p className="text-sm text-gray-500">{tenant.subdomain}.yourdomain.com</p>
@@ -249,9 +278,9 @@ export default function TenantsPage() {
                   <button onClick={() => handleOpenEditModal(tenant)} className="text-sm font-medium text-green-600 hover:text-green-800">Edit</button>
                   <button onClick={() => handleOpenDeleteModal(tenant)} className="text-sm font-medium text-red-600 hover:text-red-800">Delete</button>
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </div>
 

@@ -1,12 +1,9 @@
-// models/IncentiveRule.ts
 import mongoose, { Schema, Document, model, models } from 'mongoose';
 
-// Defines the structure for a rule in the database
+// Defines the structure for a versioned rule. Versioning is now handled by createdAt.
 export interface IIncentiveRule extends Document {
   tenantId: mongoose.Schema.Types.ObjectId;
   type: 'daily' | 'monthly';
-  startDate: Date; // NEW: Start date for when this rule set is active
-  endDate?: Date; // NEW: Optional end date, if null, it's the current active rule
   target: {
     multiplier: number;
   };
@@ -18,22 +15,15 @@ export interface IIncentiveRule extends Document {
   };
   incentive: {
     rate: number;
-    doubleRate: number; // ADDED: The missing property for TypeScript
+    doubleRate: number;
     applyOn: 'totalSaleValue' | 'serviceSaleOnly';
   };
+  createdAt: Date; // Mongoose adds this automatically with timestamps: true
 }
 
-// Mongoose schema for the incentive rules
 const IncentiveRuleSchema = new Schema<IIncentiveRule>({
-    tenantId: { 
-    type: require('mongoose').Schema.Types.ObjectId, 
-    ref: 'Tenant', 
-    required: true, 
-    index: true 
-  },
-  type: { type: String, enum: ['daily', 'monthly'], required: true }, // Removed 'unique: true' to allow multiple rules of same type over time
-  startDate: { type: Date, required: true }, // Ensure start date is always present
-  endDate: { type: Date, required: false, default: null }, // Optional end date
+  tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+  type: { type: String, enum: ['daily', 'monthly'], required: true },
   target: {
     multiplier: { type: Number, required: true, default: 5 },
   },
@@ -45,13 +35,16 @@ const IncentiveRuleSchema = new Schema<IIncentiveRule>({
   },
   incentive: {
     rate: { type: Number, required: true, default: 0.05 },
-    doubleRate: { type: Number, default: 0.10 }, // ADDED: The missing field for the database schema
+    doubleRate: { type: Number, default: 0.10 },
     applyOn: { type: String, enum: ['totalSaleValue', 'serviceSaleOnly'], default: 'totalSaleValue' }
   },
-}, { timestamps: true });
+}, { 
+  // This is the key: It automatically adds `createdAt` and `updatedAt` with full timestamps.
+  timestamps: true 
+});
 
-// Add an index for efficient querying by type and date range
-IncentiveRuleSchema.index({ type: 1, startDate: 1, endDate: 1 });
+// New index on `createdAt` for finding the latest version very quickly.
+IncentiveRuleSchema.index({ tenantId: 1, type: 1, createdAt: -1 });
 
 const IncentiveRule = models.IncentiveRule || model<IIncentiveRule>('IncentiveRule', IncentiveRuleSchema);
 
