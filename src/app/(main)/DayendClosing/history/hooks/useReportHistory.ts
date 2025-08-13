@@ -3,16 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 
-// <-- THE FIX: The interface is updated to match the API response structure perfectly.
+// Interface definition remains the same
 export interface DayEndReportHistoryItem {
   _id: string;
   closingDate: string;
-   openingBalance: number; // <-- ADD THIS
-  pettyCash: { total: number }; // <-- ADD THIS
+  openingBalance: number;
+  pettyCash: { total: number };
   expectedTotals: { cash: number; card: number; upi: number; other: number; total: number; };
-  // 1. Renamed 'actual' to 'actualTotals'
-  // 2. Used 'totalCountedCash'
-  // 3. Added 'other' for completeness
   actualTotals: { totalCountedCash: number; card: number; upi: number; other: number; total: number};
   discrepancies: { cash: number; card: number; upi: number; total: number; };
   notes?: string;
@@ -31,7 +28,8 @@ const getInitialDates = () => {
     };
 };
 
-export function useReportHistory() {
+// 1. UPDATE THE HOOK SIGNATURE TO ACCEPT tenantFetch
+export function useReportHistory(tenantFetch: (url: string, options?: RequestInit) => Promise<Response>) {
   const [reports, setReports] = useState<DayEndReportHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +39,15 @@ export function useReportHistory() {
     setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  // 2. UPDATE fetchHistory TO USE THE PASSED-IN tenantFetch
   const fetchHistory = useCallback(async (currentFilters: { startDate: string, endDate: string }) => {
+    // A guard clause to prevent API calls if tenantFetch isn't ready/available
+    if (!tenantFetch) {
+        setIsLoading(false);
+        setError("API client is not ready.");
+        return;
+    }
+
     setIsLoading(true);
     setError(null);
     
@@ -50,7 +56,10 @@ export function useReportHistory() {
     if (currentFilters.endDate) queryParams.append('endDate', currentFilters.endDate);
     
     try {
-      const res = await fetch(`/api/reports/day-end-history?${queryParams.toString()}`);
+      // Use the tenantFetch function for the API call
+      const res = await tenantFetch(`/api/reports/day-end-history?${queryParams.toString()}`);
+      
+      // The rest of the logic remains the same, as tenantFetch handles header/auth logic
       if (!res.ok) {
         const errorData = await res.json().catch(() => null);
         throw new Error(errorData?.message || `HTTP error! Status: ${res.status}`);
@@ -69,11 +78,12 @@ export function useReportHistory() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  // 3. ADD tenantFetch TO THE DEPENDENCY ARRAY
+  }, [tenantFetch]);
 
   useEffect(() => {
     fetchHistory(filters);
-  }, [fetchHistory]); // Removed filters from dep array to prevent re-fetch on date change, only on submit
+  }, [fetchHistory]); // This dependency is correct
 
   const handleApplyFilters = (e: React.FormEvent) => {
     e.preventDefault();

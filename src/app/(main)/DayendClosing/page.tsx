@@ -1,9 +1,8 @@
-// app/DayendClosing/page.tsx - Add permission checks
-
 'use client';
 
-import React, { useState } from 'react';
-import { useSession } from 'next-auth/react';
+import React, { useState, useCallback } from 'react';
+import { useSession, getSession } from 'next-auth/react'; // 1. IMPORT getSession
+import { toast } from 'react-toastify'; // Import toast for error handling in tenantFetch
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { BanknotesIcon, CalendarIcon, ClockIcon } from '@heroicons/react/24/outline';
 import DayEndClosingModal from './components/DayEndClosingModal';
@@ -21,22 +20,42 @@ export default function DayEndClosingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [closingDate, setClosingDate] = useState(formatDateForInput(new Date()));
 
+  // 2. ADD THE tenantFetch HELPER FUNCTION (from your DashboardPage)
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const currentSession = await getSession(); 
+    if (!currentSession?.user?.tenantId) {
+      toast.error("Session error: Tenant not found. Please log in again.");
+      throw new Error("Missing tenant ID in session");
+    }
+    const headers = {
+      ...options.headers,
+      'Content-Type': 'application/json',
+      'x-tenant-id': currentSession.user.tenantId,
+    };
+    return fetch(url, { ...options, headers });
+  }, []);
+  // ----------------------------------------------------------------------
+
   // Permission checks
-  const canReadDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ)|| hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
-  const canCreateDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE)|| hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
+  const canReadDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ) || hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
+  const canCreateDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_CREATE) || hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
 
   // Check for read permission
+  if (!session) {
+    // Optional: Add a loading state while session is being fetched
+    return <div className="p-6 bg-gray-50 min-h-screen">Loading session...</div>;
+  }
   if (!canReadDayEnd) {
     return (
       <div className="p-6 bg-gray-50 min-h-screen">
-        <p className="text-red-500">You do not have permission to view day-end closing.</p>
+        <p className="text-red-500 font-semibold">Access Denied: You do not have permission to view day-end closing.</p>
       </div>
     );
   }
 
   const handleOpenModal = () => {
     if (!closingDate) {
-      alert('Please select a date first.');
+      toast.error('Please select a date first.');
       return;
     }
     setIsModalOpen(true);
@@ -47,12 +66,14 @@ export default function DayEndClosingPage() {
   };
 
   const handleSuccess = () => {
-    console.log('Day-end process completed successfully.');
+    // This is called when the modal's submission is successful
+    // You might want to refresh some data here in the future
+    handleCloseModal(); // Close the modal on success
   };
 
   return (
     <>
-      <div className="">
+      <div className="p-6 bg-gray-50 min-h-screen">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Day-end Closing</h1>
           <p className="mt-1 text-sm text-gray-600">
@@ -89,14 +110,12 @@ export default function DayEndClosingPage() {
                 <CalendarIcon className="h-5 w-5 text-gray-400" />
               </div>
              <input
-            id="closing-date"
-            type="date"
-            value={closingDate}
-            onChange={(e) => setClosingDate(e.target.value)}
-            className="block w-full rounded-lg border-2 border-black py-3.5 pl-14 pr-4 text-gray-900 shadow-sm
-             focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 
-             text-lg sm:leading-6"
-            disabled={!canCreateDayEnd}
+                id="closing-date"
+                type="date"
+                value={closingDate}
+                onChange={(e) => setClosingDate(e.target.value)}
+                className="block w-full rounded-lg border-2 border-black py-3.5 pl-14 pr-4 text-gray-900 shadow-sm focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 text-lg sm:leading-6"
+                disabled={!canCreateDayEnd}
             />
             </div>
           </div>
@@ -119,12 +138,14 @@ export default function DayEndClosingPage() {
         </main>
       </div>
 
-      {canCreateDayEnd && (
+      {/* 3. PASS tenantFetch AS A PROP TO THE MODAL */}
+      {isModalOpen && canCreateDayEnd && (
         <DayEndClosingModal
           isOpen={isModalOpen}
           onClose={handleCloseModal}
           onSuccess={handleSuccess}
           closingDate={closingDate}
+          tenantFetch={tenantFetch} // <-- This is the crucial fix
         />
       )}
     </>
