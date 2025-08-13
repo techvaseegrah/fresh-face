@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { UserPlusIcon, ClockIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
 import { QrCodeIcon } from 'lucide-react';
-import { getSession } from 'next-auth/react'; // 1. Import getSession
+import { getSession } from 'next-auth/react';
 
 // --- TYPE DEFINITIONS ---
 export interface BillLineItem {
@@ -15,6 +15,7 @@ export interface BillLineItem {
   membershipRate?: number;
   quantity: number;
   finalPrice: number;
+  staffId?: string;
   isRemovable?: boolean;
 }
 
@@ -109,9 +110,14 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
   const [isGrantingMembership, setIsGrantingMembership] = useState<boolean>(false);
   const [membershipGranted, setMembershipGranted] = useState<boolean>(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState<boolean>(false);
-  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
+  
+  // --- States for the two different staff lists ---
+  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]); // For per-item assignment
+  const [billingProcessors, setBillingProcessors] = useState<StaffMember[]>([]); // For the main processor dropdown
   const [isLoadingStaff, setIsLoadingStaff] = useState<boolean>(false);
+  const [isLoadingProcessors, setIsLoadingProcessors] = useState<boolean>(false);
+  
   const [newPaymentDetails, setNewPaymentDetails] = useState({ cash: 0, card: 0, upi: 0, other: 0 });
   const [membershipBarcode, setMembershipBarcode] = useState<string>('');
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean>(true);
@@ -125,7 +131,6 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
   const originalAmountPaid = useMemo(() => isCorrectionMode ? (appointment.finalAmount || 0) : 0, [appointment, isCorrectionMode]);
   const originalPaymentDetails = useMemo(() => isCorrectionMode ? (appointment.paymentDetails || { cash: 0, card: 0, upi: 0, other: 0 }) : { cash: 0, card: 0, upi: 0, other: 0 }, [appointment, isCorrectionMode]);
 
-  // 2. Tenant-aware fetch helper
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const session = await getSession();
     if (!session?.user?.tenantId) {
@@ -138,14 +143,43 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
     return fetch(url, { ...options, headers });
   }, []);
 
+  // Fetches ALL active staff for per-item assignment
+  const fetchAllActiveStaff = useCallback(async () => {
+    setIsLoadingStaff(true);
+    try {
+      const res = await tenantFetch('/api/staff?action=listForBilling');
+      const data = await res.json();
+      if (data.success) setAvailableStaff(data.staff);
+    } catch (err) { console.error('Failed to fetch all active staff:', err); } 
+    finally { setIsLoadingStaff(false); }
+  }, [tenantFetch]);
+
+  // Fetches ONLY staff authorized to process billing
+  const fetchBillingProcessors = useCallback(async () => {
+    setIsLoadingProcessors(true);
+    try {
+      const res = await tenantFetch('/api/users/billing-staff');
+      const data = await res.json();
+      if (data.success) {
+        setBillingProcessors(data.staff);
+        const session = await getSession();
+        const currentUserId = session?.user?.id;
+        if (currentUserId && data.staff.some((s: StaffMember) => s._id === currentUserId)) {
+          setSelectedStaffId(currentUserId);
+        }
+      }
+    } catch (err) { console.error('Failed to fetch billing processors:', err); } 
+    finally { setIsLoadingProcessors(false); }
+  }, [tenantFetch]);
+
   const fetchMembershipFee = useCallback(async () => { setIsLoadingFee(true); try { const res = await tenantFetch('/api/settings/membership'); const data = await res.json(); if (data.success && typeof data.price === 'number') setMembershipFee(data.price); else setError('Error: Membership fee is not configured.'); } catch (err) { setError('Error: Membership fee is not configured.'); } finally { setIsLoadingFee(false); } }, [tenantFetch]);
-  const fetchStaffMembers = useCallback(async () => { setIsLoadingStaff(true); try { const res = await tenantFetch('/api/users/billing-staff'); const data = await res.json(); if (data.success) { setAvailableStaff(data.staff); if (data.staff.some((s: StaffMember) => s._id === stylist._id)) { setSelectedStaffId(stylist._id); } } } catch (err) { console.error('Failed to fetch staff:', err); } finally { setIsLoadingStaff(false); } }, [stylist._id, tenantFetch]);
   const fetchInventoryImpact = useCallback(async (currentBillItems: BillLineItem[]) => { const serviceItems = currentBillItems.filter(item => item.itemType === 'service'); if (serviceItems.length === 0 || !customer._id) { setInventoryImpact(null); return; } setIsLoadingInventory(true); try { const serviceIds = serviceItems.map(s => s.itemId); const response = await tenantFetch('/api/billing/inventory-preview', { method: 'POST', body: JSON.stringify({ serviceIds, customerId: customer._id }) }); const data = await response.json(); if (data.success) setInventoryImpact(data.data); } catch (err) { console.error('Failed to fetch inventory impact:', err); } finally { setIsLoadingInventory(false); } }, [customer._id, tenantFetch]);
 
   useEffect(() => {
     if (!isOpen) return;
     const initialize = async () => {
-      fetchStaffMembers();
+      fetchAllActiveStaff();
+      fetchBillingProcessors();
       fetchMembershipFee();
       const isMember = customer?.isMembership || false;
       setCustomerIsMember(isMember);
@@ -164,34 +198,31 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
           setDiscount(invoice.manualDiscount?.value || 0);
           setDiscountType(invoice.manualDiscount?.type || 'fixed');
           await fetchInventoryImpact(itemsFromInvoice);
-        } catch (err: any) {
-          setError(`Could not load bill: ${err.message}`);
-          setBillItems([]);
-        } finally {
-          setIsLoadingBill(false);
-        }
+        } catch (err: any) { setError(`Could not load bill: ${err.message}`); setBillItems([]); } 
+        finally { setIsLoadingBill(false); }
       } else {
         const initialItems = appointment.serviceIds?.map(service => {
           const finalPrice = (customer?.isMembership && typeof service.membershipRate === 'number') ? service.membershipRate : service.price;
-          return { itemType: 'service' as const, itemId: service._id, name: service.name, unitPrice: service.price, membershipRate: service.membershipRate, quantity: 1, finalPrice, isRemovable: !isCorrectionMode };
+          return { itemType: 'service' as const, itemId: service._id, name: service.name, unitPrice: service.price, membershipRate: service.membershipRate, quantity: 1, finalPrice, staffId: stylist._id, isRemovable: !isCorrectionMode };
         }) ?? [];
         setBillItems(initialItems);
         if (initialItems.length > 0) await fetchInventoryImpact(initialItems);
       }
     };
     initialize();
-  }, [isOpen, appointment.invoiceId, appointment.serviceIds, customer, isCorrectionMode, fetchStaffMembers, fetchMembershipFee, fetchInventoryImpact, stylist._id, tenantFetch]);
+  }, [isOpen, appointment.invoiceId, appointment.serviceIds, customer, isCorrectionMode, fetchAllActiveStaff, fetchBillingProcessors, fetchMembershipFee, stylist._id]);
 
   useEffect(() => { setBillItems(prevItems => prevItems.map(item => { if (item.itemType === 'service') { const unitPrice = (customerIsMember && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; return { ...item, finalPrice: unitPrice * item.quantity }; } return item; })); }, [customerIsMember]);
   useEffect(() => { if (searchQuery.trim().length < 2) { setSearchResults([]); return; } const handler = setTimeout(async () => { setIsSearching(true); try { const res = await tenantFetch(`/api/billing/search-items?query=${encodeURIComponent(searchQuery)}`); const data = await res.json(); if (data.success) setSearchResults(data.items); } catch (e) { console.error('Item search failed:', e); } finally { setIsSearching(false); } }, 400); return () => clearTimeout(handler); }, [searchQuery, tenantFetch]);
   useEffect(() => { if (!membershipBarcode.trim()) { setIsBarcodeValid(true); return; } const handler = setTimeout(async () => { setIsCheckingBarcode(true); try { const res = await tenantFetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`); const data = await res.json(); setIsBarcodeValid(!data.exists); } catch (err) { setIsBarcodeValid(false); } finally { setIsCheckingBarcode(false); } }, 500); return () => clearTimeout(handler); }, [membershipBarcode, tenantFetch]);
   
-  const handleAddItemToBill = (item: SearchableItem) => { if (billItems.some(bi => bi.itemId === item.id)) { toast.info(`${item.name} is already in the bill.`); return; } const finalPrice = (customerIsMember && item.type === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.price; let displayName = item.name; if (item.type === 'product') { if (item.categoryName) displayName = `${item.categoryName} - ${displayName}`; if (item.unit) displayName = `${displayName} (${item.unit})`; } const newItem: BillLineItem = { itemType: item.type, itemId: item.id, name: displayName, unitPrice: item.price, membershipRate: item.membershipRate, quantity: 1, finalPrice: finalPrice, isRemovable: true }; const updatedBillItems = [...billItems, newItem]; setBillItems(updatedBillItems); fetchInventoryImpact(updatedBillItems); setSearchQuery(''); setSearchResults([]); searchInputRef.current?.focus(); };
+  const handleAddItemToBill = (item: SearchableItem) => { if (billItems.some(bi => bi.itemId === item.id)) { toast.info(`${item.name} is already in the bill.`); return; } const finalPrice = (customerIsMember && item.type === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.price; let displayName = item.name; if (item.type === 'product') { if (item.categoryName) displayName = `${item.categoryName} - ${displayName}`; if (item.unit) displayName = `${displayName} (${item.unit})`; } const newItem: BillLineItem = { itemType: item.type, itemId: item.id, name: displayName, unitPrice: item.price, membershipRate: item.membershipRate, quantity: 1, finalPrice: finalPrice, staffId: stylist._id, isRemovable: true }; const updatedBillItems = [...billItems, newItem]; setBillItems(updatedBillItems); fetchInventoryImpact(updatedBillItems); setSearchQuery(''); setSearchResults([]); searchInputRef.current?.focus(); };
   const handleRemoveItem = (indexToRemove: number) => { const updatedBillItems = billItems.filter((_, idx) => idx !== indexToRemove); setBillItems(updatedBillItems); fetchInventoryImpact(updatedBillItems); };
   const handleQuantityChange = (index: number, newQuantity: number) => { if (newQuantity < 1) return; setBillItems(prev => prev.map((item, idx) => { if (idx === index) { const unitPriceForCalc = (customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; return { ...item, quantity: newQuantity, finalPrice: unitPriceForCalc * newQuantity }; } return item; })); };
-  const handleGrantMembership = async () => { if (isLoadingFee || membershipFee === null) { toast.error("Membership fee not configured."); return; } if (!membershipBarcode.trim() || !isBarcodeValid) { setError('Please enter a unique, valid barcode.'); return; } if (billItems.some(item => item.itemId === 'MEMBERSHIP_FEE_PRODUCT_ID')) { toast.info("Membership fee is already in the bill."); return; } try { const response = await tenantFetch(`/api/customer/${customer._id}/toggle-membership`, { method: 'POST', body: JSON.stringify({ isMembership: true, membershipBarcode: membershipBarcode.trim() }) }); const result = await response.json(); if (result.success) { setCustomerIsMember(true); setShowMembershipGrantOption(false); setMembershipGranted(true); setIsGrantingMembership(false); toast.success(`Membership granted! Fee added to bill.`); const membershipFeeItem: BillLineItem = { itemType: 'fee', itemId: 'MEMBERSHIP_FEE_PRODUCT_ID', name: 'New Membership Fee', unitPrice: membershipFee, quantity: 1, finalPrice: membershipFee, isRemovable: false }; setBillItems(prevItems => [...prevItems, membershipFeeItem]); } else { setError(result.message || 'Failed to grant membership'); } } catch (err) { setError('An unexpected error occurred.'); } };
+  const handleGrantMembership = async () => { if (isLoadingFee || membershipFee === null) { toast.error("Membership fee not configured."); return; } if (!membershipBarcode.trim() || !isBarcodeValid) { setError('Please enter a unique, valid barcode.'); return; } if (billItems.some(item => item.itemId === 'MEMBERSHIP_FEE_PRODUCT_ID')) { toast.info("Membership fee is already in the bill."); return; } try { const response = await tenantFetch(`/api/customer/${customer._id}/toggle-membership`, { method: 'POST', body: JSON.stringify({ isMembership: true, membershipBarcode: membershipBarcode.trim() }) }); const result = await response.json(); if (result.success) { setCustomerIsMember(true); setShowMembershipGrantOption(false); setMembershipGranted(true); setIsGrantingMembership(false); toast.success(`Membership granted! Fee added to bill.`); const membershipFeeItem: BillLineItem = { itemType: 'fee', itemId: 'MEMBERSHIP_FEE_PRODUCT_ID', name: 'New Membership Fee', unitPrice: membershipFee, quantity: 1, finalPrice: membershipFee, staffId: stylist._id, isRemovable: false }; setBillItems(prevItems => [...prevItems, membershipFeeItem]); } else { setError(result.message || 'Failed to grant membership'); } } catch (err) { setError('An unexpected error occurred.'); } };
   const handlePaymentChange = (method: keyof typeof newPaymentDetails, amount: string) => { setNewPaymentDetails(prev => ({ ...prev, [method]: parseFloat(amount) || 0 })); };
-
+  const handleItemStaffChange = (index: number, newStaffId: string) => { setBillItems(prev => prev.map((item, idx) => { if (idx === index) { return { ...item, staffId: newStaffId }; } return item; })); };
+  
   const totals = useMemo(() => {
     let serviceTotal = 0, productTotal = 0, membershipSavings = 0, feeTotal = 0;
     billItems.forEach(item => {
@@ -212,7 +243,7 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
     return { serviceTotal, productTotal, subtotalBeforeDiscount, membershipSavings, calculatedDiscount, trueGrandTotal, displayTotal: amountDueForDisplay, refundDue, totalNewPaid, balance, changeDue };
   }, [billItems, customerIsMember, newPaymentDetails, discount, discountType, originalAmountPaid, isCorrectionMode]);
 
-  const handleFinalizeClick = async () => { if (billItems.length === 0 || totals.trueGrandTotal < 0) { setError('Cannot finalize an empty or negative value bill.'); return; } if (!selectedStaffId) { setError('Please select a billing staff member.'); return; } if (totals.balance > 0.01) { setError(`Payment amount (₹${totals.totalNewPaid.toFixed(2)}) is less than the amount due (₹${totals.displayTotal.toFixed(2)}).`); return; } setIsLoading(true); setError(null); try { const finalPaymentDetails = { cash: (originalPaymentDetails.cash || 0) + newPaymentDetails.cash, card: (originalPaymentDetails.card || 0) + newPaymentDetails.card, upi: (originalPaymentDetails.upi || 0) + newPaymentDetails.upi, other: (originalPaymentDetails.other || 0) + newPaymentDetails.other, }; if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); } const finalPayload: FinalizeBillingPayload = { appointmentId: appointment._id, customerId: customer._id, stylistId: stylist._id, billingStaffId: selectedStaffId, items: billItems, serviceTotal: totals.serviceTotal, productTotal: totals.productTotal, subtotal: totals.subtotalBeforeDiscount, membershipDiscount: totals.membershipSavings, grandTotal: totals.trueGrandTotal, paymentDetails: finalPaymentDetails, notes, customerWasMember: customer?.isMembership || false, membershipGrantedDuringBilling: membershipGranted, manualDiscountType: discount > 0 ? discountType : null, manualDiscountValue: discount, finalManualDiscountApplied: totals.calculatedDiscount, }; await onFinalizeAndPay(finalPayload); } catch (err: any) { setError(err.message || "An unknown error occurred."); } finally { setIsLoading(false); } };
+  const handleFinalizeClick = async () => { if (billItems.length === 0 || totals.trueGrandTotal < 0) { setError('Cannot finalize an empty or negative value bill.'); return; } if (!selectedStaffId) { setError('Please select a billing staff member.'); return; } if (billItems.some(item => !item.staffId)) { setError('Please assign a staff member to every item in the bill.'); toast.error('Please assign a staff member to every item.'); return; } if (totals.balance > 0.01) { setError(`Payment amount (₹${totals.totalNewPaid.toFixed(2)}) is less than the amount due (₹${totals.displayTotal.toFixed(2)}).`); return; } setIsLoading(true); setError(null); try { const finalPaymentDetails = { cash: (originalPaymentDetails.cash || 0) + newPaymentDetails.cash, card: (originalPaymentDetails.card || 0) + newPaymentDetails.card, upi: (originalPaymentDetails.upi || 0) + newPaymentDetails.upi, other: (originalPaymentDetails.other || 0) + newPaymentDetails.other, }; if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); } const finalPayload: FinalizeBillingPayload = { appointmentId: appointment._id, customerId: customer._id, stylistId: stylist._id, billingStaffId: selectedStaffId, items: billItems, serviceTotal: totals.serviceTotal, productTotal: totals.productTotal, subtotal: totals.subtotalBeforeDiscount, membershipDiscount: totals.membershipSavings, grandTotal: totals.trueGrandTotal, paymentDetails: finalPaymentDetails, notes, customerWasMember: customer?.isMembership || false, membershipGrantedDuringBilling: membershipGranted, manualDiscountType: discount > 0 ? discountType : null, manualDiscountValue: discount, finalManualDiscountApplied: totals.calculatedDiscount, }; await onFinalizeAndPay(finalPayload); } catch (err: any) { setError(err.message || "An unknown error occurred."); } finally { setIsLoading(false); } };
 
   if (!isOpen) return null;
 
@@ -220,6 +251,7 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
     <>
       <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
         <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+          {/* Header section is fine */}
           <div className="flex justify-between items-center mb-4 pb-3 border-b">
             <div>
               <div className="flex items-center gap-4">
@@ -239,22 +271,39 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
           {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
           
           {isLoadingBill ? (
-            <div className="flex-grow flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-black rounded-full mx-auto mb-4" />
-                    <p className="text-gray-600 font-medium">Loading Bill Details...</p>
-                </div>
-            </div>
+            <div className="flex-grow flex items-center justify-center"><div className="text-center"><div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-black rounded-full mx-auto mb-4" /><p className="text-gray-600 font-medium">Loading Bill Details...</p></div></div>
           ) : (
             <>
               {isCorrectionMode && (<div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg"><h4 className="text-sm font-semibold text-blue-800 mb-2">Payment History</h4><div className="flex justify-between text-blue-700"><span>Previously Paid:</span><span className="font-bold">₹{originalAmountPaid.toFixed(2)}</span></div></div>)}
               {isGrantingMembership && (<div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg transition-all"><div className="flex items-end gap-4"><div className="flex-grow"><label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant</label><div className="relative"><input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} placeholder="Enter unique barcode" autoFocus className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 uppercase ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} /><QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" /></div>{isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}{!isBarcodeValid && membershipBarcode.trim() && <p className="text-xs text-red-600 mt-1">Barcode already in use.</p>}</div><button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode || isLoadingFee || membershipFee === null} className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-2 min-w-[200px] justify-center">{isLoadingFee ? 'Loading Fee...' : `Confirm & Grant (₹${membershipFee})`}</button></div></div>)}
               <div className="flex-grow overflow-y-auto pr-2 space-y-4">
-                <div><h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>{billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div> : <div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left">Item</th><th className="px-4 py-3 text-center w-24">Qty</th><th className="px-4 py-3 text-right">Unit Price</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center w-24">Action</th></tr></thead><tbody>{billItems.map((item, idx) => (<tr key={`${item.itemId}-${idx}`} className="border-b hover:bg-gray-50"><td className="px-4 py-3"><div><span className="font-medium">{item.name}</span><span className={`ml-2 text-xs capitalize px-1.5 py-0.5 rounded-full ${item.itemType === 'service' ? 'bg-blue-100 text-blue-800' : item.itemType === 'product' ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'}`}>{item.itemType}</span></div>{customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number' && <div className="text-xs text-green-600 mt-1"><span className="line-through text-gray-400">₹{item.unitPrice.toFixed(2)}</span><span className="ml-2">Member Price</span></div>}</td><td className="px-4 py-3 text-center"><input type="number" min="1" value={item.quantity} onChange={(e) => handleQuantityChange(idx, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border rounded text-center" /></td><td className="px-4 py-3 text-right">₹{((customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice).toFixed(2)}</td><td className="px-4 py-3 text-right font-semibold">₹{item.finalPrice.toFixed(2)}</td><td className="px-4 py-3 text-center"><button onClick={() => handleRemoveItem(idx)} disabled={item.isRemovable === false} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">Remove</button></td></tr>))}</tbody></table></div>}</div>
+                <div><h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>{billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div> : <div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left">Item / Assigned Staff</th><th className="px-4 py-3 text-center w-24">Qty</th><th className="px-4 py-3 text-right">Unit Price</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center w-24">Action</th></tr></thead><tbody>{billItems.map((item, idx) => (
+                  <tr key={`${item.itemId}-${idx}`} className="border-b hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                        <div><span className="font-medium">{item.name}</span><span className={`ml-2 text-xs capitalize px-1.5 py-0.5 rounded-full ${item.itemType === 'service' ? 'bg-blue-100 text-blue-800' : item.itemType === 'product' ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'}`}>{item.itemType}</span></div>
+                        {customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number' && <div className="text-xs text-green-600 mt-1"><span className="line-through text-gray-400">₹{item.unitPrice.toFixed(2)}</span><span className="ml-2">Member Price</span></div>}
+                        <div className="mt-2">
+                          <select value={item.staffId || ''} onChange={(e) => handleItemStaffChange(idx, e.target.value)} className="w-full max-w-[200px] p-1 border rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:outline-none" disabled={isLoadingStaff}><option value="" disabled>-- Assign Staff --</option>{availableStaff.map(staff => (<option key={staff._id} value={staff._id}>{staff.name}</option>))}</select>
+                        </div>
+                    </td>
+                    <td className="px-4 py-3 text-center"><input type="number" min="1" value={item.quantity} onChange={(e) => handleQuantityChange(idx, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border rounded text-center" /></td>
+                    <td className="px-4 py-3 text-right">₹{((customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-semibold">₹{item.finalPrice.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-center"><button onClick={() => handleRemoveItem(idx)} disabled={item.isRemovable === false} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">Remove</button></td>
+                  </tr>
+                ))}</tbody></table></div>}</div>
                 {isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
                 {inventoryImpact?.inventoryImpact?.length > 0 && (<div className="p-4 bg-blue-50 border border-blue-200 rounded-lg"><h4 className="text-sm font-medium text-blue-800 mb-3">Inventory Impact ({inventoryImpact.customerGender})</h4><div className="space-y-2">{inventoryImpact.inventoryImpact.map((impact: any, index: number) => (<div key={index} className={`p-3 rounded-md border text-sm ${impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' : impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}><div className="flex justify-between items-center"><div><span className="font-medium">{impact.productName}</span><div className="text-xs text-gray-600">Current: {impact.currentQuantity.toFixed(1)}{impact.unit} → After: {(impact.currentQuantity - impact.usageQuantity).toFixed(1)}{impact.unit}</div></div><div className="text-right"><div className="font-medium">-{impact.usageQuantity.toFixed(1)}{impact.unit}</div>{impact.alertLevel !== 'ok' && <div className={`text-xs font-bold ${impact.alertLevel === 'insufficient' ? 'text-red-600' : 'text-orange-600'}`}>{impact.alertLevel.toUpperCase()}!</div>}</div></div></div>))}</div></div>)}
                 <div className="border-t pt-4"><label htmlFor="itemSearch" className="block text-sm font-medium text-gray-700 mb-1">Add Additional Items</label><div className="relative"><input ref={searchInputRef} id="itemSearch" type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search services or products..." className="w-full px-3 py-2 border rounded-md" autoComplete="off" />{(isSearching || searchResults.length > 0) && (<ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-48 overflow-y-auto shadow-lg">{isSearching && <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>}{!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span className="font-medium">{item.type === 'product' && item.categoryName ? `${item.categoryName} - ${item.name}` : item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}{!isSearching && searchResults.length === 0 && searchQuery.length >= 2 && <li className="px-3 py-2 text-sm text-gray-500">No items found.</li>}</ul>)}</div></div>
-                <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingStaff}><option value="">{isLoadingStaff ? 'Loading staff...' : 'Select billing staff'}</option>{availableStaff.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
+                
+                {/* --- CHANGE 5: Update the final billing staff dropdown --- */}
+                <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff (Processor) <span className="text-red-500">*</span></label>
+                  <select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingProcessors}>
+                    <option value="">{isLoadingProcessors ? 'Loading staff...' : 'Select billing staff'}</option>
+                    {billingProcessors.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}
+                  </select>
+                </div>
+                
                 <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{discountType === 'fixed' ? '₹' : '%'}</span><input type="number" min="0" value={discount || ''} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => setDiscountType('fixed')} className={`px-4 py-2 text-sm font-semibold border transition-colors ${discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (₹)</button><button onClick={() => setDiscountType('percentage')} className={`px-4 py-2 text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
                 <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Enter New Payment</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={newPaymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total New Payment:</span><span className="font-semibold">₹{totals.totalNewPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>{isCorrectionMode ? 'Amount Due:' : 'Bill Total:'}</span><span className="font-semibold">₹{totals.displayTotal.toFixed(2)}</span></div>{totals.changeDue > 0 ? (<div className="flex justify-between mt-1 text-blue-600 font-bold"><span>Change Due:</span><span>₹{totals.changeDue.toFixed(2)}</span></div>) : (<div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Remaining Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div>)}</div></div></div>
                 <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>
@@ -274,21 +323,15 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
                   </div>
                   <div className="text-right">
                     {totals.refundDue > 0 ? (
-                      <>
-                        <div className="text-gray-600 font-semibold text-blue-600">Refund Due</div>
-                        <div className="text-3xl font-bold text-blue-600">₹{totals.refundDue.toFixed(2)}</div>
-                      </>
+                      <><div className="text-gray-600 font-semibold text-blue-600">Refund Due</div><div className="text-3xl font-bold text-blue-600">₹{totals.refundDue.toFixed(2)}</div></>
                     ) : (
-                      <>
-                        <div className="text-gray-600 font-semibold">{isCorrectionMode ? 'Amount Due Now' : 'Grand Total'}</div>
-                        <div className="text-3xl font-bold text-gray-900">₹{totals.displayTotal.toFixed(2)}</div>
-                      </>
+                      <><div className="text-gray-600 font-semibold">{isCorrectionMode ? 'Amount Due Now' : 'Grand Total'}</div><div className="text-3xl font-bold text-gray-900">₹{totals.displayTotal.toFixed(2)}</div></>
                     )}
                   </div>
                 </div>
                 <div className="mt-6 flex justify-end space-x-3">
                   <button onClick={onClose} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300" disabled={isLoading}>Cancel</button>
-                  <button onClick={handleFinalizeClick} className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isLoading || isLoadingBill || billItems.length === 0 || !selectedStaffId || totals.balance > 0.01}>
+                  <button onClick={handleFinalizeClick} className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isLoading || isLoadingBill || billItems.length === 0 || !selectedStaffId || (billItems.some(item => !item.staffId)) || totals.balance > 0.01}>
                     {isLoading ? <div className="flex items-center justify-center"><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />Processing...</div> : isCorrectionMode ? 'Save Correction' : 'Complete Payment'}
                   </button>
                 </div>

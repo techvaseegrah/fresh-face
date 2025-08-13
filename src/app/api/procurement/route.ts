@@ -1,5 +1,5 @@
 // app/api/procurement/route.ts
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
@@ -7,11 +7,12 @@ import Procurement from '@/models/Procurement';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant helper
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) { // Changed type to NextRequest
   try {
-    const tenantId = getTenantIdOrBail(request as any);
+    // Get tenantId first, or bail if it's not present
+    const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenant ID is missing
+        return tenantId;
     }
 
     const session = await getServerSession(authOptions);
@@ -26,9 +27,10 @@ export async function GET(request: Request) {
 
     await connectToDatabase();
 
-    // Filter records by tenantId
-    const totalRecords = await Procurement.countDocuments({ tenantId });
-    const records = await Procurement.find({ tenantId })
+    // Scope all queries to the tenantId
+    const filter = { tenantId };
+    const totalRecords = await Procurement.countDocuments(filter);
+    const records = await Procurement.find(filter)
       .sort({ date: -1 })
       .skip(skip)
       .limit(limit);
@@ -42,11 +44,12 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) { // Changed type to NextRequest
   try {
-    const tenantId = getTenantIdOrBail(request as any);
+    // Get tenantId first, or bail if it's not present
+    const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenant ID is missing
+        return tenantId;
     }
 
     const session = await getServerSession(authOptions);
@@ -65,8 +68,9 @@ export async function POST(request: Request) {
 
     await connectToDatabase();
 
+    // Add tenantId to the new record
     const record = await Procurement.create({
-      tenantId, // Add tenantId to the new record
+      tenantId, // <-- Associate record with the tenant
       name,
       quantity,
       price,
@@ -87,11 +91,12 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) { // Changed type to NextRequest
   try {
-    const tenantId = getTenantIdOrBail(request as any);
+    // Get tenantId first, or bail if it's not present
+    const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenant ID is missing
+        return tenantId;
     }
 
     const session = await getServerSession(authOptions);
@@ -110,10 +115,11 @@ export async function PUT(request: Request) {
 
     await connectToDatabase();
 
-    // Ensure the record belongs to the correct tenant before updating
+    // Find the record by its ID *and* the tenantId to ensure ownership
     const record = await Procurement.findOne({ _id: recordId, tenantId });
     if (!record) {
-      return NextResponse.json({ success: false, message: 'Record not found or access denied' }, { status: 404 });
+      // Return 404 whether the record doesn't exist or belongs to another tenant
+      return NextResponse.json({ success: false, message: 'Record not found' }, { status: 404 });
     }
 
     record.name = name;
@@ -138,11 +144,12 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) { // Changed type to NextRequest
   try {
-    const tenantId = getTenantIdOrBail(request as any);
+    // Get tenantId first, or bail if it's not present
+    const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenant ID is missing
+        return tenantId;
     }
 
     const session = await getServerSession(authOptions);
@@ -159,10 +166,11 @@ export async function DELETE(request: Request) {
 
     await connectToDatabase();
 
-    // Ensure the record is deleted only if it belongs to the correct tenant
+    // Find and delete the record only if it matches both the ID and the tenantId
     const record = await Procurement.findOneAndDelete({ _id: recordId, tenantId });
     if (!record) {
-      return NextResponse.json({ success: false, message: 'Record not found or access denied' }, { status: 404 });
+      // Return 404 whether the record doesn't exist or belongs to another tenant
+      return NextResponse.json({ success: false, message: 'Record not found' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, message: 'Record deleted successfully' });

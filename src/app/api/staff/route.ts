@@ -1,5 +1,3 @@
-// app/api/staff/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '../../../lib/mongodb';
 import Staff, { IStaff } from '../../../models/staff';
@@ -11,9 +9,34 @@ import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 import cloudinary from '../../../lib/cloudinary';
 import { getTenantIdOrBail } from '@/lib/tenant';
 
-// Helper functions (no changes needed here)
+/**
+ * A specific, high-privilege permission for the permanent deletion of a staff member.
+ * This should only be assigned to the most trusted administrative roles.
+ */
+const PERMISSION_STAFF_PERMANENT_DELETE = "staff:permanent-delete";
+
+// =================================================================================
+// HELPER FUNCTIONS
+// =================================================================================
+
+/**
+ * Checks if a given string is a valid MongoDB ObjectId.
+ * @param id The string to validate.
+ * @returns True if the ID is valid, otherwise false.
+ */
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
+
+/**
+ * Defines a lean staff document type for optimized queries.
+ */
 type LeanStaffDocument = Omit<IStaff, keyof mongoose.Document<Types.ObjectId>> & { _id: Types.ObjectId };
+
+/**
+ * Uploads a base64 encoded image to Cloudinary.
+ * @param imageData The base64 image data string.
+ * @param folder The target folder in Cloudinary.
+ * @returns The secure URL of the uploaded image or null.
+ */
 async function uploadImageToCloudinary(imageData: string | undefined | null, folder: string): Promise<string | null> {
     if (imageData && imageData.startsWith('data:image')) {
         try {
@@ -26,12 +49,24 @@ async function uploadImageToCloudinary(imageData: string | undefined | null, fol
     }
     return imageData || null;
 }
+
+/**
+ * Retrieves the next sequential staff ID number for a given tenant.
+ * @param tenantId The ID of the tenant.
+ * @returns The next staff ID as a string.
+ */
 async function getNextStaffId(tenantId: string): Promise<string> {
     await dbConnect();
     const settings = await ShopSetting.findOne({ key: 'defaultSettings', tenantId }).lean();
     const nextNumber = settings?.staffIdBaseNumber || 1;
     return nextNumber.toString();
 }
+
+/**
+ * Checks if the current user session has the required permission.
+ * @param permission The permission string to check for.
+ * @returns Null if permission is granted, otherwise an error object.
+ */
 async function checkPermissions(permission: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.role?.permissions) {
@@ -43,6 +78,13 @@ async function checkPermissions(permission: string) {
   return null;
 }
 
+// =================================================================================
+// API ROUTE HANDLERS
+// =================================================================================
+
+/**
+ * Handles GET requests to fetch staff data.
+ */
 export async function GET(request: NextRequest) {
   const tenantIdOrResponse = getTenantIdOrBail(request);
   if (tenantIdOrResponse instanceof NextResponse) {
@@ -54,6 +96,7 @@ export async function GET(request: NextRequest) {
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
   }
+
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const action = searchParams.get('action');
@@ -64,32 +107,20 @@ export async function GET(request: NextRequest) {
       const nextId = await getNextStaffId(tenantId);
       return NextResponse.json({ success: true, data: { nextId } });
     }
-
+    
+    if (action === 'listForBilling') {
+        const activeStaff = await Staff.find({ tenantId, status: 'active' }, '_id name email').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string, email: string }[]>();
+        return NextResponse.json({ success: true, staff: activeStaff.map(s => ({ _id: s._id.toString(), name: s.name, email: s.email })) });
+    }
+    
     if (action === 'listForAssignment') {
-        const assignableStaff = await Staff.find({ tenantId, status: 'active', position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] } }, '_id name')
-        .sort({ name: 'asc' })
-        .lean<{ _id: Types.ObjectId, name: string }[]>();
+        const assignableStaff = await Staff.find({ tenantId, status: 'active', position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] } }, '_id name').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string }[]>();
         return NextResponse.json({ success: true, stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name })) });
     }
 
-    // ✅ THE FIX IS HERE. This block serves BOTH the Staff List and Incentives pages.
     if (action === 'list') {
-      // 1. Select ALL fields needed by both pages: name, salary, status, position, etc.
-      const staffList = await Staff.find({ tenantId })
-        .select('_id name salary status position phone image')
-        .sort({ name: 'asc' })
-        .lean<LeanStaffDocument[]>();
-      
-      // 2. Map the data to a new format that includes everything needed.
-      const formattedData = staffList.map(staff => ({
-        // 3. Spread all the fetched properties (name, status, position, etc.)
-        ...staff,
-        // 4. Convert _id to a string 'id' for the frontend.
-        id: staff._id.toString(),
-        // 5. Explicitly create the `hasSalary` boolean for the Incentives page.
-        hasSalary: typeof staff.salary === 'number' && staff.salary > 0,
-      }));
-
+      const staffList = await Staff.find({ tenantId }).sort({ name: 'asc' }).lean<LeanStaffDocument[]>();
+      const formattedData = staffList.map(staff => ({ ...staff, id: staff._id.toString(), hasSalary: typeof staff.salary === 'number' && staff.salary > 0, }));
       return NextResponse.json({ success: true, data: formattedData });
     }
 
@@ -115,10 +146,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// ======================================================================================
-// Your POST, PUT, and DELETE functions are correct and do not need to be changed.
-// ======================================================================================
-
+/**
+ * Handles POST requests to create a new staff member.
+ */
 export async function POST(request: NextRequest) {
   const tenantIdOrResponse = getTenantIdOrBail(request);
   if (tenantIdOrResponse instanceof NextResponse) { return tenantIdOrResponse; }
@@ -158,6 +188,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Handles PUT requests to update an existing staff member.
+ */
 export async function PUT(request: NextRequest) {
   const tenantIdOrResponse = getTenantIdOrBail(request);
   if (tenantIdOrResponse instanceof NextResponse) { return tenantIdOrResponse; }
@@ -206,24 +239,55 @@ export async function PUT(request: NextRequest) {
   }
 }
 
+/**
+ * Handles DELETE requests to deactivate or permanently delete a staff member.
+ */
 export async function DELETE(request: NextRequest) {
   const tenantIdOrResponse = getTenantIdOrBail(request);
-  if (tenantIdOrResponse instanceof NextResponse) { return tenantIdOrResponse; }
+  if (tenantIdOrResponse instanceof NextResponse) {
+    return tenantIdOrResponse;
+  }
   const tenantId = tenantIdOrResponse;
-  const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_DELETE);
-  if (permissionCheck) { return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status }); }
+
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const staffId = searchParams.get('id');
+  const isPermanentDelete = searchParams.get('permanent') === 'true';
+
   if (!staffId || !isValidObjectId(staffId)) {
     return NextResponse.json({ success: false, error: 'Valid Staff ID is required' }, { status: 400 });
   }
+
   try {
-    const deactivatedStaff = await Staff.findOneAndUpdate({ _id: staffId, tenantId }, { status: 'inactive' }, { new: true }).lean<LeanStaffDocument>();
-    if (!deactivatedStaff) { return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 }); }
-    return NextResponse.json({ success: true, message: 'Staff member deactivated successfully', data: {...deactivatedStaff, id: deactivatedStaff._id.toString()} });
+    if (isPermanentDelete) {
+      const permissionCheck = await checkPermissions(PERMISSION_STAFF_PERMANENT_DELETE);
+      if (permissionCheck) {
+        return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+      }
+      
+      const deletedStaff = await Staff.findOneAndDelete({ _id: staffId, tenantId });
+      
+      if (!deletedStaff) {
+        return NextResponse.json({ success: false, error: 'Staff member not found or already deleted' }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, message: 'Staff member permanently deleted.' });
+
+    } else {
+      const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_DELETE);
+      if (permissionCheck) {
+        return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
+      }
+
+      const deactivatedStaff = await Staff.findOneAndUpdate({ _id: staffId, tenantId }, { status: 'inactive' }, { new: true }).lean<LeanStaffDocument>();
+      
+      if (!deactivatedStaff) {
+        return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ success: true, message: 'Staff member deactivated successfully', data: {...deactivatedStaff, id: deactivatedStaff._id.toString()} });
+    }
   } catch (error: any) {
-    console.error('Error deactivating staff:', error);
-    return NextResponse.json({ success: false, error: `Failed to deactivate staff: ${error.message || 'Unknown error'}` }, { status: 500 });
+    console.error('Error during DELETE operation:', error);
+    return NextResponse.json({ success: false, error: `Failed to process delete request: ${error.message || 'Unknown error'}` }, { status: 500 });
   }
 }

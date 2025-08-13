@@ -1,4 +1,4 @@
-// src/app/appointment/page.tsx - FINAL VERSION WITH INVOICE ID DISPLAY
+// src/app/appointment/page.tsx - FINAL VERSION WITH DURATION UNDER CLIENT INFO
 
 'use client';
 
@@ -10,20 +10,22 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import { toast } from 'react-toastify';
 import EditAppointmentForm from '@/components/EditAppointmentForm';
 import { useSession, getSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
+import { formatDuration } from '@/lib/utils';
 import { Tooltip } from 'react-tooltip';
 import 'react-tooltip/dist/react-tooltip.css';
 
 interface AppointmentWithCustomer {
   _id: string;
   id: string;
-  customerId: any; // Simplified for brevity, use your full interface
+  customerId: any; 
   stylistId: any;
   appointmentDateTime: string;
   createdAt: string;
@@ -38,11 +40,12 @@ interface AppointmentWithCustomer {
   paymentDetails?: Record<string, number>;
   finalAmount?: number;
   membershipDiscount?: number;
- invoiceId?: {
+  invoiceId?: {
     _id: string;
     invoiceNumber: string;
-  } | null;  // This was already correctly added.
+  } | null;
 }
+
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'Appointment': return 'bg-blue-100 text-blue-800';
@@ -53,7 +56,6 @@ const getStatusColor = (status: string) => {
     default: return 'bg-gray-100 text-gray-800';
   }
 };
-
 
 export default function AppointmentPage() {
   const { data: session } = useSession();
@@ -177,7 +179,7 @@ export default function AppointmentPage() {
     if (!selectedAppointmentForBilling) return;
     
     const isUpdating = !!selectedAppointmentForBilling.invoiceId;
-    const url = isUpdating ? `/api/billing/${selectedAppointmentForBilling.invoiceId}` : '/api/billing';
+    const url = isUpdating ? `/api/billing/${selectedAppointmentForBilling.invoiceId?._id}` : '/api/billing';
     const method = isUpdating ? 'PUT' : 'POST';
 
     try {
@@ -202,9 +204,10 @@ export default function AppointmentPage() {
   const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
+
   return (
     <div className="bg-gray-50/50 p-6">
-       <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
       </div>
@@ -230,6 +233,7 @@ export default function AppointmentPage() {
                   <th className="px-6 py-3">Client</th>
                   <th className="px-6 py-3">Service(s)</th>
                   <th className="px-6 py-3">Stylist</th>
+                  {/* --- CHANGE 1: Re-add Booking Time Header --- */}
                   <th className="px-6 py-3">Booking Time</th>
                   <th className="px-6 py-3">Type</th>
                   <th className="px-2 py-3 text-center">Status</th>
@@ -261,9 +265,6 @@ export default function AppointmentPage() {
                         <div className="text-xs text-gray-500 font-normal">{customerPhone}</div>
                         {appointment.customerId?.isMembership && (<div className="text-xs text-yellow-600 font-semibold">Member</div>)}
                         
-                        {/* ========================================================== */}
-                        {/* === THE CHANGE IS HERE: Conditionally display invoice ID === */}
-                        {/* ========================================================== */}
                         {appointment.invoiceId && (
                           <div 
                             className="mt-1 text-xs text-gray-500 font-mono cursor-pointer hover:text-black"
@@ -276,14 +277,27 @@ export default function AppointmentPage() {
                             Inv: {appointment.invoiceId.invoiceNumber}
                           </div>
                         )}
-                        {/* ========================================================== */}
+                        
+                        {/* --- CHANGE 2: Display Duration under Client Info --- */}
+                        {(appointment.actualDuration || appointment.estimatedDuration) && (
+                          <div className="mt-1 flex items-center gap-1 text-xs text-gray-500" title={appointment.actualDuration ? 'Actual Duration' : 'Estimated Duration'}>
+                            <ClockIcon className="w-3.5 h-3.5" />
+                            <span className={appointment.actualDuration ? 'font-semibold text-gray-700' : ''}>
+                              {formatDuration(appointment.actualDuration ?? appointment.estimatedDuration)}
+                            </span>
+                          </div>
+                        )}
+                        {/* ======================================================== */}
                       </td>
                       <td className="px-6 py-4">{serviceNames}</td>
                       <td className="px-6 py-4"><div>{stylistName}</div></td>
+
+                      {/* --- CHANGE 3: Re-add Booking Time Cell --- */}
                       <td className="px-6 py-4">
                         <div>{formatDateIST(appointment.createdAt)}</div>
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.createdAt)}</div>
                       </td>
+
                       <td className="px-6 py-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${appointment.appointmentType === 'Online' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>{appointment.appointmentType}</span></td>
                       <td className="px-2 py-4 text-center">
                         <span className={`px-2 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(appointment.status)}`}>{appointment.status}</span>
@@ -329,6 +343,7 @@ export default function AppointmentPage() {
         )}
       </div>
 
+      
       {totalPages > 1 && (<div className="px-6 py-4 flex items-center justify-center space-x-2 text-sm"><button onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1 || isLoading} className="px-3 py-1 border rounded-md disabled:opacity-50 flex items-center"><ChevronLeftIcon className="h-4 w-4 mr-1" />Previous</button><span>Page <b>{currentPage}</b> of <b>{totalPages}</b></span><button onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= totalPages || isLoading} className="px-3 py-1 border rounded-md disabled:opacity-50 flex items-center">Next<ChevronRightIcon className="h-4 w-4 ml-1" /></button></div>)}
       
       <BookAppointmentForm isOpen={isBookAppointmentModalOpen} onClose={() => setIsBookAppointmentModalOpen(false)} onBookAppointment={handleBookNewAppointment} />

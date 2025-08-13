@@ -29,6 +29,8 @@ export interface NewBookingData {
   customerName: string;
   email: string;
   gender?: string;
+  dob?: string; // ADDED
+  survey?: string; // ADDED
   serviceAssignments: { serviceId: string; stylistId: string; guestName?: string }[];
   date: string;
   time: string;
@@ -43,6 +45,8 @@ interface AppointmentFormData {
   customerName: string;
   email: string;
   gender: string;
+  dob: string; // ADDED
+  survey: string; // ADDED
   date: string;
   time: string;
   notes: string;
@@ -68,6 +72,8 @@ interface CustomerSearchResult {
   phoneNumber: string;
   email?: string;
   gender?: string;
+  dob?: string; // ADDED
+  survey?: string; // ADDED
 }
 
 interface AppointmentHistory {
@@ -84,6 +90,8 @@ interface CustomerDetails {
   name: string;
   email: string;
   phoneNumber: string;
+  dob: string | null; // ADDED
+  survey: string | null; // ADDED
   isMember: boolean;
   membershipDetails: { planName: string; status: string } | null;
   lastVisit: string | null;
@@ -395,8 +403,25 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({
         </div>
 
         {customer.membershipBarcode && (<div className="flex items-center gap-3"><QrCodeIcon className="w-5 h-5 text-blue-500" /><span className="font-medium text-gray-600">Barcode:</span><div className="flex items-center gap-2"><span className="text-blue-600 font-mono text-xs bg-blue-50 px-2 py-1 rounded">{customer.membershipBarcode}</span><button onClick={() => navigator.clipboard.writeText(customer.membershipBarcode!)} className="text-xs text-blue-500 hover:text-blue-700" title="Copy barcode">Copy</button></div></div>)}
+        
+        {/* MODIFIED: Display for DOB and Survey */}
+        {customer.dob && (
+            <div className="flex items-center gap-3">
+                <GiftIcon className="w-5 h-5 text-pink-500" />
+                <span className="font-medium text-gray-600">Birthday:</span>
+                <span>{new Date(customer.dob).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</span>
+            </div>
+        )}
+        {customer.survey && (
+            <div className="flex items-center gap-3">
+                <TagIcon className="w-5 h-5 text-cyan-500" />
+                <span className="font-medium text-gray-600">Source:</span>
+                <span>{customer.survey}</span>
+            </div>
+        )}
+        
         <div className="flex items-center gap-3"><CalendarDaysIcon className="w-5 h-5 text-gray-400" /><span className="font-medium text-gray-600">Last Visit:</span><span>{customer.lastVisit ? new Date(customer.lastVisit).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</span></div>
-        <div className="flex items-center gap-3 pt-3 border-t border-gray-200"><GiftIcon className="w-5 h-5 text-indigo-500" /><span className="font-medium text-gray-600">Loyalty Points:</span><span className="font-bold text-lg text-indigo-600">{customer.loyaltyPoints ?? 0}</span></div>
+        <div className="flex items-center gap-3 pt-3 border-t border-gray-200"><SparklesIcon className="w-5 h-5 text-indigo-500" /><span className="font-medium text-gray-600">Loyalty Points:</span><span className="font-bold text-lg text-indigo-600">{customer.loyaltyPoints ?? 0}</span></div>
       </div>
 
       <div className="flex-1">
@@ -425,12 +450,15 @@ export default function BookAppointmentForm({
   onClose,
   onBookAppointment
 }: BookAppointmentFormProps) {
+// MODIFIED: Initial form data now includes dob and survey
 const initialFormData: AppointmentFormData = {
   customerId: undefined,
   phoneNumber: '',
   customerName: '',
   email: '',
   gender: '',
+  dob: '',
+  survey: '',
   date: '',
   time: '',
   notes: '',
@@ -636,8 +664,8 @@ const initialFormData: AppointmentFormData = {
 
 
  const fetchAndSetCustomerDetails = useCallback(async (phone: string) => {
-    // The if (isLoadingCustomerDetails) guard is a good defensive measure,
-    // but the real fix is in the dependency array below. It's safe to keep.
+    // This guard is still useful to prevent accidental parallel calls,
+    // but the main fix is in the dependency array below.
     if (isLoadingCustomerDetails) return; 
     
     setIsLoadingCustomerDetails(true);
@@ -648,7 +676,16 @@ const initialFormData: AppointmentFormData = {
       const data = await res.json();
       if (res.ok && data.success && data.customer) {
         const cust = data.customer;
-        setFormData((prev) => ({ ...prev, customerId: cust._id, customerName: cust.name, phoneNumber: cust.phoneNumber, email: cust.email || '', gender: cust.gender || 'other' }));
+        setFormData((prev) => ({ 
+            ...prev,
+            customerId: cust._id,
+            customerName: cust.name,
+            phoneNumber: cust.phoneNumber,
+            email: cust.email || '',
+            gender: cust.gender || 'other',
+            dob: cust.dob ? new Date(cust.dob).toISOString().split('T')[0] : '',
+            survey: cust.survey || ''
+        }));
         setSelectedCustomerDetails(cust);
         setIsCustomerSelected(true);
         setCustomerLookupStatus('found');
@@ -665,7 +702,7 @@ const initialFormData: AppointmentFormData = {
     } finally {
       setIsLoadingCustomerDetails(false);
     }
-  }, [tenantAwareFetch]); // <-- THE ONLY CHANGE IS HERE
+  }, [tenantAwareFetch]);
 
 
   useEffect(() => {
@@ -698,7 +735,7 @@ const initialFormData: AppointmentFormData = {
         value = value.replace(/[^a-zA-Z\s]/g, '');
     }
     
-    if (isCustomerSelected && ['customerName', 'phoneNumber', 'email', 'gender'].includes(name)) {
+    if (isCustomerSelected && ['customerName', 'phoneNumber', 'email', 'gender', 'dob', 'survey'].includes(name)) { // MODIFIED: include new fields
       handleClearSelection(false);
     }
     
@@ -733,8 +770,6 @@ const initialFormData: AppointmentFormData = {
   };
 
   const handleSelectCustomer = (customer: CustomerSearchResult) => {
-    setFormData(prev => ({ ...prev, customerId: customer._id, customerName: customer.name, phoneNumber: customer.phoneNumber, email: customer.email || '', gender: (customer as any).gender || 'other' }));
-    setIsCustomerSelected(true);
     fetchAndSetCustomerDetails(customer.phoneNumber);
   };
 
@@ -742,7 +777,8 @@ const initialFormData: AppointmentFormData = {
     setIsCustomerSelected(false);
     setSelectedCustomerDetails(null);
     setCustomerLookupStatus('idle');
-    const resetData: Partial<typeof formData> = { customerId: undefined, customerName: '', email: '', gender: '' };
+    // MODIFIED: Reset dob and survey fields as well
+    const resetData: Partial<typeof formData> = { customerId: undefined, customerName: '', email: '', gender: '', dob: '', survey: '' };
     if (clearPhone) {
       resetData.phoneNumber = ''; setBarcodeQuery('');
       if (searchMode === 'phone' && phoneInputRef.current) phoneInputRef.current.focus();
@@ -841,7 +877,8 @@ const initialFormData: AppointmentFormData = {
               stylistId: a.stylistId,
               guestName: a.guestName || undefined,
           }));
-
+          
+          // MODIFIED: appointmentData now implicitly includes dob and survey from formData
           const appointmentData: NewBookingData = {
               ...formData,
               serviceAssignments: finalAssignments,
@@ -940,6 +977,24 @@ const initialFormData: AppointmentFormData = {
                     <div><label htmlFor="customerName" className="block text-sm font-medium mb-1.5">Full Name <span className="text-red-500">*</span></label><input ref={nameInputRef} id="customerName" type="text" name="customerName" value={formData.customerName} onChange={handleChange} required className={`${inputBaseClasses} ${isCustomerSelected ? 'bg-gray-100' : ''}`} disabled={isCustomerSelected}/></div>
                     <div><label htmlFor="email" className="block text-sm font-medium mb-1.5">Email</label><input id="email" type="email" name="email" value={formData.email} onChange={handleChange} className={`${inputBaseClasses} ${isCustomerSelected ? 'bg-gray-100' : ''}`} disabled={isCustomerSelected}/></div>
                     <div><label htmlFor="gender" className="block text-sm font-medium mb-1.5">Gender <span className="text-red-500">*</span></label><select id="gender" name="gender" value={formData.gender || ''} onChange={handleChange} required className={`${inputBaseClasses} ${isCustomerSelected ? 'bg-gray-100' : ''}`} disabled={isCustomerSelected}><option value="" disabled>Select Gender</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select></div>
+                    
+                    {/* ADDED: DOB and Survey form fields */}
+                    <div>
+                        <label htmlFor="dob" className="block text-sm font-medium mb-1.5">Date of Birth</label>
+                        <input id="dob" type="date" name="dob" value={formData.dob} onChange={handleChange} className={`${inputBaseClasses} ${isCustomerSelected ? 'bg-gray-100' : ''}`} disabled={isCustomerSelected}/>
+                    </div>
+                    <div className="md:col-span-2">
+                        <label htmlFor="survey" className="block text-sm font-medium mb-1.5">How did you hear about us?</label>
+                        <select id="survey" name="survey" value={formData.survey} onChange={handleChange} className={`${inputBaseClasses} ${isCustomerSelected ? 'bg-gray-100' : ''}`} disabled={isCustomerSelected}>
+                            <option value="">Select an option</option>
+                            <option value="Friend/Family Recommendation">Friend/Family Recommendation</option>
+                            <option value="Social Media (Instagram, Facebook, etc.)">Social Media (Instagram, Facebook, etc.)</option>
+                            <option value="Google/Online Search">Google/Online Search</option>
+                            <option value="Walk-in/Passed by">Walk-in/Passed by</option>
+                            <option value="Previous Visit">Previous Visit</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
                   </div>
                   {isCustomerSelected && (<div className="mt-3 flex items-center justify-between"><button type="button" onClick={() => handleClearSelection(true)} className="text-xs text-blue-600 hover:underline">Clear Selection & Add New</button>{selectedCustomerDetails?.membershipBarcode && (<div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded flex items-center gap-1"><QrCodeIcon className="w-3 h-3" />Barcode: {selectedCustomerDetails.membershipBarcode}</div>)}</div>)}
                 </fieldset>

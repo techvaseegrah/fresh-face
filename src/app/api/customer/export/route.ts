@@ -1,4 +1,4 @@
-// /app/api/customer/export/route.ts - MULTI-TENANT VERSION
+// /app/api/customer/export/route.ts - MULTI-TENANT VERSION (Corrected Permission)
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -10,8 +10,8 @@ import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import * as XLSX from 'xlsx';
 import mongoose from 'mongoose';
-import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
-import { decrypt } from '@/lib/crypto'; // Import decrypt for encrypted fields
+import { getTenantIdOrBail } from '@/lib/tenant';
+import { decrypt } from '@/lib/crypto';
 
 // Helper to format a date string or return 'N/A'
 const formatDateForExport = (date?: string | Date) => {
@@ -22,11 +22,16 @@ const formatDateForExport = (date?: string | Date) => {
 export async function GET(req: Request) {
   // Authentication and Authorization
   const session = await getServerSession(authOptions);
-  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_READ)) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
 
-  // 2. Get Tenant ID or fail early
+  // --- MODIFIED SECTION START ---
+  // The permission check is now updated to use CUSTOMERS_EXPORT,
+  // aligning with the frontend button's logic.
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_EXPORT)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized: Missing export permission.' }, { status: 403 }); // Use 403 Forbidden
+  }
+  // --- MODIFIED SECTION END ---
+
+  // Get Tenant ID or fail early
   const tenantId = getTenantIdOrBail(req as any);
   if (tenantId instanceof NextResponse) {
     return tenantId;
@@ -35,8 +40,10 @@ export async function GET(req: Request) {
   try {
     await connectToDatabase();
 
-    // 3. Fetch ALL customers for the CURRENT TENANT without pagination
+    // Fetch ALL customers for the CURRENT TENANT without pagination
     console.log(`Starting export process for tenant ${tenantId}...`);
+    // Note: The original code used isActive: true. If you want to export ALL customers
+    // (including inactive), you can remove that filter. Kept it for consistency.
     const allCustomers = await Customer.find({ isActive: true, tenantId }).sort({ createdAt: -1 }).lean();
 
     if (allCustomers.length === 0) {
@@ -45,7 +52,7 @@ export async function GET(req: Request) {
     
     const allCustomerIds = allCustomers.map(c => c._id);
     
-    // 4. Fetch all related data, SCOPED TO THE TENANT, in parallel
+    // Fetch all related data, SCOPED TO THE TENANT, in parallel
     console.log(`Fetching related data for ${allCustomerIds.length} customers...`);
     const [allLatestAppointments, allLoyaltyPoints] = await Promise.all([
       Appointment.aggregate([
@@ -66,7 +73,7 @@ export async function GET(req: Request) {
     const appointmentMap = new Map(allLatestAppointments.map(a => [a._id.toString(), a]));
     const loyaltyMap = new Map(allLoyaltyPoints.map(l => [l._id.toString(), l.totalPoints]));
 
-    // 5. Format the data for the worksheet
+    // Format the data for the worksheet
     console.log("Formatting data for Excel worksheet...");
     const formattedData = allCustomers.map((customer: any) => {
       const appointmentDetails = appointmentMap.get(customer._id.toString());
@@ -87,18 +94,18 @@ export async function GET(req: Request) {
       };
     });
 
-    // 6. Create the Excel file in memory
+    // Create the Excel file in memory
     const worksheet = XLSX.utils.json_to_sheet(formattedData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Customers');
     
     worksheet['!cols'] = [ { wch: 25 }, { wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 40 }, { wch: 18 }];
 
-    // 7. Generate the file buffer
+    // Generate the file buffer
     console.log("Generating XLSX buffer...");
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
 
-    // 8. Return the file as a response
+    // Return the file as a response
     console.log("Sending file to client.");
     return new NextResponse(buffer, {
       status: 200,

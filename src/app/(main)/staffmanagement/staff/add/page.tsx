@@ -2,28 +2,11 @@
 
 import React, { useState, FormEvent, ChangeEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react"; // <-- 1. IMPORT useSession
+import { useSession } from "next-auth/react"; // <-- ✅ FIX: Import useSession
 import {
-  ArrowLeft,
-  Save,
-  Upload,
-  PlusCircle,
-  XCircle,
-  Eye,
-  Trash2,
-  FileText,
-  Banknote,
-  ShieldCheck,
-  User,
-  Mail,
-  Phone,
-  Fingerprint,
-  Briefcase,
-  Calendar,
-  IndianRupee,
-  MapPin,
-  Image as ImageIcon,
-  Badge,
+  ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
+  Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
+  Calendar, IndianRupee, MapPin, Image as ImageIcon, Badge,
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -56,19 +39,11 @@ const DocumentViewerModal: React.FC<{
 }> = ({ src, title, onClose }) => {
   if (!src) return null;
   return (
-    <div
-      className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b">
           <h3 className="text-lg font-semibold">{title}</h3>
-          <Button variant="ghost" onClick={onClose}>
-            <XCircle />
-          </Button>
+          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
         </div>
         <div className="p-4">
           <img src={src} alt={title} className="w-full h-auto object-contain" />
@@ -89,21 +64,13 @@ const compressImage = (file: File, maxWidth: number, maxHeight: number, quality:
         const canvas = document.createElement("canvas");
         let width = img.width;
         let height = img.height;
-
         if (width > height) {
-          if (width > maxWidth) {
-            height *= maxWidth / width;
-            width = maxWidth;
-          }
+          if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
         } else {
-          if (height > maxHeight) {
-            width *= maxHeight / height;
-            height = maxHeight;
-          }
+          if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
         }
         canvas.width = width;
         canvas.height = height;
-
         const ctx = canvas.getContext("2d");
         ctx?.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL("image/jpeg", quality));
@@ -115,46 +82,28 @@ const compressImage = (file: File, maxWidth: number, maxHeight: number, quality:
 };
 
 const FileUploadInput: React.FC<{
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  fileData: string | null;
-  onFileChange: (file: string | null) => void;
-  onView: () => void;
-  isSubmitting: boolean;
+  id: string; label: string; icon: React.ReactNode; fileData: string | null;
+  onFileChange: (file: string | null) => void; onView: () => void; isSubmitting: boolean;
 }> = ({ id, label, icon, fileData, onFileChange, onView, isSubmitting }) => {
   const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size should not exceed 5MB.");
-        e.target.value = "";
-        return;
-      }
+      if (file.size > 5 * 1024 * 1024) { toast.error("File size should not exceed 5MB."); e.target.value = ""; return; }
       if (file.type.startsWith('image/')) {
         try {
           const compressedDataUrl = await compressImage(file, 1024, 1024, 0.7);
           onFileChange(compressedDataUrl);
-        } catch (error) {
-          toast.error("Failed to process image for upload.");
-          onFileChange(null);
-        }
+        } catch (error) { toast.error("Failed to process image for upload."); onFileChange(null); }
       } else if (file.type === 'application/pdf') {
         const reader = new FileReader();
         reader.onloadend = () => onFileChange(reader.result as string);
         reader.readAsDataURL(file);
-      } else {
-        toast.error("Unsupported file type. Please upload an image or PDF.");
-        e.target.value = "";
-      }
+      } else { toast.error("Unsupported file type. Please upload an image or PDF."); e.target.value = ""; }
     }
   };
-
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        <div className="flex items-center gap-2">{icon}<span>{label}</span></div>
-      </label>
+      <label className="block text-sm font-medium text-gray-700 mb-1"><div className="flex items-center gap-2">{icon}<span>{label}</span></div></label>
       <div className="mt-1 flex items-center gap-3 p-3 border border-gray-300 rounded-md">
         <input type="file" id={id} accept="image/*,application/pdf" onChange={handleFileSelect} className="hidden" disabled={isSubmitting}/>
         {fileData ? (
@@ -167,7 +116,7 @@ const FileUploadInput: React.FC<{
         ) : (
           <>
             <Button type="button" variant="outline" icon={<Upload size={16} />} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting}>Upload File</Button>
-            <p className="text-xs text-gray-500">Max 5MB (PNG, JPG, PDF)</p>
+            <p className="text-xs text-gray-500">Max 5MB</p>
           </>
         )}
       </div>
@@ -179,23 +128,15 @@ const AddStaffPage: React.FC = () => {
   const router = useRouter();
   const { addStaffMember, positionOptions: contextPositionOptions = [], addPositionOption } = useStaff();
   
-  // <-- 2. GET THE SESSION AND ITS LOADING STATUS
+  // ✅ FIX: Get session and status to access tenant ID
   const { data: session, status: sessionStatus } = useSession();
 
   const [formData, setFormData] = useState<StaffFormData>({
     staffIdNumber: "Loading...",
-    name: "",
-    email: "",
-    phone: "",
-    position: "",
+    name: "", email: "", phone: "", position: "",
     joinDate: new Date().toISOString().split("T")[0],
-    salary: "",
-    address: "",
-    image: DEFAULT_STAFF_IMAGE,
-    aadharNumber: "",
-    aadharImage: null,
-    passbookImage: null,
-    agreementImage: null,
+    salary: "", address: "", image: DEFAULT_STAFF_IMAGE, aadharNumber: "",
+    aadharImage: null, passbookImage: null, agreementImage: null,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -205,14 +146,13 @@ const AddStaffPage: React.FC = () => {
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
   const [viewingDocument, setViewingDocument] = useState<{ src: string | null; title: string; }>({ src: null, title: "" });
 
-  // <-- 3. CORRECTED useEffect FOR FETCHING THE STAFF ID
+  // ✅ FIX: Correctly fetch the next staff ID using the tenant ID from the session
   useEffect(() => {
     const fetchNextId = async (tenantId: string) => {
       try {
         const response = await fetch("/api/staff?action=getNextId", {
           headers: {
-            // <-- 4. ADD THE X-TENANT-ID HEADER
-            'X-Tenant-ID': tenantId
+            'X-Tenant-ID': tenantId // Send tenant ID for the backend to scope the request
           },
           cache: 'no-store'
         });
@@ -230,24 +170,23 @@ const AddStaffPage: React.FC = () => {
       } catch (err: any) {
         setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
         toast.error(`Could not load Staff ID: ${err.message}`);
-        console.error(err);
       }
     };
 
-    // <-- 5. ONLY RUN FETCH LOGIC WHEN SESSION IS AUTHENTICATED
+    // Only run the fetch logic when the session is authenticated and tenantId is available
     if (sessionStatus === 'authenticated') {
       const tenantId = session?.user?.tenantId;
       if (tenantId) {
         fetchNextId(tenantId);
       } else {
         setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
-        toast.error("Could not load Staff ID: Tenant ID is missing from session.");
+        toast.error("Could not load Staff ID: Tenant ID is missing.");
       }
     } else if (sessionStatus === 'unauthenticated') {
         setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
-        toast.error("Could not load Staff ID: You are not logged in.");
+        toast.error("Could not load Staff ID: Not authenticated.");
     }
-  }, [sessionStatus, session]); // <-- 6. DEPEND ON THE SESSION STATUS
+  }, [sessionStatus, session]); // Depend on session status
 
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
@@ -260,8 +199,7 @@ const AddStaffPage: React.FC = () => {
   }, [contextPositionOptions, formData.position]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({ ...prevData, [name]: value }));
+    setFormData((prevData) => ({ ...prevData, [e.target.name]: e.target.value }));
   };
 
   const handleFileChange = (fieldName: keyof StaffFormData, fileData: string | null) => {
@@ -271,95 +209,52 @@ const AddStaffPage: React.FC = () => {
   const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 2 * 1024 * 1024) {
-        toast.error("Image size should not exceed 2MB.");
-        e.target.value = "";
-        return;
-      }
+      if (file.size > 2 * 1024 * 1024) { toast.error("Image size should not exceed 2MB."); e.target.value = ""; return; }
       try {
         const compressedDataUrl = await compressImage(file, 800, 800, 0.8);
         setFormData((prev) => ({ ...prev, image: compressedDataUrl }));
-      } catch (error) {
-        console.error("Profile image compression failed:", error);
-        toast.error("Failed to process profile image.");
-        setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE }));
-      }
+      } catch (error) { toast.error("Failed to process profile image."); setFormData((prev) => ({ ...prev, image: DEFAULT_STAFF_IMAGE })); }
     }
   };
 
   const handleAddNewPosition = () => {
     setNewPositionError(null);
-    if (!newPositionName.trim()) {
-      setNewPositionError("Position name cannot be empty.");
-      return;
-    }
+    if (!newPositionName.trim()) { setNewPositionError("Position name cannot be empty."); return; }
     const formattedNewPosition = newPositionName.trim();
-    if (positionOptions.some((option) => option.value.toLowerCase() === formattedNewPosition.toLowerCase())) {
-      setNewPositionError("This position already exists.");
-      return;
-    }
+    if (positionOptions.some((option) => option.value.toLowerCase() === formattedNewPosition.toLowerCase())) { setNewPositionError("This position already exists."); return; }
     const newOption = { value: formattedNewPosition, label: formattedNewPosition };
     addPositionOption(newOption);
     setFormData((prevData) => ({ ...prevData, position: newOption.value }));
-    setNewPositionName("");
-    setShowAddPositionForm(false);
+    setNewPositionName(""); setShowAddPositionForm(false);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-
-    if (formData.staffIdNumber === "Loading..." || formData.staffIdNumber === "Error") {
-      toast.error("Staff ID is not available. Please wait or refresh the page.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (!formData.name.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.aadharNumber.trim()) {
-      toast.warn("Please fill in all required fields marked with * (Name, Phone, Aadhar Number, Position).");
-      setIsSubmitting(false);
-      return;
-    }
-    if (!/^\d{12}$/.test(formData.aadharNumber.trim())) {
-      toast.error("Aadhar Number must be exactly 12 digits.");
-      setIsSubmitting(false);
-      return;
-    }
-    if (formData.salary !== "" && Number(formData.salary) < 0) {
-      toast.error("Salary cannot be negative.");
-      setIsSubmitting(false);
-      return;
-    }
+    if (formData.staffIdNumber === "Loading..." || formData.staffIdNumber === "Error") { toast.error("Staff ID is not available. Please refresh."); setIsSubmitting(false); return; }
+    if (!formData.name.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.aadharNumber.trim()) { toast.warn("Please fill in Name, Phone, Aadhar Number, and Position."); setIsSubmitting(false); return; }
+    if (!/^\d{12}$/.test(formData.aadharNumber.trim())) { toast.error("Aadhar Number must be 12 digits."); setIsSubmitting(false); return; }
+    if (formData.salary !== "" && Number(formData.salary) < 0) { toast.error("Salary cannot be negative."); setIsSubmitting(false); return; }
 
     const apiData: NewStaffPayload = {
-      staffIdNumber: formData.staffIdNumber,
-      name: formData.name,
-      email: formData.email || undefined,
-      phone: formData.phone,
-      position: formData.position,
-      joinDate: formData.joinDate,
-      salary: Number(formData.salary) || 0,
-      address: formData.address || undefined,
-      image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image,
-      aadharNumber: formData.aadharNumber,
-      aadharImage: formData.aadharImage,
-      passbookImage: formData.passbookImage,
-      agreementImage: formData.agreementImage,
+      staffIdNumber: formData.staffIdNumber, name: formData.name, email: formData.email || undefined,
+      phone: formData.phone, position: formData.position, joinDate: formData.joinDate,
+      salary: Number(formData.salary) || 0, address: formData.address || undefined,
+      image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image, aadharNumber: formData.aadharNumber,
+      aadharImage: formData.aadharImage, passbookImage: formData.passbookImage, agreementImage: formData.agreementImage,
     };
 
     try {
       await addStaffMember(apiData);
       router.push("/staffmanagement/staff/stafflist?success=add");
     } catch (apiError: any) {
-      console.error("Failed to add staff member:", apiError);
-      toast.error(apiError.message || "Failed to add staff member. Please try again.");
+      toast.error(apiError.message || "Failed to add staff member.");
       setIsSubmitting(false);
     }
   };
 
   const IconLabel: React.FC<{ htmlFor: string; icon: React.ReactNode; text: string; }> = ({ htmlFor, icon, text }) => (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 mb-1">
-      <div className="flex items-center gap-2">{icon}<span>{text}</span></div>
-    </label>
+    <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 mb-1"><div className="flex items-center gap-2">{icon}<span>{text}</span></div></label>
   );
 
   return (
@@ -388,6 +283,7 @@ const AddStaffPage: React.FC = () => {
               </div>
             </div>
           </div>
+          
           <div>
             <IconLabel htmlFor="staffIdNumber" icon={<Badge size={14} className="text-gray-500" />} text="Staff ID*"/>
             <input id="staffIdNumber" name="staffIdNumber" type="text" required value={formData.staffIdNumber} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black bg-gray-100 cursor-not-allowed" readOnly/>
@@ -422,7 +318,7 @@ const AddStaffPage: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <input type="text" id="newPositionName" value={newPositionName} onChange={(e) => {setNewPositionName(e.target.value); if (newPositionError) setNewPositionError(null);}} placeholder="Enter position name" className="flex-grow w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black" disabled={isSubmitting}/>
                   <Button type="button" variant="primary" size="sm" onClick={handleAddNewPosition} disabled={isSubmitting || !newPositionName.trim()}>Add</Button>
-                  <Button type="button" variant="ghost" onClick={() => {setShowAddPositionForm(false); setNewPositionName(""); setNewPositionError(null);}} disabled={isSubmitting} className="p-1.5 text-gray-500 hover:text-red-600" icon={<XCircle size={18} />} title="Cancel Adding Position"/>
+                  <Button type="button" variant="ghost" onClick={() => {setShowAddPositionForm(false); setNewPositionName(""); setNewPositionError(null);}} disabled={isSubmitting} className="p-1.5 text-gray-500 hover:text-red-600" icon={<XCircle size={18} />} title="Cancel"/>
                 </div>
                 {newPositionError && <p className="text-xs text-red-600 mt-1">{newPositionError}</p>}
               </div>

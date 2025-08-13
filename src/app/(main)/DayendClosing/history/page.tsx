@@ -1,17 +1,35 @@
-// app/DayendClosing/history/page.tsx - Add permission checks
-
 'use client';
 
 import Link from 'next/link';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
-import { useSession } from 'next-auth/react';
+import { useSession, getSession } from 'next-auth/react'; // 1. IMPORT getSession
+import { useCallback } from 'react'; // 2. IMPORT useCallback
+import { toast } from 'react-toastify'; // Import toast for error handling
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { useReportHistory } from './hooks/useReportHistory';
+import { useReportHistory } from './hooks/useReportHistory'; // Correct path to your hook
 import { FilterBar } from './components/FilterBar';
 import { ReportList } from './components/ReportList';
 
 export default function DayEndHistoryPage() {
   const { data: session } = useSession();
+
+  // 3. DEFINE THE tenantFetch HELPER FUNCTION
+  const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    const currentSession = await getSession(); 
+    if (!currentSession?.user?.tenantId) {
+      toast.error("Session error: Tenant not found. Please log in again.");
+      throw new Error("Missing tenant ID in session");
+    }
+    const headers = {
+      ...options.headers,
+      'Content-Type': 'application/json',
+      'x-tenant-id': currentSession.user.tenantId,
+    };
+    return fetch(url, { ...options, headers });
+  }, []);
+  // ----------------------------------------------------------------------
+
+  // 4. PASS tenantFetch TO THE useReportHistory HOOK
   const {
     reports,
     isLoading,
@@ -19,15 +37,20 @@ export default function DayEndHistoryPage() {
     filters,
     handleFilterChange,
     handleApplyFilters,
-  } = useReportHistory();
+  } = useReportHistory(tenantFetch); // <-- This is the crucial fix
 
   // Permission check
-  const canReadDayEnd = session && hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ);
+  const canReadDayEnd = session && (hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_READ) || hasPermission(session.user.role.permissions, PERMISSIONS.DAYEND_MANAGE));
+
+  // A better loading/permission flow
+  if (!session) {
+      return <div className="p-6 bg-gray-50 min-h-screen">Loading session...</div>;
+  }
 
   if (!canReadDayEnd) {
     return (
       <div className="p-6 bg-gray-50 min-h-screen">
-        <p className="text-red-500">You do not have permission to view day-end history.</p>
+        <p className="text-red-500 font-semibold">Access Denied: You do not have permission to view day-end history.</p>
       </div>
     );
   }
@@ -51,7 +74,7 @@ export default function DayEndHistoryPage() {
   };
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8 bg-gray-50 min-h-screen">
       <header className="mb-8">
         <Link href="/DayendClosing" className="text-sm text-gray-500 hover:text-gray-800 inline-flex items-center gap-2 mb-2">
           <ArrowLeftIcon className="h-4 w-4" />
@@ -68,7 +91,7 @@ export default function DayEndHistoryPage() {
         isLoading={isLoading}
       />
       
-      <main className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <main className="mt-6 bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
         {renderContent()}
       </main>
     </div>

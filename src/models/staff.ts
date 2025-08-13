@@ -1,5 +1,3 @@
-// FILE: src/models/staff.ts
-
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export interface IStaff extends Document {
@@ -31,14 +29,14 @@ const staffSchema = new Schema<IStaff>({
   staffIdNumber: {
     type: String,
     required: [true, 'Staff ID number is required.'],
-    // unique: true, // <<< REMOVED THIS
     trim: true,
   },
   name: { type: String, required: true, trim: true },
   email: {
     type: String,
+    // Email should be unique globally, so this is correct.
     unique: true,
-    sparse: true, // This is fine, email should be globally unique
+    sparse: true, 
     trim: true,
     lowercase: true,
   },
@@ -46,7 +44,6 @@ const staffSchema = new Schema<IStaff>({
   aadharNumber: {
     type: String,
     required: true,
-    // unique: true, // <<< REMOVED THIS
     trim: true,
   },
   position: { type: String, required: true, trim: true },
@@ -60,18 +57,20 @@ const staffSchema = new Schema<IStaff>({
   agreementImage: { type: String },
 }, { timestamps: true });
 
-// --- THIS IS THE FIX ---
-// Create compound indexes to ensure uniqueness is scoped to each tenant.
+// --- ✅ FIX: Create compound indexes for tenant-scoped uniqueness ---
 staffSchema.index({ tenantId: 1, staffIdNumber: 1 }, { unique: true });
 staffSchema.index({ tenantId: 1, aadharNumber: 1 }, { unique: true });
 
+// Index for better query performance on common filters
 staffSchema.index({ status: 1, name: 1 });
 
 let Staff: Model<IStaff>;
 
 try {
+  // Try to retrieve existing model to prevent recompilation error in Next.js
   Staff = mongoose.model<IStaff>('Staff');
 } catch {
+  // Define the model if it doesn't exist
   Staff = mongoose.model<IStaff>('Staff', staffSchema);
 }
 

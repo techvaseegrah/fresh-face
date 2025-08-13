@@ -8,7 +8,7 @@ import { useCrm } from './hooks/useCrm';
 import { CustomerTable } from './components/CustomerTable';
 import CrmCustomerDetailPanel from './components/CrmCustomerDetailPanel';
 import AddEditCustomerModal from './components/AddEditCustomerModal';
-import { useSession, getSession } from 'next-auth/react'; // 1. Import getSession
+import { useSession, getSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import CustomerImportModal from '@/components/admin/CustomerImportModal';
 import { toast } from 'react-toastify';
@@ -25,7 +25,19 @@ export default function CrmPage() {
     handleCloseAddEditModal, handleGrantMembership, handleFilterChange, applyFilters, clearFilters,
   } = useCrm();
 
+  // --- PERMISSION CHECKS ---
+  // Each action has its own dedicated permission check.
+
+  // Permission for the "Add" button
   const canCreateCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE);
+  
+  // Permission for the "Import" button
+  const canImportCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_IMPORT);
+
+  // Permission for the "Export" button
+  const canExportCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_EXPORT);
+  
+  // Permissions for table actions (Edit/Delete)
   const canUpdateCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_UPDATE);
   const canDeleteCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_DELETE);
   
@@ -39,7 +51,6 @@ export default function CrmPage() {
     refreshData();
   };
 
-  // 2. This function is updated to be multi-tenant aware
   const handleExportAll = async () => {
     setIsExporting(true);
     try {
@@ -50,7 +61,7 @@ export default function CrmPage() {
 
       const response = await fetch('/api/customer/export', {
         headers: {
-          'x-tenant-id': session.user.tenantId, // Add the required tenant header
+          'x-tenant-id': session.user.tenantId,
         }
       });
 
@@ -86,17 +97,23 @@ export default function CrmPage() {
             <h1 className="text-3xl font-bold text-gray-900">Customers</h1>
             <p className="text-sm text-gray-600">Manage your entire customer base.</p>
           </div>
+          {/* --- CONDITIONALLY RENDERED BUTTONS --- */}
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* This button only appears if user has 'customers:export' permission */}
+            {canExportCustomers && (
+              <button onClick={handleExportAll} disabled={isExporting} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-wait">
+                {isExporting ? 'Exporting...' : ( <><ArrowDownTrayIcon className="w-5 h-5" /> Export All </>)}
+              </button>
+            )}
+            {/* This button only appears if user has 'customers:import' permission */}
+            {canImportCustomers && (
+              <button onClick={() => setIsImportModalOpen(true)} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Import</button>
+            )}
+            {/* This button only appears if user has 'customers:create' permission */}
             {canCreateCustomers && (
-              <>
-                <button onClick={handleExportAll} disabled={isExporting} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-wait">
-                  {isExporting ? 'Exporting...' : ( <><ArrowDownTrayIcon className="w-5 h-5" /> Export All </>)}
-                </button>
-                <button onClick={() => setIsImportModalOpen(true)} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Import</button>
-                <button onClick={handleOpenAddModal} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-black rounded-lg shadow-sm hover:bg-gray-800 transition-colors">
-                  <PlusIcon className="w-5 h-5" /> Add
-                </button>
-              </>
+              <button onClick={handleOpenAddModal} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-black rounded-lg shadow-sm hover:bg-gray-800 transition-colors">
+                <PlusIcon className="w-5 h-5" /> Add
+              </button>
             )}
           </div>
         </header>

@@ -1,4 +1,3 @@
-// src/context/StaffContext.tsx
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
@@ -27,9 +26,11 @@ interface PopulatedStaffInfoFE { id: string; name: string; image?: string | null
 export interface TemporaryExitTypeFE { id: string; attendanceId: string; startTime: Date; endTime: Date | null; reason: string | null; durationMinutes: number; isOngoing: boolean; }
 export interface AttendanceRecordTypeFE { id: string; staff: PopulatedStaffInfoFE; date: Date; checkIn: Date | null; checkOut: Date | null; status: 'present' | 'absent' | 'late' | 'incomplete' | 'on_leave' | 'week_off'; temporaryExits: TemporaryExitTypeFE[]; totalWorkingMinutes: number; requiredMinutes: number; isWorkComplete: boolean; notes?: string; createdAt?: Date; updatedAt?: Date; }
 
-// --- Context Type (unchanged) ---
+// --- Context Type ---
 export interface StaffContextType {
-  staffMembers: StaffMember[]; loadingStaff: boolean; errorStaff: string | null; fetchStaffMembers: () => Promise<void>; addStaffMember: (staffData: NewStaffPayload) => Promise<StaffMember>; deleteStaffMember: (staffId: string) => Promise<void>; updateStaffMember: (staffId: string, updatedData: UpdateStaffPayload) => Promise<StaffMember>; getStaffById: (staffId: string) => StaffMember | undefined;
+  staffMembers: StaffMember[]; loadingStaff: boolean; errorStaff: string | null; fetchStaffMembers: () => Promise<void>; addStaffMember: (staffData: NewStaffPayload) => Promise<StaffMember>; deleteStaffMember: (staffId: string) => Promise<void>;
+  permanentlyDeleteStaffMember: (staffId: string) => Promise<void>; // ✅ ADDED
+  updateStaffMember: (staffId: string, updatedData: UpdateStaffPayload) => Promise<StaffMember>; getStaffById: (staffId: string) => StaffMember | undefined;
   positionOptions: PositionOption[]; addPositionOption: (option: PositionOption) => void;
   advancePayments: AdvancePaymentType[]; loadingAdvancePayments: boolean; errorAdvancePayments: string | null; fetchAdvancePayments: () => Promise<void>; requestAdvance: (payload: NewAdvancePaymentPayload) => Promise<void>; updateAdvanceStatus: (paymentId: string, status: 'approved' | 'rejected') => Promise<void>;
   attendanceRecordsFE: AttendanceRecordTypeFE[]; loadingAttendance: boolean; errorAttendance: string | null; fetchAttendanceRecords: (filter?: { staffId?: string; year?: number; month?: number; date?: string; startDate?: string; endDate?: string; }) => Promise<void>;
@@ -148,6 +149,29 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
       const msg = error instanceof Error ? error.message : 'Unknown error deactivating staff';
       setErrorStaff(msg);
       console.error('Error deactivating staff member:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch]);
+
+  // ✅ --- ADDED: Function for PERMANENT deletion ---
+  const permanentlyDeleteStaffMember = useCallback(async (staffId: string) => {
+    setErrorStaff(null);
+    try {
+      const response = await tenantAwareFetch(`/api/staff?id=${staffId}&permanent=true`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw await handleApiResponseError(response, 'Failed to permanently delete staff member');
+      }
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to permanently delete staff');
+      }
+      setStaffMembers(prev => prev.filter(m => m.id !== staffId));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error during permanent deletion';
+      setErrorStaff(msg);
+      console.error('Error permanently deleting staff member:', error);
       throw new Error(msg);
     }
   }, [tenantAwareFetch]);
@@ -518,9 +542,10 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
       fetchAttendanceRecords({ date: format(new Date(), 'yyyy-MM-dd') });
     }
   }, [tenantId, fetchStaffMembers, fetchAdvancePayments, fetchAttendanceRecords]);
-
+  
+  // ✅ --- MODIFIED: Added permanentlyDeleteStaffMember to the context value ---
   const contextValue: StaffContextType = {
-    staffMembers, loadingStaff, errorStaff, fetchStaffMembers, addStaffMember, deleteStaffMember, updateStaffMember, getStaffById,
+    staffMembers, loadingStaff, errorStaff, fetchStaffMembers, addStaffMember, deleteStaffMember, permanentlyDeleteStaffMember, updateStaffMember, getStaffById,
     positionOptions, addPositionOption,
     advancePayments, loadingAdvancePayments, errorAdvancePayments, fetchAdvancePayments, requestAdvance, updateAdvanceStatus,
     attendanceRecordsFE, loadingAttendance, errorAttendance, fetchAttendanceRecords, checkInStaff, checkOutStaff, startTemporaryExit, endTemporaryExit, applyWeekOff,

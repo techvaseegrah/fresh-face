@@ -1,5 +1,4 @@
 // src/app/(main)/staffmanagement/attendance/page.tsx
-// This is the final, CORRECTED version.
 
 'use client';
 
@@ -37,7 +36,7 @@ const formatDuration = (minutes: number | null): string => {
     return `${hours}h ${mins}m`;
 };
 
-// Avatar component with a vibrant, modern color palette and ring effect.
+// Avatar component
 const Avatar: React.FC<{
   src?: string | null;
   name: string;
@@ -270,10 +269,17 @@ const ApplyWeekOffModal: React.FC<{ staffMembers: StaffMember[]; attendanceRecor
 
 const Attendance: React.FC = () => {
   const { data: session } = useSession();
-  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
-  const canManageAttendance = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_ATTENDANCE_MANAGE), [userPermissions]);
 
-  // --- FIX 1: Destructure `loadingStaff` from the useStaff hook ---
+  // --- PERMISSION CHECK START ---
+  // This section determines if the current user has the right to see the action buttons.
+  // `userPermissions` will be an array like ["dashboard:read", "staff:read"]
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+  
+  // `canManageAttendance` becomes true only if "staff:attendance:manage" is in the userPermissions array.
+  // For your "Fox" user, this is currently `false`.
+  const canManageAttendance = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_ATTENDANCE_MANAGE), [userPermissions]);
+  // --- PERMISSION CHECK END ---
+
   const { staffMembers, loadingStaff, attendanceRecordsFE, loadingAttendance, errorAttendance, fetchAttendanceRecords, checkInStaff, checkOutStaff, startTemporaryExit, endTemporaryExit, applyWeekOff, removeWeekOff } = useStaff();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -299,16 +305,30 @@ const Attendance: React.FC = () => {
 
   useEffect(() => {
     const fetchAllSettings = async () => {
+      if (!session?.user?.tenantId) {
+        return; 
+      }
+      
       setSettingsLoading(true);
+
+      const headers = new Headers({
+        'Content-Type': 'application/json',
+        'x-tenant-id': session.user.tenantId,
+      });
+
       try {
-        const shopSettingsResponse = await fetch('/api/settings');
+        const [shopSettingsResponse, positionHoursResponse] = await Promise.all([
+          fetch('/api/settings', { headers }),
+          fetch('/api/settings/position-hours', { headers })
+        ]);
+
         const shopSettingsResult = await shopSettingsResponse.json();
-        
-        if (shopSettingsResult.success && shopSettingsResult.data && shopSettingsResult.data.settings) {
+        if (shopSettingsResult.success && shopSettingsResult.data?.settings) {
           setDailyRequiredHours(shopSettingsResult.data.settings.defaultDailyHours);
+        } else {
+          throw new Error(shopSettingsResult.error || "Failed to fetch default settings.");
         }
 
-        const positionHoursResponse = await fetch('/api/settings/position-hours');
         const positionHoursResult = await positionHoursResponse.json();
         if (positionHoursResult.success && Array.isArray(positionHoursResult.data)) {
             const map = new Map<string, number>();
@@ -316,16 +336,20 @@ const Attendance: React.FC = () => {
                 map.set(setting.positionName, setting.requiredHours);
             });
             setPositionHoursMap(map);
+        } else if (!positionHoursResult.success) {
+            console.warn("Could not load position-specific hour settings:", positionHoursResult.error);
         }
+
       } catch (error) {
         console.error("Error fetching settings:", error);
-        toast.error("Could not load required hour settings.");
+        toast.error(error instanceof Error ? error.message : "Could not load required hour settings.");
       } finally {
         setSettingsLoading(false);
       }
     };
+
     fetchAllSettings();
-  }, []);
+  }, [session]); 
   
   const todayAttendanceMap = useMemo(() => {
     const map = new Map<string, AttendanceRecordTypeFE>();
@@ -464,6 +488,7 @@ const Attendance: React.FC = () => {
           <input type="text" placeholder="Search by staff name or ID..." className="pl-12 pr-4 py-2.5 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
         <div className="flex items-center gap-3">
+          {/* PERMISSION CHECK: This button only appears if `canManageAttendance` is true */}
           {canManageAttendance && (
             <Button onClick={() => setShowWeekOffModal(true)}>Apply Week Off</Button>
           )}
@@ -472,7 +497,6 @@ const Attendance: React.FC = () => {
         </div>
       </div>
 
-      {/* --- FIX 2: Add `loadingStaff` to the loading condition to prevent race condition --- */}
       {(loadingAttendance || settingsLoading || loadingStaff) && (
         <div className="text-center py-20 text-gray-500 flex items-center justify-center gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
@@ -480,7 +504,6 @@ const Attendance: React.FC = () => {
         </div>
       )}
       
-      {/* --- FIX 3: Ensure this section only renders when ALL data is loaded --- */}
       {!(loadingAttendance || settingsLoading || loadingStaff) && (
         <>
         <Card title={`Today's Attendance (${format(new Date(), 'eeee, MMMM d')})`} className="!p-0 overflow-hidden shadow-lg rounded-xl border">
@@ -495,6 +518,7 @@ const Attendance: React.FC = () => {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[10%]">Working Time</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[10%]">Required</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[13%]">Temp Exits</th>
+                    {/* PERMISSION CHECK: The entire "Actions" column only appears if `canManageAttendance` is true */}
                     {canManageAttendance && (
                       <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-[15%]">Actions</th>
                     )}                
@@ -564,7 +588,8 @@ const Attendance: React.FC = () => {
                             </div>
                             )}
                         </td>
-
+                        
+                        {/* PERMISSION CHECK: This entire block of buttons only appears if `canManageAttendance` is true */}
                         {canManageAttendance && (
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                             {!todayAttendance ? 
