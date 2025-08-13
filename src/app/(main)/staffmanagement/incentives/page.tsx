@@ -12,10 +12,14 @@ import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
 // ===================================================================
-// HELPER COMPONENTS & INTERFACES (These do not need changes)
+// HELPER COMPONENTS & INTERFACES
 // ===================================================================
 
-interface StaffMember { id: string; name: string; hasSalary: boolean; }
+interface StaffMember {
+  id: string;
+  name: string;
+  hasSalary: boolean;
+}
 interface Rule { target: { multiplier: number; }; sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; }; incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };}
 interface SettingsProps { onClose: () => void; tenantId: string; }
 
@@ -240,6 +244,7 @@ export default function IncentivesPage() {
   const selectedStaffMember = useMemo(() => staffList.find(staff => staff.id === selectedStaffId), [selectedStaffId, staffList]);
   const isCalculationDisabled = loading || !selectedStaffId || !selectedStaffMember?.hasSalary;
 
+  // ✅ CORRECTED CODE IS HERE
   useEffect(() => {
     const fetchStaff = async () => {
       setLoadingStaff(true);
@@ -250,8 +255,18 @@ export default function IncentivesPage() {
         const response = await fetch('/api/staff?action=list', { headers }); 
         const result = await response.json();
         if (response.ok && Array.isArray(result.data)) {
-            setStaffList(result.data);
-            if (result.data.length > 0) setSelectedStaffId(result.data[0].id);
+            // Transform the API data to match the StaffMember interface
+            const transformedStaffList = result.data.map((staff: any) => ({
+              id: staff.id,
+              name: staff.name,
+              hasSalary: staff.salary !== null && staff.salary !== undefined && staff.salary > 0,
+            }));
+            
+            setStaffList(transformedStaffList);
+
+            if (transformedStaffList.length > 0) {
+              setSelectedStaffId(transformedStaffList[0].id);
+            }
         } else {
             toast.error(result.message || "Failed to fetch staff.");
         }
@@ -402,35 +417,28 @@ export default function IncentivesPage() {
     toast.success("PDF report downloaded!");
   };
 
-  // ✅ THE FINAL FIX IS HERE: This function now correctly creates a multi-sheet Excel file.
   const handleDownloadAllExcel = async () => {
     const reportData = await fetchReportData();
     if (!reportData) return;
     
     const { dailyReport, monthlyReport, staffSummary } = reportData;
-
-    // 1. Create a new workbook.
     const workbook = XLSX.utils.book_new();
 
-    // 2. Create a worksheet for the Daily Report and add it to the workbook.
     if (dailyReport.length > 0) {
       const dailyWorksheet = XLSX.utils.json_to_sheet(dailyReport);
       XLSX.utils.book_append_sheet(workbook, dailyWorksheet, "Daily Details");
     }
 
-    // 3. Create a worksheet for the Monthly Report and add it to the workbook.
     if (monthlyReport.length > 0) {
       const monthlyWorksheet = XLSX.utils.json_to_sheet(monthlyReport);
       XLSX.utils.book_append_sheet(workbook, monthlyWorksheet, "Monthly Summary");
     }
 
-    // 4. Create a worksheet for the Staff Summary and add it to the workbook.
     if (staffSummary.length > 0) {
       const summaryWorksheet = XLSX.utils.json_to_sheet(staffSummary);
       XLSX.utils.book_append_sheet(workbook, summaryWorksheet, "Staff Totals");
     }
 
-    // 5. Write the final workbook to a file.
     XLSX.writeFile(workbook, `incentive-report_${reportStartDate}_to_${reportEndDate}.xlsx`);
     toast.success("Excel report downloaded!");
   };

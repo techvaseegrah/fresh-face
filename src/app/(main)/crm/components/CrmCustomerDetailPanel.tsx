@@ -1,4 +1,4 @@
-// FILE: /app/crm/components/CrmCustomerDetailPanel.tsx - MULTI-TENANT VERSION
+// FILE: /app/crm/components/CrmCustomerDetailPanel.tsx - CORRECTED VERSION
 
 'use client';
 
@@ -12,7 +12,7 @@ import {
   PhoneIcon,
   EnvelopeIcon 
 } from '@heroicons/react/24/outline';
-import { getSession } from 'next-auth/react'; // 1. Import getSession
+import { getSession } from 'next-auth/react';
 
 interface CrmCustomerDetailPanelProps {
   customer: CrmCustomer | null;
@@ -43,7 +43,6 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
     }
   }, [customer, isOpen]);
 
-  // 2. Update the barcode check useEffect to be tenant-aware
   useEffect(() => {
     const checkBarcode = async () => {
       if (!showBarcodeInput || !membershipBarcode.trim()) {
@@ -64,7 +63,7 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
           `/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`,
           {
             headers: {
-              'x-tenant-id': session.user.tenantId, // Add the tenant header
+              'x-tenant-id': session.user.tenantId,
             },
           }
         );
@@ -225,18 +224,20 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
             {(!customer!.appointmentHistory || customer!.appointmentHistory.length === 0) ? (
               <p className="text-gray-500 text-sm py-4 text-center italic">No paid appointments found.</p>
             ) : (
-              customer!.appointmentHistory.map(apt => (
-                <div key={apt._id} className="p-3 bg-gray-100/70 rounded-lg text-sm">
-                  <div className="flex justify-between items-start">
-                    <p className="font-semibold">{formatDate(apt.date)}</p>
-                    <p className="font-bold text-gray-800">₹{(apt.totalAmount || 0).toFixed(2)}</p>
+              customer!.appointmentHistory
+                .filter(Boolean) // <-- FIX: Filter out null/undefined appointments
+                .map(apt => (
+                  <div key={apt._id} className="p-3 bg-gray-100/70 rounded-lg text-sm">
+                    <div className="flex justify-between items-start">
+                      <p className="font-semibold">{formatDate(apt.date)}</p>
+                      <p className="font-bold text-gray-800">₹{(apt.totalAmount || 0).toFixed(2)}</p>
+                    </div>
+                    <p className="text-xs text-gray-600">with {apt.stylistName}</p>
+                    <div className="flex items-start gap-2 mt-2 pt-2 border-t text-xs text-gray-500">
+                      <TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                      <span>{Array.isArray(apt.services) ? apt.services.join(', ') : 'Details unavailable'}</span>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-600">with {apt.stylistName}</p>
-                  <div className="flex items-start gap-2 mt-2 pt-2 border-t text-xs text-gray-500">
-                    <TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                    <span>{Array.isArray(apt.services) ? apt.services.join(', ') : 'Details unavailable'}</span>
-                  </div>
-                </div>
               ))
             )}
           </div>

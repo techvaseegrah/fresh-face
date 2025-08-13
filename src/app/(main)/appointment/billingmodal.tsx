@@ -32,7 +32,7 @@ interface SearchableItem {
 interface AppointmentForModal {
   _id: string;
   id: string;
-  invoiceId?: string;
+  invoiceId?: string | { _id: string; invoiceNumber: string }; // Can be string or object
   serviceIds?: Array<{ _id: string; name: string; price: number; membershipRate?: number }>;
   finalAmount?: number;
   paymentDetails?: { cash?: number; card?: number; upi?: number; other?: number };
@@ -88,7 +88,6 @@ interface BillingModalProps {
   onFinalizeAndPay: (payload: FinalizeBillingPayload) => Promise<any>;
 }
 
-// Placeholder for CustomerHistoryModal which might have its own API calls
 const CustomerHistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; customer: CustomerForModal | null; }> = ({ isOpen, onClose, customer }) => {
     return null; 
 };
@@ -111,13 +110,10 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
   const [membershipGranted, setMembershipGranted] = useState<boolean>(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState<boolean>(false);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-  
-  // --- States for the two different staff lists ---
-  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]); // For per-item assignment
-  const [billingProcessors, setBillingProcessors] = useState<StaffMember[]>([]); // For the main processor dropdown
+  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
+  const [billingProcessors, setBillingProcessors] = useState<StaffMember[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState<boolean>(false);
   const [isLoadingProcessors, setIsLoadingProcessors] = useState<boolean>(false);
-  
   const [newPaymentDetails, setNewPaymentDetails] = useState({ cash: 0, card: 0, upi: 0, other: 0 });
   const [membershipBarcode, setMembershipBarcode] = useState<string>('');
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean>(true);
@@ -133,17 +129,12 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
 
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const session = await getSession();
-    if (!session?.user?.tenantId) {
-      throw new Error("Your session is invalid. Please log in again.");
-    }
+    if (!session?.user?.tenantId) { throw new Error("Your session is invalid. Please log in again."); }
     const headers = { ...options.headers, 'x-tenant-id': session.user.tenantId };
-    if (options.body) {
-      (headers as any)['Content-Type'] = 'application/json';
-    }
+    if (options.body) { (headers as any)['Content-Type'] = 'application/json'; }
     return fetch(url, { ...options, headers });
   }, []);
 
-  // Fetches ALL active staff for per-item assignment
   const fetchAllActiveStaff = useCallback(async () => {
     setIsLoadingStaff(true);
     try {
@@ -154,7 +145,6 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
     finally { setIsLoadingStaff(false); }
   }, [tenantFetch]);
 
-  // Fetches ONLY staff authorized to process billing
   const fetchBillingProcessors = useCallback(async () => {
     setIsLoadingProcessors(true);
     try {
@@ -178,18 +168,42 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
   useEffect(() => {
     if (!isOpen) return;
     const initialize = async () => {
+      // Reset all states
+      setBillItems([]); setNotes(''); setIsLoading(false); setError(null);
+      setInventoryImpact(null); setSearchQuery(''); setSearchResults([]);
+      setCustomerIsMember(false); setShowMembershipGrantOption(false);
+      setIsGrantingMembership(false); setMembershipGranted(false);
+      setShowCustomerHistory(false); setSelectedStaffId('');
+      setNewPaymentDetails({ cash: 0, card: 0, upi: 0, other: 0 });
+      setMembershipBarcode(''); setIsBarcodeValid(true);
+      setDiscount(0); setDiscountType('fixed');
+
+      // Fetch initial data
       fetchAllActiveStaff();
       fetchBillingProcessors();
       fetchMembershipFee();
       const isMember = customer?.isMembership || false;
       setCustomerIsMember(isMember);
       setShowMembershipGrantOption(!isMember);
+
+      // --- THIS IS THE FIX FOR THE CastError ---
       if (isCorrectionMode && appointment.invoiceId) {
         setIsLoadingBill(true);
         try {
-          const res = await tenantFetch(`/api/billing/${appointment.invoiceId}`);
+          // Check if invoiceId is an object to get its _id, otherwise use it directly.
+          const invoiceIdToFetch = typeof appointment.invoiceId === 'object' 
+            ? (appointment.invoiceId as { _id: string })._id 
+            : appointment.invoiceId;
+          
+          if (!invoiceIdToFetch) {
+            throw new Error("A valid Invoice ID could not be found in the appointment data.");
+          }
+
+          // This fetch call will now use the correct ID string
+          const res = await tenantFetch(`/api/billing/${invoiceIdToFetch}`);
           const result = await res.json();
           if (!res.ok) throw new Error(result.message || 'Failed to fetch invoice.');
+          
           const { invoice } = result;
           const itemsFromInvoice: BillLineItem[] = invoice.lineItems.map((item: any) => ({ ...item, isRemovable: true }));
           setBillItems(itemsFromInvoice);
@@ -198,8 +212,12 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
           setDiscount(invoice.manualDiscount?.value || 0);
           setDiscountType(invoice.manualDiscount?.type || 'fixed');
           await fetchInventoryImpact(itemsFromInvoice);
-        } catch (err: any) { setError(`Could not load bill: ${err.message}`); setBillItems([]); } 
-        finally { setIsLoadingBill(false); }
+        } catch (err: any) { 
+          setError(`Could not load bill: ${err.message}`); 
+          setBillItems([]); 
+        } finally { 
+          setIsLoadingBill(false); 
+        }
       } else {
         const initialItems = appointment.serviceIds?.map(service => {
           const finalPrice = (customer?.isMembership && typeof service.membershipRate === 'number') ? service.membershipRate : service.price;
@@ -210,7 +228,7 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
       }
     };
     initialize();
-  }, [isOpen, appointment.invoiceId, appointment.serviceIds, customer, isCorrectionMode, fetchAllActiveStaff, fetchBillingProcessors, fetchMembershipFee, stylist._id]);
+  }, [isOpen, appointment, customer, isCorrectionMode, fetchAllActiveStaff, fetchBillingProcessors, fetchMembershipFee, stylist._id, tenantFetch]);
 
   useEffect(() => { setBillItems(prevItems => prevItems.map(item => { if (item.itemType === 'service') { const unitPrice = (customerIsMember && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; return { ...item, finalPrice: unitPrice * item.quantity }; } return item; })); }, [customerIsMember]);
   useEffect(() => { if (searchQuery.trim().length < 2) { setSearchResults([]); return; } const handler = setTimeout(async () => { setIsSearching(true); try { const res = await tenantFetch(`/api/billing/search-items?query=${encodeURIComponent(searchQuery)}`); const data = await res.json(); if (data.success) setSearchResults(data.items); } catch (e) { console.error('Item search failed:', e); } finally { setIsSearching(false); } }, 400); return () => clearTimeout(handler); }, [searchQuery, tenantFetch]);
@@ -244,7 +262,7 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
   }, [billItems, customerIsMember, newPaymentDetails, discount, discountType, originalAmountPaid, isCorrectionMode]);
 
   const handleFinalizeClick = async () => { if (billItems.length === 0 || totals.trueGrandTotal < 0) { setError('Cannot finalize an empty or negative value bill.'); return; } if (!selectedStaffId) { setError('Please select a billing staff member.'); return; } if (billItems.some(item => !item.staffId)) { setError('Please assign a staff member to every item in the bill.'); toast.error('Please assign a staff member to every item.'); return; } if (totals.balance > 0.01) { setError(`Payment amount (₹${totals.totalNewPaid.toFixed(2)}) is less than the amount due (₹${totals.displayTotal.toFixed(2)}).`); return; } setIsLoading(true); setError(null); try { const finalPaymentDetails = { cash: (originalPaymentDetails.cash || 0) + newPaymentDetails.cash, card: (originalPaymentDetails.card || 0) + newPaymentDetails.card, upi: (originalPaymentDetails.upi || 0) + newPaymentDetails.upi, other: (originalPaymentDetails.other || 0) + newPaymentDetails.other, }; if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); } const finalPayload: FinalizeBillingPayload = { appointmentId: appointment._id, customerId: customer._id, stylistId: stylist._id, billingStaffId: selectedStaffId, items: billItems, serviceTotal: totals.serviceTotal, productTotal: totals.productTotal, subtotal: totals.subtotalBeforeDiscount, membershipDiscount: totals.membershipSavings, grandTotal: totals.trueGrandTotal, paymentDetails: finalPaymentDetails, notes, customerWasMember: customer?.isMembership || false, membershipGrantedDuringBilling: membershipGranted, manualDiscountType: discount > 0 ? discountType : null, manualDiscountValue: discount, finalManualDiscountApplied: totals.calculatedDiscount, }; await onFinalizeAndPay(finalPayload); } catch (err: any) { setError(err.message || "An unknown error occurred."); } finally { setIsLoading(false); } };
-
+  
   if (!isOpen) return null;
 
   return (
@@ -295,15 +313,7 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
                 {isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
                 {inventoryImpact?.inventoryImpact?.length > 0 && (<div className="p-4 bg-blue-50 border border-blue-200 rounded-lg"><h4 className="text-sm font-medium text-blue-800 mb-3">Inventory Impact ({inventoryImpact.customerGender})</h4><div className="space-y-2">{inventoryImpact.inventoryImpact.map((impact: any, index: number) => (<div key={index} className={`p-3 rounded-md border text-sm ${impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' : impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}><div className="flex justify-between items-center"><div><span className="font-medium">{impact.productName}</span><div className="text-xs text-gray-600">Current: {impact.currentQuantity.toFixed(1)}{impact.unit} → After: {(impact.currentQuantity - impact.usageQuantity).toFixed(1)}{impact.unit}</div></div><div className="text-right"><div className="font-medium">-{impact.usageQuantity.toFixed(1)}{impact.unit}</div>{impact.alertLevel !== 'ok' && <div className={`text-xs font-bold ${impact.alertLevel === 'insufficient' ? 'text-red-600' : 'text-orange-600'}`}>{impact.alertLevel.toUpperCase()}!</div>}</div></div></div>))}</div></div>)}
                 <div className="border-t pt-4"><label htmlFor="itemSearch" className="block text-sm font-medium text-gray-700 mb-1">Add Additional Items</label><div className="relative"><input ref={searchInputRef} id="itemSearch" type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search services or products..." className="w-full px-3 py-2 border rounded-md" autoComplete="off" />{(isSearching || searchResults.length > 0) && (<ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-48 overflow-y-auto shadow-lg">{isSearching && <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>}{!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span className="font-medium">{item.type === 'product' && item.categoryName ? `${item.categoryName} - ${item.name}` : item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}{!isSearching && searchResults.length === 0 && searchQuery.length >= 2 && <li className="px-3 py-2 text-sm text-gray-500">No items found.</li>}</ul>)}</div></div>
-                
-                {/* --- CHANGE 5: Update the final billing staff dropdown --- */}
-                <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff (Processor) <span className="text-red-500">*</span></label>
-                  <select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingProcessors}>
-                    <option value="">{isLoadingProcessors ? 'Loading staff...' : 'Select billing staff'}</option>
-                    {billingProcessors.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}
-                  </select>
-                </div>
-                
+                <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff (Processor) <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingProcessors}><option value="">{isLoadingProcessors ? 'Loading staff...' : 'Select billing staff'}</option>{billingProcessors.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
                 <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{discountType === 'fixed' ? '₹' : '%'}</span><input type="number" min="0" value={discount || ''} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => setDiscountType('fixed')} className={`px-4 py-2 text-sm font-semibold border transition-colors ${discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (₹)</button><button onClick={() => setDiscountType('percentage')} className={`px-4 py-2 text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
                 <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Enter New Payment</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={newPaymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total New Payment:</span><span className="font-semibold">₹{totals.totalNewPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>{isCorrectionMode ? 'Amount Due:' : 'Bill Total:'}</span><span className="font-semibold">₹{totals.displayTotal.toFixed(2)}</span></div>{totals.changeDue > 0 ? (<div className="flex justify-between mt-1 text-blue-600 font-bold"><span>Change Due:</span><span>₹{totals.changeDue.toFixed(2)}</span></div>) : (<div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Remaining Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div>)}</div></div></div>
                 <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>

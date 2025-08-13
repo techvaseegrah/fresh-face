@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect, useMemo, useCallback, FC, ChangeEvent } from 'react';
 import { useSession, Session } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
@@ -16,6 +17,7 @@ import Link from 'next/link';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Assuming these components exist and have been converted to TSX
 import ReportDownloadModal from '@/components/ReportDownloadModal';
 import CostModal from '@/components/CostModal';
 import HistoryModal from '@/components/HistoryModal';
@@ -30,7 +32,7 @@ interface CustomSession extends Session {
         email?: string | null; 
         image?: string | null; 
         role: { permissions: string[] };
-        tenantId: string; // Ensure tenantId is part of the session type
+        tenantId: string;
     };
 }
 
@@ -106,11 +108,112 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
     const { data: session } = useSession() as { data: CustomSession | null };
     const [isEditing, setIsEditing] = useState<boolean>(false);
     const [editMorningUnits, setEditMorningUnits] = useState<number | undefined>();
-    const handleEnterEditMode = () => { setEditMorningUnits(reading.morningUnits); setIsEditing(true); };
-    const handleUpdate = async () => { if (editMorningUnits !== undefined && editMorningUnits < 0) { alert('Units must be a non-negative number.'); return; } await onUpdate(reading._id, editMorningUnits); setIsEditing(false); };
+
+    const handleEnterEditMode = () => { 
+        setEditMorningUnits(reading.morningUnits); 
+        setIsEditing(true); 
+    };
+    
+    const handleUpdate = async (): Promise<void> => { 
+        if (editMorningUnits !== undefined && editMorningUnits < 0) { 
+            alert('Units must be a non-negative number.'); 
+            return; 
+        } 
+        await onUpdate(reading._id, editMorningUnits); 
+        setIsEditing(false); 
+    };
+
     const handleCancelEdit = () => setIsEditing(false);
-    return (<div className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl border-t-4 border-indigo-500"><div className="px-6 py-4 flex items-center justify-between"><h3 className="text-lg font-semibold text-slate-800">{new Date(reading.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>{session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE) && (<button onClick={isEditing ? handleCancelEdit : handleEnterEditMode} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-1 rounded-md hover:bg-indigo-50 transition-colors">{isEditing ? 'Cancel' : 'Update Units'}</button>)}</div><div className="px-6 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6"><div className="bg-slate-50/80 rounded-lg p-4 space-y-4"><div><div className="flex items-center text-slate-600 mb-2"><SunIcon className="h-5 w-5 mr-2 text-yellow-500" /><p className="text-sm font-medium">Morning Reading (Today)</p></div>{isEditing ? (<input type="number" value={editMorningUnits ?? ''} onChange={(e: ChangeEvent<HTMLInputElement>) => { const val = e.target.value; setEditMorningUnits(val === '' ? undefined : parseFloat(val)); }} className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" step="0.01" placeholder="Enter reading" />) : (<div><p className="text-2xl font-semibold text-slate-900">{(reading.morningUnits !== undefined) ? `${reading.morningUnits.toFixed(2)}` : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>{reading.morningImageUrl && (<div onClick={() => onImageZoom(reading.morningImageUrl as string)} className="mt-3 cursor-pointer group"><Image src={reading.morningImageUrl} alt="Morning Meter Reading" width={200} height={120} className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" /></div>)}</div>)}</div><hr className="border-slate-200" /><div><div className="flex items-center text-slate-600 mb-2"><CalendarDaysIcon className="h-5 w-5 mr-2 text-sky-600" /><p className="text-sm font-medium">Morning Reading (Next Day)</p></div><p className="text-2xl font-semibold text-slate-900">{nextDayMorningUnits !== undefined ? `${nextDayMorningUnits.toFixed(2)}` : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p></div></div><div className="space-y-4"><div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full"><div className="flex-shrink-0 bg-teal-100 text-teal-700 rounded-lg p-3"><ArrowUpRightIcon className="h-6 w-6" /></div><div className="ml-4"><p className="text-sm text-slate-600">Units Consumed (for this day)</p><p className="text-lg font-bold text-slate-800">{reading.unitsConsumed !== undefined ? `${reading.unitsConsumed.toFixed(2)} units` : 'N/A'}</p></div></div><div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full"><div className="flex-shrink-0 bg-amber-100 text-amber-700 rounded-lg p-3"><CurrencyRupeeIcon className="h-6 w-6" /></div><div className="ml-4"><p className="text-sm text-slate-600">Total Cost</p><p className="text-lg font-bold text-slate-800">{reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}</p></div></div></div></div><div className="px-6 py-4 flex items-center justify-between bg-slate-50 border-t border-slate-200">{isEditing ? (<button onClick={handleUpdate} className="px-5 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 w-full sm:w-auto font-semibold shadow-sm">Save Changes</button>) : <div />}{reading.history && reading.history.length > 0 && (<button onClick={() => onHistoryOpen(reading.history)} className="flex items-center text-sm text-slate-500 hover:text-slate-800 font-medium p-2 rounded-md hover:bg-slate-100 transition-colors"><ClockIcon className="h-4 w-4 mr-1.5"/>View History</button>)}</div></div>);
+    
+    return (
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl border-t-4 border-indigo-500">
+            <div className="px-6 py-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-800">{new Date(reading.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
+                {session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE) && (
+                    <button onClick={isEditing ? handleCancelEdit : handleEnterEditMode} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-1 rounded-md hover:bg-indigo-50 transition-colors">
+                        {isEditing ? 'Cancel' : 'Update Units'}
+                    </button>
+                )}
+            </div>
+            <div className="px-6 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-slate-50/80 rounded-lg p-4 space-y-4">
+                    <div>
+                        <div className="flex items-center text-slate-600 mb-2">
+                            <SunIcon className="h-5 w-5 mr-2 text-yellow-500" />
+                            <p className="text-sm font-medium">Morning Reading (Today)</p>
+                        </div>
+                        {isEditing ? (
+                            <input 
+                                type="number" 
+                                value={editMorningUnits ?? ''} 
+                                onChange={(e: ChangeEvent<HTMLInputElement>) => { 
+                                    const val = e.target.value; 
+                                    setEditMorningUnits(val === '' ? undefined : parseFloat(val)); 
+                                }} 
+                                className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" 
+                                step="0.01" 
+                                placeholder="Enter reading" 
+                            />
+                        ) : (
+                            <p className="text-2xl font-semibold text-slate-900">
+                                {(reading.morningUnits !== undefined) ? reading.morningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span>
+                            </p>
+                        )}
+                        {/* Image is now outside the conditional block to always be visible if it exists */}
+                        {reading.morningImageUrl && (
+                            <div onClick={() => onImageZoom(reading.morningImageUrl as string)} className="mt-3 cursor-pointer group">
+                                <Image 
+                                    src={reading.morningImageUrl} 
+                                    alt="Morning Meter Reading" 
+                                    width={200} 
+                                    height={120} 
+                                    className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" 
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <hr className="border-slate-200" />
+                    <div>
+                        <div className="flex items-center text-slate-600 mb-2">
+                            <CalendarDaysIcon className="h-5 w-5 mr-2 text-sky-600" />
+                            <p className="text-sm font-medium">Morning Reading (Next Day)</p>
+                        </div>
+                        <p className="text-2xl font-semibold text-slate-900">
+                            {nextDayMorningUnits !== undefined ? nextDayMorningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span>
+                        </p>
+                    </div>
+                </div>
+                <div className="space-y-4">
+                    <div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full">
+                        <div className="flex-shrink-0 bg-teal-100 text-teal-700 rounded-lg p-3"><ArrowUpRightIcon className="h-6 w-6" /></div>
+                        <div className="ml-4">
+                            <p className="text-sm text-slate-600">Units Consumed (for this day)</p>
+                            <p className="text-lg font-bold text-slate-800">{reading.unitsConsumed !== undefined ? `${reading.unitsConsumed.toFixed(2)} units` : 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full">
+                        <div className="flex-shrink-0 bg-amber-100 text-amber-700 rounded-lg p-3"><CurrencyRupeeIcon className="h-6 w-6" /></div>
+                        <div className="ml-4">
+                            <p className="text-sm text-slate-600">Total Cost</p>
+                            <p className="text-lg font-bold text-slate-800">{reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div className="px-6 py-4 flex items-center justify-between bg-slate-50 border-t border-slate-200">
+                {isEditing ? (
+                    <button onClick={handleUpdate} className="px-5 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 w-full sm:w-auto font-semibold shadow-sm">Save Changes</button>
+                ) : <div />}
+                {reading.history && reading.history.length > 0 && (
+                    <button onClick={() => onHistoryOpen(reading.history)} className="flex items-center text-sm text-slate-500 hover:text-slate-800 font-medium p-2 rounded-md hover:bg-slate-100 transition-colors">
+                        <ClockIcon className="h-4 w-4 mr-1.5"/>View History
+                    </button>
+                )}
+            </div>
+        </div>
+    );
 };
+
 
 // --- MAIN PAGE COMPONENT ---
 export default function EBViewPage(): JSX.Element {
@@ -131,7 +234,7 @@ export default function EBViewPage(): JSX.Element {
         session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE),
     [session]);
 
-    const fetchPageData = useCallback(async () => {
+    const fetchPageData = useCallback(async (): Promise<void> => {
         const tenantId = session?.user?.tenantId;
         if (!tenantId) {
             setIsLoading(false);
@@ -147,10 +250,14 @@ export default function EBViewPage(): JSX.Element {
                 fetch('/api/appointment/summary', { headers }),
                 fetch('/api/settings/ebCostPerUnit', { headers })
             ]);
+            
             const ebData = await ebRes.json();
             const appointmentsData = await appointmentsRes.json();
-            if (!ebData.success) { throw new Error(ebData.message || 'Failed to fetch EB readings.'); }
+
+            if (!ebData.success) throw new Error(ebData.message || 'Failed to fetch EB readings.');
+
             const appointmentCounts = appointmentsData.success ? appointmentsData.counts : {};
+            
             const combinedData: IEBReadingWithAppointments[] = (ebData.readings as IEBReading[]).map(reading => {
                 const dateKey = new Date(reading.date).toISOString().split('T')[0];
                 return { ...reading, appointmentCount: appointmentCounts[dateKey] || 0 };
@@ -173,7 +280,7 @@ export default function EBViewPage(): JSX.Element {
         if(canViewCalculateEB) { fetchPageData(); } else if (session) { setIsLoading(false); }
     }, [session, canViewCalculateEB, fetchPageData]);
     
-    const handleUnitUpdate = async (id: string, morningUnits: number | undefined) => {
+    const handleUnitUpdate = async (id: string, morningUnits: number | undefined): Promise<void> => {
       const tenantId = session?.user?.tenantId;
       if (!tenantId) {
           alert('Could not identify your salon. Update failed.');
@@ -192,7 +299,7 @@ export default function EBViewPage(): JSX.Element {
       }
     };
     
-    const handleSetGlobalCost = async (newCost: number) => {
+    const handleSetGlobalCost = async (newCost: number): Promise<void> => {
         const tenantId = session?.user?.tenantId;
         if (!tenantId) {
             alert('Could not identify your salon. Cost update failed.');
@@ -222,12 +329,12 @@ export default function EBViewPage(): JSX.Element {
         }
     };
 
-    const handleHistoryOpen = (history: IHistoryEntry[]) => {
+    const handleHistoryOpen = (history: IHistoryEntry[]): void => {
         setCurrentHistory(history);
         setIsHistoryModalOpen(true);
     };
 
-    const handleDownloadEbReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }) => {
+    const handleDownloadEbReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }): Promise<void> => {
         const tenantId = session?.user?.tenantId;
         if (!tenantId) {
             alert('Could not identify your salon. Report download failed.');
@@ -238,11 +345,7 @@ export default function EBViewPage(): JSX.Element {
             const response = await fetch('/api/eb/report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-                body: JSON.stringify({ 
-                    startDate: params.startDate, 
-                    endDate: params.endDate, 
-                    format: params.format 
-                }),
+                body: JSON.stringify({ ...params }),
             });
 
             if (!response.ok) {
@@ -304,7 +407,7 @@ export default function EBViewPage(): JSX.Element {
             {zoomedImageUrl && <ImageZoomModal src={zoomedImageUrl} onClose={() => setZoomedImageUrl(null)} />}
             <ReportDownloadModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} onDownload={handleDownloadEbReport} isDownloading={isDownloading} />
 
-            <main className=" bg-slate-100 min-h-screen">
+            <main className="bg-slate-100 min-h-screen">
                 <div className="max-w-7xl mx-auto space-y-8 p-4 sm:p-6 lg:p-8">
                     <div className="flex flex-wrap justify-between items-center gap-4">
                         <div>
@@ -320,12 +423,28 @@ export default function EBViewPage(): JSX.Element {
                     
                     <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
                         {readings.length === 0 ? (
-                            <div className="text-center py-16"><DocumentTextIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" /><h3 className="text-xl font-semibold text-slate-700">No EB Readings Found</h3><p className="text-slate-500 mt-2">Get started by adding the first reading.</p><Link href="/eb-upload" className="mt-6 inline-block bg-indigo-600 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm hover:bg-indigo-700">Upload First Reading</Link></div>
+                            <div className="text-center py-16">
+                                <DocumentTextIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+                                <h3 className="text-xl font-semibold text-slate-700">No EB Readings Found</h3>
+                                <p className="text-slate-500 mt-2">Get started by adding the first reading.</p>
+                                <Link href="/eb-upload" className="mt-6 inline-block bg-indigo-600 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm hover:bg-indigo-700">
+                                    Upload First Reading
+                                </Link>
+                            </div>
                         ) : (
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                                 {readings.map((reading, index) => {
                                     const nextDayReading = index > 0 ? readings[index - 1] : null;
-                                    return (<EBReadingCard key={reading._id} reading={reading} nextDayMorningUnits={nextDayReading?.morningUnits} onUpdate={handleUnitUpdate} onImageZoom={(url) => setZoomedImageUrl(url)} onHistoryOpen={handleHistoryOpen}/>);
+                                    return (
+                                        <EBReadingCard 
+                                            key={reading._id} 
+                                            reading={reading} 
+                                            nextDayMorningUnits={nextDayReading?.morningUnits} 
+                                            onUpdate={handleUnitUpdate} 
+                                            onImageZoom={(url) => setZoomedImageUrl(url)} 
+                                            onHistoryOpen={handleHistoryOpen}
+                                        />
+                                    );
                                 })}
                             </div>
                         )}

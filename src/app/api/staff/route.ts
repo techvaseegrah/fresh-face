@@ -86,44 +86,85 @@ async function checkPermissions(permission: string) {
  * Handles GET requests to fetch staff data.
  */
 export async function GET(request: NextRequest) {
+  // 1. Ensure Tenant ID is present
   const tenantIdOrResponse = getTenantIdOrBail(request);
   if (tenantIdOrResponse instanceof NextResponse) {
     return tenantIdOrResponse;
   }
   const tenantId = tenantIdOrResponse;
 
+  // 2. Check for read permissions
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_READ);
   if (permissionCheck) {
     return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status });
   }
 
+  // 3. Connect to DB and parse URL parameters
   await dbConnect();
   const { searchParams } = request.nextUrl;
   const action = searchParams.get('action');
   const staffId = searchParams.get('id');
 
   try {
+    // --- ACTION: Get the next available staff ID number ---
     if (action === 'getNextId') {
       const nextId = await getNextStaffId(tenantId);
       return NextResponse.json({ success: true, data: { nextId } });
     }
     
+    // --- ACTION: Get a list of all active staff for the Billing Modal ---
     if (action === 'listForBilling') {
-        const activeStaff = await Staff.find({ tenantId, status: 'active' }, '_id name email').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string, email: string }[]>();
-        return NextResponse.json({ success: true, staff: activeStaff.map(s => ({ _id: s._id.toString(), name: s.name, email: s.email })) });
+        const activeStaff = await Staff.find(
+          {
+            tenantId,       // Scope by tenant
+            status: 'active', // Only get active staff
+          },
+          '_id name email' // Select only the fields needed by the modal
+        )
+        .sort({ name: 'asc' })
+        .lean<{ _id: Types.ObjectId, name: string, email: string }[]>();
+
+        return NextResponse.json({
+            success: true,
+            // The BillingModal expects the response key to be 'staff'
+            staff: activeStaff.map(s => ({ 
+                _id: s._id.toString(), 
+                name: s.name,
+                email: s.email 
+            }))
+        });
     }
     
+    // --- ACTION: Get a filtered list of stylists for appointment assignment ---
     if (action === 'listForAssignment') {
-        const assignableStaff = await Staff.find({ tenantId, status: 'active', position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] } }, '_id name').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string }[]>();
-        return NextResponse.json({ success: true, stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name })) });
+        const assignableStaff = await Staff.find(
+          {
+            tenantId, // Scope by tenant
+            status: 'active',
+            // Filter by specific positions
+            position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] }
+          },
+          '_id name'
+        )
+        .sort({ name: 'asc' })
+        .lean<{ _id: Types.ObjectId, name: string }[]>();
+
+        return NextResponse.json({
+            success: true,
+            stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name }))
+        });
     }
 
+    // --- ACTION: Get a detailed list of all staff for the main management page ---
     if (action === 'list') {
-      const staffList = await Staff.find({ tenantId }).sort({ name: 'asc' }).lean<LeanStaffDocument[]>();
-      const formattedData = staffList.map(staff => ({ ...staff, id: staff._id.toString(), hasSalary: typeof staff.salary === 'number' && staff.salary > 0, }));
-      return NextResponse.json({ success: true, data: formattedData });
+      const staffList = await Staff.find({ tenantId }) // Scope by tenant
+        .select('staffIdNumber name email phone aadharNumber position joinDate salary address image status aadharImage passbookImage agreementImage')
+        .sort({ name: 'asc' })
+        .lean<LeanStaffDocument[]>();
+      return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
     }
 
+    // --- ACTION: Get a single staff member by their document ID ---
     if (staffId) {
       if (!isValidObjectId(staffId)) {
         return NextResponse.json({ success: false, error: 'Invalid staff ID format' }, { status: 400 });
@@ -134,11 +175,10 @@ export async function GET(request: NextRequest) {
       }
       return NextResponse.json({ success: true, data: {...staffMember, id: staffMember._id.toString()} });
     }
-    
-    const allStaff = await Staff.find({ tenantId }).lean<LeanStaffDocument[]>();
-    const formattedAllStaff = allStaff.map(staff => ({ ...staff, id: staff._id.toString() }));
-    return NextResponse.json({ success: true, data: formattedAllStaff });
 
+    // --- Fallback if no valid action or ID is provided ---
+    return NextResponse.json({ success: false, error: 'Invalid action or missing ID for GET request' }, { status: 400 });
+  
   } catch (error) {
     console.error('Error fetching staff:', error);
     const message = error instanceof Error ? error.message : 'An unknown error occurred';
