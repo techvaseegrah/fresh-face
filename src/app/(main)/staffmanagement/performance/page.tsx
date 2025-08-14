@@ -53,7 +53,8 @@ interface IncentiveReportData {
     staffSummary: any[];
 }
 
-const CHART_COLORS = [ '#4f46e5', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6' ];
+const CHART_COLORS = [ '#4f46e5', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899', '#64748b', '#14b8a6', '#f97316', '#a855f7' ];
+
 
 // --- UI Helper Components (Unchanged) ---
 const SummaryCardSkeleton: React.FC = () => ( <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 animate-pulse"><div className="flex items-center"><div className="w-12 h-12 rounded-full bg-gray-200 mr-4"></div><div className="space-y-2 flex-1"><div className="h-6 bg-gray-300 rounded w-1/2"></div><div className="h-4 bg-gray-200 rounded w-1/3"></div></div></div></div> );
@@ -65,30 +66,51 @@ const ModalPortal: React.FC<{ children: ReactNode }> = ({ children }) => {
 };
 
 // --- Pie Chart Components ---
+// --- MODIFICATION: Added animation to the PerformancePieChart ---
 const PerformancePieChart: React.FC<{ data: PerformanceData[] }> = ({ data }) => {
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
+    
     const sortedData = [...data].sort((a, b) => b.sales - a.sales);
-    const topPerformers = sortedData.slice(0, 5);
-    const othersSales = sortedData.slice(5).reduce((sum, staff) => sum + staff.sales, 0);
-    const labels = topPerformers.map(staff => staff.name);
-    const salesData = topPerformers.map(staff => staff.sales);
-    if (othersSales > 0) {
-      labels.push('Others');
-      salesData.push(othersSales);
-    }
-    return { labels, datasets: [{ label: 'Total Sales', data: salesData, backgroundColor: CHART_COLORS, borderColor: '#ffffff', borderWidth: 2, hoverOffset: 8 }] };
+    const labels = sortedData.map(staff => staff.name);
+    const salesData = sortedData.map(staff => staff.sales);
+
+    return { 
+        labels, 
+        datasets: [{ 
+            label: 'Total Sales', 
+            data: salesData, 
+            backgroundColor: CHART_COLORS, 
+            borderColor: '#ffffff', 
+            borderWidth: 2, 
+            hoverOffset: 8 
+        }] 
+    };
   }, [data]);
+
   if (!chartData) return null;
+
   return (
     <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
       <h3 className="text-lg font-bold text-gray-800 flex items-center mb-4"><PieChart className="mr-2 text-indigo-500" size={20}/>Sales Contribution by Staff</h3>
       <div className="relative h-80 w-full">
-        <Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }} />
+        <Doughnut 
+          data={chartData} 
+          options={{ 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            plugins: { legend: { position: 'top' } },
+            animation: { // Animation added here
+                animateScale: true,
+                animateRotate: true
+            }
+          }} 
+        />
       </div>
     </div>
   );
 };
+
 const IncentivePieChart: React.FC<{ data: any[], chartRef: React.RefObject<any> }> = ({ data, chartRef }) => {
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
@@ -98,18 +120,32 @@ const IncentivePieChart: React.FC<{ data: any[], chartRef: React.RefObject<any> 
     const incentiveData = filteredData.map(staff => parseFloat(staff['Total Incentive (₹)']));
     return { labels, datasets: [{ label: 'Total Incentive (₹)', data: incentiveData, backgroundColor: CHART_COLORS.slice().reverse(), borderColor: '#ffffff', borderWidth: 2, hoverOffset: 8 }] };
   }, [data]);
+
   if (!chartData) return null;
+  
   return (
     <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
       <h3 className="text-lg font-bold text-gray-800 flex items-center mb-4"><PieChart className="mr-2 text-teal-500" size={20}/>Incentive Contribution by Staff</h3>
       <div className="relative h-80 w-full">
-        <Doughnut ref={chartRef} data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }} />
+        <Doughnut 
+          ref={chartRef} 
+          data={chartData} 
+          options={{ 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            plugins: { legend: { position: 'top' } },
+            animation: {
+                animateScale: true,
+                animateRotate: true
+            }
+          }} 
+        />
       </div>
     </div>
   );
 };
 
-// --- Main Performance Page Component ---
+// --- Main Performance Page Component (Unchanged) ---
 const PerformancePage: React.FC = () => {
   const { data: session } = useSession();
   const [searchTerm, setSearchTerm] = useState('');
@@ -252,7 +288,6 @@ const PerformancePage: React.FC = () => {
   const formatCurrency = (value: number | string) => `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
   const yearOptions = useMemo(() => Array.from({ length: new Date().getFullYear() - 2020 + 1 }, (_, i) => new Date().getFullYear() - i), []);
 
-  // ✅ FIX: This function is now restored to its original state.
   const getExportData = () => {
     const headers = ["S.NO", "employee name", "employee code", "client count", "ABV", "service net sales", "product sales", "total sales", "total sales heading to", "No of Clients Heading To"];
     const body = filteredStaffPerformance.map((staff, index) => {
@@ -265,7 +300,6 @@ const PerformancePage: React.FC = () => {
     return { headers, body, totalsRow };
   };
 
-  // ✅ FIX: This function now only exports the performance table.
   const handleDownloadExcel = () => {
     const { headers, body, totalsRow } = getExportData();
     const wb = XLSX.utils.book_new();
@@ -275,7 +309,6 @@ const PerformancePage: React.FC = () => {
     XLSX.writeFile(wb, `Performance_Report_${months[currentMonthIndex]}_${currentYear}.xlsx`);
   };
 
-  // ✅ FIX: This function now only exports the performance table.
   const handleDownloadPdf = () => {
     const { headers, body, totalsRow } = getExportData();
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -381,9 +414,11 @@ const PerformancePage: React.FC = () => {
             }
           </div>
           <div className="block md:hidden p-4 space-y-4"></div>
+          {/* --- FIX START --- */}
           <div className="p-3 text-xs text-center text-gray-600 bg-slate-50 rounded-b-lg border-t border-gray-200 uppercase">
-            TOTAL SALES HEADING TO MEANS THE ESTIMATED SALES YOU ARE GOING TO REACH BY THE END OF THE MONTH...
+            {'TOTAL SALES HEADING TO MEANS THE ESTIMATED SALES YOU ARE GOING TO REACH BY THE END OF THE MONTH...'}
           </div>
+          {/* --- FIX END --- */}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
