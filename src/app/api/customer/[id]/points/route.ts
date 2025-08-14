@@ -1,10 +1,15 @@
+<<<<<<< HEAD
 // app/api/customer/[id]/points/route.ts - MULTI-TENANT VERSION
 
+=======
+// app/api/customer/[id]/points/route.ts
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
+<<<<<<< HEAD
 import { getTenantIdOrBail } from '@/lib/tenant'; // Import tenant helper
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -25,6 +30,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   
   // Start the mongoose session for the transaction
+=======
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -32,7 +41,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const { id: customerId } = params;
     const { points, reason } = await req.json();
 
+<<<<<<< HEAD
     // Validation remains the same and is good practice
+=======
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
     if (!mongoose.Types.ObjectId.isValid(customerId)) {
       return NextResponse.json({ success: false, message: 'Invalid Customer ID' }, { status: 400 });
     }
@@ -45,6 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     await connectToDatabase();
     
+<<<<<<< HEAD
     // 2. Find the customer, scoped to the current tenant
     const customer = await Customer.findOne({ _id: customerId, tenantId }).session(session);
     if (!customer) {
@@ -52,29 +65,57 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
 
     // This business logic is correct
+=======
+    // 1. Find the customer to check their current points
+    const customer = await Customer.findById(customerId).session(session);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    // 2. Prevent the balance from going negative
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
     if (customer.loyaltyPoints + points < 0) {
       throw new Error(`Operation failed. Customer only has ${customer.loyaltyPoints} points.`);
     }
 
+<<<<<<< HEAD
     // 3. Update the customer's point balance, scoped to the current tenant
     const updatedCustomer = await Customer.findOneAndUpdate(
       { _id: customerId, tenantId }, // Use a tenant-scoped filter
       { $inc: { loyaltyPoints: points } },
       { new: true, session }
+=======
+    // 3. Update the customer's point balance
+    const updatedCustomer = await Customer.findByIdAndUpdate(
+      customerId,
+      { $inc: { loyaltyPoints: points } }, // $inc safely increments/decrements
+      { new: true, session } // 'new: true' returns the updated doc
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
     );
 
     if (!updatedCustomer) throw new Error('Failed to update customer points.');
     
+<<<<<<< HEAD
     // 4. Create a tenant-scoped log of the transaction
     await LoyaltyTransaction.create([{
       customerId,
       tenantId, // Add the tenantId to the log
       points: Math.abs(points),
+=======
+    // 4. Create a log of the transaction
+    await LoyaltyTransaction.create([{
+      customerId,
+      points: Math.abs(points), // Store points as a positive number in the log
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
       type: points > 0 ? 'Credit' : 'Debit',
       reason: `Manual Adjustment: ${reason.trim()}`,
     }], { session });
 
+<<<<<<< HEAD
     await session.commitTransaction(); // Commit all changes
+=======
+    await session.commitTransaction(); // Commit all changes if everything was successful
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
     return NextResponse.json({
       success: true,

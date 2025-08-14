@@ -1,19 +1,33 @@
+<<<<<<< HEAD
 // /app/api/customer/[id]/route.ts - COMPLETE VERSION WITH DEBUGGING
+=======
+// /app/api/customer/[id]/route.ts - FINAL CORRECTED VERSION
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
 import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
+<<<<<<< HEAD
 import Staff from '@/models/staff';
+=======
+// --- FIX: IMPORT THE CORRECT STAFF MODEL ---
+import Staff from '@/models/staff'; // Adjust path if necessary, e.g., '@/models/staffmodel'
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+<<<<<<< HEAD
 import { encrypt, decrypt } from '@/lib/crypto';
 import { getTenantIdOrBail } from '@/lib/tenant';
 import {createBlindIndex, generateNgrams} from '@/lib/search-indexing';
+=======
+import { encrypt } from '@/lib/crypto';
+import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
 interface LeanCustomer {
   _id: mongoose.Types.ObjectId;
@@ -27,6 +41,12 @@ interface LeanCustomer {
   membershipBarcode?: string;
 }
 
+<<<<<<< HEAD
+=======
+// ===================================================================================
+//  GET: Handler for fetching full customer details (CORRECTED)
+// ===================================================================================
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const customerId = params.id;
 
@@ -35,17 +55,21 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
 
+<<<<<<< HEAD
   const tenantId = getTenantIdOrBail(req as any);
   if (tenantId instanceof NextResponse) {
     return tenantId;
   }
 
+=======
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
   if (!mongoose.Types.ObjectId.isValid(customerId)) {
     return NextResponse.json({ success: false, message: 'Invalid Customer ID.' }, { status: 400 });
   }
 
   try {
     await connectToDatabase();
+<<<<<<< HEAD
 
     const customer = await Customer.findOne({ _id: customerId, tenantId }).lean<LeanCustomer>();
     if (!customer) {
@@ -68,18 +92,37 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       // =========================================================================
       LoyaltyTransaction.aggregate([
         { $match: { customerId: customer._id, tenantId: new mongoose.Types.ObjectId(tenantId) } },
+=======
+    
+    const customer = await Customer.findById(customerId).lean<LeanCustomer>();
+    if (!customer) {
+      return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
+    }
+
+    const [allRecentAppointments, loyaltyData] = await Promise.all([
+      Appointment.find({ customerId: customer._id }).sort({ appointmentDateTime: -1, date: -1 }).limit(20).lean(),
+      LoyaltyTransaction.aggregate([
+        { $match: { customerId: customer._id } },
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
         { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
       ])
     ]);
 
+<<<<<<< HEAD
     // The rest of the logic remains the same, but now operates on the filtered 'Paid' appointments.
+=======
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
     let activityStatus: 'Active' | 'Inactive' | 'New' = 'New';
     let lastVisit: string | null = null;
     const twoMonthsAgo = new Date();
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
     if (allRecentAppointments.length > 0) {
+<<<<<<< HEAD
       const lastAppointmentDate = (allRecentAppointments[0] as any).appointmentDateTime || (allRecentAppointments[0] as any).date;
+=======
+      const lastAppointmentDate = allRecentAppointments[0].appointmentDateTime || allRecentAppointments[0].date;
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
       if (lastAppointmentDate) {
         activityStatus = new Date(lastAppointmentDate) >= twoMonthsAgo ? 'Active' : 'Inactive';
         lastVisit = new Date(lastAppointmentDate).toISOString();
@@ -89,14 +132,24 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     }
 
     const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
+<<<<<<< HEAD
     const appointmentIds = allRecentAppointments.map(apt => (apt as any)._id);
 
     const populatedHistory = await Appointment.find({ _id: { $in: appointmentIds }, tenantId })
       .sort({ appointmentDateTime: -1, date: -1 })
+=======
+
+    // Use all recent appointments to populate, not just paid ones
+    const appointmentIds = allRecentAppointments.map(apt => apt._id);
+    const populatedHistory = await Appointment.find({ _id: { $in: appointmentIds } })
+      .sort({ appointmentDateTime: -1, date: -1 })
+      // --- THE FIX IS HERE: Use the 'Staff' model for population ---
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
       .populate({ path: 'stylistId', model: Staff, select: 'name' })
       .populate({ path: 'serviceIds', model: ServiceItem, select: 'name price' })
       .lean();
 
+<<<<<<< HEAD
     // ... The rest of the function (decryption block and response object) is unchanged ...
     // ... It will now correctly use the filtered data ...
     let decryptedName = 'Error: Corrupted Data';
@@ -127,6 +180,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       name: decryptedName,
       email: decryptedEmail,
       phoneNumber: decryptedPhoneNumber,
+=======
+    const customerDetails = {
+      id: customer._id.toString(),
+      _id: customer._id.toString(),
+      name: customer.name,
+      email: customer.email,
+      phoneNumber: customer.phoneNumber,
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
       gender: customer.gender,
       isMember: customer.isMembership,
       membershipBarcode: customer.membershipBarcode,
@@ -138,6 +199,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       createdAt: customer.createdAt || customer._id.getTimestamp(),
       appointmentHistory: populatedHistory.map(apt => {
         let finalDateTime;
+<<<<<<< HEAD
         if ((apt as any).appointmentDateTime && (apt as any).appointmentDateTime instanceof Date) {
           finalDateTime = (apt as any).appointmentDateTime;
         } else if ((apt as any).date && (apt as any).time) {
@@ -145,12 +207,25 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
           finalDateTime = new Date(`${dateStr}T${(apt as any).time}:00.000Z`);
         } else {
           finalDateTime = (apt as any).createdAt || new Date();
+=======
+        if (apt.appointmentDateTime && apt.appointmentDateTime instanceof Date) {
+          finalDateTime = apt.appointmentDateTime;
+        } else if (apt.date && apt.time) {
+          const dateStr = apt.date instanceof Date ? apt.date.toISOString().split('T')[0] : apt.date.toString();
+          finalDateTime = new Date(`${dateStr}T${apt.time}:00.000Z`);
+        } else {
+          finalDateTime = apt.createdAt || new Date();
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
         }
         return {
           _id: (apt as any)._id.toString(),
           id: (apt as any)._id.toString(),
           date: finalDateTime.toISOString(),
           totalAmount: (apt as any).finalAmount || (apt as any).amount || 0,
+<<<<<<< HEAD
+=======
+          // This will now correctly find the 'name' property on the populated Staff object
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
           stylistName: (apt as any).stylistId?.name || 'N/A',
           services: Array.isArray((apt as any).serviceIds) ? (apt as any).serviceIds.map((s: any) => s.name) : [],
           status: (apt as any).status || 'N/A',
@@ -166,6 +241,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
+<<<<<<< HEAD
 // The PUT and DELETE functions are unchanged.
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
     const customerId = params.id;
@@ -267,4 +343,107 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       console.error(`API Error deactivating customer ${customerId}:`, error);
       return NextResponse.json({ success: false, message: error.message || 'Failed to deactivate customer.' }, { status: 500 });
     }
+=======
+// ===================================================================================
+//  PUT: Handler for UPDATING a customer (UNCHANGED)
+// ===================================================================================
+export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const customerId = params.id;
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    return NextResponse.json({ success: false, message: 'Invalid Customer ID.' }, { status: 400 });
+  }
+
+  const session = await getServerSession(authOptions);
+  if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_UPDATE)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    await connectToDatabase();
+    const body = await req.json();
+    const updateData: any = {};
+
+    if (body.phoneNumber) {
+      const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
+      updateData.phoneNumber = encrypt(normalizedPhoneNumber);
+      updateData.phoneHash = createBlindIndex(normalizedPhoneNumber);
+      updateData.last4PhoneNumber = normalizedPhoneNumber.slice(-4);
+      updateData.phoneSearchIndex = generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram));
+    }
+
+    if (body.name) {
+      updateData.name = encrypt(body.name);
+      updateData.searchableName = body.name.toLowerCase().trim();
+    }
+    
+    if (typeof body.email !== 'undefined') {
+      updateData.email = body.email ? encrypt(body.email) : undefined;
+    }
+
+    if (body.dob) updateData.dob = body.dob;
+    if (body.gender) updateData.gender = body.gender;
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ success: false, message: 'No update data provided.' }, { status: 400 });
+    }
+
+    const updatedCustomer = await Customer.findByIdAndUpdate(
+      customerId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedCustomer) {
+      return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ success: true, customer: updatedCustomer });
+
+  } catch (error: any) {
+    console.error(`API Error updating customer ${customerId}:`, error);
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return NextResponse.json({ success: false, message: `A customer with this ${field} already exists.` }, { status: 409 });
+    }
+    if (error.name === 'ValidationError') {
+        return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
+    }
+    return NextResponse.json({ success: false, message: 'Failed to update customer.' }, { status: 500 });
+  }
+}
+
+// ===================================================================================
+//  DELETE: Handler for "soft deleting" a customer (UNCHANGED)
+// ===================================================================================
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const customerId = params.id;
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    return NextResponse.json({ success: false, message: 'Invalid Customer ID.' }, { status: 400 });
+  }
+
+  const session = await getServerSession(authOptions);
+  if (!hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_DELETE)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    await connectToDatabase();
+    
+    const deactivatedCustomer = await Customer.findByIdAndUpdate(
+      customerId,
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!deactivatedCustomer) {
+      return NextResponse.json({ success: false, message: 'Customer not found.' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, message: 'Customer has been deactivated successfully.' });
+
+  } catch (error: any) {
+    console.error(`API Error deactivating customer ${customerId}:`, error);
+    return NextResponse.json({ success: false, message: error.message || 'Failed to deactivate customer.' }, { status: 500 });
+  }
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 }

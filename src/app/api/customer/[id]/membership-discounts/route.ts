@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // app/api/customer/[id]/membership-discounts/route.ts - MULTI-TENANT VERSION
 
 import { NextResponse } from 'next/server';
@@ -21,12 +22,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return tenantId;
   }
   
+=======
+// app/api/customer/[id]/membership-discounts/route.ts - GET MEMBERSHIP DISCOUNTS
+import { NextResponse } from 'next/server';
+import connectToDatabase from '@/lib/mongodb';
+import Customer from '@/models/customermodel';
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
   try {
     await connectToDatabase();
     
     const { id } = params;
     const { serviceIds } = await req.json();
 
+<<<<<<< HEAD
     // 3. Scope the customer lookup to the current tenant
     // This is the critical security change.
     const customer = await Customer.findOne({ _id: id, tenantId });
@@ -37,6 +47,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
 
     // Because the `customer` document is correctly scoped, these instance method calls are now secure.
+=======
+    const customer = await Customer.findById(id);
+    if (!customer) {
+      return NextResponse.json({ success: false, message: "Customer not found." }, { status: 404 });
+    }
+
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
     const discounts = await customer.getMembershipDiscount(serviceIds);
     const hasMembership = await customer.hasActiveMembership();
 

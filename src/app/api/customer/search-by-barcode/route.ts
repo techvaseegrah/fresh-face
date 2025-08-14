@@ -1,10 +1,15 @@
+<<<<<<< HEAD
 // /app/api/customer/search-by-barcode/route.ts - MULTI-TENANT VERSION
 
+=======
+// app/api/customer/search-by-barcode/route.ts - FINAL & CORRECT
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
 import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
+<<<<<<< HEAD
 import Staff from '@/models/staff'; // Corrected from Stylist for consistency
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import mongoose from 'mongoose';
@@ -26,6 +31,13 @@ export async function GET(req: Request) {
     return tenantId;
   }
 
+=======
+import Stylist from '@/models/Stylist';
+import LoyaltyTransaction from '@/models/loyaltyTransaction';
+import mongoose from 'mongoose';
+
+export async function GET(req: Request) {
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
   try {
     await connectToDatabase();
     
@@ -39,16 +51,22 @@ export async function GET(req: Request) {
       }, { status: 400 });
     }
     
+<<<<<<< HEAD
     // 3. Scope the main customer find to the current tenant
     const customer = await Customer.findOne({ 
         membershipBarcode: barcode, 
         isActive: true,
         tenantId // <-- CRITICAL: Tenant scope added
     });
+=======
+    // Find customer by barcode
+    const customer = await Customer.findOne({ membershipBarcode: barcode, isActive: true });
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
     
     if (!customer) {
       return NextResponse.json({
         success: false,
+<<<<<<< HEAD
         message: 'No active customer found with this barcode for this tenant'
       }, { status: 404 });
     }
@@ -63,6 +81,22 @@ export async function GET(req: Request) {
         .lean(),
       LoyaltyTransaction.aggregate([
         { $match: { customerId: customer._id, tenantId: new mongoose.Types.ObjectId(tenantId) } }, // <-- Tenant scope added
+=======
+        message: 'No active customer found with this barcode'
+      }, { status: 404 });
+    }
+    
+    // This logic is now identical to the detailed fetch in the other search route
+    const [appointmentHistory, loyaltyData] = await Promise.all([
+      Appointment.find({ customerId: customer._id })
+        .sort({ appointmentDateTime: -1 }) // CORRECT FIELD
+        .limit(20)
+        .populate({ path: 'stylistId', model: Stylist, select: 'name' })
+        .populate({ path: 'serviceIds', model: ServiceItem, select: 'name' })
+        .lean(),
+      LoyaltyTransaction.aggregate([
+        { $match: { customerId: customer._id } },
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
         { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
       ])
     ]);
@@ -73,22 +107,38 @@ export async function GET(req: Request) {
       .filter(apt => (apt as any).status === 'Paid')
       .reduce((sum, apt) => sum + ((apt as any).finalAmount || (apt as any).amount || 0), 0);
 
+<<<<<<< HEAD
     // 5. Decrypt sensitive customer data before sending
     const customerDetails = {
       _id: customer._id.toString(),
       name: decrypt(customer.name),
       email: customer.email ? decrypt(customer.email) : undefined,
       phoneNumber: decrypt(customer.phoneNumber),
+=======
+    const customerDetails = {
+      _id: customer._id.toString(),
+      name: customer.name,
+      email: customer.email,
+      phoneNumber: customer.phoneNumber,
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
       isMember: customer.isMembership || false,
       membershipDetails: customer.isMembership ? { planName: 'Member', status: 'Active' } : null,
       membershipBarcode: customer.membershipBarcode,
       gender: customer.gender || 'other',
       loyaltyPoints: calculatedLoyaltyPoints,
+<<<<<<< HEAD
       lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).appointmentDateTime : null,
       totalSpent: totalSpent,
       appointmentHistory: appointmentHistory.map(apt => ({
         _id: (apt as any)._id.toString(),
         date: (apt as any).appointmentDateTime,
+=======
+      lastVisit: appointmentHistory.length > 0 ? (appointmentHistory[0] as any).appointmentDateTime : null, // CORRECT FIELD
+      totalSpent: totalSpent,
+      appointmentHistory: appointmentHistory.map(apt => ({
+        _id: (apt as any)._id.toString(),
+        date: (apt as any).appointmentDateTime, // CORRECT FIELD
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
         services: ((apt as any).serviceIds || []).map((s: any) => s.name),
         totalAmount: (apt as any).finalAmount || (apt as any).amount || 0,
         stylistName: (apt as any).stylistId?.name || 'N/A',
@@ -108,4 +158,8 @@ export async function GET(req: Request) {
       message: 'An internal server error occurred.'
     }, { status: 500 });
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> df642c83af3692f0da766243fb53ac637920f256
