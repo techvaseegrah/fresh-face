@@ -3,15 +3,15 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Tenant from '@/models/Tenant';
-// Note: You would add session/permission checks here to secure this endpoint
-// For now, we are just creating the functionality.
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
     await connectToDatabase();
 
-    // Find all tenants and sort them by creation date
-    const tenants = await Tenant.find({}).sort({ createdAt: 'desc' }).lean();
+    // Find all tenants and sort them by creation date (descending)
+    const tenants = await Tenant.find({}).sort({ createdAt: -1 }).lean();
 
     return NextResponse.json(tenants);
 
