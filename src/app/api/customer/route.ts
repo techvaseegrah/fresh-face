@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 // FILE: /api/customer/route.ts - MULTI-TENANT VERSION
-=======
-// FILE: /api/customer/route.ts - COMPLETE & FINAL
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -13,13 +9,10 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import mongoose from 'mongoose';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 import { encrypt, decrypt } from '@/lib/crypto';
-<<<<<<< HEAD
 import { getTenantIdOrBail } from '@/lib/tenant'; // 1. Import the tenant helper
 
 // NOTE: This code assumes that the 'Appointment', 'ServiceItem', and 'LoyaltyTransaction' models
 // also have a 'tenantId' field for secure data lookups.
-=======
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
@@ -27,14 +20,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
   
-<<<<<<< HEAD
     const tenantId = getTenantIdOrBail(req as any);
     if (tenantId instanceof NextResponse) {
         return tenantId;
     }
 
-=======
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
     try {
       await connectToDatabase();
       const { searchParams } = new URL(req.url);
@@ -43,10 +33,6 @@ export async function GET(req: Request) {
       const limit = parseInt(searchParams.get('limit') || '10', 10);
       const skip = (page - 1) * limit;
       const searchQuery = searchParams.get('search')?.trim();
-<<<<<<< HEAD
-=======
-      
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
       const statusFilter = searchParams.get('status');
       const isMemberFilter = searchParams.get('isMember');
       const lastVisitFrom = searchParams.get('lastVisitFrom');
@@ -56,11 +42,7 @@ export async function GET(req: Request) {
       const nonReturningDaysParam = searchParams.get('nonReturningDays');
 
       const pipeline: mongoose.PipelineStage[] = [];
-<<<<<<< HEAD
       const initialMatchConditions: any[] = [{ tenantId: new mongoose.Types.ObjectId(tenantId) }, { isActive: true }];
-=======
-      const initialMatchConditions: any[] = [{ isActive: true }];
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
       if (searchQuery) {
         const isNumeric = /^\d+$/.test(searchQuery);
@@ -73,7 +55,6 @@ export async function GET(req: Request) {
       
       pipeline.push({ $match: { $and: initialMatchConditions } });
 
-<<<<<<< HEAD
       pipeline.push({
         $lookup: {
           from: 'appointments',
@@ -82,9 +63,6 @@ export async function GET(req: Request) {
           as: 'appointments'
         }
       });
-=======
-      pipeline.push({ $lookup: { from: 'appointments', localField: '_id', foreignField: 'customerId', as: 'appointments' } });
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
       const twoMonthsAgo = new Date();
       twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
       pipeline.push({
@@ -127,7 +105,6 @@ export async function GET(req: Request) {
           metadata: [{ $count: 'total' }],
           data: [
             { $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limit },
-<<<<<<< HEAD
             {
               $lookup: {
                 from: 'serviceitems',
@@ -151,10 +128,6 @@ export async function GET(req: Request) {
                 as: "loyaltyData"
               }
             },
-=======
-            { $lookup: { from: 'serviceitems', localField: 'lastAppointment.serviceIds', foreignField: '_id', as: 'lastServicesDetails' } },
-            { $lookup: { from: "loyaltytransactions", localField: "_id", foreignField: "customerId", as: "loyaltyData" } },
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
             { $project: {
                 name: 1, phoneNumber: 1, email: 1, gender: 1, dob: 1, isMembership: 1, membershipBarcode: 1, createdAt: 1, status: 1,
                 lastVisitDate: '$lastAppointment.appointmentDateTime',
@@ -170,7 +143,6 @@ export async function GET(req: Request) {
       const [result] = await Customer.aggregate(pipeline);
       const totalCustomers = result.metadata[0] ? result.metadata[0].total : 0;
       const customersFromDb = result.data;
-<<<<<<< HEAD
       const customersWithDetails = customersFromDb.map((customer: any) => {
     let decryptedName = 'Error: Corrupted Data';
     let decryptedPhoneNumber = 'Error: Corrupted Data';
@@ -205,16 +177,6 @@ export async function GET(req: Request) {
         appointmentHistory: customer.lastVisitDate ? [{ date: customer.lastVisitDate, services: customer.lastServices || [] }] : [],
     };
 });
-=======
-      const customersWithDetails = customersFromDb.map((customer: any) => ({
-        ...customer,
-        name: customer.name ? decrypt(customer.name) : 'N/A',
-        phoneNumber: customer.phoneNumber ? decrypt(customer.phoneNumber) : '',
-        email: customer.email ? decrypt(customer.email) : '',
-        id: customer._id.toString(),
-        appointmentHistory: customer.lastVisitDate ? [{ date: customer.lastVisitDate, services: customer.lastServices || [], _id: '', id: '', status: '', totalAmount: 0, stylistName: '' }] : [],
-      }));
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
       const totalPages = Math.ceil(totalCustomers / limit);
   
       return NextResponse.json({ success: true, customers: customersWithDetails, pagination: { totalCustomers, totalPages, currentPage: page, limit } });
@@ -225,16 +187,11 @@ export async function GET(req: Request) {
     }
 }
 
-<<<<<<< HEAD
-
-=======
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE)) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
-<<<<<<< HEAD
 
   // 2. Get Tenant ID or fail early
   const tenantId = getTenantIdOrBail(req as any);
@@ -242,15 +199,12 @@ export async function POST(req: Request) {
       return tenantId;
   }
 
-=======
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
   try {
     await connectToDatabase();
     const body = await req.json();
     if (!body.name || !body.phoneNumber) {
         return NextResponse.json({ success: false, message: 'Name and Phone Number are required.' }, { status: 400 });
     }
-<<<<<<< HEAD
 
     const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
     const phoneHash = createBlindIndex(normalizedPhoneNumber);
@@ -274,20 +228,6 @@ export async function POST(req: Request) {
       gender: body.gender ? body.gender.toLowerCase() : undefined, 
       survey: body.survey || undefined,
       tenantId: tenantId, // Enforce tenantId
-=======
-    if (body.gender) { body.gender = body.gender.toLowerCase(); }
-    const normalizedPhoneNumber = String(body.phoneNumber).replace(/\D/g, '');
-    const phoneHash = createBlindIndex(normalizedPhoneNumber);
-    const phoneSearchIndexes = generateNgrams(normalizedPhoneNumber).map(ngram => createBlindIndex(ngram));
-    const existingCustomer = await Customer.findOne({ phoneHash });
-    if (existingCustomer) {
-        return NextResponse.json({ success: false, message: 'A customer with this phone number already exists.', exists: true, customer: existingCustomer }, { status: 409 });
-    }
-    const newCustomerData = {
-      name: encrypt(body.name), phoneNumber: encrypt(normalizedPhoneNumber), email: body.email ? encrypt(body.email) : undefined,
-      phoneHash, searchableName: body.name.toLowerCase(), last4PhoneNumber: normalizedPhoneNumber.slice(-4), phoneSearchIndex: phoneSearchIndexes,
-      dob: body.dob || undefined, gender: body.gender || undefined, survey: body.survey || undefined,
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
     };
     const newCustomer = await Customer.create(newCustomerData);
     return NextResponse.json({ success: true, data: newCustomer }, { status: 201 });

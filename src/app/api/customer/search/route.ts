@@ -1,15 +1,10 @@
-<<<<<<< HEAD
 // /app/api/customer/search/route.ts - MULTI-TENANT VERSION
-=======
-// /app/api/customer/search/route.ts - FINAL CORRECTED VERSION
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Customer from '@/models/customermodel';
 import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
-<<<<<<< HEAD
 import Staff from '@/models/staff';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import { createBlindIndex } from '@/lib/search-indexing';
@@ -32,14 +27,6 @@ export async function GET(req: Request) {
     return tenantId;
   }
 
-=======
-// --- FIX: IMPORT THE CORRECT STAFF MODEL ---
-import Staff from '@/models/staff'; // You might need to adjust the path, e.g., '@/models/staffmodel'
-import LoyaltyTransaction from '@/models/loyaltyTransaction';
-import { createBlindIndex } from '@/lib/search-indexing';
-
-export async function GET(req: Request) {
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
   try {
     await connectToDatabase();
 
@@ -51,54 +38,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, message: 'A search query is required.' }, { status: 400 });
     }
     
-<<<<<<< HEAD
     // --- FETCH FULL DETAILS (MULTI-TENANT) ---
-=======
-    // --- FETCH FULL DETAILS FOR SIDE PANEL (CORRECTED) ---
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
     if (fetchDetails) {
       const normalizedPhone = String(query).replace(/\D/g, '');
       const phoneHash = createBlindIndex(normalizedPhone); 
       
-<<<<<<< HEAD
       // 3. Scope the customer find to the current tenant
       const customer = await Customer.findOne({ phoneHash, tenantId }); 
-=======
-      const customer = await Customer.findOne({ phoneHash }); 
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
 
       if (!customer) {
         return NextResponse.json({ success: true, customer: null });
       }
       
-<<<<<<< HEAD
       // 4. Scope all related data lookups to the same tenant
       const [appointmentHistory, loyaltyData] = await Promise.all([
         Appointment.find({ customerId: customer._id, tenantId })
             .sort({ appointmentDateTime: -1 })
             .limit(20)
-=======
-      const [appointmentHistory, loyaltyData] = await Promise.all([
-        Appointment.find({ customerId: customer._id })
-            .sort({ appointmentDateTime: -1 })
-            .limit(20)
-            // --- THE FIX IS HERE: Use the 'Staff' model for population ---
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
             .populate({ path: 'stylistId', model: Staff, select: 'name' }) 
             .populate({ path: 'serviceIds', model: ServiceItem, select: 'name' })
             .lean(),
         LoyaltyTransaction.aggregate([
-<<<<<<< HEAD
           { $match: { customerId: customer._id, tenantId: new mongoose.Types.ObjectId(tenantId) } },
-=======
-          { $match: { customerId: customer._id } },
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
           { $group: { _id: null, totalPoints: { $sum: { $cond: [{ $eq: ['$type', 'Credit'] }, '$points', { $multiply: ['$points', -1] }] } } } }
         ])
       ]);
       const calculatedLoyaltyPoints = loyaltyData.length > 0 ? loyaltyData[0].totalPoints : 0;
       
-<<<<<<< HEAD
       const customerDetails = {
         _id: customer._id.toString(),
         name: decrypt(customer.name), // Decrypting fields for the response
@@ -106,15 +72,6 @@ export async function GET(req: Request) {
         phoneNumber: decrypt(customer.phoneNumber),
         isMember: customer.isMembership || false,
         membershipBarcode: customer.membershipBarcode,
-=======
-      // The rest of the code is now correct because .populate() will return the staff object
-      const customerDetails = {
-        _id: customer._id.toString(),
-        name: customer.name, // Assuming your Customer model hook decrypts this
-        email: customer.email,
-        phoneNumber: customer.phoneNumber,
-        isMember: customer.isMembership || false,
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
         membershipDetails: customer.isMembership ? { planName: 'Member', status: 'Active' } : null,
         gender: customer.gender || 'other',
         loyaltyPoints: calculatedLoyaltyPoints,
@@ -124,33 +81,21 @@ export async function GET(req: Request) {
           date: (apt as any).appointmentDateTime,
           services: ((apt as any).serviceIds || []).map((s: any) => s.name),
           totalAmount: (apt as any).finalAmount || (apt as any).amount || 0,
-<<<<<<< HEAD
-=======
-          // This will now correctly find the 'name' property on the populated Staff object
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
           stylistName: (apt as any).stylistId?.name || 'N/A', 
           status: (apt as any).status || 'Unknown'
         }))
       };
       return NextResponse.json({ success: true, customer: customerDetails });
     }
-<<<<<<< HEAD
     // --- GENERAL SEARCH FOR DROPDOWN (MULTI-TENANT) ---
-=======
-    // --- GENERAL SEARCH FOR DROPDOWN (This part is already correct) ---
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
     else {
       if (query.trim().length < 2) {
         return NextResponse.json({ success: true, customers: [] });
       }
 
       const searchStr = query.trim();
-<<<<<<< HEAD
       // 5. Add tenantId to the base find conditions
       let findConditions: any = { isActive: true, tenantId };
-=======
-      let findConditions: any = { isActive: true };
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
       const isNumeric = /^\d+$/.test(searchStr);
 
       if (isNumeric) {
@@ -160,7 +105,6 @@ export async function GET(req: Request) {
         findConditions.searchableName = { $regex: searchStr, $options: 'i' };
       }
       
-<<<<<<< HEAD
       const customersFromDb = await Customer.find(findConditions)
         .select('name phoneNumber email isMembership gender')
         .limit(10);
@@ -174,12 +118,6 @@ export async function GET(req: Request) {
           email: customer.email ? decrypt(customer.email) : undefined,
       }));
       
-=======
-      const customers = await Customer.find(findConditions)
-        .select('name phoneNumber email isMembership gender')
-        .limit(10);
-      
->>>>>>> df642c83af3692f0da766243fb53ac637920f256
       return NextResponse.json({ success: true, customers });
     }
   } catch (error: any) {
