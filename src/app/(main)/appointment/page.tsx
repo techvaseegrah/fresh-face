@@ -1,4 +1,4 @@
-// src/app/appointment/page.tsx - FINAL VERSION WITH DURATION UNDER CLIENT INFO
+// src/app/appointment/page.tsx
 
 'use client';
 
@@ -71,7 +71,10 @@ export default function AppointmentPage() {
   const [selectedAppointmentForBilling, setSelectedAppointmentForBilling] = useState<AppointmentWithCustomer | null>(null);
 
   const [statusFilter, setStatusFilter] = useState('All');
-  const [dateFilter, setDateFilter] = useState('all');
+  // --- CHANGE 1: State for date range filter ---
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  // ---------------------------------------------
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalAppointmentsCount, setTotalAppointmentsCount] = useState(0);
@@ -98,14 +101,18 @@ export default function AppointmentPage() {
         search: searchTerm 
       });
 
-      if (dateFilter === 'today') {
-        params.append('date', 'today');
+      // --- CHANGE 2: Add date range parameters to API call ---
+      if (startDate) {
+        params.append('startDate', startDate);
       }
+      if (endDate) {
+        params.append('endDate', endDate);
+      }
+      // --------------------------------------------------------
 
       const res = await tenantFetch(`/api/appointment?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to fetch appointments');
-      console.log("APPOINTMENTS DATA RECEIVED:", data.appointments); // <-- ADD THIS LINE
       
       setAllAppointments(data.appointments);
       setTotalPages(data.pagination.totalPages);
@@ -117,20 +124,24 @@ export default function AppointmentPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, currentPage, searchTerm, dateFilter, tenantFetch]);
+  }, [statusFilter, currentPage, searchTerm, startDate, endDate, tenantFetch]); // <-- Updated dependencies
 
+  // --- CHANGE 3: Consolidated and simplified useEffect for fetching data ---
   useEffect(() => {
     const handler = setTimeout(() => {
-      if (currentPage !== 1 && searchTerm !== '') {
-        setCurrentPage(1);
-      } else {
-        fetchAppointments();
-      }
-    }, 300);
+      fetchAppointments();
+    }, 300); // Debounce all filter changes
     return () => clearTimeout(handler);
-  }, [searchTerm, fetchAppointments, currentPage]);
+  }, [fetchAppointments]);
 
-  useEffect(() => { fetchAppointments(); }, [currentPage, statusFilter, dateFilter]);
+  // Effect to reset page when filters change
+  useEffect(() => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [searchTerm, statusFilter, startDate, endDate]);
+  // ----------------------------------------------------------------------
+
 
   const handleBookNewAppointment = async (bookingData: NewBookingData) => {
     try {
@@ -200,7 +211,7 @@ export default function AppointmentPage() {
   };
 
   const handleCloseBillingModal = () => { setIsBillingModalOpen(false); setSelectedAppointmentForBilling(null); fetchAppointments(); };
-  const handleFilterChange = (newStatus: string) => { setCurrentPage(1); setStatusFilter(newStatus); };
+  const handleFilterChange = (newStatus: string) => { setStatusFilter(newStatus); };
   const canCreateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE));
   const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
@@ -212,19 +223,40 @@ export default function AppointmentPage() {
         <h1 className="text-3xl font-bold">Appointments</h1>
         {canCreateAppointments && (<button onClick={() => setIsBookAppointmentModalOpen(true)} className="px-4 py-2.5 bg-black text-white rounded-lg flex items-center gap-2 hover:bg-gray-800"><PlusIcon className="h-5 w-5" /><span>Book Appointment</span></button>)}
       </div>
-      <div className="mb-6 flex flex-col md:flex-row items-center gap-4">
+      
+      {/* --- CHANGE 4: Updated Filter Controls UI --- */}
+      <div className="mb-6 flex flex-col md:flex-row flex-wrap items-center gap-4">
         <div className="flex-grow w-full md:w-auto"><input type="text" placeholder="Search by client or stylist..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/50" /></div>
         
-        <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">
-          <button onClick={() => { setDateFilter('all'); setCurrentPage(1); }} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>All Time</button>
-          <button onClick={() => { setDateFilter('today'); setCurrentPage(1); }} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${dateFilter === 'today' ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>Today</button>
+        <div className="flex items-center gap-2">
+            <label htmlFor="startDate" className="text-sm font-medium text-gray-700">From:</label>
+            <input
+                type="date"
+                id="startDate"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/50 text-sm"
+            />
+        </div>
+        <div className="flex items-center gap-2">
+            <label htmlFor="endDate" className="text-sm font-medium text-gray-700">To:</label>
+            <input
+                type="date"
+                id="endDate"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/50 text-sm"
+                min={startDate}
+            />
         </div>
 
         <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">{['All', 'Appointment', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled', 'No-Show'].map((status) => (<button key={status} onClick={() => handleFilterChange(status)} className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${statusFilter === status ? 'bg-white text-black shadow-sm' : 'text-gray-600 hover:bg-gray-200'}`}>{status}</button>))}</div>
       </div>
+      {/* ---------------------------------------------------- */}
+
       <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
         {isLoading && (<div className="p-10 text-center text-gray-500">Loading appointments...</div>)}
-        {!isLoading && allAppointments.length === 0 && (<div className="p-10 text-center text-gray-500">{searchTerm || statusFilter !== 'All' || dateFilter !== 'all' ? 'No appointments match criteria.' : 'No appointments scheduled.'}</div>)}
+        {!isLoading && allAppointments.length === 0 && (<div className="p-10 text-center text-gray-500">{searchTerm || statusFilter !== 'All' || startDate || endDate ? 'No appointments match criteria.' : 'No appointments scheduled.'}</div>)}
         {!isLoading && allAppointments.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
@@ -234,7 +266,6 @@ export default function AppointmentPage() {
                   <th className="px-6 py-3">Client</th>
                   <th className="px-6 py-3">Service(s)</th>
                   <th className="px-6 py-3">Stylist</th>
-                  {/* --- CHANGE 1: Re-add Booking Time Header --- */}
                   <th className="px-6 py-3">Booking Time</th>
                   <th className="px-6 py-3">Type</th>
                   <th className="px-2 py-3 text-center">Status</th>
@@ -279,7 +310,6 @@ export default function AppointmentPage() {
                           </div>
                         )}
                         
-                        {/* --- CHANGE 2: Display Duration under Client Info --- */}
                         {(appointment.actualDuration || appointment.estimatedDuration) && (
                           <div className="mt-1 flex items-center gap-1 text-xs text-gray-500" title={appointment.actualDuration ? 'Actual Duration' : 'Estimated Duration'}>
                             <ClockIcon className="w-3.5 h-3.5" />
@@ -288,12 +318,10 @@ export default function AppointmentPage() {
                             </span>
                           </div>
                         )}
-                        {/* ======================================================== */}
                       </td>
                       <td className="px-6 py-4">{serviceNames}</td>
                       <td className="px-6 py-4"><div>{stylistName}</div></td>
 
-                      {/* --- CHANGE 3: Re-add Booking Time Cell --- */}
                       <td className="px-6 py-4">
                         <div>{formatDateIST(appointment.createdAt)}</div>
                         <div className="text-xs text-gray-500">{formatTimeIST(appointment.createdAt)}</div>

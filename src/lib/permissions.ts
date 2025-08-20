@@ -13,6 +13,12 @@ export const PERMISSIONS = {
   ROLES_DELETE: 'roles:delete',
   ROLES_MANAGE: 'roles:manage',
 
+  // SOP Management
+  SOP_READ: 'sop:read',
+  SOP_MANAGE: 'sop:manage', // Create, Update, Delete
+  SOP_SUBMIT_CHECKLIST: 'sop:submit_checklist',
+  SOP_REPORTS_READ: 'sop:reports:read',
+
   // Store management
   STORES_CREATE: 'stores:create',
   STORES_READ: 'stores:read',
@@ -158,6 +164,7 @@ export const PERMISSION_CATEGORIES = {
   INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
   ALERTS_MANAGEMENT: 'Alerts Management',
   EXPENSES_MANAGEMENT: 'Expenses Management',
+  SOP_MANAGEMENT: 'SOP Management'
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -285,6 +292,12 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.EXPENSES_UPDATE, description: 'Update expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   { permission: PERMISSIONS.EXPENSES_DELETE, description: 'Delete expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   { permission: PERMISSIONS.EXPENSES_MANAGE, description: 'Manage all expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+
+   // SOP Management (Add this new block)
+  { permission: PERMISSIONS.SOP_READ, description: 'View assigned SOPs and checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  { permission: PERMISSIONS.SOP_SUBMIT_CHECKLIST, description: 'Submit daily SOP checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  { permission: PERMISSIONS.SOP_REPORTS_READ, description: 'View SOP compliance reports for all staff', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
