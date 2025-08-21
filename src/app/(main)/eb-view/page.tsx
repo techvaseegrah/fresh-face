@@ -14,10 +14,8 @@ import {
 } from '@heroicons/react/24/outline';
 import Image from 'next/image';
 import Link from 'next/link';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
-// Assuming these components exist and have been converted to TSX
+// Components
 import ReportDownloadModal from '@/components/ReportDownloadModal';
 import CostModal from '@/components/CostModal';
 import HistoryModal from '@/components/HistoryModal';
@@ -52,6 +50,7 @@ interface IHistoryEntry {
 interface IEBReading {
   _id: string;
   date: string;
+  meterIdentifier: string;
   morningUnits?: number;
   unitsConsumed?: number;
   costPerUnit?: number;
@@ -64,16 +63,6 @@ interface IEBReadingWithAppointments extends IEBReading {
   appointmentCount?: number;
 }
 
-type EbReportData = { 
-  date: string; 
-  startUnits: number | null; 
-  endUnits: number | null; 
-  unitsConsumed: number | null; 
-  appointmentCount: number; 
-  costPerUnit: number | null; 
-  totalCost: number | null; 
-};
-
 interface EBReadingCardProps {
   reading: IEBReading;
   nextDayMorningUnits?: number;
@@ -82,28 +71,8 @@ interface EBReadingCardProps {
   onHistoryOpen: (history: IHistoryEntry[]) => void;
 }
 
-// --- CLIENT-SIDE PDF GENERATOR ---
-function createEbPdfReportClient(data: EbReportData[], startDate: Date, endDate: Date): jsPDF {
-  const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text("Electricity Consumption Report", 14, 20);
-  doc.setFontSize(12);
-  doc.text(`For the period: ${startDate.toLocaleDateString('en-IN')} - ${endDate.toLocaleDateString('en-IN')}`, 14, 30);
-  const headers = [["Date", "Start Units", "End Units", "Units Consumed", "Total Appts", "Cost per Unit", "Total Cost"]];
-  const rows = data.map(item => [
-    new Date(item.date).toLocaleDateString('en-IN'),
-    item.startUnits?.toFixed(2) ?? 'N/A',
-    item.endUnits?.toFixed(2) ?? 'N/A',
-    item.unitsConsumed?.toFixed(2) ?? 'N/A',
-    item.appointmentCount.toString(),
-    item.costPerUnit?.toFixed(2) ?? 'N/A',
-    item.totalCost?.toFixed(2) ?? 'N/A'
-  ]);
-  autoTable(doc, { startY: 40, head: headers, body: rows, styles: { fontSize: 8 }, headStyles: { fillColor: [45, 55, 72] } });
-  return doc;
-}
 
-// --- EBReadingCard COMPONENT ---
+// --- EBReadingCard COMPONENT (மாற்றம் இல்லை) ---
 const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, onUpdate, onImageZoom, onHistoryOpen }) => {
     const { data: session } = useSession() as { data: CustomSession | null };
     const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -143,32 +112,13 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
                             <p className="text-sm font-medium">Morning Reading (Today)</p>
                         </div>
                         {isEditing ? (
-                            <input 
-                                type="number" 
-                                value={editMorningUnits ?? ''} 
-                                onChange={(e: ChangeEvent<HTMLInputElement>) => { 
-                                    const val = e.target.value; 
-                                    setEditMorningUnits(val === '' ? undefined : parseFloat(val)); 
-                                }} 
-                                className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" 
-                                step="0.01" 
-                                placeholder="Enter reading" 
-                            />
+                            <input type="number" value={editMorningUnits ?? ''} onChange={(e: ChangeEvent<HTMLInputElement>) => { const val = e.target.value; setEditMorningUnits(val === '' ? undefined : parseFloat(val)); }} className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" step="0.01" placeholder="Enter reading" />
                         ) : (
-                            <p className="text-2xl font-semibold text-slate-900">
-                                {(reading.morningUnits !== undefined) ? reading.morningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span>
-                            </p>
+                            <p className="text-2xl font-semibold text-slate-900">{(reading.morningUnits !== undefined) ? reading.morningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>
                         )}
-                        {/* Image is now outside the conditional block to always be visible if it exists */}
                         {reading.morningImageUrl && (
                             <div onClick={() => onImageZoom(reading.morningImageUrl as string)} className="mt-3 cursor-pointer group">
-                                <Image 
-                                    src={reading.morningImageUrl} 
-                                    alt="Morning Meter Reading" 
-                                    width={200} 
-                                    height={120} 
-                                    className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" 
-                                />
+                                <Image src={reading.morningImageUrl} alt="Morning Meter Reading" width={200} height={120} className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" />
                             </div>
                         )}
                     </div>
@@ -178,9 +128,7 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
                             <CalendarDaysIcon className="h-5 w-5 mr-2 text-sky-600" />
                             <p className="text-sm font-medium">Morning Reading (Next Day)</p>
                         </div>
-                        <p className="text-2xl font-semibold text-slate-900">
-                            {nextDayMorningUnits !== undefined ? nextDayMorningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span>
-                        </p>
+                        <p className="text-2xl font-semibold text-slate-900">{nextDayMorningUnits !== undefined ? nextDayMorningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>
                     </div>
                 </div>
                 <div className="space-y-4">
@@ -214,12 +162,12 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
     );
 };
 
-
 // --- MAIN PAGE COMPONENT ---
 export default function EBViewPage(): JSX.Element {
     const { data: session } = useSession() as { data: CustomSession | null };
     const [readings, setReadings] = useState<IEBReadingWithAppointments[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [activeMeter, setActiveMeter] = useState<'meter-1' | 'meter-2'>('meter-1');
     const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
     const [isCostModalOpen, setIsCostModalOpen] = useState<boolean>(false);
     const [globalCost, setGlobalCost] = useState<number>(8);
@@ -307,26 +255,14 @@ export default function EBViewPage(): JSX.Element {
         }
         setIsSavingCost(true);
         try {
-            const res = await fetch('/api/settings/ebCostPerUnit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-                body: JSON.stringify({ value: newCost }),
-            });
-
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.message || 'Failed to update cost setting.');
-            }
-            
+            const res = await fetch('/api/settings/ebCostPerUnit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, body: JSON.stringify({ value: newCost }) });
+            if (!res.ok) { throw new Error('Failed to update cost setting.'); }
             setGlobalCost(newCost);
             setIsCostModalOpen(false);
             alert('Global cost per unit has been updated for all future readings.');
         } catch (error) {
-            console.error('Failed to apply global cost', error);
             alert(`An error occurred while setting the new cost: ${(error as Error).message}`);
-        } finally {
-            setIsSavingCost(false);
-        }
+        } finally { setIsSavingCost(false); }
     };
 
     const handleHistoryOpen = (history: IHistoryEntry[]): void => {
@@ -334,6 +270,7 @@ export default function EBViewPage(): JSX.Element {
         setIsHistoryModalOpen(true);
     };
 
+    // --- மாற்றப்பட்ட மற்றும் சரிசெய்யப்பட்ட ரிப்போர்ட் டவுன்லோட் ஃபங்ஷன் ---
     const handleDownloadEbReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }): Promise<void> => {
         const tenantId = session?.user?.tenantId;
         if (!tenantId) {
@@ -342,47 +279,38 @@ export default function EBViewPage(): JSX.Element {
         }
         setIsDownloading(true);
         try {
-            const response = await fetch('/api/eb/report', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
-                body: JSON.stringify({ ...params }),
+            const response = await fetch('/api/eb/report', { 
+                method: 'POST', 
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'x-tenant-id': tenantId 
+                }, 
+                body: JSON.stringify(params) 
             });
 
-            if (!response.ok) {
+            if (!response.ok) { 
                 const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to generate report.');
+                throw new Error(errorData.message || 'Failed to generate report.'); 
             }
 
-            if (params.format === 'pdf') {
-                const { data: reportData } = await response.json();
-                if (!reportData || reportData.length === 0) {
-                    alert('No data available for the selected date range.');
-                    return;
-                }
-                const pdfDoc = createEbPdfReportClient(reportData, params.startDate, params.endDate);
-                const filename = `eb_report_${params.startDate.toISOString().split('T')[0]}_to_${params.endDate.toISOString().split('T')[0]}.pdf`;
-                pdfDoc.save(filename);
-            } else {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                const contentDisposition = response.headers.get('content-disposition');
-                let filename = 'eb-report-download.xlsx'; 
-                if (contentDisposition) {
-                    const filenameRegex = /filename="([^"]+)"/;
-                    const matches = filenameRegex.exec(contentDisposition);
-                    if (matches && matches[1]) {
-                        filename = matches[1];
-                    }
-                }
-                a.href = url;
-                a.download = filename; 
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-            }
+            // Backend-லிருந்து வரும் file-ஐப் பெறுகிறோம்
+            const blob = await response.blob();
             
+            // ஒரு தற்காலிக URL-ஐ உருவாக்குகிறோம்
+            const url = window.URL.createObjectURL(blob);
+            
+            // ஒரு தற்காலிக link-ஐ உருவாக்கி, அதை click செய்கிறோம்
+            const link = document.createElement('a');
+            link.href = url;
+            const filename = params.format === 'excel' ? 'EB_Report.xlsx' : 'EB_Report.pdf';
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            
+            // தற்காலிக link-ஐ நீக்கிவிடுகிறோம்
+            link.parentNode?.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
             setIsReportModalOpen(false);
         } catch (error) {
             alert(`Download failed: ${(error as Error).message}`);
@@ -390,6 +318,19 @@ export default function EBViewPage(): JSX.Element {
             setIsDownloading(false);
         }
     };
+
+    const displayedReadings = useMemo(() => {
+        // டேட்டாபேஸிலிருந்து வரும் டேட்டாவை தேதி வாரியாக வரிசைப்படுத்தவும்
+        const sortedReadings = [...readings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        return sortedReadings.filter(r => {
+            // பழைய டேட்டாவில் meterIdentifier இல்லாமல் இருக்கலாம், அதை meter-1 ஆகக் கருதவும்
+            if (activeMeter === 'meter-1' && (r.meterIdentifier === 'meter-1' || !r.meterIdentifier)) { 
+                return true; 
+            }
+            return r.meterIdentifier === activeMeter;
+        });
+    }, [readings, activeMeter]);
 
     if (isLoading) {
         return <div className="p-4 sm:p-6 lg:p-8 bg-slate-100"><div className="animate-pulse"><div className="h-10 bg-slate-200 rounded w-80 mb-8"></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-8">{[1, 2].map(i => <div key={i} className="h-80 bg-slate-200 rounded-2xl"></div>)}</div></div></div>;
@@ -421,27 +362,39 @@ export default function EBViewPage(): JSX.Element {
                         </div>
                     </div>
                     
+                    <div className="border-b border-slate-200">
+                        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                            <button onClick={() => setActiveMeter('meter-1')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeMeter === 'meter-1' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>
+                                EB Meter 01
+                            </button>
+                            <button onClick={() => setActiveMeter('meter-2')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeMeter === 'meter-2' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>
+                                EB Meter 02
+                            </button>
+                        </nav>
+                    </div>
+
                     <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-                        {readings.length === 0 ? (
+                        {displayedReadings.length === 0 ? (
                             <div className="text-center py-16">
                                 <DocumentTextIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                                <h3 className="text-xl font-semibold text-slate-700">No EB Readings Found</h3>
-                                <p className="text-slate-500 mt-2">Get started by adding the first reading.</p>
+                                <h3 className="text-xl font-semibold text-slate-700">No Readings Found for {activeMeter === 'meter-1' ? 'Meter 1' : 'Meter 2'}</h3>
+                                <p className="text-slate-500 mt-2">Upload a reading for this meter to get started.</p>
                                 <Link href="/eb-upload" className="mt-6 inline-block bg-indigo-600 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm hover:bg-indigo-700">
-                                    Upload First Reading
+                                    Upload Reading
                                 </Link>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                                {readings.map((reading, index) => {
-                                    const nextDayReading = index > 0 ? readings[index - 1] : null;
+                                {displayedReadings.map((reading, index) => {
+                                    // அடுத்த நாள் என்பது, வரிசைப்படுத்தப்பட்ட array-ல் அதற்கு முந்தைய index-ல் இருக்கும்
+                                    const nextDayReading = index > 0 ? displayedReadings[index - 1] : null;
                                     return (
                                         <EBReadingCard 
                                             key={reading._id} 
                                             reading={reading} 
                                             nextDayMorningUnits={nextDayReading?.morningUnits} 
                                             onUpdate={handleUnitUpdate} 
-                                            onImageZoom={(url) => setZoomedImageUrl(url)} 
+                                            onImageZoom={(url) => setZoomedImageUrl(url as string)} 
                                             onHistoryOpen={handleHistoryOpen}
                                         />
                                     );
