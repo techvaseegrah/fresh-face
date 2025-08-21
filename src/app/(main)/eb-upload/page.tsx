@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, FC } from 'react';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { 
@@ -15,7 +15,7 @@ import {
 } from '@heroicons/react/24/solid';
 import Image from 'next/image';
 
-// --- Utility & Reusable Components ---
+// --- UTILITY & REUSABLE COMPONENTS (முழுமையாக இங்கே உள்ளன) ---
 
 const formatBytes = (bytes: number, decimals = 2): string => {
   if (bytes === 0) return '0 Bytes';
@@ -26,7 +26,7 @@ const formatBytes = (bytes: number, decimals = 2): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; }) => {
+const ImageZoomModal: FC<{ src: string; onClose: () => void; }> = ({ src, onClose }) => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -47,7 +47,7 @@ const ImageZoomModal = ({ src, onClose }: { src: string; onClose: () => void; })
   );
 };
 
-const NotificationToast = ({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void; }) => {
+const NotificationToast: FC<{ message: string; type: 'success' | 'error'; onClose: () => void; }> = ({ message, type, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(() => onClose(), 5000);
     return () => clearTimeout(timer);
@@ -75,7 +75,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string; type: 
   );
 };
 
-const ImageDropzone = ({ file, onFileSelect, onClear, onZoom, disabled = false }: { file: File | null; onFileSelect: (file: File) => void; onClear: () => void; onZoom: () => void; disabled?: boolean; }) => {
+const ImageDropzone: FC<{ file: File | null; onFileSelect: (file: File) => void; onClear: () => void; onZoom: () => void; disabled?: boolean; }> = ({ file, onFileSelect, onClear, onZoom, disabled = false }) => {
   const [isDragging, setIsDragging] = useState(false);
   const preview = useMemo(() => file ? URL.createObjectURL(file) : null, [file]);
 
@@ -156,29 +156,82 @@ export default function EBUploadPage() {
   const { data: session } = useSession();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [meterIdentifier, setMeterIdentifier] = useState<'meter-1' | 'meter-2'>('meter-1');
   const [isLoading, setIsLoading] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [notification, setNotification] = useState<{ show: boolean; message: string; type: 'success' | 'error'; }>({ show: false, message: '', type: 'success' });
 
+  // === புதிய State Variables ===
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
+
   const canUploadEB = session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_UPLOAD);
+
+  // === புதிய useEffect Hook ===
+  useEffect(() => {
+    const tenantId = session?.user?.tenantId;
+    if (!canUploadEB || !date || !meterIdentifier || !tenantId) {
+      setIsChecking(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    const checkForExistingReading = async () => {
+      setIsChecking(true);
+      try {
+        const headers = new Headers();
+        headers.append('x-tenant-id', tenantId);
+        
+        const url = `/api/eb/check?date=${date}&meterIdentifier=${meterIdentifier}`;
+        const response = await fetch(url, { headers, signal });
+
+        if (!response.ok) throw new Error('API check failed');
+
+        const data = await response.json();
+        if (signal.aborted) return;
+
+        setIsUpdateMode(data.success && data.exists);
+
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'AbortError') {
+            console.error("Failed to check for existing reading:", error);
+            setIsUpdateMode(false);
+        }
+      } finally {
+        if (!signal.aborted) {
+            setIsChecking(false);
+        }
+      }
+    };
+
+    const handler = setTimeout(() => {
+        checkForExistingReading();
+    }, 300);
+
+    return () => {
+      clearTimeout(handler);
+      controller.abort();
+    };
+  }, [date, meterIdentifier, session, canUploadEB]);
+
 
   const handleClearForm = () => {
     setImageFile(null);
     setDate(new Date().toISOString().split('T')[0]);
+    setMeterIdentifier('meter-1');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const tenantId = session?.user?.tenantId;
-
     if (!tenantId) {
       setNotification({ show: true, message: 'Tenant identification failed. Please log out and try again.', type: 'error' });
       return;
     }
-
-    if (!imageFile || !date) {
-      setNotification({ show: true, message: 'Please select a date and an image file.', type: 'error' });
+    if (!imageFile || !date || !meterIdentifier) {
+      setNotification({ show: true, message: 'Please select a date, meter, and an image file.', type: 'error' });
       return;
     }
 
@@ -186,11 +239,11 @@ export default function EBUploadPage() {
     const formData = new FormData();
     formData.append('image', imageFile);
     formData.append('date', date);
+    formData.append('meterIdentifier', meterIdentifier);
 
     try {
       const headers = new Headers();
       headers.append('x-tenant-id', tenantId);
-
       const response = await fetch('/api/eb', { 
         method: 'POST', 
         headers: headers,
@@ -198,7 +251,11 @@ export default function EBUploadPage() {
       });
 
       if (response.ok) {
-        setNotification({ show: true, message: `Morning reading uploaded successfully!`, type: 'success' });
+        // === மாற்றப்பட்ட வெற்றி செய்தி ===
+        const successMessage = isUpdateMode
+          ? `Reading for ${meterIdentifier === 'meter-1' ? 'EB Meter 1' : 'EB Meter 2'} updated successfully!`
+          : `Reading for ${meterIdentifier === 'meter-1' ? 'EB Meter 1' : 'EB Meter 2'} uploaded successfully!`;
+        setNotification({ show: true, message: successMessage, type: 'success' });
         handleClearForm();
       } else {
         const errorData = await response.json();
@@ -222,66 +279,72 @@ export default function EBUploadPage() {
 
   return (
     <>
-      {isZoomed && imageFile && (
-        <ImageZoomModal src={URL.createObjectURL(imageFile)} onClose={() => setIsZoomed(false)} />
-      )}
-      
-      {notification.show && (
-        <NotificationToast 
-          message={notification.message}
-          type={notification.type}
-          onClose={() => setNotification({ ...notification, show: false })}
-        />
-      )}
+      {isZoomed && imageFile && ( <ImageZoomModal src={URL.createObjectURL(imageFile)} onClose={() => setIsZoomed(false)} /> )}
+      {notification.show && ( <NotificationToast message={notification.message} type={notification.type} onClose={() => setNotification({ ...notification, show: false })} /> )}
 
       <main className="bg-slate-100 p-4 sm:p-6 lg:p-8 min-h-screen">
         <div className="max-w-7xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Upload Morning Reading</h1>
-                <p className="text-slate-500 mt-1">Upload the meter image for the morning of the selected date.</p>
+                {/* === தானாக மாறும் தலைப்பு === */}
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+                    {isUpdateMode ? 'Update Morning Reading' : 'Upload Morning Reading'}
+                </h1>
+                <p className="text-slate-500 mt-1">
+                    {isChecking 
+                        ? 'Checking for existing readings...'
+                        : isUpdateMode
+                            ? 'A reading for this meter and date already exists. Uploading a new image will replace the old one.'
+                            : 'Upload the meter image for the morning of the selected date.'
+                    }
+                </p>
             </div>
 
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200/80">
                 <form onSubmit={handleSubmit} className="lg:grid lg:grid-cols-5">
-                    {/* Left side: Form Fields */}
                     <div className="px-6 py-8 sm:p-10 lg:col-span-2">
                         <h2 className="text-xl font-semibold text-slate-800">Reading Details</h2>
-                        <p className="text-sm text-slate-500 mt-1">Select the date for this reading.</p>
+                        <p className="text-sm text-slate-500 mt-1">Select the date and meter for this reading.</p>
                         <div className="mt-8 space-y-8">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700">Select Meter</label>
+                                <fieldset className="mt-2">
+                                    <legend className="sr-only">EB Meter selection</legend>
+                                    <div className="flex items-center space-x-4">
+                                        <div className="flex items-center">
+                                            <input id="meter-1" name="meter-selection" type="radio" value="meter-1" checked={meterIdentifier === 'meter-1'} onChange={() => setMeterIdentifier('meter-1')} disabled={isLoading || isChecking} className="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                            <label htmlFor="meter-1" className="ml-2 block text-sm text-gray-900">EB Meter 01</label>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <input id="meter-2" name="meter-selection" type="radio" value="meter-2" checked={meterIdentifier === 'meter-2'} onChange={() => setMeterIdentifier('meter-2')} disabled={isLoading || isChecking} className="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                            <label htmlFor="meter-2" className="ml-2 block text-sm text-gray-900">EB Meter 02</label>
+                                        </div>
+                                    </div>
+                                </fieldset>
+                            </div>
                             <div>
                                 <label htmlFor="date" className="block text-sm font-medium text-slate-700">Date of Morning Reading</label>
                                 <div className="relative mt-2">
-                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                        <CalendarDaysIcon className="h-5 w-5 text-slate-400" />
-                                    </div>
-                                    <input
-                                        id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                                        className="block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-10 p-2.5 disabled:cursor-not-allowed disabled:bg-slate-50"
-                                        disabled={isLoading}
-                                    />
+                                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><CalendarDaysIcon className="h-5 w-5 text-slate-400" /></div>
+                                    <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm pl-10 p-2.5 disabled:cursor-not-allowed disabled:bg-slate-50" disabled={isLoading || isChecking} />
                                 </div>
                             </div>
                         </div>
                          <div className="mt-12 pt-8 border-t border-slate-200">
-                            <button
-                                type="submit"
-                                disabled={isLoading || !imageFile}
-                                className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-indigo-400 transition-all"
-                            >
+                            {/* === தானாக மாறும் பட்டன் === */}
+                            <button type="submit" disabled={isLoading || isChecking || !imageFile} className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-indigo-400 transition-all">
                                 <ArrowUpTrayIcon className={`-ml-1 mr-3 h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
-                                {isLoading ? 'Uploading...' : 'Upload Image'}
+                                {isLoading ? 'Processing...' : (isUpdateMode ? 'Update Image' : 'Upload Image')}
                             </button>
                         </div>
                     </div>
 
-                    {/* Right side: Dropzone */}
                     <div className="lg:col-span-3 p-6 sm:p-10 bg-slate-50/70 lg:border-l lg:border-slate-200">
                         <ImageDropzone 
                             file={imageFile}
                             onFileSelect={(file) => setImageFile(file)}
                             onClear={() => setImageFile(null)}
                             onZoom={() => setIsZoomed(true)}
-                            disabled={isLoading}
+                            disabled={isLoading || isChecking}
                         />
                     </div>
                 </form>

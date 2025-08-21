@@ -1,24 +1,18 @@
+// /models/ebReadings.ts
+
 import mongoose, { Schema, Document, Model, models } from 'mongoose';
 
-// Interface for the History sub-document to track changes
 export interface IHistoryEntry extends Document {
   tenantId: mongoose.Schema.Types.ObjectId;
   timestamp: Date;
-  user: {
-    id: string;
-    name: string;
-  };
-  changes: {
-    field: string;
-    oldValue?: any; // Use 'any' as it can be mixed types
-    newValue?: any;
-  }[];
+  user: { id: string; name: string; };
+  changes: { field: string; oldValue?: any; newValue?: any; }[];
 }
 
-// The main EBReading Interface
 export interface IEBReading extends Document {
   tenantId: mongoose.Schema.Types.ObjectId;
   date: Date;
+  meterIdentifier: string;
   morningUnits?: number;
   unitsConsumed?: number;
   costPerUnit?: number;
@@ -29,61 +23,46 @@ export interface IEBReading extends Document {
   updatedBy?: string;
 }
 
-// Sub-schema for tracking changes within the history array
 const HistorySchema = new Schema<IHistoryEntry>({
-  tenantId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Tenant', 
-    required: true, 
-  },
-  timestamp: { 
-    type: Date, 
-    default: Date.now 
-  },
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true },
+  timestamp: { type: Date, default: Date.now },
   user: {
     id: { type: String, required: true },
     name: { type: String, required: true },
   },
   changes: [{
-    _id: false, // Don't create an _id for each change object
+    _id: false,
     field: { type: String, required: true },
-    oldValue: Schema.Types.Mixed,
     newValue: Schema.Types.Mixed,
+    oldValue: Schema.Types.Mixed,
   }],
-}, { _id: false }); // Do not create a separate _id for the History sub-document itself
+}, { _id: false });
 
-// The main schema for EBReadings
 const EBReadingSchema = new Schema<IEBReading>({
-  tenantId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Tenant', 
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+  date: { type: Date, required: true },
+  // சிரிய மாற்றம்: default மதிப்பும், enum-ம் சேர்க்கப்பட்டுள்ளது
+  meterIdentifier: { 
+    type: String, 
     required: true, 
-    index: true // A regular index on tenantId is good for performance
-  },
-  date: { 
-    type: Date, 
-    required: true, 
-    // `unique: true` has been REMOVED from here.
+    trim: true, 
+    index: true, 
+    enum: ['meter-1', 'meter-2'], // இது தவறான மதிப்புகள் வராமல் தடுக்கும்
+    default: 'meter-1' 
   },
   morningUnits: { type: Number, required: false },
   unitsConsumed: { type: Number, required: false },
-  costPerUnit: { type: Number, required: false, default: 8 }, // A sensible default
+  costPerUnit: { type: Number, required: false, default: 8 },
   totalCost: { type: Number, required: false },
   morningImageUrl: { type: String, required: false },
   history: [HistorySchema],
   createdBy: { type: String, required: true },
   updatedBy: { type: String, required: false },
-}, {
-  timestamps: true // Adds createdAt and updatedAt automatically
-});
+}, { timestamps: true });
 
-// --- THIS IS THE CORRECTED PART ---
-// Create a compound unique index on the combination of tenantId and date.
-// This ensures that a date is unique PER TENANT, which is the correct
-// multi-tenant logic.
-EBReadingSchema.index({ tenantId: 1, date: 1 }, { unique: true });
+// இது ஏற்கெனவே சரியாகத்தான் உள்ளது. மாற்ற வேண்டாம்.
+EBReadingSchema.index({ tenantId: 1, date: 1, meterIdentifier: 1 }, { unique: true });
 
-// Check if the model already exists before compiling it
 const EBReading: Model<IEBReading> = models.EBReading || mongoose.model<IEBReading>('EBReading', EBReadingSchema);
 
 export default EBReading;

@@ -1,11 +1,12 @@
-// /app/api/appointment/route.ts - FINAL CORRECTED VERSION
+// /app/api/appointment/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
-import Customer, { ICustomer } from '@/models/customermodel'; // Import ICustomer
+import Customer, { ICustomer } from '@/models/customermodel';
 import Staff from '@/models/staff';
 import ServiceItem from '@/models/ServiceItem';
+import Invoice from '@/models/invoice'; // --- CHANGE: Import Invoice model ---
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -13,13 +14,11 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { InventoryManager } from '@/lib/inventoryManager'; 
 import { getTenantIdOrBail } from '@/lib/tenant';
 import { whatsAppService } from '@/lib/whatsapp';
-
-// --- IMPORT THE DECRYPT FUNCTION ---
 import { encrypt, decrypt} from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 
 // ===================================================================================
-//  GET: Handler (No Changes Needed)
+//  GET: Handler (MODIFIED FOR DATE RANGE & INVOICE SEARCH)
 // ===================================================================================
 export async function GET(req: NextRequest) {
   try {
@@ -38,7 +37,9 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10', 10);
     const statusFilter = searchParams.get('status');
     const searchQuery = searchParams.get('search');
-    const dateFilter = searchParams.get('date');
+    // --- CHANGE: Get startDate and endDate instead of dateFilter ---
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
     const skip = (page - 1) * limit;
 
     const matchStage: any = { tenantId: new mongoose.Types.ObjectId(tenantId) };
@@ -46,22 +47,31 @@ export async function GET(req: NextRequest) {
     if (statusFilter && statusFilter !== 'All') {
       matchStage.status = statusFilter;
     }
-
-    if (dateFilter === 'today') {
-        const istOffset = 5.5 * 60 * 60 * 1000;
-        const now = new Date();
-        const istNow = new Date(now.getTime() + istOffset);
-        const startOfTodayIST = new Date(istNow);
-        startOfTodayIST.setUTCHours(0, 0, 0, 0);
-        const endOfTodayIST = new Date(istNow);
-        endOfTodayIST.setUTCHours(23, 59, 59, 999);
-        const startOfTodayUTC = new Date(startOfTodayIST.getTime() - istOffset);
-        const endOfTodayUTC = new Date(endOfTodayIST.getTime() - istOffset);
-        matchStage.appointmentDateTime = { $gte: startOfTodayUTC, $lte: endOfTodayUTC };
+    
+    // --- CHANGE: Implement date range filtering logic ---
+    if (startDate || endDate) {
+        matchStage.appointmentDateTime = {};
+        if (startDate) {
+            // Find appointments greater than or equal to the start of the startDate
+            const startOfDay = new Date(startDate);
+            startOfDay.setUTCHours(0, 0, 0, 0);
+            matchStage.appointmentDateTime.$gte = startOfDay;
+        }
+        if (endDate) {
+            // Find appointments less than the start of the day *after* the endDate
+            // This correctly includes all times on the endDate itself.
+            const endOfDay = new Date(endDate);
+            endOfDay.setDate(endOfDay.getDate() + 1);
+            endOfDay.setUTCHours(0, 0, 0, 0);
+            matchStage.appointmentDateTime.$lt = endOfDay;
+        }
     }
 
     if (searchQuery) {
         const searchStr = searchQuery.trim();
+        const finalSearchOrConditions = [];
+
+        // 1. Search by Customer Name/Phone
         let customerFindConditions: any = { tenantId };
         const isNumeric = /^\d+$/.test(searchStr);
         if (isNumeric) {
@@ -71,15 +81,32 @@ export async function GET(req: NextRequest) {
         }
         const matchingCustomers = await Customer.find(customerFindConditions).select('_id').lean();
         const customerIds = matchingCustomers.map(c => c._id);
+        if (customerIds.length > 0) {
+            finalSearchOrConditions.push({ customerId: { $in: customerIds } });
+        }
+        
+        // 2. Search by Stylist Name
         const stylistQuery = { name: { $regex: searchStr, $options: 'i' }, tenantId };
         const matchingStylists = await Staff.find(stylistQuery).select('_id').lean();
         const stylistIds = matchingStylists.map(s => s._id);
-        const finalSearchOrConditions = [];
-        if (customerIds.length > 0) finalSearchOrConditions.push({ customerId: { $in: customerIds } });
-        if (stylistIds.length > 0) finalSearchOrConditions.push({ stylistId: { $in: stylistIds } });
+        if (stylistIds.length > 0) {
+            finalSearchOrConditions.push({ stylistId: { $in: stylistIds } });
+        }
+
+        // --- CHANGE: 3. Search by Invoice Number ---
+        const matchingInvoices = await Invoice.find({
+            invoiceNumber: { $regex: `^${searchStr}`, $options: 'i' }, // "starts with" search
+            tenantId
+        }).select('_id').lean();
+        const invoiceIds = matchingInvoices.map(inv => inv._id);
+        if (invoiceIds.length > 0) {
+            finalSearchOrConditions.push({ invoiceId: { $in: invoiceIds } });
+        }
+
         if (finalSearchOrConditions.length > 0) {
             matchStage.$or = finalSearchOrConditions;
         } else {
+            // If search finds no customers, stylists, or invoices, return no appointments
             matchStage._id = new mongoose.Types.ObjectId(); 
         }
     }
@@ -91,7 +118,7 @@ export async function GET(req: NextRequest) {
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
         .populate({  path: 'invoiceId', select: 'invoiceNumber'})
-        .sort({ appointmentDateTime: dateFilter === 'today' ? 1 : -1 }) 
+        .sort({ appointmentDateTime: -1 }) // --- CHANGE: Consistent sort order
         .skip(skip)
         .limit(limit)
         .lean(), 
@@ -155,7 +182,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ===================================================================================
-//  POST: Handler (MODIFIED TO SAVE DOB AND SURVEY)
+//  POST: Handler (No Changes Needed)
 // ===================================================================================
 export async function POST(req: NextRequest) {
   
@@ -169,9 +196,8 @@ export async function POST(req: NextRequest) {
     await connectToDatabase();
     const body = await req.json();
 
-    // MODIFIED: Destructure dob and survey from the request body
     const { 
-      customerName, phoneNumber, email, gender, dob, survey, // <-- ADDED dob, survey
+      customerName, phoneNumber, email, gender, dob, survey,
       date, time, notes, status, 
       appointmentType = 'Online', serviceAssignments
     } = body;
@@ -185,7 +211,6 @@ export async function POST(req: NextRequest) {
     let customerDoc = await Customer.findOne({ phoneHash: phoneHashToFind, tenantId }).session(session);
 
     if (!customerDoc) {
-      // MODIFIED: Add dob and survey to the creation object if they exist
       const customerDataForCreation: Partial<ICustomer> = {
         tenantId: new mongoose.Types.ObjectId(tenantId),
         name: encrypt(customerName.trim()),
@@ -196,15 +221,13 @@ export async function POST(req: NextRequest) {
         searchableName: customerName.trim().toLowerCase(),
         last4PhoneNumber: normalizedPhone.slice(-4),
         phoneSearchIndex: generateNgrams(normalizedPhone).map(ngram => createBlindIndex(ngram)),
-        // --- NEW FIELDS ADDED HERE ---
-        dob: dob ? new Date(dob) : undefined, // Add dob if it's provided
-        survey: survey ? survey.trim() : undefined, // Add survey if it's provided
+        dob: dob ? new Date(dob) : undefined,
+        survey: survey ? survey.trim() : undefined,
       };
       const newCustomers = await Customer.create([customerDataForCreation], { session });
       customerDoc = newCustomers[0];
     }
 
-    // --- (No changes needed for the rest of the logic) ---
     const allServiceIds = serviceAssignments.map((a: any) => a.serviceId);
     const primaryStylistId = serviceAssignments[0].stylistId; 
     const serviceDetails = await ServiceItem.find({ _id: { $in: allServiceIds } }).lean();

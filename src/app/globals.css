@@ -7,6 +7,24 @@ body {
   overflow: hidden;
   height: 100%;
 }
+@layer components {
+  .form-input {
+    /* --- Sizing & Spacing --- */
+    @apply w-full px-4 py-2.5 text-base; /* Generous padding for height */
+
+    /* --- Border, BG & Appearance (Matches Screenshot) --- */
+    @apply bg-white border border-gray-300 rounded-lg shadow-sm appearance-none;
+    
+    /* --- Text & Placeholder --- */
+    @apply text-gray-900 placeholder:text-gray-400;
+
+    /* --- States & Transitions --- */
+    @apply transition-colors duration-200 ease-in-out;
+    /* --- Focus State: The key change is here. No ring, just a blue border. --- */
+    @apply focus:outline-none focus:border-blue-500; 
+    @apply disabled:cursor-not-allowed disabled:bg-gray-100 disabled:border-gray-200;
+  }
+}
 /* :root {
   --foreground-rgb: 0, 0, 0;
   --background-rgb: 249, 250, 251;

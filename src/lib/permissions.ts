@@ -13,6 +13,12 @@ export const PERMISSIONS = {
   ROLES_DELETE: 'roles:delete',
   ROLES_MANAGE: 'roles:manage',
 
+  // SOP Management
+  SOP_READ: 'sop:read',
+  SOP_MANAGE: 'sop:manage', // Create, Update, Delete
+  SOP_SUBMIT_CHECKLIST: 'sop:submit_checklist',
+  SOP_REPORTS_READ: 'sop:reports:read',
+
   // Store management
   STORES_CREATE: 'stores:create',
   STORES_READ: 'stores:read',
@@ -132,6 +138,10 @@ export const PERMISSIONS = {
   // Budget Management Permissions <<-- ADDED
   BUDGET_READ: 'budget:read',
   BUDGET_MANAGE: 'budget:manage',
+  // NEW TELECALLING PERMISSIONS
+  TELECALLING_PERFORM: 'telecalling:perform',
+  TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
+  TELECALLING_VIEW_REPORTS: 'telecalling:reports:read',
 
   SALES_REPORT_READ: 'sales:report:read',
   TENANTS_CREATE: 'tenants:create',
@@ -163,6 +173,8 @@ export const PERMISSION_CATEGORIES = {
   ALERTS_MANAGEMENT: 'Alerts Management',
   EXPENSES_MANAGEMENT: 'Expenses Management',
   BUDGET_MANAGEMENT: 'Budget Management', // <<-- ADDED
+  SOP_MANAGEMENT: 'SOP Management',
+  TELECALLING_MANAGEMENT: 'Telecalling Management' 
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -295,6 +307,16 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.BUDGET_READ, description: 'View budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
   { permission: PERMISSIONS.BUDGET_MANAGE, description: 'Manage budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
 
+
+   // SOP Management (Add this new block)
+  { permission: PERMISSIONS.SOP_READ, description: 'View assigned SOPs and checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  { permission: PERMISSIONS.SOP_SUBMIT_CHECKLIST, description: 'Submit daily SOP checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  { permission: PERMISSIONS.SOP_REPORTS_READ, description: 'View SOP compliance reports for all staff', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  //Telecalling management
+ { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_VIEW_DASHBOARD,  description: 'View the performance dashboard for telecalling activities', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_VIEW_REPORTS, description: 'View detailed performance reports for telecallers', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT},
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];

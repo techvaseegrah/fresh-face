@@ -75,6 +75,7 @@ const customerSchema = new Schema<ICustomer, ICustomerModel>({
 
   // --- Status ---
   isActive: { type: Boolean, default: true },
+  doNotDisturb: { type: Boolean, default: false },
 }, 
 { 
   timestamps: true // Automatically adds createdAt and updatedAt
