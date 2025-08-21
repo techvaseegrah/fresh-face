@@ -40,7 +40,7 @@ const appointmentSchema = new Schema({
   
   appointmentType: {
     type: String,
-    enum: ['Online', 'Offline'],
+    enum: ['Online', 'Offline','Telecalling'],
     required: true,
     default: 'Online'
   },

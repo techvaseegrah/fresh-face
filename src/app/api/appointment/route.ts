@@ -6,7 +6,7 @@ import Appointment from '@/models/Appointment';
 import Customer, { ICustomer } from '@/models/customermodel';
 import Staff from '@/models/staff';
 import ServiceItem from '@/models/ServiceItem';
-import Invoice from '@/models/Invoice'; // --- CHANGE: Import Invoice model ---
+import Invoice from '@/models/invoice'; // --- CHANGE: Import Invoice model ---
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';

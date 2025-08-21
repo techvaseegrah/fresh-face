@@ -134,6 +134,10 @@ export const PERMISSIONS = {
   EXPENSES_UPDATE: 'expenses:update',
   EXPENSES_DELETE: 'expenses:delete',
   EXPENSES_MANAGE: 'expenses:manage',
+  // NEW TELECALLING PERMISSIONS
+  TELECALLING_PERFORM: 'telecalling:perform',
+  TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
+  TELECALLING_VIEW_REPORTS: 'telecalling:reports:read',
 
   SALES_REPORT_READ: 'sales:report:read',
   TENANTS_CREATE: 'tenants:create',
@@ -164,7 +168,8 @@ export const PERMISSION_CATEGORIES = {
   INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
   ALERTS_MANAGEMENT: 'Alerts Management',
   EXPENSES_MANAGEMENT: 'Expenses Management',
-  SOP_MANAGEMENT: 'SOP Management'
+  SOP_MANAGEMENT: 'SOP Management',
+  TELECALLING_MANAGEMENT: 'Telecalling Management' 
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -298,7 +303,10 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_SUBMIT_CHECKLIST, description: 'Submit daily SOP checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_REPORTS_READ, description: 'View SOP compliance reports for all staff', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
-  
+  //Telecalling management
+ { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_VIEW_DASHBOARD,  description: 'View the performance dashboard for telecalling activities', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_VIEW_REPORTS, description: 'View detailed performance reports for telecallers', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT},
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];

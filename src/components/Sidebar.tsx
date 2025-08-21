@@ -14,7 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 // --- CHANGE #1: Import the new icon ---
-import { BeakerIcon, ClipboardList } from 'lucide-react';
+import { BeakerIcon, ClipboardList,PhoneForwarded, LayoutDashboard, BarChartBig } from 'lucide-react';
 import { DocumentCheckIcon } from '@heroicons/react/24/solid';
 
 // --- (Your other custom SVG icons remain the same) ---
@@ -64,7 +64,22 @@ const Sidebar = () => {
         },
         { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
     ];
+    const telecallingSubItems: NavSubItem[] = [
+      { 
+        href: '/telecalling', 
+        label: 'Workspace', 
+        icon: <PhoneForwarded className="h-5 w-5" />,
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM])
+      },
+      { 
+        href: '/telecalling/reports/performance', 
+        label: 'Performance Report', 
+        icon: <BarChartBig className="h-5 w-5" />,
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_VIEW_REPORTS]) 
+      }
+    ];
 
+    const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
@@ -86,6 +101,9 @@ const Sidebar = () => {
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       // --- CHANGE #2: Add the new SOP Library link here ---
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
+      { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
+      
+      
 
       { href: '/admin', label: 'Administration', icon: <Cog6ToothIcon className="h-5 w-5" />, show: canSeeAdministration, subItems: adminSubItems.filter(item => item.show) },
       { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [ PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, PERMISSIONS.ATTENDANCE_SETTINGS_READ, PERMISSIONS.LOYALTY_SETTINGS_READ, ])},
