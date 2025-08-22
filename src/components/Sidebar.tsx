@@ -29,6 +29,7 @@ const TargetIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentC
 const IncentivesIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg> );
 const SwiftIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> );
 
+
 interface NavSubItem { href: string; label: string; icon: JSX.Element; show: boolean; basePathForActive?: string; }
 interface NavItemConfig { href: string; label: string; icon: JSX.Element; show: boolean; subItems?: NavSubItem[]; }
 
@@ -40,6 +41,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
 
   const navItems = useMemo((): NavItemConfig[] => {
+    // --- (No changes to staffSubItems) ---
     const staffSubItems: NavSubItem[] = [
       { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ATTENDANCE_READ]) },
       { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ADVANCE_READ]) },
@@ -51,11 +53,19 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/staffmanagement/swift', label: 'Shift Management', icon: <SwiftIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
     ];
 
+    // --- (No changes to adminSubItems) ---
     const adminSubItems: NavSubItem[] = [
       { href: '/admin/users', label: 'Users', icon: <UsersIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.USERS_READ]) },
       { href: '/admin/roles', label: 'Roles', icon: <CogIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ROLES_READ]) },
       { href: '/admin/tenants', label: 'Stores', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TENANTS_CREATE]) }
     ];
+
+    // --- [NEW] DEFINE BUDGET SUB-ITEMS ---
+    const budgetSubItems: NavSubItem[] = [
+      { href: '/budgets/setup', label: 'Budget Setup', icon: <CogIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_MANAGE]) },
+      { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
+    ];
+    
      const sopSubItems: NavSubItem[] = [
         { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]), basePathForActive: '/sop' },
         { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
@@ -66,9 +76,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/telecalling/reports/performance', label: 'Performance Report', icon: <BarChartBig className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_VIEW_REPORTS]) }
     ];
 
-    const canSeeTelecalling = telecallingSubItems.some(item => item.show);
+    // --- Calculate visibility for parent items ---
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
+    const canSeeBudgetManagement = budgetSubItems.some(item => item.show); // <-- [NEW]
+    const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
     
     return [
@@ -85,12 +97,24 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/eb-view', label: 'EB View & Calculate', icon: <DocumentTextIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EB_VIEW_CALCULATE]) },
       { href: '/inventory-checker', label: 'Inventory Checker', icon: <BeakerIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) },
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
+      
+      // --- [NEW] ADD BUDGET MANAGEMENT TO THE NAVIGATION ARRAY ---
+      { 
+        href: '/budgets', 
+        label: 'Budget Management', 
+        icon: <BanknotesIcon className="h-5 w-5" />, 
+        show: canSeeBudgetManagement, 
+        subItems: budgetSubItems.filter(item => item.show) 
+      },
+      // --- CHANGE #2: Add the new SOP Library link here ---
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
       { href: '/admin', label: 'Administration', icon: <Cog6ToothIcon className="h-5 w-5" />, show: canSeeAdministration, subItems: adminSubItems.filter(item => item.show) },
       { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [ PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, PERMISSIONS.ATTENDANCE_SETTINGS_READ, PERMISSIONS.LOYALTY_SETTINGS_READ, ])},
     ];
   }, [userPermissions]);
+  
+  // --- (No changes below this line) ---
   
   useEffect(() => {
     if (status !== 'authenticated') return;

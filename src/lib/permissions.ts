@@ -74,19 +74,19 @@ export const PERMISSIONS = {
   EB_UPLOAD: 'eb:upload',
   EB_VIEW_CALCULATE: 'eb:view_calculate',
 
- // Procurement management
- PROCUREMENT_CREATE: 'procurement:create',
- PROCUREMENT_READ: 'procurement:read',
- PROCUREMENT_UPDATE: 'procurement:update',
- PROCUREMENT_DELETE: 'procurement:delete',
+  // Procurement management
+  PROCUREMENT_CREATE: 'procurement:create',
+  PROCUREMENT_READ: 'procurement:read',
+  PROCUREMENT_UPDATE: 'procurement:update',
+  PROCUREMENT_DELETE: 'procurement:delete',
 
- // Procurement Workflow (New)
- WORKFLOW_PO_CREATE: 'workflow:po:create',
- WORKFLOW_PO_READ_OWN: 'workflow:po:read:own',
- WORKFLOW_PO_READ_ALL: 'workflow:po:read:all',
- WORKFLOW_PO_REVIEW: 'workflow:po:review',
- WORKFLOW_PO_APPROVE: 'workflow:po:approve',
- WORKFLOW_PO_RECEIVE: 'workflow:po:receive',
+  // Procurement Workflow (New)
+  WORKFLOW_PO_CREATE: 'workflow:po:create',
+  WORKFLOW_PO_READ_OWN: 'workflow:po:read:own',
+  WORKFLOW_PO_READ_ALL: 'workflow:po:read:all',
+  WORKFLOW_PO_REVIEW: 'workflow:po:review',
+  WORKFLOW_PO_APPROVE: 'workflow:po:approve',
+  WORKFLOW_PO_RECEIVE: 'workflow:po:receive',
 
   // Settings management
   SETTINGS_READ: 'settings:read',
@@ -134,6 +134,10 @@ export const PERMISSIONS = {
   EXPENSES_UPDATE: 'expenses:update',
   EXPENSES_DELETE: 'expenses:delete',
   EXPENSES_MANAGE: 'expenses:manage',
+  
+  // Budget Management Permissions <<-- ADDED
+  BUDGET_READ: 'budget:read',
+  BUDGET_MANAGE: 'budget:manage',
   // NEW TELECALLING PERMISSIONS
   TELECALLING_PERFORM: 'telecalling:perform',
   TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
@@ -168,6 +172,7 @@ export const PERMISSION_CATEGORIES = {
   INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
   ALERTS_MANAGEMENT: 'Alerts Management',
   EXPENSES_MANAGEMENT: 'Expenses Management',
+  BUDGET_MANAGEMENT: 'Budget Management', // <<-- ADDED
   SOP_MANAGEMENT: 'SOP Management',
   TELECALLING_MANAGEMENT: 'Telecalling Management' 
 } as const;
@@ -213,19 +218,19 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.EB_UPLOAD, description: 'Upload morning and evening meter images', category: PERMISSION_CATEGORIES.EB_MANAGEMENT },
   { permission: PERMISSIONS.EB_VIEW_CALCULATE, description: 'View meter images and calculate units/costs', category: PERMISSION_CATEGORIES.EB_MANAGEMENT },
 
- // Procurement Management
- { permission: PERMISSIONS.PROCUREMENT_CREATE, description: 'Create procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
- { permission: PERMISSIONS.PROCUREMENT_READ, description: 'View procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
- { permission: PERMISSIONS.PROCUREMENT_UPDATE, description: 'Update procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
- { permission: PERMISSIONS.PROCUREMENT_DELETE, description: 'Delete procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
+  // Procurement Management
+  { permission: PERMISSIONS.PROCUREMENT_CREATE, description: 'Create procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
+  { permission: PERMISSIONS.PROCUREMENT_READ, description: 'View procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
+  { permission: PERMISSIONS.PROCUREMENT_UPDATE, description: 'Update procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
+  { permission: PERMISSIONS.PROCUREMENT_DELETE, description: 'Delete procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
 
- // Procurement Workflow
- { permission: PERMISSIONS.WORKFLOW_PO_CREATE, description: 'Create a new Purchase Order request', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
- { permission: PERMISSIONS.WORKFLOW_PO_READ_OWN, description: 'View only own Purchase Orders', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
- { permission: PERMISSIONS.WORKFLOW_PO_READ_ALL, description: 'View all Purchase Orders', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
- { permission: PERMISSIONS.WORKFLOW_PO_REVIEW, description: 'Perform the Admin review step', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
- { permission: PERMISSIONS.WORKFLOW_PO_APPROVE, description: 'Give final Approval/Cancellation for a PO', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
- { permission: PERMISSIONS.WORKFLOW_PO_RECEIVE, description: 'Receive stock and update inventory for a PO', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
+  // Procurement Workflow
+  { permission: PERMISSIONS.WORKFLOW_PO_CREATE, description: 'Create a new Purchase Order request', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
+  { permission: PERMISSIONS.WORKFLOW_PO_READ_OWN, description: 'View only own Purchase Orders', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
+  { permission: PERMISSIONS.WORKFLOW_PO_READ_ALL, description: 'View all Purchase Orders', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
+  { permission: PERMISSIONS.WORKFLOW_PO_REVIEW, description: 'Perform the Admin review step', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
+  { permission: PERMISSIONS.WORKFLOW_PO_APPROVE, description: 'Give final Approval/Cancellation for a PO', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
+  { permission: PERMISSIONS.WORKFLOW_PO_RECEIVE, description: 'Receive stock and update inventory for a PO', category: PERMISSION_CATEGORIES.PROCUREMENT_WORKFLOW },
 
   // Day-end Closing Management
   { permission: PERMISSIONS.DAYEND_CREATE, description: 'Create day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
@@ -297,6 +302,11 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.EXPENSES_UPDATE, description: 'Update expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   { permission: PERMISSIONS.EXPENSES_DELETE, description: 'Delete expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   { permission: PERMISSIONS.EXPENSES_MANAGE, description: 'Manage all expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
+  
+  // Budget Management <<-- ADDED
+  { permission: PERMISSIONS.BUDGET_READ, description: 'View budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
+  { permission: PERMISSIONS.BUDGET_MANAGE, description: 'Manage budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
+
 
    // SOP Management (Add this new block)
   { permission: PERMISSIONS.SOP_READ, description: 'View assigned SOPs and checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },

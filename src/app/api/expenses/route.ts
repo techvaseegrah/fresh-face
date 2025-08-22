@@ -1,9 +1,13 @@
+// FILE: /app/api/expenses/route.ts
+// No changes to GET function. Only the POST function is modified below.
+
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/dbConnect';
 import Expense from '@/models/Expense';
 import { v2 as cloudinary } from 'cloudinary';
-import { getTenantIdOrBail } from '@/lib/tenant'; // <-- NEW: Import tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
+import { checkBudgetThreshold } from '@/lib/budgetAlerts'; // <-- 1. IMPORT THE ALERT FUNCTION
 
 // Cloudinary config remains the same
 cloudinary.config({
@@ -13,20 +17,15 @@ cloudinary.config({
   secure: true,
 });
 
-// --- GET: Fetch all expenses for a specific tenant ---
-export async function GET(request: NextRequest) { // <-- NEW: Use NextRequest
+// --- GET: Fetch all expenses for a specific tenant (NO CHANGES) ---
+export async function GET(request: NextRequest) {
   try {
-    // --- NEW: Securely get tenantId or exit ---
     const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenantId is missing
+        return tenantId;
     }
-
     await dbConnect();
-
-    // --- UPDATED: Filter expenses by tenantId ---
     const expenses = await Expense.find({ tenantId }).sort({ date: -1 });
-    
     return NextResponse.json({ success: true, data: expenses });
   } catch (error) {
     console.error("GET Error:", error); 
@@ -35,20 +34,18 @@ export async function GET(request: NextRequest) { // <-- NEW: Use NextRequest
   }
 }
 
-// --- POST: Add a new expense for a specific tenant ---
-export async function POST(request: NextRequest) { // <-- NEW: Use NextRequest
+// --- POST: Add a new expense for a specific tenant (MODIFIED) ---
+export async function POST(request: NextRequest) {
   try {
-    // --- NEW: Securely get tenantId or exit ---
     const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenantId is missing
+        return tenantId;
     }
     
     await dbConnect();
     
     const formData = await request.formData();
     
-    // ... (formData extraction remains the same)
     const type = formData.get('type') as string;
     const description = formData.get('description') as string;
     const amount = parseFloat(formData.get('amount') as string);
@@ -78,9 +75,8 @@ export async function POST(request: NextRequest) { // <-- NEW: Use NextRequest
       }
     }
 
-    // --- UPDATED: Add tenantId to the expense data ---
     const expenseData = {
-        tenantId, // <-- NEW
+        tenantId: new mongoose.Types.ObjectId(tenantId), // Ensure tenantId is stored as ObjectId
         type,
         description,
         amount,
@@ -91,6 +87,12 @@ export async function POST(request: NextRequest) { // <-- NEW: Use NextRequest
     };
 
     const expense = await Expense.create(expenseData);
+
+    // --- 2. TRIGGER THE BUDGET CHECK AFTER CREATING THE EXPENSE ---
+    // This runs in the background (`void`) so the API response is not delayed.
+    if (expense) {
+      void checkBudgetThreshold(tenantId, expense.type, expense.date);
+    }
     
     return NextResponse.json({ success: true, data: expense }, { status: 201 });
   } catch (error) {

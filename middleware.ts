@@ -1,3 +1,4 @@
+// middleware.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
@@ -17,7 +18,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Extract subdomain
+  // 2. Extract subdomain (removes `.MAIN_DOMAIN` from host)
   const subdomain = host.replace(`.${MAIN_DOMAIN}`, '');
 
   // 3. If it's the main domain, allow
@@ -47,37 +48,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(correctLoginUrl);
   }
 
-  // --- THIS IS THE CORRECTED LOGIC ---
-
-  // A. Always prepare the headers with the tenant ID.
-  const requestHeaders = new Headers(req.headers);
-  const tenantId = token.tenantId as string;
-  if (!tenantId) {
-      console.error("Middleware Error: Token is valid but missing tenantId.");
-      const loginUrl = new URL('/login', `http://${host}`);
-      return NextResponse.redirect(loginUrl);
-  }
-  requestHeaders.set('x-tenant-id', tenantId);
-
-  // B. Differentiate between API routes and Page routes.
-  if (pathname.startsWith('/api')) {
-    // For API routes, we ONLY inject the header and do NOT rewrite the URL.
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-  }
-
-  // C. For all other routes (pages), we rewrite the URL AND inject the header.
+  // 8. Rewrite path for tenant routing
   const url = req.nextUrl.clone();
   url.pathname = `/${subdomain}${pathname}`;
-  
-  return NextResponse.rewrite(url, {
-    request: {
-      headers: requestHeaders,
-    },
-  }); 
+  return NextResponse.rewrite(url);
 }
 
 export const config = {
