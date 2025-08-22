@@ -6,7 +6,8 @@ import dbConnect from '@/lib/dbConnect';
 import Sop from '@/models/Sop';
 import SopSubmission from '@/models/SopSubmission';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
-import { startOfDay } from 'date-fns';
+// *** Import monthly date functions ***
+import { startOfMonth, endOfMonth } from 'date-fns';
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -18,12 +19,16 @@ export async function GET(req: NextRequest) {
     if (tenantId instanceof NextResponse) return tenantId;
     
     await dbConnect();
-    const today = startOfDay(new Date());
 
-    // Find all SOP templates of type 'daily' assigned to the user's role
+    // *** Get the start and end of the current month ***
+    const now = new Date();
+    const startOfCurrentMonth = startOfMonth(now); 
+    const endOfCurrentMonth = endOfMonth(now);
+
+    // Find all SOP templates of type 'monthly'
     const checklists = await Sop.find({
         tenantId,
-        type: 'daily', // *** CHANGED from 'checklist' to 'daily' ***
+        type: 'monthly', // *** Find monthly checklists ***
         isActive: true,
         roles: { $in: [session.user.role.id] },
     }).lean();
@@ -34,15 +39,17 @@ export async function GET(req: NextRequest) {
 
     const checklistIds = checklists.map(c => c._id);
 
-    // Find submissions for these checklists specifically for today
+    // Find submissions for these checklists WITHIN the current month
     const submissions = await SopSubmission.find({
         tenantId,
-        // staff: session.user.id, // You might want to check for any submission by anyone in the tenant, not just this user
-        submissionDate: today,
-        sop: { $in: checklistIds }
+        sop: { $in: checklistIds },
+        // *** Check for a submission date within the range ***
+        submissionDate: {
+            $gte: startOfCurrentMonth,
+            $lte: endOfCurrentMonth
+        }
     }).lean();
 
-    // Map the results, adding a 'submitted' flag
     const result = checklists.map(checklist => {
         const hasSubmitted = submissions.some(sub => sub.sop.toString() === checklist._id.toString());
         return { ...checklist, submitted: hasSubmitted };

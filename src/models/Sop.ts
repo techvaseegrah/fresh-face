@@ -1,15 +1,16 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
 
-// Ensure you have Role model imported if you want to use mongoose.Types.ObjectId from it
-// import { IRole } from './role'; 
-
 export interface ISop extends Document {
   title: string;
   description: string;
-  content: string; // For rich-text steps, images, video embeds
-  type: 'document' | 'checklist';
+  // --- REMOVED --- content is no longer used in the new checklist-only system
+  // content: string; 
+  
+  // --- CHANGED --- Updated the allowed types for TypeScript
+  type: 'daily' | 'weekly' | 'monthly';
+  
   checklistItems: { text: string }[];
-  roles: mongoose.Schema.Types.ObjectId[]; // Links to your existing Role model
+  roles: mongoose.Schema.Types.ObjectId[];
   tenantId: mongoose.Schema.Types.ObjectId;
   createdBy: mongoose.Schema.Types.ObjectId;
   isActive: boolean;
@@ -18,8 +19,18 @@ export interface ISop extends Document {
 const SopSchema: Schema = new Schema({
   title: { type: String, required: true },
   description: { type: String, required: false },
-  content: { type: String, required: false },
-  type: { type: String, enum: ['document', 'checklist'], required: true, default: 'document' },
+  
+  // --- REMOVED --- The content field is no longer needed
+  // content: { type: String, required: false },
+
+  // --- CHANGED --- Updated the enum and default value
+  type: { 
+    type: String, 
+    enum: ['daily', 'weekly', 'monthly'], // These are the only allowed values now
+    required: true, 
+    default: 'daily' // Set a new, valid default
+  },
+
   checklistItems: [{ text: { type: String, required: true } }],
   roles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Role', required: true }],
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
@@ -27,6 +38,7 @@ const SopSchema: Schema = new Schema({
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+// To prevent Mongoose from recompiling the model on every hot-reload
 const Sop: Model<ISop> = mongoose.models.Sop || mongoose.model<ISop>('Sop', SopSchema);
 
 export default Sop;

@@ -5,9 +5,8 @@ import { useSession } from 'next-auth/react';
 import { X, Check } from 'lucide-react';
 import Image from 'next/image';
 import { format } from 'date-fns';
-import ImageZoomModal from '@/components/ImageZoomModal'; // Adjust path if your component is located elsewhere
+import ImageZoomModal from '@/components/ImageZoomModal'; // Adjust path if needed
 
-// The component now accepts an onAcknowledged function that takes a string (the submissionId)
 export default function SubmissionDetailsModal({ details, onClose, onAcknowledged }: { details: any; onClose: () => void; onAcknowledged: (submissionId: string) => void; }) {
   const { data: session } = useSession();
   const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
@@ -16,7 +15,6 @@ export default function SubmissionDetailsModal({ details, onClose, onAcknowledge
 
   if (!details) return null;
 
-  // This function is called when the manager clicks the "Acknowledge" button
   const handleAcknowledge = async (submissionId: string) => {
     if (!session) return;
     setIsAcknowledging(true);
@@ -36,7 +34,6 @@ export default function SubmissionDetailsModal({ details, onClose, onAcknowledge
             throw new Error(errorData.message || "Failed to acknowledge the submission.");
         }
         
-        // This is the FIX: Pass the submissionId back to the parent component.
         onAcknowledged(submissionId);
 
     } catch (err: any) {
@@ -87,19 +84,46 @@ export default function SubmissionDetailsModal({ details, onClose, onAcknowledge
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">{response.text}</p>
                         </div>
+                        
+                        {/* --- MAJOR CHANGE: Conditional rendering for video or image --- */}
                         {response.imageUrl ? (
-                          <button
-                            type="button"
-                            className="flex-shrink-0 cursor-zoom-in"
-                            onClick={() => setZoomedImageUrl(response.imageUrl)}
-                          >
-                            <div className="relative h-24 w-24 rounded-md overflow-hidden border hover:opacity-80 transition-opacity">
-                              <Image src={response.imageUrl} alt={`Verification for ${response.text}`} layout="fill" className="object-cover" />
-                            </div>
-                          </button>
+                          (() => {
+                            // Check if the URL points to a common video format
+                            const isVideo = /\.(mp4|webm|mov)$/i.test(response.imageUrl);
+
+                            if (isVideo) {
+                              // If it's a video, render the <video> tag
+                              return (
+                                <div className="relative h-24 w-24 rounded-md overflow-hidden border bg-black flex-shrink-0">
+                                  <video
+                                    src={response.imageUrl}
+                                    className="object-cover h-full w-full"
+                                    loop
+                                    muted
+                                    autoPlay
+                                    playsInline // Crucial for iOS
+                                  />
+                                </div>
+                              );
+                            } else {
+                              // If it's an image, render the original Image component with zoom functionality
+                              return (
+                                <button
+                                  type="button"
+                                  className="flex-shrink-0 cursor-zoom-in"
+                                  onClick={() => setZoomedImageUrl(response.imageUrl)}
+                                >
+                                  <div className="relative h-24 w-24 rounded-md overflow-hidden border hover:opacity-80 transition-opacity">
+                                    <Image src={response.imageUrl} alt={`Verification for ${response.text}`} layout="fill" className="object-cover" />
+                                  </div>
+                                </button>
+                              );
+                            }
+                          })()
                         ) : (
-                          <div className="h-24 w-24 flex items-center justify-center bg-gray-200 rounded-md text-xs text-gray-500">
-                            No Image
+                          // Fallback if no media is present
+                          <div className="h-24 w-24 flex items-center justify-center bg-gray-200 rounded-md text-xs text-gray-500 flex-shrink-0">
+                            No Media
                           </div>
                         )}
                       </div>
@@ -115,6 +139,7 @@ export default function SubmissionDetailsModal({ details, onClose, onAcknowledge
         </div>
       </div>
 
+      {/* The zoom modal will only work for images, which is the desired behavior */}
       {zoomedImageUrl && (
         <ImageZoomModal 
           src={zoomedImageUrl} 
