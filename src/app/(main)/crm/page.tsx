@@ -1,4 +1,4 @@
-// FILE: /app/crm/page.tsx - COMPLETE & MULTI-TENANT
+// FILE: /app/crm/page.tsx - COMPLETE, MULTI-TENANT & MOBILE-RESPONSIVE
 
 'use client';
 
@@ -26,18 +26,9 @@ export default function CrmPage() {
   } = useCrm();
 
   // --- PERMISSION CHECKS ---
-  // Each action has its own dedicated permission check.
-
-  // Permission for the "Add" button
   const canCreateCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_CREATE);
-  
-  // Permission for the "Import" button
   const canImportCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_IMPORT);
-
-  // Permission for the "Export" button
   const canExportCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_EXPORT);
-  
-  // Permissions for table actions (Edit/Delete)
   const canUpdateCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_UPDATE);
   const canDeleteCustomers = session && hasPermission(session.user.role.permissions, PERMISSIONS.CUSTOMERS_DELETE);
   
@@ -92,26 +83,22 @@ export default function CrmPage() {
   return (
     <div className="min-h-screen bg-gray-50/30 p-4 sm:p-6">
       <main className={`flex-grow transition-all duration-300 ${isDetailPanelOpen ? 'md:mr-[400px] lg:mr-[450px]' : 'mr-0'}`}>
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Customers</h1>
-            <p className="text-sm text-gray-600">Manage your entire customer base.</p>
+            <p className="text-sm text-gray-600 mt-1">Manage your entire customer base.</p>
           </div>
-          {/* --- CONDITIONALLY RENDERED BUTTONS --- */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* This button only appears if user has 'customers:export' permission */}
+          <div className="flex items-center gap-2 flex-wrap justify-start sm:justify-end w-full sm:w-auto">
             {canExportCustomers && (
-              <button onClick={handleExportAll} disabled={isExporting} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-wait">
+              <button onClick={handleExportAll} disabled={isExporting} className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-wait">
                 {isExporting ? 'Exporting...' : ( <><ArrowDownTrayIcon className="w-5 h-5" /> Export All </>)}
               </button>
             )}
-            {/* This button only appears if user has 'customers:import' permission */}
             {canImportCustomers && (
-              <button onClick={() => setIsImportModalOpen(true)} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Import</button>
+              <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Import</button>
             )}
-            {/* This button only appears if user has 'customers:create' permission */}
             {canCreateCustomers && (
-              <button onClick={handleOpenAddModal} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-black rounded-lg shadow-sm hover:bg-gray-800 transition-colors">
+              <button onClick={handleOpenAddModal} className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-black rounded-lg shadow-sm hover:bg-gray-800 transition-colors">
                 <PlusIcon className="w-5 h-5" /> Add
               </button>
             )}
@@ -164,7 +151,7 @@ export default function CrmPage() {
                   id="filter-non-returning-days"
                   value={filters.nonReturningDays}
                   onChange={(e) => handleFilterChange('nonReturningDays', e.target.value)}
-                  className="mt-1 block w-full sm:w-1/4 pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  className="mt-1 block w-full sm:w-1/2 md:w-1/4 pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                   placeholder="e.g., 90"
                 />
               </div>
@@ -181,7 +168,7 @@ export default function CrmPage() {
                </div>
             </div>
             
-            <div className="mt-4 flex justify-end gap-3">
+            <div className="mt-4 flex flex-col sm:flex-row sm:justify-end gap-3">
               <button onClick={clearFilters} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Clear</button>
               <button onClick={applyFilters} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700">Apply Filters</button>
             </div>
@@ -189,14 +176,19 @@ export default function CrmPage() {
 
           {isLoading && <div className="p-10 text-center text-gray-500">Loading customers...</div>}
           {pageError && <div className="p-4 bg-red-100 text-red-700 rounded-lg text-sm">{pageError}</div>}
+          
           {!isLoading && !pageError && customers.length === 0 && (
             <div className="py-16 text-center text-gray-500 bg-white rounded-xl shadow-sm">
               <h3 className="text-lg font-semibold">No Customers Found</h3>
               <p>{searchTerm || Object.values(filters).some(v => v) ? `No customers match your search or filter criteria.` : "You haven't added any customers yet."}</p>
             </div>
           )}
+
+          {/* This container makes the table scrollable on mobile without breaking the page layout */}
           {!isLoading && !pageError && customers.length > 0 && (
-            <CustomerTable customers={customers} pagination={pagination} onViewDetails={handleViewCustomerDetails} onEdit={canUpdateCustomers ? handleOpenEditModal : undefined} onDelete={canDeleteCustomers ? handleDeleteCustomer : undefined} onGoToPage={goToPage} />
+             <div className="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+                <CustomerTable customers={customers} pagination={pagination} onViewDetails={handleViewCustomerDetails} onEdit={canUpdateCustomers ? handleOpenEditModal : undefined} onDelete={canDeleteCustomers ? handleDeleteCustomer : undefined} onGoToPage={goToPage} />
+             </div>
           )}
         </div>
       </main>

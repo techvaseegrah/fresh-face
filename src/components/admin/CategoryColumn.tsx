@@ -1,6 +1,6 @@
 "use client"
 
-import { PencilIcon, TrashIcon, PlusIcon, FolderOpenIcon } from "@heroicons/react/24/outline"
+import { PencilIcon, TrashIcon, PlusIcon, FolderOpenIcon, ArrowLeftIcon } from "@heroicons/react/24/outline"
 
 interface Item {
   _id: string
@@ -15,6 +15,7 @@ interface Props {
   onEdit?: (item: Item) => void
   onDelete?: (id: string) => void
   onAddNew?: () => void
+  onBack?: () => void
   isLoading: boolean
   disabled?: boolean
   disabledText?: string
@@ -29,20 +30,31 @@ export default function CategoryColumn({
   onEdit,
   onDelete,
   onAddNew,
+  onBack,
   isLoading,
   disabled = false,
   disabledText = "Select an item in the previous column.",
   className = "",
 }: Props) {
   return (
-    // The main container for the column.
-    // It's a vertical flexbox that takes up the full height.
     <div
-      className={`flex h-full flex-col border-r border-slate-200 bg-slate-50/50 ${className}`}
+      className={`flex h-full flex-col bg-slate-50/50 sm:border-r sm:border-slate-200 ${className}`}
     >
-      {/* 1. Consolidated Header: Title and "Add New" button */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white p-4">
-        <h3 className="text-lg font-semibold tracking-tight text-slate-800">{title}</h3>
+      {/* Header (No Changes Here) */}
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 bg-white p-3 sm:p-4">
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="rounded-md p-1.5 hover:bg-slate-100 sm:hidden"
+              title="Go back"
+            >
+              <ArrowLeftIcon className="h-5 w-5 text-slate-600" />
+            </button>
+          )}
+          <h3 className="text-base font-semibold tracking-tight text-slate-800 sm:text-lg">{title}</h3>
+        </div>
+        
         {onAddNew && (
           <button
             onClick={onAddNew}
@@ -55,7 +67,7 @@ export default function CategoryColumn({
         )}
       </div>
 
-      {/* 2. Scrollable Content Area */}
+      {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto p-2">
         {isLoading ? (
           <div className="flex h-full items-center justify-center">
@@ -65,16 +77,20 @@ export default function CategoryColumn({
             </div>
           </div>
         ) : disabled ? (
-          <div className="flex h-full items-center justify-center text-center">
-            <p className="px-4 text-sm text-slate-500">{disabledText}</p>
+          // --- FIX 1: Explicitly render rich placeholder for DISABLED state ---
+          <div className="flex h-full flex-col items-center justify-center p-4 text-center text-slate-500">
+            <FolderOpenIcon className="mb-2 h-10 w-10 text-slate-400" />
+            <p className="text-sm">{disabledText}</p>
           </div>
         ) : items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
+          // Render rich placeholder for EMPTY state
+          <div className="flex h-full flex-col items-center justify-center p-4 text-center text-slate-500">
             <FolderOpenIcon className="mb-2 h-10 w-10 text-slate-400" />
             <p className="font-medium">No {title.toLowerCase()}</p>
             <p className="text-xs">Click the '+' button above to add one.</p>
           </div>
         ) : (
+          // Render the list of items
           <div className="space-y-1">
             {items.map((item) => (
               <div
@@ -87,28 +103,14 @@ export default function CategoryColumn({
                 }`}
               >
                 <span className="truncate pr-2">{item.name}</span>
-                <div className="flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="flex flex-shrink-0 items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                   {onEdit && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onEdit(item)
-                      }}
-                      className="rounded-md p-1.5 hover:bg-slate-300/50"
-                      title={`Edit ${item.name}`}
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); onEdit(item); }} className="rounded-md p-1.5 hover:bg-slate-300/50" title={`Edit ${item.name}`}>
                       <PencilIcon className="h-4 w-4 text-slate-600" />
                     </button>
                   )}
                   {onDelete && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDelete(item._id)
-                      }}
-                      className="rounded-md p-1.5 hover:bg-red-100"
-                      title={`Delete ${item.name}`}
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(item._id); }} className="rounded-md p-1.5 hover:bg-red-100" title={`Delete ${item.name}`}>
                       <TrashIcon className="h-4 w-4 text-red-500" />
                     </button>
                   )}

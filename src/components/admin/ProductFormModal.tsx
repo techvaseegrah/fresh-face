@@ -72,36 +72,30 @@ export default function ProductFormModal({ isOpen, onClose, onSave, entityType, 
     }))
   }
 
-const handleSubmit = (e: FormEvent) => {
-  e.preventDefault();
-  if (!entityType) return;
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!entityType) return;
 
-  // Create a mutable copy of the form data
-  const dataToSave = { ...formData };
-
-  // --- THIS IS THE FIX ---
-  // If we are saving a product, we explicitly remove the totalQuantity field.
-  // This allows the Mongoose pre-save hook on the server to correctly calculate it.
-  if (entityType === 'product') {
-    delete dataToSave.totalQuantity;
-  }
-  // --- END OF FIX ---
-
-  // The rest of your logic remains the same, just using 'dataToSave'
-  if (entityToEdit) {
-    dataToSave._id = entityToEdit._id;
-  }
-  if (!entityToEdit) {
-    dataToSave.type = context.productType;
-    if (entityType === "subcategory") dataToSave.brand = context.brandId;
-    if (entityType === "product") {
-      dataToSave.brand = context.brandId;
-      dataToSave.subCategory = context.subCategoryId;
+    const dataToSave = { ...formData };
+    
+    if (entityType === 'product') {
+      delete dataToSave.totalQuantity;
     }
-  }
-  
-  onSave(entityType, dataToSave);
-};
+
+    if (entityToEdit) {
+      dataToSave._id = entityToEdit._id;
+    }
+    if (!entityToEdit) {
+      dataToSave.type = context.productType;
+      if (entityType === "subcategory") dataToSave.brand = context.brandId;
+      if (entityType === "product") {
+        dataToSave.brand = context.brandId;
+        dataToSave.subCategory = context.subCategoryId;
+      }
+    }
+    
+    onSave(entityType, dataToSave);
+  };
 
   if (!isOpen) return null
 
@@ -121,17 +115,17 @@ const handleSubmit = (e: FormEvent) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-slate-200 bg-slate-50/50">
-          <h2 className="text-xl font-semibold text-slate-900">{getTitle()}</h2>
+        <div className="flex-shrink-0 flex justify-between items-center p-4 sm:p-6 border-b border-slate-200 bg-slate-50/50">
+          <h2 className="text-lg sm:text-xl font-semibold text-slate-900">{getTitle()}</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-lg transition-colors duration-150">
             <XMarkIcon className="h-5 w-5 text-slate-500" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
           <form onSubmit={handleSubmit} className="space-y-6">
             {(entityType === "brand" || entityType === "subcategory") && (
               <div>
@@ -299,17 +293,17 @@ const handleSubmit = (e: FormEvent) => {
             )}
 
             {/* Footer */}
-            <div className="flex justify-end gap-3 pt-6 border-t border-slate-200">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4 sm:pt-6 border-t border-slate-200">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors duration-150"
+                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors duration-150"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors duration-150 shadow-sm"
+                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors duration-150 shadow-sm"
               >
                 Save
               </button>
