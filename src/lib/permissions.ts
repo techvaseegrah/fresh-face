@@ -124,6 +124,8 @@ export const PERMISSIONS = {
   STAFF_TARGET_MANAGE: 'staff-target:manage',
   STAFF_INCENTIVES_READ: 'staff-incentives:read',
   STAFF_INCENTIVES_MANAGE: 'staff-incentives:manage',
+  STAFF_INCENTIVE_PAYOUT_READ: 'staff-incentive-payout:read', // <-- ADDED
+  STAFF_INCENTIVE_PAYOUT_MANAGE: 'staff-incentive-payout:manage',
   STAFF_SALARY_READ: 'staff-salary:read',
   STAFF_SALARY_MANAGE: 'staff-salary:manage',
   STAFF_SWIFT_MANAGE: 'staff-swift:manage',
@@ -292,6 +294,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.STAFF_TARGET_MANAGE, description: 'Manage staff targets', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_INCENTIVES_READ, description: 'Read staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_INCENTIVES_MANAGE, description: 'Manage staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
+  { permission: PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, description: 'Create, approve, reject, and delete incentive payouts', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT }, // <-- ADDED
+  
   { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SWIFT_MANAGE, description: 'Manage staff swift', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },

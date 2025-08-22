@@ -1,50 +1,52 @@
-import mongoose, { Schema, Document, model, models, Types } from 'mongoose';
+import mongoose, { Document, Schema, Model, Types } from 'mongoose';
 
-// 1. Define an interface for the document's properties
 export interface IIncentivePayout extends Document {
   staff: Types.ObjectId;
-  tenantId: Types.ObjectId;
   amount: number;
-  payoutDate: Date;
-  notes?: string; // Optional field
-  createdAt: Date; // Automatically added by timestamps
-  updatedAt: Date; // Automatically added by timestamps
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  processedDate?: Date;
+  tenantId: Types.ObjectId; // ✅ THIS IS THE KEY FIELD
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-// 2. Create the Mongoose Schema, using the interface for type safety
-const IncentivePayoutSchema: Schema<IIncentivePayout> = new Schema({
-  staff: {
-    type: Schema.Types.ObjectId,
-    ref: 'Staff', // This links to your 'Staff' model
-    required: [true, 'Staff ID is required.'],
-    index: true, // Add index for faster queries on staff
+const IncentivePayoutSchema: Schema<IIncentivePayout> = new Schema(
+  {
+    staff: {
+      type: Schema.Types.ObjectId,
+      ref: 'Staff',
+      required: true,
+    },
+    amount: {
+      type: Number,
+      required: true,
+    },
+    reason: {
+      type: String,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    processedDate: {
+      type: Date,
+    },
+    // This field ensures every single payout record is securely linked
+    // to a specific tenant in the database. All our API route logic
+    // depends on this field being here.
+    tenantId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Tenant',
+      required: true,
+    },
   },
-  tenantId: {
-    type: Schema.Types.ObjectId,
-    required: [true, 'Tenant ID is required.'],
-    index: true, // Add index for faster queries on tenant
-  },
-  amount: {
-    type: Number,
-    required: [true, 'Payout amount is required.'],
-    min: [0.01, 'Payout amount must be greater than zero.'],
-  },
-  payoutDate: {
-    type: Date,
-    default: Date.now,
-    required: true,
-  },
-  notes: {
-    type: String,
-    trim: true,
-  },
-}, {
-  // 3. Add timestamps for createdAt and updatedAt fields
-  timestamps: true 
-});
+  { timestamps: true }
+);
 
-// 4. Export the model, preventing recompilation in hot-reloading environments
-// The model is typed with the IIncentivePayout interface
-const IncentivePayout = models.IncentivePayout || model<IIncentivePayout>('IncentivePayout', IncentivePayoutSchema);
+const IncentivePayout: Model<IIncentivePayout> =
+  mongoose.models.IncentivePayout || mongoose.model<IIncentivePayout>('IncentivePayout', IncentivePayoutSchema);
 
 export default IncentivePayout;
