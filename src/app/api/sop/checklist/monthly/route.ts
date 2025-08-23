@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
     const startOfCurrentMonth = startOfMonth(now); 
     const endOfCurrentMonth = endOfMonth(now);
 
-    // --- FIX IS HERE ---
+    // 1. Find all monthly SOP templates assigned to the user's role.
+    // This query is already correct and includes the necessary checklistItems.
     const checklists = await Sop.find({
         tenantId,
         type: 'monthly',
@@ -39,8 +40,11 @@ export async function GET(req: NextRequest) {
 
     const checklistIds = checklists.map(c => c._id);
 
+    // 2. Find all submissions for these checklists within the current month.
+    // We now fetch the full submission object to get the status.
     const submissions = await SopSubmission.find({
         tenantId,
+        staff: session.user.id, // Good practice to scope submissions to the user
         sop: { $in: checklistIds },
         submissionDate: {
             $gte: startOfCurrentMonth,
@@ -48,10 +52,19 @@ export async function GET(req: NextRequest) {
         }
     }).lean();
 
+    // --- THIS IS THE UPGRADED LOGIC ---
+    // 3. For each checklist, find its corresponding submission and attach it.
     const result = checklists.map(checklist => {
-        const hasSubmitted = submissions.some(sub => sub.sop.toString() === checklist._id.toString());
-        return { ...checklist, submitted: hasSubmitted };
+        // Find the submission object that matches this checklist's ID.
+        const submission = submissions.find(sub => sub.sop.toString() === checklist._id.toString());
+        
+        // Return the checklist data along with the full submission object (or null if not found).
+        return { 
+            ...checklist, 
+            submission: submission || null 
+        };
     });
+    // --- END OF UPGRADED LOGIC ---
 
     return NextResponse.json(result);
 }

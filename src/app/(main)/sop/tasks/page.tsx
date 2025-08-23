@@ -4,20 +4,24 @@ import { useState } from 'react';
 // Correctly import both the hook and the global mutate function
 import useSWR, { mutate as globalMutate } from 'swr';
 import { useSession } from 'next-auth/react';
-import { ListChecks, CheckCircle2, Calendar, CalendarDays, Loader2 } from 'lucide-react';
+// Import all necessary icons
+import { ListChecks, CheckCircle2, Calendar, CalendarDays, Loader2, Clock, XCircle, RefreshCw } from 'lucide-react';
 import ChecklistSubmissionModal from '../components/ChecklistSubmissionModal'; // Adjust path as needed
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// --- ROBUSTNESS: Define a strong type for our checklist data ---
-// The '?' makes checklistItems optional, preventing type errors if the API doesn't send it.
+// --- ROBUSTNESS: Define a strong type for our checklist data, reflecting the new workflow ---
 interface Checklist {
   _id: string;
   title: string;
   description: string;
-  submitted: boolean;
   checklistItems?: { text: string }[];
+  submission?: {
+    _id: string;
+    status: 'pending_review' | 'approved' | 'rejected';
+    reviewNotes?: string;
+  } | null;
 }
 type ChecklistType = 'daily' | 'weekly' | 'monthly';
 
@@ -33,7 +37,7 @@ const fetcherWithAuth = async (url: string, tenantId: string) => {
     return res.json();
 };
 
-// --- A reusable UI component for the notification badge with CORNER alignment ---
+// --- A reusable UI component for the notification badge with corner alignment ---
 const NotificationBadge = ({ count }: { count: number }) => {
     return (
         <AnimatePresence>
@@ -43,7 +47,6 @@ const NotificationBadge = ({ count }: { count: number }) => {
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0, opacity: 0 }}
                     transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    // Positions badge in the top-right corner of the parent button
                     className="absolute top-1 right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center pointer-events-none"
                 >
                     {count}
@@ -56,6 +59,7 @@ const NotificationBadge = ({ count }: { count: number }) => {
 export default function MyTasksPage() {
     const { data: session } = useSession();
     const [selectedChecklist, setSelectedChecklist] = useState<Checklist | null>(null);
+    const [isResubmitting, setIsResubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState<ChecklistType>('daily');
 
     // This hook provides the BOUND mutate, which we'll use for the main list
@@ -80,6 +84,7 @@ export default function MyTasksPage() {
 
     const handleSuccess = () => {
         setSelectedChecklist(null);
+        setIsResubmitting(false);
         // Use the BOUND mutate (a shortcut) to re-fetch the main checklist list
         mutate();
         // Use the GLOBAL mutate to re-fetch the data for the other, separate APIs
@@ -89,19 +94,29 @@ export default function MyTasksPage() {
     };
 
     const handleStartTask = (checklist: Checklist) => {
-        // ROBUSTNESS: A guard clause to prevent opening the modal if there are no items to display
         if (!checklist.checklistItems || checklist.checklistItems.length === 0) {
             alert("Error: This checklist has no tasks defined. Please contact an administrator.");
             return;
         }
+        setIsResubmitting(false); // Ensure this is treated as a new submission
         setSelectedChecklist(checklist);
+    };
+
+    const handleResubmit = (checklist: Checklist) => {
+        if (!checklist.checklistItems || checklist.checklistItems.length === 0) {
+            alert("Error: This checklist has no tasks defined.");
+            return;
+        }
+        if (confirm(`This task was rejected.\n\nManager's Feedback: "${checklist.submission?.reviewNotes || 'No feedback provided.'}"\n\nDo you want to re-submit this task?`)) {
+            setIsResubmitting(true);
+            setSelectedChecklist(checklist);
+        }
     };
 
     if (!canSubmit) {
         return <p className="p-6 text-gray-500">You do not have any tasks assigned.</p>;
     }
 
-    // The `relative` class is the anchor for the absolute positioned badge
     const tabStyles = "relative flex-1 text-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center justify-center gap-2";
     const activeTabStyles = "bg-blue-600 text-white shadow";
     const inactiveTabStyles = "text-gray-600 hover:bg-gray-200";
@@ -114,7 +129,6 @@ export default function MyTasksPage() {
                     <p className="text-gray-500 mt-1">Tasks to be completed for {format(new Date(), 'eeee, MMMM d')}</p>
                 </div>
 
-                {/* --- UI FIX: Badge is a direct child of the button for corner positioning --- */}
                 <div className="flex space-x-2 p-1 bg-gray-100 rounded-lg mb-6">
                     <button onClick={() => setActiveTab('daily')} className={`${tabStyles} ${activeTab === 'daily' ? activeTabStyles : inactiveTabStyles}`}>
                         <span className="flex items-center gap-2">
@@ -144,7 +158,6 @@ export default function MyTasksPage() {
                         </div>
                     )}
                     
-                    {/* --- ROBUSTNESS: Defensive checks to prevent crashes --- */}
                     {Array.isArray(checklists) && checklists.length === 0 && (
                         <div className="text-center py-8">
                             <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
@@ -155,7 +168,10 @@ export default function MyTasksPage() {
                     
                     {Array.isArray(checklists) && checklists.length > 0 && (
                          <ul className="space-y-3">
-                            {checklists.map((checklist: Checklist) => (
+                            {checklists.map((checklist: Checklist) => {
+                                const status = checklist.submission?.status;
+
+                                return (
                                 <li key={checklist._id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-md bg-gray-50 border gap-4">
                                     <div className="flex items-center gap-4 w-full">
                                         <ListChecks className="text-gray-500 h-6 w-6 flex-shrink-0" />
@@ -165,11 +181,24 @@ export default function MyTasksPage() {
                                         </div>
                                     </div>
                                     <div className="w-full sm:w-auto flex-shrink-0">
-                                        {checklist.submitted ? (
+                                        {status === 'approved' ? (
                                             <div className="flex items-center justify-center gap-2 text-green-600 font-semibold bg-green-100 px-3 py-1.5 rounded-full text-center">
                                                 <CheckCircle2 size={20} />
-                                                <span>Completed</span>
+                                                <span>Approved</span>
                                             </div>
+                                        ) : status === 'pending_review' ? (
+                                            <div className="flex items-center justify-center gap-2 text-yellow-600 font-semibold bg-yellow-100 px-3 py-1.5 rounded-full text-center">
+                                                <Clock size={20} />
+                                                <span>Pending Review</span>
+                                            </div>
+                                        ) : status === 'rejected' ? (
+                                            <button
+                                                onClick={() => handleResubmit(checklist)}
+                                                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors"
+                                            >
+                                                <RefreshCw size={16} />
+                                                <span>Re-submit</span>
+                                            </button>
                                         ) : (
                                             <button
                                                 onClick={() => handleStartTask(checklist)}
@@ -180,7 +209,8 @@ export default function MyTasksPage() {
                                         )}
                                     </div>
                                 </li>
-                            ))}
+                                );
+                            })}
                         </ul>
                     )}
                 </div>
@@ -189,7 +219,8 @@ export default function MyTasksPage() {
             {selectedChecklist && (
                 <ChecklistSubmissionModal
                     checklist={selectedChecklist}
-                    onClose={() => setSelectedChecklist(null)}
+                    isResubmitting={isResubmitting}
+                    onClose={() => { setSelectedChecklist(null); setIsResubmitting(false); }}
                     onSuccess={handleSuccess}
                 />
             )}

@@ -8,20 +8,18 @@ import SopSubmission from '@/models/SopSubmission';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 import { startOfDay } from 'date-fns';
 
-// Configure Cloudinary (ensure these variables are in your .env.local)
+// Configure Cloudinary (remains the same)
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// --- CHANGED ---: Renamed function to be more generic
-// Helper function to upload a media buffer to Cloudinary in a structured folder
+// Helper function to upload media (remains the same)
 async function uploadMedia(buffer: Buffer, tenantId: string, staffId: string, date: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       { 
-        // --- CRITICAL CHANGE ---: Tell Cloudinary this is a video file
         resource_type: 'video', 
         folder: `sop-submissions/${tenantId}/${date}`,
         public_id: `staff_${staffId}_${Date.now()}`
@@ -55,33 +53,29 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ message: 'Missing required data' }, { status: 400 });
         }
 
-        // --- CRITICAL CHANGE ---: Add server-side file size validation
+        // Server-side file size validation (remains the same and is crucial)
         const MAX_FILE_SIZE_MB = 10;
         const maxFileSizeBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
-
         for (const file of files) {
             if (file.size > maxFileSizeBytes) {
-                return NextResponse.json(
-                    { message: `File "${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB size limit.` },
-                    { status: 400 } // Use 400 for a bad request from the client
-                );
+                return NextResponse.json({ message: `File "${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB size limit.` }, { status: 400 });
             }
         }
-        // --- END OF VALIDATION ---
 
         const responses = JSON.parse(responsesJson);
         
         await dbConnect();
         
+        // Upload all media files to Cloudinary in parallel
         const processedResponses = await Promise.all(
             responses.map(async (response: any, index: number) => {
                 const file = files[index];
                 if (file) {
                     const buffer = Buffer.from(await file.arrayBuffer());
                     const dateString = new Date().toISOString().split('T')[0];
-                    // --- CHANGED ---: Use the new function name and a more generic variable name
-                    const mediaUrl = await uploadMedia(buffer, tenantId.toString(), session.user.id, dateString);
-                    return { ...response, imageUrl: mediaUrl }; // Still use imageUrl to match the DB schema
+                    const url = await uploadMedia(buffer, tenantId.toString(), session.user.id, dateString);
+                    // --- CORRECTED ---: Use the new 'mediaUrl' field name to match the schema
+                    return { ...response, mediaUrl: url };
                 }
                 return response;
             })
@@ -89,22 +83,43 @@ export async function POST(req: NextRequest) {
         
         const today = startOfDay(new Date());
 
-        const newSubmission = new SopSubmission({
+        // --- NEW WORKFLOW LOGIC ---
+        // Check if there is an existing 'rejected' submission for this SOP, user, and day.
+        const existingRejectedSubmission = await SopSubmission.findOne({
             sop: sopId,
-            responses: processedResponses,
             staff: session.user.id,
-            tenantId,
             submissionDate: today,
+            status: 'rejected',
         });
 
-        await newSubmission.save();
-        return NextResponse.json({ message: 'Checklist submitted successfully' }, { status: 201 });
-    } catch (error) {
-        console.error("SOP Submission Error:", error);
-        // Provide a more specific error message if possible
-        if (error instanceof Error && 'message' in error) {
-             return NextResponse.json({ message: error.message || 'Server Error' }, { status: 500 });
+        if (existingRejectedSubmission) {
+            // If a rejected submission exists, UPDATE it instead of creating a new one.
+            existingRejectedSubmission.responses = processedResponses;
+            existingRejectedSubmission.status = 'pending_review'; // Reset the status for re-review
+            existingRejectedSubmission.reviewNotes = undefined; // Clear previous rejection notes
+            existingRejectedSubmission.reviewedBy = undefined; // Clear previous reviewer
+            
+            await existingRejectedSubmission.save();
+            return NextResponse.json({ message: 'Checklist re-submitted successfully' }, { status: 200 });
+
+        } else {
+            // If no rejected submission exists, create a brand new submission.
+            const newSubmission = new SopSubmission({
+                sop: sopId,
+                responses: processedResponses,
+                staff: session.user.id,
+                tenantId,
+                submissionDate: today,
+                // The 'status' will default to 'pending_review' as per the schema
+            });
+
+            await newSubmission.save();
+            return NextResponse.json({ message: 'Checklist submitted successfully' }, { status: 201 });
         }
-        return NextResponse.json({ message: 'An unknown server error occurred' }, { status: 500 });
+        // --- END OF NEW WORKFLOW LOGIC ---
+
+    } catch (error: any) {
+        console.error("SOP Submission Error:", error);
+        return NextResponse.json({ message: error.message || 'Server Error' }, { status: 500 });
     }
 }
