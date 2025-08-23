@@ -20,13 +20,15 @@ export async function GET(req: NextRequest) {
     await dbConnect();
     const today = startOfDay(new Date());
 
-    // Find all SOP templates of type 'daily' assigned to the user's role
+    // --- FIX IS HERE ---
     const checklists = await Sop.find({
         tenantId,
-        type: 'daily', // *** CHANGED from 'checklist' to 'daily' ***
+        type: 'daily',
         isActive: true,
         roles: { $in: [session.user.role.id] },
-    }).lean();
+    })
+    .select('title description checklistItems') // Explicitly request the needed fields
+    .lean();
 
     if (checklists.length === 0) {
         return NextResponse.json([]);
@@ -34,15 +36,12 @@ export async function GET(req: NextRequest) {
 
     const checklistIds = checklists.map(c => c._id);
 
-    // Find submissions for these checklists specifically for today
     const submissions = await SopSubmission.find({
         tenantId,
-        // staff: session.user.id, // You might want to check for any submission by anyone in the tenant, not just this user
         submissionDate: today,
         sop: { $in: checklistIds }
     }).lean();
 
-    // Map the results, adding a 'submitted' flag
     const result = checklists.map(checklist => {
         const hasSubmitted = submissions.some(sub => sub.sop.toString() === checklist._id.toString());
         return { ...checklist, submitted: hasSubmitted };

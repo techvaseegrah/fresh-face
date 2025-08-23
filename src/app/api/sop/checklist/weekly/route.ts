@@ -6,7 +6,6 @@ import dbConnect from '@/lib/dbConnect';
 import Sop from '@/models/Sop';
 import SopSubmission from '@/models/SopSubmission';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
-// *** Import weekly date functions ***
 import { startOfWeek, endOfWeek } from 'date-fns';
 
 export async function GET(req: NextRequest) {
@@ -20,19 +19,19 @@ export async function GET(req: NextRequest) {
     
     await dbConnect();
 
-    // *** Get the start and end of the current week ***
     const now = new Date();
-    // Assuming week starts on Sunday. To start on Monday, add { weekStartsOn: 1 }
     const startOfCurrentWeek = startOfWeek(now); 
     const endOfCurrentWeek = endOfWeek(now);
 
-    // Find all SOP templates of type 'weekly'
+    // --- FIX IS HERE ---
     const checklists = await Sop.find({
         tenantId,
-        type: 'weekly', // *** Find weekly checklists ***
+        type: 'weekly',
         isActive: true,
         roles: { $in: [session.user.role.id] },
-    }).lean();
+    })
+    .select('title description checklistItems') // Explicitly request the needed fields
+    .lean();
 
     if (checklists.length === 0) {
         return NextResponse.json([]);
@@ -40,11 +39,9 @@ export async function GET(req: NextRequest) {
 
     const checklistIds = checklists.map(c => c._id);
 
-    // Find submissions for these checklists WITHIN the current week
     const submissions = await SopSubmission.find({
         tenantId,
         sop: { $in: checklistIds },
-        // *** Check for a submission date within the range ***
         submissionDate: {
             $gte: startOfCurrentWeek,
             $lte: endOfCurrentWeek

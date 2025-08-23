@@ -9,7 +9,6 @@ import Sop from '@/models/Sop';
 import SopSubmission from '@/models/SopSubmission';
 import { startOfDay, endOfDay } from 'date-fns';
 
-// NOTE: The code logic is the same, only the file path has changed.
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user || !hasPermission(session.user.role?.permissions || [], PERMISSIONS.SOP_REPORTS_READ)) {
@@ -30,15 +29,19 @@ export async function GET(req: NextRequest) {
     await dbConnect();
 
     try {
-        // 1. Get all active staff members for the tenant
+        // 1. Get all active staff members for the tenant (This query is perfect)
         const staffMembers = await User.find({ tenantId, isActive: true }).populate('roleId', 'displayName').select('name roleId').lean();
 
-        // 2. Get all active checklist-type SOPs for the tenant
-        const checklists = await Sop.find({ tenantId, type: 'checklist', isActive: true }).select('title roles').lean();
-
-        // 3. Get all submissions within the selected date range
         // --- THIS IS THE FIX ---
-        // The .select() method has been removed from this query.
+        // 2. Get all active SOPs that are any of the checklist types for the tenant
+        const checklists = await Sop.find({ 
+            tenantId, 
+            type: { $in: ['daily', 'weekly', 'monthly'] }, // Find docs where type is in this array
+            isActive: true 
+        }).select('title roles').lean();
+        // --- END OF FIX ---
+
+        // 3. Get all submissions within the selected date range (This query is perfect)
         const submissions = await SopSubmission.find({
             tenantId,
             submissionDate: {
@@ -47,7 +50,7 @@ export async function GET(req: NextRequest) {
             }
         }).lean();
         
-        // 4. Return the raw data, which now includes the full submission object.
+        // 4. Return the raw data. The 'checklists' array will now be populated.
         return NextResponse.json({ staff: staffMembers, checklists, submissions });
 
     } catch (error) {
