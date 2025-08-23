@@ -8,13 +8,12 @@ import React, {
     ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Star, TrendingUp, Users, IndianRupee, X, CalendarDays, Sheet, FileDown, PieChart, Send, MessageSquareText } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import { Search, Star, TrendingUp, Users, IndianRupee, X, CalendarDays, Sheet, FileDown, PieChart } from 'lucide-react';
+import { format, parseISO, startOfMonth } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
-import { toast } from 'react-toastify';
 
 // --- Imports for Charting ---
 import { Doughnut } from 'react-chartjs-2';
@@ -40,7 +39,6 @@ interface SummaryData {
     totalCustomers: number;
     revenueGenerated: number;
     avgServiceQuality: string;
-    totalPayouts: number; // --- MODIFIED: Added totalPayouts for the new card
 }
 interface DailyPerformanceRecord {
   date: string;
@@ -53,16 +51,6 @@ interface IncentiveReportData {
     dailyReport: any[];
     monthlyReport: any[];
     staffSummary: any[];
-}
-interface PayoutRecord {
-    _id: string;
-    amount: number;
-    payoutDate: string;
-    notes?: string;
-}
-interface PayoutData {
-    history: PayoutRecord[];
-    totalPaid: number;
 }
 
 const CHART_COLORS = [ '#4f46e5', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899', '#64748b', '#14b8a6', '#f97316', '#a855f7' ];
@@ -99,12 +87,6 @@ const PerformancePage: React.FC = () => {
   const [staffDailyPerformance, setStaffDailyPerformance] = useState<DailyPerformanceRecord[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-
-  // States for Payouts
-  const [staffPayoutData, setStaffPayoutData] = useState<PayoutData | null>(null);
-  const [payoutAmount, setPayoutAmount] = useState<string>('');
-  const [payoutNotes, setPayoutNotes] = useState<string>('');
-  const [isClaiming, setIsClaiming] = useState(false);
 
   const incentiveChartRef = useRef(null);
 
@@ -187,7 +169,6 @@ const PerformancePage: React.FC = () => {
     setIsLoadingDetails(true);
     setErrorDetails(null);
     setStaffDailyPerformance([]);
-    setStaffPayoutData(null);
     try {
       // --- UPDATED: API call uses startDate and endDate ---
       const formattedStartDate = format(startDate, 'yyyy-MM-dd');
@@ -199,7 +180,6 @@ const PerformancePage: React.FC = () => {
       const data = await response.json();
       if (!data.success) throw new Error(data.message || 'API error fetching details.');
       setStaffDailyPerformance(data.details || []);
-      setStaffPayoutData(data.payouts || { history: [], totalPaid: 0 });
     } catch (err: any) {
       setErrorDetails(err.message);
     } finally {
@@ -209,8 +189,6 @@ const PerformancePage: React.FC = () => {
 
   const handleCloseDetails = () => {
     setSelectedStaff(null);
-    setPayoutAmount('');
-    setPayoutNotes('');
   };
 
   const panelSummary = useMemo(() => {
@@ -239,55 +217,6 @@ const PerformancePage: React.FC = () => {
     };
   }, [selectedStaff, incentiveReportData]);
 
-
-  const handleClaimPayout = async () => {
-    if (!selectedStaff || !session?.user?.tenantId) {
-        toast.error("Cannot process payout: Staff or session not found.");
-        return;
-    }
-    const amount = parseFloat(payoutAmount);
-    if (isNaN(amount) || amount <= 0) {
-        toast.error("Please enter a valid positive amount.");
-        return;
-    }
-
-    const earned = modalIncentiveSummary.monthlyAchieved;
-    const paid = staffPayoutData?.totalPaid || 0;
-    const balance = earned - paid;
-
-    if (amount > balance) {
-        toast.error(`Payout amount cannot exceed the current balance of ${formatCurrency(balance)}.`);
-        return;
-    }
-
-    setIsClaiming(true);
-    try {
-        const response = await fetch('/api/payouts', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-tenant-id': session.user.tenantId,
-            },
-            body: JSON.stringify({
-                staffId: selectedStaff.staffId,
-                amount: amount,
-                notes: payoutNotes,
-            }),
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.message || 'Failed to record payout.');
-
-        toast.success('Payout recorded successfully!');
-        setPayoutAmount('');
-        setPayoutNotes('');
-        await handleOpenDetails(selectedStaff); // Refresh modal data
-
-    } catch (error: any) {
-        toast.error(error.message);
-    } finally {
-        setIsClaiming(false);
-    }
-  };
 
   const topPerformersSummary = useMemo(() => {
     if (!performanceData || performanceData.length === 0) {
@@ -373,17 +302,12 @@ const PerformancePage: React.FC = () => {
       </header>
 
       {/* --- SUMMARY CARDS --- */}
-      {/* --- MODIFIED: Grid columns adjusted and new card added --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-        {isLoading ? <><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /></> :
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {isLoading ? <><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /></> :
          error ? <div className="col-span-full text-center p-10 bg-white rounded-xl shadow-sm text-red-500">{error}</div> :
           <>
             <SummaryCard icon={<Users className="text-teal-600" />} title="Total Customers" value={summaryData?.totalCustomers || 0} iconBgColor="bg-teal-100" bgIconColor="text-teal-100"/>
             <SummaryCard icon={<IndianRupee className="text-green-600" />} title="Revenue Generated" value={formatCurrency(summaryData?.revenueGenerated || 0)} iconBgColor="bg-green-100" bgIconColor="text-green-100"/>
-            {/* --- NEW CARD: TOTAL INCENTIVE CLAIMED --- */}
-            {/* This card requires you to update your backend API at /api/performance */}
-            {/* to return a 'totalPayouts' field in the 'summary' object. */}
-            <SummaryCard icon={<Send className="text-orange-600" />} title="Total Incentive Claimed" value={formatCurrency(summaryData?.totalPayouts || 0)} iconBgColor="bg-orange-100" bgIconColor="text-orange-100"/>
             <SummaryCard icon={<Star className="text-amber-600" />} title="Top Service Earner" value={formatCurrency(topPerformersSummary.topService.value)} subValue={topPerformersSummary.topService.name} iconBgColor="bg-amber-100" bgIconColor="text-amber-100"/>
             <SummaryCard icon={<TrendingUp className="text-indigo-600" />} title="Top Product Earner" value={formatCurrency(topPerformersSummary.topProduct.value)} subValue={topPerformersSummary.topProduct.name} iconBgColor="bg-indigo-100" bgIconColor="text-indigo-100"/>
           </>
@@ -465,14 +389,13 @@ const PerformancePage: React.FC = () => {
       {selectedStaff && (
         <ModalPortal>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-60" onClick={handleCloseDetails}>
-              <div className="relative w-full max-w-5xl max-h-[90vh] bg-slate-50 rounded-2xl shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="relative w-full max-w-3xl max-h-[90vh] bg-slate-50 rounded-2xl shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <header className="flex-shrink-0 flex justify-between items-center p-4 border-b border-slate-200 bg-white rounded-t-2xl">
                   <h2 className="text-lg font-semibold text-slate-800">Performance & Incentive Details</h2>
                   <button onClick={handleCloseDetails} className="p-1 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"><X size={24} /></button>
                 </header>
 
-                <div className="flex-grow p-4 sm:p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Left Column */}
+                <div className="flex-grow p-4 sm:p-6 overflow-y-auto">
                     <div className="space-y-6">
                         {/* Staff Header */}
                         <div className="flex items-center p-4 bg-white rounded-xl shadow-sm border border-slate-200">
@@ -497,62 +420,9 @@ const PerformancePage: React.FC = () => {
                             }
                         </div>
 
-                        {/* --- Incentive Payout Section --- */}
-                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                          <h4 className="text-md font-semibold text-slate-800 mb-3">Incentive Payout Tracking</h4>
-                          {isLoadingDetails ? (<div className="py-4 text-center text-slate-500">Loading payout data...</div>) :
-                          errorDetails ? (<div className="py-4 text-center text-red-500">{errorDetails}</div>) :
-                          (<>
-                            <div className="grid grid-cols-3 gap-2 text-center">
-                              <div><p className="text-lg font-bold text-green-600">{formatCurrency(modalIncentiveSummary.monthlyAchieved)}</p><p className="text-xs text-slate-500 uppercase">Total Earned</p></div>
-                              <div><p className="text-lg font-bold text-red-600">{formatCurrency(staffPayoutData?.totalPaid || 0)}</p><p className="text-xs text-slate-500 uppercase">Total Paid</p></div>
-                              <div><p className="text-lg font-bold text-blue-700">{formatCurrency(modalIncentiveSummary.monthlyAchieved - (staffPayoutData?.totalPaid || 0))}</p><p className="text-xs text-slate-500 uppercase">Balance</p></div>
-                            </div>
-                            <div className="mt-4 pt-4 border-t border-slate-200">
-                                <h5 className="text-sm font-semibold text-slate-600 mb-2">Record a New Payout</h5>
-                                <div className="space-y-3">
-                                    <div className="relative">
-                                      <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                      <input type="number" placeholder="Amount (e.g., 500)" value={payoutAmount} onChange={(e) => setPayoutAmount(e.target.value)} className="w-full pl-10 p-2.5 bg-slate-100 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" />
-                                    </div>
-                                    <div className="relative">
-                                      <MessageSquareText className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                      <input type="text" placeholder="Optional notes..." value={payoutNotes} onChange={(e) => setPayoutNotes(e.target.value)} className="w-full pl-10 p-2.5 bg-slate-100 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" />
-                                    </div>
-                                    <button onClick={handleClaimPayout} disabled={isClaiming} className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:bg-indigo-400 disabled:cursor-not-allowed shadow-sm hover:shadow-md">
-                                      <Send size={16} /> {isClaiming ? 'Processing...' : 'Claim Payout'}
-                                    </button>
-                                </div>
-                            </div>
-                           </>)
-                          }
-                        </div>
-                    </div>
-
-                    {/* Right Column */}
-                    <div className="space-y-6">
-                        {/* Payout History */}
-                        <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 max-h-48 overflow-y-auto">
-                            <h4 className="text-md font-semibold text-slate-800 mb-2 px-2 sticky top-0 bg-white py-2">Payout History</h4>
-                            {isLoadingDetails ? (<div className="py-10 text-center text-slate-500">Loading history...</div>) :
-                            staffPayoutData && staffPayoutData.history.length > 0 ? (
-                            <div className="space-y-1 px-1 pb-1">
-                                {staffPayoutData.history.map((payout) => (
-                                <div key={payout._id} className="p-2.5 rounded-lg flex justify-between items-center hover:bg-slate-100 transition-colors">
-                                    <div>
-                                        <p className="font-semibold text-sm text-slate-800">{format(parseISO(payout.payoutDate), 'dd MMM, yyyy')}</p>
-                                        {payout.notes && <p className="text-xs text-slate-500 italic">"{payout.notes}"</p>}
-                                    </div>
-                                    <p className="font-bold text-sm text-green-700">{formatCurrency(payout.amount)}</p>
-                                </div>
-                                ))}
-                            </div>
-                            ) : ( <p className="text-sm text-center text-slate-500 py-10">No payout records found.</p> )}
-                        </div>
-
                         {/* Daily Breakdown */}
-                        <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 max-h-[calc(80vh-15rem)] overflow-y-auto">
-                            <h4 className="text-md font-semibold text-slate-800 mb-3 px-2 sticky top-0 bg-white py-2">Daily Breakdown</h4>
+                        <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 max-h-[45vh] overflow-y-auto">
+                            <h4 className="text-md font-semibold text-slate-800 mb-3 px-2 sticky top-0 bg-white py-2 z-10">Daily Breakdown</h4>
                             {isLoadingDetails ? (<div className="py-10 text-center text-slate-500">Loading daily data...</div>) :
                             errorDetails ? (<div className="py-10 text-center text-red-500">{errorDetails}</div>) :
                             staffDailyPerformance.length > 0 ? (
@@ -567,7 +437,6 @@ const PerformancePage: React.FC = () => {
                                                 <CalendarDays className="w-4 h-4 mr-2 text-indigo-500" />
                                                 {format(parseISO(day.date), 'dd MMM, yyyy')}
                                             </div>
-                                            {/* --- THIS IS THE CORRECTED LINE --- */}
                                             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1 text-center text-xs">
                                                 <div className="p-2 rounded-md bg-blue-100 text-blue-800"><p className="font-bold">{formatCurrency(day.serviceSales)}</p><p className="text-[10px] uppercase">Service</p></div>
                                                 <div className="p-2 rounded-md bg-purple-100 text-purple-800"><p className="font-bold">{formatCurrency(day.productSales)}</p><p className="text-[10px] uppercase">Product</p></div>
