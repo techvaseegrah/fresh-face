@@ -1,22 +1,20 @@
-// src/app/(main)/telecalling/hooks/useTelecallingQueue.ts
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react'; // 1. IMPORT useSession
+import { toast } from 'react-toastify';
 
-// Define the shape of a client object
+// Interfaces remain the same, they are well-defined.
 export interface TelecallingClient {
-  customerId: string;
+  _id: string; // It's better to use _id from MongoDB for consistency
   searchableName: string;
   phoneNumber: string;
   lastVisitDate?: string;
   isCallback: boolean;
   lastServiceNames: string[];
-  // ▼▼▼ NEW: Add the new fields ▼▼▼
   lastStylistName: string;
   lastBillAmount: number;
 }
-
-// Define the shape of the stats object
 export interface TelecallingStats {
   totalCalls: number;
   appointmentsBooked: number;
@@ -24,73 +22,90 @@ export interface TelecallingStats {
 }
 
 export function useTelecallingQueue() {
+  const { data: session } = useSession(); // 2. GET a session instance
   const [clients, setClients] = useState<TelecallingClient[]>([]);
-  const [stats, setStats] = useState<TelecallingStats | null>(null); // State for stats
+  const [stats, setStats] = useState<TelecallingStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // This function fetches BOTH the queue and the stats
   const fetchData = useCallback(async () => {
+    // Don't fetch if the session isn't ready
+    if (!session) return;
+
     setIsLoading(true);
     setError(null);
     try {
-      // Fetch queue and stats in parallel for better performance
+      const headers = { 'x-tenant-id': session.user.tenantId }; // 3. DEFINE headers for reuse
+
       const [queueResponse, statsResponse] = await Promise.all([
-        fetch('/api/telecalling/queue'),
-        fetch('/api/telecalling/stats'),
+        fetch('/api/telecalling/queue', { headers }),
+        fetch('/api/telecalling/stats', { headers }),
       ]);
 
       if (!queueResponse.ok) throw new Error('Failed to fetch the telecalling queue.');
       if (!statsResponse.ok) throw new Error('Failed to fetch telecalling stats.');
 
-      const queueData: TelecallingClient[] = await queueResponse.json();
-      const statsData: TelecallingStats = await statsResponse.json();
+      const queueData = await queueResponse.json();
+      const statsData = await statsResponse.json();
       
-      setClients(queueData);
+      setClients(queueData.queue || []); // Access the 'queue' property from your API response
       setStats(statsData);
     } catch (err: any) {
       setError(err.message);
+      toast.error(err.message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [session]); // 4. ADD session as a dependency
 
-  // Fetch initial data when the hook is first used
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const currentClient = clients.length > 0 ? clients[0] : null;
 
-  // This function logs an outcome, advances the queue, AND updates the stats
-  const logAndProceed = useCallback(async (outcomeData: { outcome: string; notes?: string; callbackDate?: Date; appointmentId?: string; }) => {
-    if (!currentClient) return;
+  const logAndProceed = useCallback(async (outcomeData: { outcome: string; [key: string]: any; }) => {
+    if (!currentClient || !session) return;
+
+    // --- REFINED ERROR HANDLING & LOGIC ---
+    // Keep a reference to the client we are trying to log
+    const clientToLog = currentClient;
+    
+    // Optimistically remove the client from the queue
+    setClients(prevClients => prevClients.slice(1));
 
     try {
       const response = await fetch('/api/telecalling/log', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId: currentClient.customerId, ...outcomeData }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-tenant-id': session.user.tenantId, // Add tenant header
+        },
+        body: JSON.stringify({ customerId: clientToLog._id, ...outcomeData }),
       });
 
-      if (!response.ok) throw new Error('Failed to log the outcome.');
+      if (!response.ok) {
+        const errorBody = await response.json();
+        throw new Error(errorBody.message || 'Failed to log the outcome.');
+      }
 
-      // On success, remove the client from the local state
-      setClients(prevClients => prevClients.slice(1));
-
-      // AND re-fetch the stats to update the dashboard in real-time
-      const statsResponse = await fetch('/api/telecalling/stats');
+      // On success, re-fetch the stats to update the dashboard
+      const statsResponse = await fetch('/api/telecalling/stats', { headers: { 'x-tenant-id': session.user.tenantId } });
       const statsData = await statsResponse.json();
       setStats(statsData);
-
+      
     } catch (err: any) {
+      toast.error(`Error: ${err.message}`);
       setError(err.message);
+
+      // **CRITICAL**: If the API call fails, add the client back to the front of the queue
+      setClients(prevClients => [clientToLog, ...prevClients]);
     }
-  }, [currentClient]);
+  }, [currentClient, session]); // Add session as a dependency
 
   return {
     currentClient,
-    stats, // Expose stats
+    stats,
     isLoading,
     error,
     logAndProceed,

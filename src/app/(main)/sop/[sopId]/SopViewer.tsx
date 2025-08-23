@@ -1,51 +1,64 @@
 'use client';
 
-import { FileText, ListChecks } from 'lucide-react';
-import DOMPurify from 'dompurify';
+import { ListChecks, Check } from 'lucide-react';
 
-export default function SopViewer({ sop }) {
-  // Sanitize HTML content before rendering to prevent XSS attacks
-  const sanitizedContent = typeof window !== 'undefined' ? DOMPurify.sanitize(sop.content) : sop.content;
+// Define a more specific type for the sop prop for better code quality
+interface SopData {
+  _id: string;
+  title: string;
+  description: string;
+  roles: { _id: string; displayName: string }[];
+  checklistItems: { text: string }[];
+}
+
+export default function SopViewer({ sop }: { sop: SopData }) {
+  if (!sop) return null;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="bg-white rounded-lg shadow-lg p-8">
+        {/* Header Section */}
         <div className="flex items-center gap-4 mb-4">
-          {sop.type === 'checklist' ? <ListChecks className="text-blue-500" size={32} /> : <FileText className="text-green-500" size={32} />}
-          <h1 className="text-3xl font-bold">{sop.title}</h1>
+          <ListChecks className="text-blue-500 h-8 w-8 flex-shrink-0" />
+          <h1 className="text-3xl font-bold text-gray-800">{sop.title}</h1>
         </div>
-        <p className="text-lg text-gray-600 mb-6">{sop.description}</p>
-        <div className="mb-6">
-            <h4 className="text-sm font-semibold text-gray-700 mb-1">Assigned Roles:</h4>
-            <div className="flex flex-wrap gap-2">
-            {sop.roles.map(role => (
-                <span key={role._id} className="text-sm bg-gray-200 text-gray-800 px-3 py-1 rounded-full">{role.displayName}</span>
+
+        {/* Description */}
+        {sop.description && (
+          <p className="text-lg text-gray-600 mb-6">{sop.description}</p>
+        )}
+
+        {/* Assigned Roles */}
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Assigned Roles</h2>
+          <div className="flex flex-wrap gap-2">
+            {sop.roles.map((role) => (
+              <span key={role._id} className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded-full">
+                {role.displayName}
+              </span>
             ))}
-            </div>
+          </div>
         </div>
 
         <hr className="my-8" />
         
-        {sop.type === 'document' && (
-          <div>
-            <h2 className="text-2xl font-semibold mb-4">Procedure Steps</h2>
-            <div
-              className="prose lg:prose-xl max-w-none"
-              dangerouslySetInnerHTML={{ __html: sanitizedContent }}
-            />
-          </div>
-        )}
-
-        {sop.type === 'checklist' && (
-          <div>
-            <h2 className="text-2xl font-semibold mb-4">Daily Checklist Items</h2>
-            <ul className="list-disc list-inside space-y-2">
+        {/* Display the list of checklist items */}
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">Checklist Items</h2>
+          {sop.checklistItems && sop.checklistItems.length > 0 ? (
+            <ul className="space-y-3">
               {sop.checklistItems.map((item, index) => (
-                <li key={index} className="text-gray-800 text-lg">{item.text}</li>
+                <li key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-800">{item.text}</span>
+                </li>
               ))}
             </ul>
-          </div>
-        )}
+          ) : (
+            // Show this message if the array is empty
+            <p className="text-gray-500">No checklist items have been defined for this SOP.</p>
+          )}
+        </div>
       </div>
     </div>
   );

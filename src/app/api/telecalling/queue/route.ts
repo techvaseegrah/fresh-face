@@ -3,12 +3,13 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import Appointment from '@/models/Appointment';
-import TelecallingLog from '@/models/TelecallingLog';
 import Customer from '@/models/customermodel';
 import mongoose from 'mongoose';
 import { decrypt } from '@/lib/crypto';
+import Setting from '@/models/Setting'; // 1. IMPORT the Setting model
 
-// Helper function to decrypt customer data safely
+// --- HELPER FUNCTION ---
+// A safe decryption utility that prevents one bad record from crashing the entire API.
 const decryptCustomer = (customer: any) => {
   try {
     return {
@@ -16,7 +17,7 @@ const decryptCustomer = (customer: any) => {
       phoneNumber: customer.phoneNumber ? decrypt(customer.phoneNumber) : 'MISSING_PHONE',
     };
   } catch (error) {
-    console.error(`Failed to decrypt phone for customer ${customer.customerId || customer._id}:`, error);
+    console.error(`Failed to decrypt phone for customer ${customer._id}:`, error);
     return {
       ...customer,
       phoneNumber: 'DECRYPTION_ERROR',
@@ -24,7 +25,12 @@ const decryptCustomer = (customer: any) => {
   }
 };
 
+/**
+ * @description API endpoint to generate an intelligent, prioritized telecalling queue.
+ * It prioritizes due callbacks over general lapsed clients and uses a configurable setting.
+ */
 export async function GET(request: Request) {
+  // 1. --- AUTHENTICATION & SETUP ---
   const session = await getServerSession(authOptions);
   if (!session?.user?.tenantId) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
@@ -33,97 +39,98 @@ export async function GET(request: Request) {
   try {
     await dbConnect();
     const tenantId = new mongoose.Types.ObjectId(session.user.tenantId);
+    const now = new Date();
 
-    // Define date range for "today"
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    // 1. Get IDs for today's scheduled callbacks
-    const callbackCustomerIds = await TelecallingLog.distinct('customerId', {
+    // 2. --- GATHER IDs FOR PRIORITY 1: DUE CALLBACKS ---
+    const dueCallbacks = await Customer.find({
       tenantId,
-      callbackDate: { $gte: todayStart, $lte: todayEnd },
-    });
+      telecallingStatus: 'Scheduled',
+      callbackDate: { $lte: now },
+    }).select('_id').lean();
 
-    // 2. Get IDs for customers with a "final" outcome today (excluding scheduling outcomes)
-    const contactedTodayIds = await TelecallingLog.distinct('customerId', {
-        tenantId,
-        createdAt: { $gte: todayStart, $lte: todayEnd },
-        outcome: { $nin: ['Specific Date', 'Will Come Later'] } 
-    });
-    
-    const contactedTodayObjectIds = contactedTodayIds.map(id => new mongoose.Types.ObjectId(id));
+    const dueCallbackIds = dueCallbacks.map(c => c._id);
 
-    // --- PRIORITY 1: FETCH FULL DETAILS FOR TODAY'S UNCONTACTED CALLBACKS ---
+    // 3. --- EXECUTE AGGREGATION FOR PRIORITY 1 ---
     let callbacks: any[] = [];
-    if (callbackCustomerIds.length > 0) {
-      const priorityCustomerObjectIds = callbackCustomerIds.map(id => new mongoose.Types.ObjectId(id));
-      
-      const uncontactedCallbackIds = priorityCustomerObjectIds.filter(
-        id => !contactedTodayObjectIds.some(contactedId => contactedId.equals(id))
-      );
-
-      if (uncontactedCallbackIds.length > 0) {
-        // Run a dedicated aggregation for these priority clients to get their last appointment details
-        callbacks = await Appointment.aggregate([
-          { $match: { customerId: { $in: uncontactedCallbackIds } } },
-          { $sort: { appointmentDateTime: -1 } },
-          { $group: { _id: "$customerId", lastAppointment: { $first: "$$ROOT" } } },
-          { $replaceRoot: { newRoot: "$lastAppointment" } },
-          { $lookup: { from: 'serviceitems', localField: 'serviceIds', foreignField: '_id', as: 'lastServiceDetails' } },
-          { $lookup: { from: 'staffs', localField: 'stylistId', foreignField: '_id', as: 'lastStylistInfo' } },
-          { $lookup: { from: "customers", localField: "customerId", foreignField: "_id", as: "customerInfo" } },
-          { $unwind: "$customerInfo" },
-          { $unwind: { path: '$lastStylistInfo', preserveNullAndEmptyArrays: true } },
-          { $project: {
-              _id: 0, customerId: "$customerId", lastVisitDate: "$appointmentDateTime", searchableName: "$customerInfo.searchableName",
-              phoneNumber: "$customerInfo.phoneNumber", isCallback: true,
-              lastServiceNames: { $map: { input: "$lastServiceDetails", as: "service", in: "$$service.name" } },
-              lastStylistName: { $ifNull: ["$lastStylistInfo.name", "N/A"] },
-              lastBillAmount: { $ifNull: ["$finalAmount", 0] },
-          }}
-        ]);
-      }
+    if (dueCallbackIds.length > 0) {
+      callbacks = await Appointment.aggregate([
+        { $match: { customerId: { $in: dueCallbackIds } } },
+        { $sort: { appointmentDateTime: -1 } },
+        { $group: { _id: "$customerId", lastAppointment: { $first: "$$ROOT" } } },
+        { $replaceRoot: { newRoot: "$lastAppointment" } },
+        { $lookup: { from: 'serviceitems', localField: 'serviceIds', foreignField: '_id', as: 'lastServiceDetails' } },
+        { $lookup: { from: 'staffs', localField: 'stylistId', foreignField: '_id', as: 'lastStylistInfo' } },
+        { $lookup: { from: "customers", localField: "customerId", foreignField: "_id", as: "customerInfo" } },
+        { $unwind: "$customerInfo" },
+        { $unwind: { path: '$lastStylistInfo', preserveNullAndEmptyArrays: true } },
+        { $project: {
+            _id: "$customerInfo._id",
+            searchableName: "$customerInfo.searchableName",
+            phoneNumber: "$customerInfo.phoneNumber",
+            lastVisitDate: "$appointmentDateTime",
+            isCallback: { $literal: true },
+            lastServiceNames: { $map: { input: "$lastServiceDetails", as: "service", in: "$$service.name" } },
+            lastStylistName: { $ifNull: ["$lastStylistInfo.name", "N/A"] },
+            lastBillAmount: { $ifNull: ["$finalAmount", 0] },
+        }}
+      ]);
     }
 
-    // --- PRIORITY 2: FETCH LAPSED CLIENTS ---
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // 4. --- EXECUTE AGGREGATION FOR PRIORITY 2: LAPSED CLIENTS ---
+
+    // 2. REPLACE the hardcoded value with a dynamic database lookup
+    const setting = await Setting.findOne({ tenantId, key: 'telecallingDays' }).lean();
+    // Use the value from the database, or fall back to a safe default if it's not set.
+    const lapsedClientDays = setting?.value || 30; 
     
-    // The exclusion list contains ALL today's callbacks and ALL already contacted clients
-    const allExclusionIds = [...new Set([...callbackCustomerIds.map(id => id.toString()), ...contactedTodayIds.map(id => id.toString())])].map(id => new mongoose.Types.ObjectId(id));
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(now.getDate() - lapsedClientDays);
+    
+    const exclusionIds = dueCallbackIds;
 
     const lapsed = await Appointment.aggregate([
-      { $match: { tenantId, status: "Paid", appointmentDateTime: { $exists: true }, customerId: { $nin: allExclusionIds } } },
+      { $match: { 
+          tenantId, 
+          status: "Paid", 
+          appointmentDateTime: { $exists: true }, 
+          customerId: { $nin: exclusionIds }
+      }},
       { $sort: { appointmentDateTime: -1 } },
       { $group: {
-          _id: "$customerId", lastVisitDate: { $first: "$appointmentDateTime" },
-          lastServiceIds: { $first: "$serviceIds" }, lastStylistId: { $first: "$stylistId" },
+          _id: "$customerId",
+          lastVisitDate: { $first: "$appointmentDateTime" },
+          lastServiceIds: { $first: "$serviceIds" },
+          lastStylistId: { $first: "$stylistId" },
           lastFinalAmount: { $first: "$finalAmount" },
       }},
-      { $match: { lastVisitDate: { $lt: thirtyDaysAgo } } },
-      { $lookup: { from: 'serviceitems', localField: 'lastServiceIds', foreignField: '_id', as: 'lastServiceDetails' } },
-      { $lookup: { from: 'staffs', localField: 'lastStylistId', foreignField: '_id', as: 'lastStylistInfo' } },
       { $lookup: { from: "customers", localField: "_id", foreignField: "_id", as: "customerInfo" } },
       { $unwind: "$customerInfo" },
+      { $lookup: { from: 'serviceitems', localField: 'lastServiceIds', foreignField: '_id', as: 'lastServiceDetails' } },
+      { $lookup: { from: 'staffs', localField: 'lastStylistId', foreignField: '_id', as: 'lastStylistInfo' } },
       { $unwind: { path: '$lastStylistInfo', preserveNullAndEmptyArrays: true } },
-      { $match: { "customerInfo.doNotDisturb": { $ne: true } } },
+      { $match: { 
+          lastVisitDate: { $lt: thirtyDaysAgo }, // This now uses the dynamic date
+          "customerInfo.doNotDisturb": { $ne: true },
+          "customerInfo.telecallingStatus": "Pending"
+      }},
       { $project: {
-          _id: 0, customerId: "$_id", lastVisitDate: 1, searchableName: "$customerInfo.searchableName",
-          phoneNumber: "$customerInfo.phoneNumber", isCallback: { $literal: false },
+          _id: "$customerInfo._id",
+          searchableName: "$customerInfo.searchableName",
+          phoneNumber: "$customerInfo.phoneNumber",
+          lastVisitDate: "$lastVisitDate",
+          isCallback: { $literal: false },
           lastServiceNames: { $map: { input: "$lastServiceDetails", as: "service", in: "$$service.name" } },
           lastStylistName: { $ifNull: ["$lastStylistInfo.name", "N/A"] },
           lastBillAmount: { $ifNull: ["$lastFinalAmount", 0] },
       }},
-      { $limit: 20 },
+      { $limit: 100 },
     ]);
 
-    // --- COMBINE, DECRYPT, AND SEND RESPONSE ---
+    // 5. --- COMBINE, DECRYPT, AND SEND RESPONSE ---
     const combinedList = [...callbacks, ...lapsed];
     const decryptedCustomers = combinedList.map(decryptCustomer);
 
-    return NextResponse.json(decryptedCustomers);
+    return NextResponse.json({ queue: decryptedCustomers });
 
   } catch (error) {
     console.error('Failed to fetch telecalling queue:', error);

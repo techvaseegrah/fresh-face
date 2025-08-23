@@ -7,15 +7,15 @@ const MONGODB_URI ="mongodb+srv://dhanush:Dhanush@cluster0.7ymwvxu.mongodb.net/t
 // --- PERMISSIONS TO ADD ---
 // These must exactly match the values in your src/lib/permissions.ts file.
 const PERMISSIONS_TO_ADD = [
-  'BUDGET_READ',
-  'BUDGET_MANAGE',
-  'SOP_MANAGE',
-  'SOP_READ',
-  'SOP_REPORTS_READ',
-  'SOP_SUBMIT_CHECKLIST',
-  'TELECALLING_PERFORM',
-  'TELECALLING_VIEW_DASHBOARD',
-  'TELECALLING_VIEW_REPORTS',
+  'budget:read',
+  'budget:manage',
+  'telecalling:perform',
+  'telecalling:view_dashboard',
+  'telecalling:reports:read',
+  'sop:read',
+  'sop:manage',
+  'sop:submit_checklist',
+  'sop:reports:read',
 ];
 
 async function runPermissionMigration() {

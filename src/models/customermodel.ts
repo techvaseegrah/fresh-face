@@ -76,6 +76,15 @@ const customerSchema = new Schema<ICustomer, ICustomerModel>({
   // --- Status ---
   isActive: { type: Boolean, default: true },
   doNotDisturb: { type: Boolean, default: false },
+  telecallingStatus: {
+    type: String,
+    enum: ['Pending', 'Contacted', 'Scheduled', 'Uninterested'], // Allowed values
+    default: 'Pending', // <-- CRITICAL: All new customers will start as 'Pending'
+  },
+  callbackDate: {
+    type: Date,
+    required: false, // This field should only exist when status is 'Scheduled'
+  },
 }, 
 { 
   timestamps: true // Automatically adds createdAt and updatedAt
