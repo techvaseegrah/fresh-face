@@ -31,8 +31,8 @@ export default function StoreManagementPage() {
   const renderContent = () => {
     if (!activeTab) {
       return (
-        <div className="flex items-center justify-center h-full bg-gray-100 p-8">
-            <div className="text-center bg-white p-12 rounded-lg shadow-sm">
+        <div className="flex items-center justify-center h-full bg-gray-100 p-4 sm:p-8">
+            <div className="text-center bg-white p-6 md:p-12 rounded-lg shadow-sm">
                 <h2 className="text-2xl font-bold text-gray-800">Access Denied</h2>
                 <p className="text-gray-500 mt-3 max-w-md mx-auto">
                     You do not have the necessary permissions to manage any of the shop sections. Please contact an administrator if you believe this is an error.
@@ -57,37 +57,39 @@ export default function StoreManagementPage() {
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       {/* Page Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="text-center md:text-left">
             <h1 className="text-3xl font-bold text-gray-900">Shop Management</h1>
             <p className="text-sm text-gray-500 mt-0.5">Manage products, services, and stylists.</p>
           </div>
           
           {/* Tab Navigation */}
           {visibleTabs.length > 0 && (
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                {visibleTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                      activeTab === tab.id
-                        ? "bg-indigo-600 text-white shadow"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    <tab.icon className="h-5 w-5" />
-                    {tab.label}
-                  </button>
-                ))}
+              <div className="flex-shrink-0 w-full md:w-auto">
+                <div className="flex justify-center bg-gray-100 rounded-lg p-1">
+                  {visibleTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center justify-center w-full gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                        activeTab === tab.id
+                          ? "bg-indigo-600 text-white shadow"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      <tab.icon className="h-5 w-5" />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
           )}
         </div>
       </div>
 
       {/* Main Content Area: Fills remaining vertical space and handles overflow */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-auto">
         {renderContent()}
       </div>
     </div>

@@ -1,4 +1,4 @@
-// FILE: src/lib/inventoryManager.ts - MULTI-TENANT REFACTORED VERSION
+// FILE: src/lib/inventoryManager.ts - MULTI-TENANT REFACTORED VERSION (FIXED)
 
 import mongoose from 'mongoose';
 import Product, { IProduct } from '@/models/Product';
@@ -33,21 +33,31 @@ export class InventoryManager {
     const service = await ServiceItem.findOne({ _id: serviceId, tenantId }).populate('consumables.product', 'name sku unit');
     if (!service || !service.consumables?.length) return [];
 
-    return service.consumables.map(consumable => {
-      const product = consumable.product as IProduct;
-      let quantityToUse = consumable.quantity.default || 0;
-      if (customerGender === Gender.Male && typeof consumable.quantity.male === 'number') {
-        quantityToUse = consumable.quantity.male;
-      } else if (customerGender === Gender.Female && typeof consumable.quantity.female === 'number') {
-        quantityToUse = consumable.quantity.female;
-      }
+    // FIX: Filter out consumables where the populated product is null (i.e., it was deleted)
+    return service.consumables
+      .filter(consumable => {
+        if (!consumable.product) {
+          console.warn(`Data Integrity Warning: ServiceItem '${service.name}' (${service._id}) has a consumable referencing a deleted Product. Skipping it.`);
+          return false;
+        }
+        return true;
+      })
+      .map(consumable => {
+        // At this point, consumable.product is guaranteed to be a valid, non-null object.
+        const product = consumable.product as IProduct;
+        let quantityToUse = consumable.quantity.default || 0;
+        if (customerGender === Gender.Male && typeof consumable.quantity.male === 'number') {
+          quantityToUse = consumable.quantity.male;
+        } else if (customerGender === Gender.Female && typeof consumable.quantity.female === 'number') {
+          quantityToUse = consumable.quantity.female;
+        }
 
-      return {
-        productId: product._id.toString(),
-        productName: product.name,
-        quantityToDeduct: quantityToUse,
-        unit: consumable.unit || product.unit,
-      };
+        return {
+          productId: product._id.toString(),
+          productName: product.name,
+          quantityToDeduct: quantityToUse,
+          unit: consumable.unit || product.unit,
+        };
     });
   }
 

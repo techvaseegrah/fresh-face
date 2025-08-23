@@ -1,8 +1,9 @@
+// app/layout.tsx
 'use client'
 
 import { Inter } from "next/font/google"
 import "./globals.css"
-import Sidebar from "@/components/Sidebar"
+// DO NOT import Sidebar here
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { SessionProvider } from "next-auth/react"
@@ -17,12 +18,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} bg-gray-50`}>
+        {/* SessionProvider wraps everything, which is correct */}
         <SessionProvider>
-          <Sidebar />
-          <main className="ml-0 p-8">
-            {children}
-          </main>
-          {/* React Datepicker Portal Root */}
+          {/* 
+            The `children` here will be your actual pages.
+            For routes like /login, it will be the login page.
+            For routes like /dashboard, it will be the MainLayout, which in turn contains the dashboard page.
+          */}
+          {children}
           
           <ToastContainer
             position="top-right"

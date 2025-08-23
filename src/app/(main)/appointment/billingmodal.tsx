@@ -88,9 +88,22 @@ interface BillingModalProps {
   onFinalizeAndPay: (payload: FinalizeBillingPayload) => Promise<any>;
 }
 
+// A placeholder for the customer history modal
 const CustomerHistoryModal: React.FC<{ isOpen: boolean; onClose: () => void; customer: CustomerForModal | null; }> = ({ isOpen, onClose, customer }) => {
-    return null; 
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex justify-center items-center p-4">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg">
+                <h2 className="text-xl font-semibold mb-4">History for {customer?.name}</h2>
+                <p className="text-gray-600">A full implementation would fetch and display the customer's visit and purchase history here.</p>
+                <div className="mt-6 text-right">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Close</button>
+                </div>
+            </div>
+        </div>
+    );
 };
+
 
 const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointment, customer, stylist, onFinalizeAndPay }) => {
   const [billItems, setBillItems] = useState<BillLineItem[]>([]);
@@ -186,11 +199,9 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
       setCustomerIsMember(isMember);
       setShowMembershipGrantOption(!isMember);
 
-      // --- THIS IS THE FIX FOR THE CastError ---
       if (isCorrectionMode && appointment.invoiceId) {
         setIsLoadingBill(true);
         try {
-          // Check if invoiceId is an object to get its _id, otherwise use it directly.
           const invoiceIdToFetch = typeof appointment.invoiceId === 'object' 
             ? (appointment.invoiceId as { _id: string })._id 
             : appointment.invoiceId;
@@ -199,7 +210,6 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
             throw new Error("A valid Invoice ID could not be found in the appointment data.");
           }
 
-          // This fetch call will now use the correct ID string
           const res = await tenantFetch(`/api/billing/${invoiceIdToFetch}`);
           const result = await res.json();
           if (!res.ok) throw new Error(result.message || 'Failed to fetch invoice.');
@@ -267,60 +277,61 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4">
-        <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
-          {/* Header section is fine */}
-          <div className="flex justify-between items-center mb-4 pb-3 border-b">
-            <div>
-              <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold">{isCorrectionMode ? "Correct Bill for: " : "Bill for: "}<span className="text-indigo-600">{customer.name}</span></h2>
+      <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-2 sm:p-4">
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow-xl w-full max-w-6xl h-full max-h-[95vh] flex flex-col">
+          {/* Header section */}
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4 pb-3 border-b">
+            <div className="w-full">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <h2 className="text-lg sm:text-xl font-semibold">{isCorrectionMode ? "Correct Bill: " : "Bill for: "}<span className="text-indigo-600">{customer.name}</span></h2>
                 {customer.phoneNumber && <button onClick={() => setShowCustomerHistory(true)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="View Customer History"><ClockIcon className="w-5 h-5" /></button>}
               </div>
-              <p className="text-sm text-gray-500 mt-1">Service by: <span className="font-medium">{stylist.name}</span>
-                {customerIsMember && <span className="ml-3 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full font-semibold">Member Pricing Applied</span>}
-                {membershipGranted && <span className="ml-2 px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">Membership Granted</span>}
-              </p>
+              <div className="text-sm text-gray-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                 <span>Service by: <span className="font-medium">{stylist.name}</span></span>
+                {customerIsMember && <span className="px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full font-semibold">Member Pricing</span>}
+                {membershipGranted && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold">Membership Granted</span>}
+              </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
               {showMembershipGrantOption && !customerIsMember && (<button onClick={() => setIsGrantingMembership(prev => !prev)} title="Grant Membership" className="px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 font-semibold transition-all duration-200 border border-yellow-500 text-yellow-700 bg-transparent hover:bg-yellow-50"><UserPlusIcon className="w-4 h-4" /><span>{isGrantingMembership ? 'Cancel' : 'Grant Membership'}</span></button>)}
               <button onClick={onClose} className="text-gray-500 text-2xl hover:text-gray-700">×</button>
             </div>
           </div>
-          {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
+          {error && <div className="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm flex-shrink-0">{error}</div>}
           
           {isLoadingBill ? (
             <div className="flex-grow flex items-center justify-center"><div className="text-center"><div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-black rounded-full mx-auto mb-4" /><p className="text-gray-600 font-medium">Loading Bill Details...</p></div></div>
           ) : (
             <>
-              {isCorrectionMode && (<div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg"><h4 className="text-sm font-semibold text-blue-800 mb-2">Payment History</h4><div className="flex justify-between text-blue-700"><span>Previously Paid:</span><span className="font-bold">₹{originalAmountPaid.toFixed(2)}</span></div></div>)}
-              {isGrantingMembership && (<div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg transition-all"><div className="flex items-end gap-4"><div className="flex-grow"><label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant</label><div className="relative"><input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} placeholder="Enter unique barcode" autoFocus className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 uppercase ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} /><QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" /></div>{isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}{!isBarcodeValid && membershipBarcode.trim() && <p className="text-xs text-red-600 mt-1">Barcode already in use.</p>}</div><button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode || isLoadingFee || membershipFee === null} className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-2 min-w-[200px] justify-center">{isLoadingFee ? 'Loading Fee...' : `Confirm & Grant (₹${membershipFee})`}</button></div></div>)}
+              {isCorrectionMode && (<div className="flex-shrink-0 mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg"><h4 className="text-sm font-semibold text-blue-800 mb-2">Payment History</h4><div className="flex justify-between text-blue-700"><span>Previously Paid:</span><span className="font-bold">₹{originalAmountPaid.toFixed(2)}</span></div></div>)}
+              {isGrantingMembership && (<div className="flex-shrink-0 mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg transition-all"><div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-4"><div className="flex-grow"><label className="block text-sm font-medium text-yellow-800 mb-1">Enter Membership Barcode to Grant</label><div className="relative"><input type="text" value={membershipBarcode} onChange={(e) => setMembershipBarcode(e.target.value.toUpperCase())} placeholder="Enter unique barcode" autoFocus className={`w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2 uppercase ${!isBarcodeValid ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'}`} /><QrCodeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" /></div>{isCheckingBarcode && <p className="text-xs text-gray-500 mt-1">Checking...</p>}{!isBarcodeValid && membershipBarcode.trim() && <p className="text-xs text-red-600 mt-1">Barcode already in use.</p>}</div><button onClick={handleGrantMembership} disabled={!membershipBarcode.trim() || !isBarcodeValid || isCheckingBarcode || isLoadingFee || membershipFee === null} className="px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-md hover:bg-yellow-700 disabled:opacity-50 flex items-center gap-2 justify-center">{isLoadingFee ? 'Loading Fee...' : `Confirm & Grant (₹${membershipFee})`}</button></div></div>)}
               <div className="flex-grow overflow-y-auto pr-2 space-y-4">
-                <div><h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>{billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div> : <div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left">Item / Assigned Staff</th><th className="px-4 py-3 text-center w-24">Qty</th><th className="px-4 py-3 text-right">Unit Price</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center w-24">Action</th></tr></thead><tbody>{billItems.map((item, idx) => (
-                  <tr key={`${item.itemId}-${idx}`} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">
+                <div><h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({billItems.length})</h3>{billItems.length === 0 ? <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-lg"><p>No items in bill.</p></div> : <div className="md:border md:rounded-lg md:overflow-hidden"><table className="w-full text-sm"><thead className="hidden md:table-header-group bg-gray-50"><tr><th className="px-4 py-3 text-left">Item / Assigned Staff</th><th className="px-4 py-3 text-center w-24">Qty</th><th className="px-4 py-3 text-right">Unit Price</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3 text-center w-24">Action</th></tr></thead><tbody className="block md:table-row-group">{billItems.map((item, idx) => (
+                  <tr key={`${item.itemId}-${idx}`} className="block md:table-row mb-4 md:mb-0 p-3 border rounded-lg md:border-0 md:border-b md:p-0 hover:bg-gray-50">
+                    <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3" data-label="Item">
                         <div><span className="font-medium">{item.name}</span><span className={`ml-2 text-xs capitalize px-1.5 py-0.5 rounded-full ${item.itemType === 'service' ? 'bg-blue-100 text-blue-800' : item.itemType === 'product' ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'}`}>{item.itemType}</span></div>
                         {customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number' && <div className="text-xs text-green-600 mt-1"><span className="line-through text-gray-400">₹{item.unitPrice.toFixed(2)}</span><span className="ml-2">Member Price</span></div>}
                         <div className="mt-2">
-                          <select value={item.staffId || ''} onChange={(e) => handleItemStaffChange(idx, e.target.value)} className="w-full max-w-[200px] p-1 border rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:outline-none" disabled={isLoadingStaff}><option value="" disabled>-- Assign Staff --</option>{availableStaff.map(staff => (<option key={staff._id} value={staff._id}>{staff.name}</option>))}</select>
+                          <select value={item.staffId || ''} onChange={(e) => handleItemStaffChange(idx, e.target.value)} className="w-full max-w-full sm:max-w-[200px] p-1 border rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:outline-none" disabled={isLoadingStaff}><option value="" disabled>-- Assign Staff --</option>{availableStaff.map(staff => (<option key={staff._id} value={staff._id}>{staff.name}</option>))}</select>
                         </div>
                     </td>
-                    <td className="px-4 py-3 text-center"><input type="number" min="1" value={item.quantity} onChange={(e) => handleQuantityChange(idx, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border rounded text-center" /></td>
-                    <td className="px-4 py-3 text-right">₹{((customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right font-semibold">₹{item.finalPrice.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-center"><button onClick={() => handleRemoveItem(idx)} disabled={item.isRemovable === false} className="text-red-500 hover:text-red-700 text-xs px-2 py-1 hover:bg-red-50 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">Remove</button></td>
+                    <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-center" data-label="Qty"><span className="font-bold md:hidden">Qty: </span><input type="number" min="1" value={item.quantity} onChange={(e) => handleQuantityChange(idx, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border rounded text-center inline-block ml-2 md:ml-0" /></td>
+                    <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-right" data-label="Unit Price"><span className="font-bold md:hidden">Unit Price: </span>₹{((customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice).toFixed(2)}</td>
+                    <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-right font-semibold" data-label="Total"><span className="font-bold md:hidden">Total: </span>₹{item.finalPrice.toFixed(2)}</td>
+                    <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-center mt-2 md:mt-0" data-label="Action"><button onClick={() => handleRemoveItem(idx)} disabled={item.isRemovable === false} className="w-full md:w-auto text-red-500 hover:text-red-700 text-xs px-2 py-2 md:py-1 bg-red-50 md:bg-transparent hover:bg-red-100 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">Remove</button></td>
                   </tr>
                 ))}</tbody></table></div>}</div>
                 {isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
                 {inventoryImpact?.inventoryImpact?.length > 0 && (<div className="p-4 bg-blue-50 border border-blue-200 rounded-lg"><h4 className="text-sm font-medium text-blue-800 mb-3">Inventory Impact ({inventoryImpact.customerGender})</h4><div className="space-y-2">{inventoryImpact.inventoryImpact.map((impact: any, index: number) => (<div key={index} className={`p-3 rounded-md border text-sm ${impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' : impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}><div className="flex justify-between items-center"><div><span className="font-medium">{impact.productName}</span><div className="text-xs text-gray-600">Current: {impact.currentQuantity.toFixed(1)}{impact.unit} → After: {(impact.currentQuantity - impact.usageQuantity).toFixed(1)}{impact.unit}</div></div><div className="text-right"><div className="font-medium">-{impact.usageQuantity.toFixed(1)}{impact.unit}</div>{impact.alertLevel !== 'ok' && <div className={`text-xs font-bold ${impact.alertLevel === 'insufficient' ? 'text-red-600' : 'text-orange-600'}`}>{impact.alertLevel.toUpperCase()}!</div>}</div></div></div>))}</div></div>)}
                 <div className="border-t pt-4"><label htmlFor="itemSearch" className="block text-sm font-medium text-gray-700 mb-1">Add Additional Items</label><div className="relative"><input ref={searchInputRef} id="itemSearch" type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search services or products..." className="w-full px-3 py-2 border rounded-md" autoComplete="off" />{(isSearching || searchResults.length > 0) && (<ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-48 overflow-y-auto shadow-lg">{isSearching && <li className="px-3 py-2 text-sm text-gray-500">Searching...</li>}{!isSearching && searchResults.map(item => (<li key={item.id} onClick={() => handleAddItemToBill(item)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer"><div className="flex justify-between items-center"><div><span className="font-medium">{item.type === 'product' && item.categoryName ? `${item.categoryName} - ${item.name}` : item.name}</span><span className={`text-xs ml-2 px-1.5 py-0.5 rounded-full ${item.type === 'service' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{item.type}</span></div><div className="text-right"><div>₹{item.price.toFixed(2)}</div>{customerIsMember && item.membershipRate && item.type === 'service' && <div className="text-xs text-green-600">Member: ₹{item.membershipRate.toFixed(2)}</div>}</div></div></li>))}{!isSearching && searchResults.length === 0 && searchQuery.length >= 2 && <li className="px-3 py-2 text-sm text-gray-500">No items found.</li>}</ul>)}</div></div>
                 <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff (Processor) <span className="text-red-500">*</span></label><select id="billingStaff" value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={isLoadingProcessors}><option value="">{isLoadingProcessors ? 'Loading staff...' : 'Select billing staff'}</option>{billingProcessors.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
-                <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{discountType === 'fixed' ? '₹' : '%'}</span><input type="number" min="0" value={discount || ''} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => setDiscountType('fixed')} className={`px-4 py-2 text-sm font-semibold border transition-colors ${discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (₹)</button><button onClick={() => setDiscountType('percentage')} className={`px-4 py-2 text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
-                <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Enter New Payment</h4><div className="grid grid-cols-2 gap-4">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={newPaymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}<div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm col-span-2"><div className="flex justify-between"><span>Total New Payment:</span><span className="font-semibold">₹{totals.totalNewPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>{isCorrectionMode ? 'Amount Due:' : 'Bill Total:'}</span><span className="font-semibold">₹{totals.displayTotal.toFixed(2)}</span></div>{totals.changeDue > 0 ? (<div className="flex justify-between mt-1 text-blue-600 font-bold"><span>Change Due:</span><span>₹{totals.changeDue.toFixed(2)}</span></div>) : (<div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Remaining Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div>)}</div></div></div>
+                <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{discountType === 'fixed' ? '₹' : '%'}</span><input type="number" min="0" value={discount || ''} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => setDiscountType('fixed')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border transition-colors ${discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (₹)</button><button onClick={() => setDiscountType('percentage')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
+                <div className="pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-3">Enter New Payment</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div className="grid grid-cols-2 gap-4 sm:col-span-2">{(['cash', 'card', 'upi', 'other'] as const).map(method => (<div key={method}><label className="block text-xs font-medium text-gray-600 mb-1 capitalize">{method}</label><input type="number" min="0" step="0.01" value={newPaymentDetails[method] || ''} onChange={e => handlePaymentChange(method, e.target.value)} className="w-full px-3 py-2 border rounded-md text-sm" placeholder="0.00" /></div>))}</div><div className="mt-2 p-3 bg-gray-50 rounded-lg text-sm sm:col-span-2"><div className="flex justify-between"><span>Total New Payment:</span><span className="font-semibold">₹{totals.totalNewPaid.toFixed(2)}</span></div><div className="flex justify-between mt-1"><span>{isCorrectionMode ? 'Amount Due:' : 'Bill Total:'}</span><span className="font-semibold">₹{totals.displayTotal.toFixed(2)}</span></div>{totals.changeDue > 0 ? (<div className="flex justify-between mt-1 text-blue-600 font-bold"><span>Change Due:</span><span>₹{totals.changeDue.toFixed(2)}</span></div>) : (<div className={`flex justify-between mt-1 ${Math.abs(totals.balance) < 0.01 ? 'text-green-600' : 'text-red-600'}`}><span>Remaining Balance:</span><span className="font-bold">₹{totals.balance.toFixed(2)}</span></div>)}</div></div></div>
                 <div className="mt-4"><label htmlFor="billingNotes" className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea id="billingNotes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 border rounded-md" placeholder="Any additional notes..." /></div>
               </div>
-              <div className="mt-auto pt-4 border-t">
-                <div className="grid grid-cols-2 gap-8 items-end">
-                  <div className="space-y-2 text-sm">
+              <div className="mt-auto pt-3 border-t flex-shrink-0">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-8 items-end">
+                  <div className="space-y-1.5 text-sm order-2 md:order-1">
                     <div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>₹{totals.subtotalBeforeDiscount.toFixed(2)}</span></div>
                     {totals.membershipSavings > 0 && (<div className="flex justify-between text-green-600 font-semibold"><span>Membership Savings:</span><span>-₹{totals.membershipSavings.toFixed(2)}</span></div>)}
                     {totals.calculatedDiscount > 0 && (<div className="flex justify-between text-orange-600 font-semibold"><span>Manual Discount:</span><span>-₹{totals.calculatedDiscount.toFixed(2)}</span></div>)}
@@ -331,15 +342,15 @@ const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, appointmen
                       </>
                     )}
                   </div>
-                  <div className="text-right">
+                  <div className="text-right order-1 md:order-2">
                     {totals.refundDue > 0 ? (
-                      <><div className="text-gray-600 font-semibold text-blue-600">Refund Due</div><div className="text-3xl font-bold text-blue-600">₹{totals.refundDue.toFixed(2)}</div></>
+                      <><div className="text-sm text-gray-600 font-semibold text-blue-600">Refund Due</div><div className="text-2xl md:text-3xl font-bold text-blue-600">₹{totals.refundDue.toFixed(2)}</div></>
                     ) : (
-                      <><div className="text-gray-600 font-semibold">{isCorrectionMode ? 'Amount Due Now' : 'Grand Total'}</div><div className="text-3xl font-bold text-gray-900">₹{totals.displayTotal.toFixed(2)}</div></>
+                      <><div className="text-sm text-gray-600 font-semibold">{isCorrectionMode ? 'Amount Due Now' : 'Grand Total'}</div><div className="text-2xl md:text-3xl font-bold text-gray-900">₹{totals.displayTotal.toFixed(2)}</div></>
                     )}
                   </div>
                 </div>
-                <div className="mt-6 flex justify-end space-x-3">
+                <div className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 gap-2 sm:gap-0">
                   <button onClick={onClose} className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300" disabled={isLoading}>Cancel</button>
                   <button onClick={handleFinalizeClick} className="px-6 py-2 text-sm bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 min-w-[120px]" disabled={isLoading || isLoadingBill || billItems.length === 0 || !selectedStaffId || (billItems.some(item => !item.staffId)) || totals.balance > 0.01}>
                     {isLoading ? <div className="flex items-center justify-center"><div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />Processing...</div> : isCorrectionMode ? 'Save Correction' : 'Complete Payment'}

@@ -6,7 +6,7 @@ import dbConnect from '@/lib/dbConnect';
 import Sop from '@/models/Sop';
 import SopSubmission from '@/models/SopSubmission';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
-import { startOfDay } from 'date-fns';
+import { startOfMonth, endOfMonth } from 'date-fns';
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -18,12 +18,15 @@ export async function GET(req: NextRequest) {
     if (tenantId instanceof NextResponse) return tenantId;
     
     await dbConnect();
-    const today = startOfDay(new Date());
+
+    const now = new Date();
+    const startOfCurrentMonth = startOfMonth(now); 
+    const endOfCurrentMonth = endOfMonth(now);
 
     // --- FIX IS HERE ---
     const checklists = await Sop.find({
         tenantId,
-        type: 'daily',
+        type: 'monthly',
         isActive: true,
         roles: { $in: [session.user.role.id] },
     })
@@ -38,8 +41,11 @@ export async function GET(req: NextRequest) {
 
     const submissions = await SopSubmission.find({
         tenantId,
-        submissionDate: today,
-        sop: { $in: checklistIds }
+        sop: { $in: checklistIds },
+        submissionDate: {
+            $gte: startOfCurrentMonth,
+            $lte: endOfCurrentMonth
+        }
     }).lean();
 
     const result = checklists.map(checklist => {

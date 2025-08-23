@@ -137,8 +137,6 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
 
   if (!isOpen) return null
 
-  // --- FIX APPLIED HERE ---
-  // Wrapped the return strings in backticks (`) to create valid template literals.
   const getTitle = () => {
     const action = entityToEdit ? "Edit" : "Add New"
     switch (entityType) {
@@ -155,17 +153,17 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-slate-50/50">
-          <h2 className="text-xl font-semibold text-blue-900">{getTitle()}</h2>
+        <div className="flex-shrink-0 flex items-center justify-between p-4 sm:p-6 border-b border-slate-200 bg-slate-50/50">
+          <h2 className="text-lg sm:text-xl font-semibold text-blue-900">{getTitle()}</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-lg transition-colors duration-150">
             <XMarkIcon className="h-5 w-5 text-slate-500" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
           <form onSubmit={handleSubmit} className="space-y-6">
             {(entityType === "brand" || entityType === "subcategory") && (
               <div>
@@ -297,7 +295,7 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
                 </div>
 
                 {calculatedTotal > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-sm font-medium text-blue-900">
@@ -308,7 +306,7 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
                           {formData.unit || "units"} each
                         </div>
                       </div>
-                      <div className="text-2xl font-bold text-blue-600">{calculatedTotal}</div>
+                      <div className="text-xl sm:text-2xl font-bold text-blue-600">{calculatedTotal}</div>
                     </div>
                   </div>
                 )}
@@ -316,17 +314,17 @@ export default function EntityFormModal({ isOpen, onClose, onSave, entityType, e
             )}
 
             {/* Footer */}
-            <div className="flex justify-end gap-3 pt-6 border-t border-slate-200">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4 sm:pt-6 border-t border-slate-200">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors duration-150"
+                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors duration-150"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors duration-150 shadow-sm"
+                className="w-full sm:w-auto px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors duration-150 shadow-sm"
               >
                 Save
               </button>
