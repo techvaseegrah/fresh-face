@@ -168,12 +168,12 @@ const StaffMonthlySummaryModal: React.FC<{
                     </div>
                 </div>
 
-                <div className="p-6 grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <div className="bg-green-100 p-4 rounded-lg text-center border border-green-200"><p className="text-sm text-green-700 font-medium">Present Days</p><p className="text-3xl font-bold text-green-800">{presentDays}</p></div>
-                    <div className="bg-red-100 p-4 rounded-lg text-center border border-red-200"><p className="text-sm text-red-700 font-medium">Absent Days</p><p className="text-3xl font-bold text-red-800">{absentDays}</p></div>
-                    <div className="bg-blue-100 p-4 rounded-lg text-center border border-blue-200"><p className="text-sm text-blue-700 font-medium">On Leave</p><p className="text-3xl font-bold text-blue-800">{leaveDays}</p></div>
-                    <div className="bg-purple-100 p-4 rounded-lg text-center border border-purple-200"><p className="text-sm text-purple-700 font-medium">Total OT Hours</p><p className="text-3xl font-bold text-purple-800">{totalOvertimeHours}</p></div>
-                    <div className="bg-cyan-100 p-4 rounded-lg text-center border border-cyan-200"><p className="text-sm text-cyan-700 font-medium">Week Offs</p><p className="text-3xl font-bold text-cyan-800">{weekOffDays}</p></div>
+                <div className="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                    <div className="bg-green-100 p-3 sm:p-4 rounded-lg text-center border border-green-200"><p className="text-xs sm:text-sm text-green-700 font-medium">Present</p><p className="text-2xl sm:text-3xl font-bold text-green-800">{presentDays}</p></div>
+                    <div className="bg-red-100 p-3 sm:p-4 rounded-lg text-center border border-red-200"><p className="text-xs sm:text-sm text-red-700 font-medium">Absent</p><p className="text-2xl sm:text-3xl font-bold text-red-800">{absentDays}</p></div>
+                    <div className="bg-blue-100 p-3 sm:p-4 rounded-lg text-center border border-blue-200"><p className="text-xs sm:text-sm text-blue-700 font-medium">On Leave</p><p className="text-2xl sm:text-3xl font-bold text-blue-800">{leaveDays}</p></div>
+                    <div className="bg-purple-100 p-3 sm:p-4 rounded-lg text-center border border-purple-200"><p className="text-xs sm:text-sm text-purple-700 font-medium">OT Hours</p><p className="text-2xl sm:text-3xl font-bold text-purple-800">{totalOvertimeHours}</p></div>
+                    <div className="bg-cyan-100 p-3 sm:p-4 rounded-lg text-center border border-cyan-200 col-span-2 sm:col-span-1 md:col-span-1"><p className="text-xs sm:text-sm text-cyan-700 font-medium">Week Offs</p><p className="text-2xl sm:text-3xl font-bold text-cyan-800">{weekOffDays}</p></div>
                 </div>
                 <div className="px-6 py-4 bg-gray-50 border-t flex justify-end">
                     <Button variant="danger" onClick={onClose}>Close</Button>
@@ -269,17 +269,8 @@ const ApplyWeekOffModal: React.FC<{ staffMembers: StaffMember[]; attendanceRecor
 
 const Attendance: React.FC = () => {
   const { data: session } = useSession();
-
-  // --- PERMISSION CHECK START ---
-  // This section determines if the current user has the right to see the action buttons.
-  // `userPermissions` will be an array like ["dashboard:read", "staff:read"]
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
-  
-  // `canManageAttendance` becomes true only if "staff:attendance:manage" is in the userPermissions array.
-  // For your "Fox" user, this is currently `false`.
   const canManageAttendance = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_ATTENDANCE_MANAGE), [userPermissions]);
-  // --- PERMISSION CHECK END ---
-
   const { staffMembers, loadingStaff, attendanceRecordsFE, loadingAttendance, errorAttendance, fetchAttendanceRecords, checkInStaff, checkOutStaff, startTemporaryExit, endTemporaryExit, applyWeekOff, removeWeekOff } = useStaff();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -305,41 +296,23 @@ const Attendance: React.FC = () => {
 
   useEffect(() => {
     const fetchAllSettings = async () => {
-      if (!session?.user?.tenantId) {
-        return; 
-      }
-      
+      if (!session?.user?.tenantId) return; 
       setSettingsLoading(true);
-
-      const headers = new Headers({
-        'Content-Type': 'application/json',
-        'x-tenant-id': session.user.tenantId,
-      });
-
+      const headers = new Headers({ 'Content-Type': 'application/json', 'x-tenant-id': session.user.tenantId });
       try {
         const [shopSettingsResponse, positionHoursResponse] = await Promise.all([
           fetch('/api/settings', { headers }),
           fetch('/api/settings/position-hours', { headers })
         ]);
-
         const shopSettingsResult = await shopSettingsResponse.json();
-        if (shopSettingsResult.success && shopSettingsResult.data?.settings) {
-          setDailyRequiredHours(shopSettingsResult.data.settings.defaultDailyHours);
-        } else {
-          throw new Error(shopSettingsResult.error || "Failed to fetch default settings.");
-        }
-
+        if (shopSettingsResult.success && shopSettingsResult.data?.settings) { setDailyRequiredHours(shopSettingsResult.data.settings.defaultDailyHours); } 
+        else { throw new Error(shopSettingsResult.error || "Failed to fetch default settings."); }
         const positionHoursResult = await positionHoursResponse.json();
         if (positionHoursResult.success && Array.isArray(positionHoursResult.data)) {
             const map = new Map<string, number>();
-            positionHoursResult.data.forEach((setting: { positionName: string, requiredHours: number }) => {
-                map.set(setting.positionName, setting.requiredHours);
-            });
+            positionHoursResult.data.forEach((setting: { positionName: string, requiredHours: number }) => { map.set(setting.positionName, setting.requiredHours); });
             setPositionHoursMap(map);
-        } else if (!positionHoursResult.success) {
-            console.warn("Could not load position-specific hour settings:", positionHoursResult.error);
-        }
-
+        } else if (!positionHoursResult.success) { console.warn("Could not load position-specific hour settings:", positionHoursResult.error); }
       } catch (error) {
         console.error("Error fetching settings:", error);
         toast.error(error instanceof Error ? error.message : "Could not load required hour settings.");
@@ -347,135 +320,31 @@ const Attendance: React.FC = () => {
         setSettingsLoading(false);
       }
     };
-
     fetchAllSettings();
   }, [session]); 
   
-  const todayAttendanceMap = useMemo(() => {
-    const map = new Map<string, AttendanceRecordTypeFE>();
-    const todayStart = startOfDay(new Date());
-    for (const record of attendanceRecordsFE) {
-      if (isEqual(startOfDay(record.date), todayStart)) {
-        map.set(record.staff.id, record);
-      }
-    }
-    return map;
-  }, [attendanceRecordsFE]);
-
-  const monthlyAttendanceMap = useMemo(() => {
-    const map = new Map<string, AttendanceRecordTypeFE>();
-    for (const record of attendanceRecordsFE) {
-      const key = `${record.staff.id}-${format(record.date, 'yyyy-MM-dd')}`;
-      map.set(key, record);
-    }
-    return map;
-  }, [attendanceRecordsFE]);
-
+  const todayAttendanceMap = useMemo(() => { const map = new Map<string, AttendanceRecordTypeFE>(); const todayStart = startOfDay(new Date()); for (const record of attendanceRecordsFE) { if (isEqual(startOfDay(record.date), todayStart)) { map.set(record.staff.id, record); } } return map; }, [attendanceRecordsFE]);
+  const monthlyAttendanceMap = useMemo(() => { const map = new Map<string, AttendanceRecordTypeFE>(); for (const record of attendanceRecordsFE) { const key = `${record.staff.id}-${format(record.date, 'yyyy-MM-dd')}`; map.set(key, record); } return map; }, [attendanceRecordsFE]);
   const activeStaffMembers = useMemo(() => staffMembers.filter((staff: StaffMember) => staff.status === 'active'), [staffMembers]);
-  
-  const filteredStaff = useMemo(() => {
-    if (!searchTerm) {
-      return activeStaffMembers;
-    }
-    const lowercasedFilter = searchTerm.toLowerCase();
-    return activeStaffMembers.filter((staff: StaffMemberWithId) => 
-        staff.name.toLowerCase().includes(lowercasedFilter) ||
-        (staff.staffIdNumber && staff.staffIdNumber.includes(lowercasedFilter))
-    );
-  }, [activeStaffMembers, searchTerm]);
-
+  const filteredStaff = useMemo(() => { if (!searchTerm) { return activeStaffMembers; } const lowercasedFilter = searchTerm.toLowerCase(); return activeStaffMembers.filter((staff: StaffMemberWithId) => staff.name.toLowerCase().includes(lowercasedFilter) || (staff.staffIdNumber && staff.staffIdNumber.includes(lowercasedFilter))); }, [activeStaffMembers, searchTerm]);
   const daysInMonth = useMemo(() => eachDayOfInterval({ start: startOfMonth(currentMonthDate), end: endOfMonth(currentMonthDate) }), [currentMonthDate]);
   const goToPreviousMonth = () => setCurrentMonthDate(prev => subMonths(prev, 1));
   const goToNextMonth = () => setCurrentMonthDate(prev => addMonths(prev, 1));
+  const handleCalendarCellClick = (staffId: string, day: Date) => { if (day.getTime() > new Date().getTime()) return; const key = `${staffId}-${format(day, 'yyyy-MM-dd')}`; const record = monthlyAttendanceMap.get(key); if (record) { if (record.status === 'week_off') { setWeekOffToRemove(record); } else { setSelectedRecordForDetail(record); } } };
   
-  const handleCalendarCellClick = (staffId: string, day: Date) => {
-    if (day.getTime() > new Date().getTime()) return;
-    const key = `${staffId}-${format(day, 'yyyy-MM-dd')}`;
-    const record = monthlyAttendanceMap.get(key);
-    if (record) {
-      if (record.status === 'week_off') {
-        setWeekOffToRemove(record);
-      } else {
-        setSelectedRecordForDetail(record);
-      }
-    }
-  };
-  
-  const getMonthlyAttendanceIcon = (staffId: string, day: Date): React.ReactNode => {
-    const key = `${staffId}-${format(day, 'yyyy-MM-dd')}`;
-    const record = monthlyAttendanceMap.get(key);
-    
-    let icon: React.ReactNode = null;
-    let title = "";
-
-    if (!record) {
-      if (isWeekend(day)) { title = "Weekend"; icon = <span className="block h-2 w-2 rounded-sm bg-gray-200" />; } 
-      else if (day.getTime() > new Date().setHours(23, 59, 59, 999)) { title = "Future"; icon = <span className="block h-5 w-5" />; } 
-      else if (isToday(day)) { title = "Not Recorded"; icon = <Info className="h-4 w-4 text-gray-400" />; } 
-      else { title = "Absent"; icon = <XCircle className="h-5 w-5 text-red-500" />; }
-      return <div className="flex justify-center items-center h-full" title={title}>{icon}</div>;
-    }
-    
-    switch (record.status) {
-      case 'present': case 'incomplete': title = `View details for ${record.staff.name}`; icon = <CheckCircle className={`h-5 w-5 ${record.isWorkComplete ? 'text-green-500' : 'text-orange-400'}`} />; break;
-      case 'absent': title = `View details for ${record.staff.name}`; icon = <XCircle className="h-5 w-5 text-red-500" />; break;
-      case 'late': title = `View details for ${record.staff.name}`; icon = <AlertTriangle className="h-5 w-5 text-yellow-500" />; break;
-      case 'on_leave': title = `View details for ${record.staff.name}`; icon = <Calendar className="h-5 w-5 text-blue-500" />; break;
-      case 'week_off': title = `Click to edit/remove week off for ${record.staff.name}`; icon = <Bed className="h-5 w-5 text-cyan-500" />; break;
-      default: icon = <span className="block h-2 w-2 rounded-full bg-gray-300" />;
-    }
-    return <div className="flex justify-center items-center h-full w-full cursor-pointer rounded-lg hover:bg-purple-100 transition-colors" title={title} onClick={() => handleCalendarCellClick(staffId, day)}>{icon}</div>;
-  };
-
-  const handleConfirmRemoveWeekOff = async () => {
-    if (!weekOffToRemove) return;
-    try {
-        await removeWeekOff(weekOffToRemove.id);
-        toast.success(`Week off for ${weekOffToRemove.staff.name} has been removed.`);
-    } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to remove week off.");
-    } finally {
-        setWeekOffToRemove(null);
-    }
-  };
-  
+  const getMonthlyAttendanceIcon = (staffId: string, day: Date): React.ReactNode => { const key = `${staffId}-${format(day, 'yyyy-MM-dd')}`; const record = monthlyAttendanceMap.get(key); let icon: React.ReactNode = null; let title = ""; if (!record) { if (isWeekend(day)) { title = "Weekend"; icon = <span className="block h-2 w-2 rounded-sm bg-gray-200" />; } else if (day.getTime() > new Date().setHours(23, 59, 59, 999)) { title = "Future"; icon = <span className="block h-5 w-5" />; } else if (isToday(day)) { title = "Not Recorded"; icon = <Info className="h-4 w-4 text-gray-400" />; } else { title = "Absent"; icon = <XCircle className="h-5 w-5 text-red-500" />; } return <div className="flex justify-center items-center h-full" title={title}>{icon}</div>; } switch (record.status) { case 'present': case 'incomplete': title = `View details for ${record.staff.name}`; icon = <CheckCircle className={`h-5 w-5 ${record.isWorkComplete ? 'text-green-500' : 'text-orange-400'}`} />; break; case 'absent': title = `View details for ${record.staff.name}`; icon = <XCircle className="h-5 w-5 text-red-500" />; break; case 'late': title = `View details for ${record.staff.name}`; icon = <AlertTriangle className="h-5 w-5 text-yellow-500" />; break; case 'on_leave': title = `View details for ${record.staff.name}`; icon = <Calendar className="h-5 w-5 text-blue-500" />; break; case 'week_off': title = `Click to edit/remove week off for ${record.staff.name}`; icon = <Bed className="h-5 w-5 text-cyan-500" />; break; default: icon = <span className="block h-2 w-2 rounded-full bg-gray-300" />; } return <div className="flex justify-center items-center h-full w-full cursor-pointer rounded-lg hover:bg-purple-100 transition-colors" title={title} onClick={() => handleCalendarCellClick(staffId, day)}>{icon}</div>; };
+  const handleConfirmRemoveWeekOff = async () => { if (!weekOffToRemove) return; try { await removeWeekOff(weekOffToRemove.id); toast.success(`Week off for ${weekOffToRemove.staff.name} has been removed.`); } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to remove week off."); } finally { setWeekOffToRemove(null); } };
   const calculateFrontendWorkingMinutes = useCallback((attendance: AttendanceRecordTypeFE): number => { let totalMinutes = 0; if (attendance.checkIn && attendance.checkOut) { return attendance.totalWorkingMinutes; } else if (attendance.checkIn && !attendance.checkOut) { totalMinutes = differenceInMinutes(new Date(), attendance.checkIn); } let tempExitDeduction = 0; (attendance.temporaryExits || []).forEach((exit: TemporaryExitTypeFE) => { if (!exit.isOngoing && exit.endTime) { tempExitDeduction += exit.durationMinutes; } else if (exit.isOngoing) { tempExitDeduction += differenceInMinutes(new Date(), exit.startTime); } }); return Math.max(0, totalMinutes - tempExitDeduction); }, []);
-  
-  const handleCheckIn = async (staff: StaffMember) => { 
-    try { 
-      await checkInStaff(staff.id, dailyRequiredHours); 
-      toast.success('Successfully checked in!'); 
-    } catch (err) { 
-      toast.error(err instanceof Error ? err.message : 'Check-in failed'); 
-    } 
-  };
-  
-  const handleCheckOutAttempt = async (attendanceId: string, staffId: string, staffName: string) => {
-    const attendance = todayAttendanceMap.get(staffId);
-    if (!attendance || attendance.checkOut) return;
-
-    if (attendance.temporaryExits?.some((exit: TemporaryExitTypeFE) => exit.isOngoing)) {
-        toast.error("Please end the ongoing temporary exit before checking out.");
-        return;
-    }
-    
-    const estimatedMinutes = attendance.checkOut ? attendance.totalWorkingMinutes : calculateFrontendWorkingMinutes(attendance);
-    const requiredMinutes = attendance.requiredMinutes || (dailyRequiredHours * 60);
-    
-    if (estimatedMinutes < requiredMinutes) {
-        setPendingCheckOutData({ attendanceId, staffName, requiredHours: requiredMinutes / 60 });
-        setShowConfirmModal(true);
-    } else {
-        await confirmCheckOut(attendanceId, requiredMinutes / 60);
-    }
-  };
-
+  const handleCheckIn = async (staff: StaffMember) => { try { await checkInStaff(staff.id, dailyRequiredHours); toast.success('Successfully checked in!'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Check-in failed'); } };
+  const handleCheckOutAttempt = async (attendanceId: string, staffId: string, staffName: string) => { const attendance = todayAttendanceMap.get(staffId); if (!attendance || attendance.checkOut) return; if (attendance.temporaryExits?.some((exit: TemporaryExitTypeFE) => exit.isOngoing)) { toast.error("Please end the ongoing temporary exit before checking out."); return; } const estimatedMinutes = attendance.checkOut ? attendance.totalWorkingMinutes : calculateFrontendWorkingMinutes(attendance); const requiredMinutes = attendance.requiredMinutes || (dailyRequiredHours * 60); if (estimatedMinutes < requiredMinutes) { setPendingCheckOutData({ attendanceId, staffName, requiredHours: requiredMinutes / 60 }); setShowConfirmModal(true); } else { await confirmCheckOut(attendanceId, requiredMinutes / 60); } };
   const confirmCheckOut = async (attendanceId: string, requiredHours: number) => { try { await checkOutStaff(attendanceId, requiredHours); toast.success('Successfully checked out!'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Check-out failed'); } finally { setPendingCheckOutData(null); setShowConfirmModal(false); } };
   const handleOpenTempExitModal = (attendanceId: string) => { const att = [...todayAttendanceMap.values()].find(a => a.id === attendanceId); if (!att || att.checkOut || (att.temporaryExits || []).some((e: TemporaryExitTypeFE) => e.isOngoing)) { toast.error("Cannot start temp exit: Staff already checked out or an exit is ongoing."); return; } setSelectedAttendanceIdForTempExit(attendanceId); setShowTempExitModal(true); setTempExitReason(''); };
   const handleSubmitTempExit = async () => { if (!selectedAttendanceIdForTempExit || !tempExitReason.trim()) { toast.error("A reason is required to start a temporary exit."); return; } try { await startTemporaryExit(selectedAttendanceIdForTempExit, tempExitReason.trim()); toast.success('Temporary exit started.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Starting temp exit failed'); } finally { setShowTempExitModal(false); setTempExitReason(''); setSelectedAttendanceIdForTempExit(null); } };
   const handleEndTempExit = async (attendanceId: string, tempExitId: string) => { try { await endTemporaryExit(attendanceId, tempExitId); toast.success('Temporary exit ended.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Ending temp exit failed'); } };
   const getTodayAttendance = (staffIdToFind: string): AttendanceRecordTypeFE | undefined => { return todayAttendanceMap.get(staffIdToFind); };
   const handleStaffSummaryClick = (staff: StaffMember) => { setSelectedStaffForSummary(staff); };
+
+  const mobileCardCellStyle = "block lg:table-cell py-2 px-4 lg:py-4 lg:px-6 text-sm text-right lg:text-left before:content-[attr(data-label)] before:font-bold before:float-left lg:before:content-none";
 
   return (
     <div className="space-y-8 p-4 md:p-8 bg-gray-50 min-h-screen">
@@ -487,13 +356,12 @@ const Attendance: React.FC = () => {
           <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <input type="text" placeholder="Search by staff name or ID..." className="pl-12 pr-4 py-2.5 w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
-        <div className="flex items-center gap-3">
-          {/* PERMISSION CHECK: This button only appears if `canManageAttendance` is true */}
-          {canManageAttendance && (
-            <Button onClick={() => setShowWeekOffModal(true)}>Apply Week Off</Button>
-          )}
-          <label htmlFor="dailyHours" className="text-sm font-medium text-gray-700 whitespace-nowrap">Shop Default Hours:</label>
-          <input type="number" id="dailyHours" value={settingsLoading ? '...' : dailyRequiredHours} readOnly className="w-20 border-gray-300 rounded-lg shadow-sm bg-gray-100 sm:text-sm px-3 py-2 text-gray-900 font-semibold" />
+        <div className="flex flex-wrap items-center justify-between md:justify-end gap-3">
+          {canManageAttendance && (<Button onClick={() => setShowWeekOffModal(true)}>Apply Week Off</Button>)}
+          <div className="flex items-center gap-2">
+            <label htmlFor="dailyHours" className="text-sm font-medium text-gray-700 whitespace-nowrap">Shop Hours:</label>
+            <input type="number" id="dailyHours" value={settingsLoading ? '...' : dailyRequiredHours} readOnly className="w-20 border-gray-300 rounded-lg shadow-sm bg-gray-100 sm:text-sm px-3 py-2 text-gray-900 font-semibold" />
+          </div>
         </div>
       </div>
 
@@ -507,9 +375,9 @@ const Attendance: React.FC = () => {
       {!(loadingAttendance || settingsLoading || loadingStaff) && (
         <>
         <Card title={`Today's Attendance (${format(new Date(), 'eeee, MMMM d')})`} className="!p-0 overflow-hidden shadow-lg rounded-xl border">
-          <div>
-            <table className="min-w-full table-fixed">
-              <thead className="bg-gray-50">
+          <div className="overflow-x-auto">
+            <table className="min-w-full w-full block lg:table">
+              <thead className="hidden lg:table-header-group bg-gray-50">
                 <tr>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[20%]">Staff</th>
                     <th className="px-4 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[8%]">Staff ID</th>
@@ -518,128 +386,91 @@ const Attendance: React.FC = () => {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[10%]">Working Time</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[10%]">Required</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-[13%]">Temp Exits</th>
-                    {/* PERMISSION CHECK: The entire "Actions" column only appears if `canManageAttendance` is true */}
-                    {canManageAttendance && (
-                      <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-[15%]">Actions</th>
-                    )}                
-                    </tr>
+                    {canManageAttendance && (<th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider w-[15%]">Actions</th>)}                
+                </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="block lg:table-row-group bg-white lg:divide-y lg:divide-gray-200">
                 {filteredStaff.map((staff) => { 
                   const todayAttendance = getTodayAttendance(staff.id); 
                   const workingMinutes = todayAttendance ? (todayAttendance.checkOut ? todayAttendance.totalWorkingMinutes : calculateFrontendWorkingMinutes(todayAttendance)) : 0;
-                  
                   const requiredMinutesForStaff = todayAttendance?.requiredMinutes || (dailyRequiredHours * 60);
-                  
                   const remainingMinutes = Math.max(0, requiredMinutesForStaff - workingMinutes);
                   const ongoingTempExit = todayAttendance?.temporaryExits?.find((exit: TemporaryExitTypeFE) => exit.isOngoing);
                   const staffWithId = staff as StaffMemberWithId;
                   
                   return (
-                    <tr key={staff.id} className="hover:bg-violet-50/70 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                            <Avatar src={staff.image} name={staff.name} className="h-11 w-11" />
-                            <div className="ml-4">
-                                <div className="text-sm font-medium text-gray-900 truncate">{staff.name}</div>
-                                <div className="text-xs text-gray-500">{staff.position}</div>
-                            </div>
-                            </div>
+                    <tr key={staff.id} className="block lg:table-row mb-4 lg:mb-0 border lg:border-none rounded-lg shadow-md lg:shadow-none bg-white">
+                        <td className="p-4 lg:py-4 lg:px-6 whitespace-nowrap block lg:table-cell border-b lg:border-none">
+                            <div className="flex items-center"><Avatar src={staff.image} name={staff.name} className="h-11 w-11" /><div className="ml-4"><div className="text-base font-bold text-gray-900 truncate">{staff.name}</div><div className="text-xs text-gray-500">{staff.position}</div></div></div>
                         </td>
-                        
-                        <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-600">{staffWithId.staffIdNumber || 'N/A'}</td>
-                        
-                        <td className="px-6 py-4 whitespace-nowrap">
-                            {todayAttendance ? ( 
-                            todayAttendance.status === 'week_off' ? 
-                            <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-cyan-100 text-cyan-800">Week Off</span> : 
-                            <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${todayAttendance.isWorkComplete ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
-                                {todayAttendance.status.charAt(0).toUpperCase() + todayAttendance.status.slice(1).replace('_', ' ')}
-                                {!todayAttendance.isWorkComplete && ' (Inc.)'}
-                            </span> 
-                            ) : <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-gray-100 text-gray-800">Not Recorded</span>}
+                        <td data-label="Staff ID:" className={`${mobileCardCellStyle} text-gray-600`}>{staffWithId.staffIdNumber || 'N/A'}</td>
+                        <td data-label="Status:" className={mobileCardCellStyle}>
+                            {todayAttendance ? ( todayAttendance.status === 'week_off' ? <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-cyan-100 text-cyan-800">Week Off</span> : <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${todayAttendance.isWorkComplete ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{todayAttendance.status.charAt(0).toUpperCase() + todayAttendance.status.slice(1).replace('_', ' ')}{!todayAttendance.isWorkComplete && ' (Inc.)'}</span> ) : <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-gray-100 text-gray-800">Not Recorded</span>}
                         </td>
-
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                            <div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> In: {todayAttendance?.checkIn ? format(todayAttendance.checkIn, 'HH:mm') : '—'}</div>
-                            <div><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> Out: {todayAttendance?.checkOut ? format(todayAttendance.checkOut, 'HH:mm') : '—'}</div>
+                        <td data-label="Timings:" className={`${mobileCardCellStyle} text-gray-700`}>
+                            <div className="flex items-center justify-end lg:justify-start"><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> In: {todayAttendance?.checkIn ? format(todayAttendance.checkIn, 'HH:mm') : '—'}</div>
+                            <div className="flex items-center justify-end lg:justify-start mt-1 lg:mt-0"><Clock className="h-4 w-4 text-gray-400 mr-1.5 inline-block" /> Out: {todayAttendance?.checkOut ? format(todayAttendance.checkOut, 'HH:mm') : '—'}</div>
                         </td>
-                        
-                        <td className="px-6 py-4 whitespace-nowrap"><span className="text-sm font-semibold text-gray-900">{formatDuration(workingMinutes)}</span></td>
-
-                        <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`text-sm font-medium ${remainingMinutes > 0 && workingMinutes > 0 && !todayAttendance?.isWorkComplete ? 'text-red-600' : (todayAttendance?.isWorkComplete ? 'text-green-600' : 'text-gray-700')}`}>
+                        <td data-label="Working:" className={`${mobileCardCellStyle} font-semibold text-gray-900`}>{formatDuration(workingMinutes)}</td>
+                        <td data-label="Required:" className={`${mobileCardCellStyle} ${remainingMinutes > 0 && workingMinutes > 0 && !todayAttendance?.isWorkComplete ? 'text-red-600' : (todayAttendance?.isWorkComplete ? 'text-green-600' : 'text-gray-700')}`}>
                             {todayAttendance?.isWorkComplete ? 'Completed' : (remainingMinutes > 0 && workingMinutes > 0 ? `${formatDuration(remainingMinutes)} rem.` : formatDuration(requiredMinutesForStaff))}
-                            </span>
                         </td>
-                        
-                        <td className="px-6 py-4 whitespace-nowrap max-w-xs">
-                            {todayAttendance?.temporaryExits && todayAttendance.temporaryExits.length > 0 && (
-                            <div className="space-y-1.5">
-                                {todayAttendance.temporaryExits.map((exit: TemporaryExitTypeFE) => (
-                                <div key={exit.id} className="text-xs" title={exit.reason ?? undefined}>
-                                    <div className={`flex items-center space-x-1.5 ${exit.isOngoing ? 'text-blue-600 font-semibold animate-pulse' : 'text-gray-500'}`}>
-                                    <span>{format(exit.startTime, 'HH:mm')} - {exit.endTime ? format(exit.endTime, 'HH:mm') : 'Ongoing'}</span>
-                                    {!exit.isOngoing && exit.endTime && (<span className="text-purple-600">({formatDuration(exit.durationMinutes)})</span>)}
-                                    </div>
-                                    {exit.reason && <p className="text-gray-600 truncate">{exit.reason}</p>}
-                                </div>
-                                ))}
-                            </div>
-                            )}
+                        <td data-label="Temp Exits:" className={`${mobileCardCellStyle}`}>
+                            {todayAttendance?.temporaryExits && todayAttendance.temporaryExits.length > 0 ? (<div className="space-y-1.5 text-right lg:text-left">{todayAttendance.temporaryExits.map((exit: TemporaryExitTypeFE) => (<div key={exit.id} className="text-xs" title={exit.reason ?? undefined}><div className={`flex items-center justify-end lg:justify-start space-x-1.5 ${exit.isOngoing ? 'text-blue-600 font-semibold animate-pulse' : 'text-gray-500'}`}><span>{format(exit.startTime, 'HH:mm')} - {exit.endTime ? format(exit.endTime, 'HH:mm') : 'Ongoing'}</span>{!exit.isOngoing && exit.endTime && (<span className="text-purple-600">({formatDuration(exit.durationMinutes)})</span>)}</div>{exit.reason && <p className="text-gray-600 truncate">{exit.reason}</p>}</div>))}</div>) : '—'}
                         </td>
-                        
-                        {/* PERMISSION CHECK: This entire block of buttons only appears if `canManageAttendance` is true */}
                         {canManageAttendance && (
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                            {!todayAttendance ? 
-                                <Button size="sm" icon={<LogIn size={14} />} onClick={() => handleCheckIn(staff)}>Check In</Button> : 
-                            todayAttendance.status === 'week_off' ? 
-                                <span className="text-xs text-cyan-700 bg-cyan-100 px-2 py-1 rounded-md font-semibold">On Week Off</span> : 
-                            <div className="flex justify-end items-center space-x-2">
-                                {!todayAttendance.checkOut && (
-                                <>
-                                    {ongoingTempExit ? 
-                                    <Button size="xs" variant="success" icon={<PauseCircle size={12} />} onClick={() => handleEndTempExit(todayAttendance.id, ongoingTempExit.id)}>End Exit</Button> : 
-                                    <Button size="xs" variant="outline" icon={<PlayCircle size={12} />} onClick={() => handleOpenTempExitModal(todayAttendance.id)} disabled={!!todayAttendance.checkOut}>Temp Exit</Button>
-                                    }
-                                    <Button size="xs" variant="secondary" icon={<LogOut size={12} />} onClick={() => handleCheckOutAttempt(todayAttendance.id, staff.id, staff.name)} disabled={!!todayAttendance.checkOut || !!ongoingTempExit}>Check Out</Button>
-                                </>
-                                )}
-                                {todayAttendance.checkOut && (
-                                <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-md font-semibold">Checked Out</span>
-                                )}
-                            </div>
-                            }
+                            <td className="block lg:table-cell p-4 lg:p-6 whitespace-nowrap text-sm mt-2 lg:mt-0 border-t lg:border-t-0">
+                                <div className="flex justify-end items-center flex-wrap gap-2">{!todayAttendance ? <Button size="sm" icon={<LogIn size={14} />} onClick={() => handleCheckIn(staff)}>Check In</Button> : todayAttendance.status === 'week_off' ? <span className="text-xs text-cyan-700 bg-cyan-100 px-2 py-1 rounded-md font-semibold">On Week Off</span> : <>{!todayAttendance.checkOut && (<>{ongoingTempExit ? <Button size="xs" variant="success" icon={<PauseCircle size={12} />} onClick={() => handleEndTempExit(todayAttendance.id, ongoingTempExit.id)}>End Exit</Button> : <Button size="xs" variant="outline" icon={<PlayCircle size={12} />} onClick={() => handleOpenTempExitModal(todayAttendance.id)} disabled={!!todayAttendance.checkOut}>Temp Exit</Button>}<Button size="xs" variant="secondary" icon={<LogOut size={12} />} onClick={() => handleCheckOutAttempt(todayAttendance.id, staff.id, staff.name)} disabled={!!todayAttendance.checkOut || !!ongoingTempExit}>Check Out</Button></>)}{todayAttendance.checkOut && (<span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-md font-semibold">Checked Out</span>)}</>}</div>
                             </td>
                         )}
-                        </tr>
+                    </tr>
                   );
                 })}
+                 {filteredStaff.length === 0 && (<tr className="block lg:table-row"><td colSpan={canManageAttendance ? 8 : 7} className="text-center py-12 text-gray-500 block lg:table-cell">No staff members found.</td></tr>)}
               </tbody>
             </table>
           </div>
         </Card>
         
-        <div className="flex items-center justify-between mt-8 mb-4">
-            <h2 className="text-2xl font-bold text-gray-800">Monthly Attendance Overview</h2>
-            <div className="flex items-center space-x-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mt-8 mb-4 gap-4">
+            <h2 className="text-2xl font-bold text-gray-800 whitespace-nowrap">Monthly Overview</h2>
+            <div className="flex items-center space-x-2 self-end sm:self-center">
                 <Button variant="outline" size="sm" onClick={goToPreviousMonth} className="!p-2"><ChevronLeft size={16}/></Button>
-                <span className="font-semibold text-gray-700 w-36 text-center">{format(currentMonthDate, 'MMMM yyyy')}</span>
+                <span className="font-semibold text-gray-700 w-32 sm:w-36 text-center">{format(currentMonthDate, 'MMMM yyyy')}</span>
                 <Button variant="outline" size="sm" onClick={goToNextMonth} className="!p-2"><ChevronRight size={16}/></Button>
             </div>
         </div>
         <Card className="!p-0 overflow-hidden shadow-lg rounded-xl border">
           <div className="overflow-x-auto pb-2">
             <table className="min-w-full border-collapse">
-              <thead className="bg-gray-50"><tr><th className="w-52 py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 bg-gray-50/80 backdrop-blur-sm z-10 border-b border-r">Staff</th>{daysInMonth.map((day) => (<th key={format(day, 'd')} className={`w-14 h-14 text-center py-2 text-xs font-semibold uppercase border-b border-l ${isWeekend(day) ? 'text-gray-400 bg-gray-100/50' : isToday(day) ? 'text-purple-700 font-bold bg-purple-50' : 'text-gray-500'}`}><div>{format(day, 'd')}</div><div className="text-[10px] font-normal">{format(day, 'EEE').charAt(0)}</div></th>))}</tr></thead>
+              <thead className="bg-gray-50">
+                <tr className="sticky top-0 z-20 bg-gray-50/80 backdrop-blur-sm">
+                  <th className="w-36 md:w-52 py-3 px-2 md:px-4 text-left text-xs font-semibold text-gray-600 uppercase sticky left-0 z-30 bg-gray-50/80 backdrop-blur-sm border-b border-r">Staff</th>
+                  {daysInMonth.map((day) => (
+                    <th key={format(day, 'd')} className={`w-12 md:w-14 h-14 text-center py-2 text-xs font-semibold uppercase border-b border-l ${isWeekend(day) ? 'text-gray-400 bg-gray-100/50' : isToday(day) ? 'text-purple-700 font-bold bg-purple-50' : 'text-gray-500'}`}>
+                      <div>{format(day, 'd')}</div>
+                      <div className="text-[10px] font-normal">{format(day, 'EEE').charAt(0)}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
               <tbody>
                 {filteredStaff.map((staff) => (
                   <tr key={staff.id} className="border-b border-gray-200 last:border-b-0 group">
-                    <td className="py-2 px-3 sticky left-0 bg-white group-hover:bg-violet-50 z-10 border-r cursor-pointer transition-colors" onClick={() => handleStaffSummaryClick(staff)} title={`View monthly summary for ${staff.name}`}><div className="flex items-center"><Avatar src={staff.image} name={staff.name} className="h-9 w-9 mr-3" /><p className="text-sm font-medium text-gray-800 whitespace-nowrap">{staff.name}</p></div></td>
-                    {daysInMonth.map((day) => (<td key={format(day, 'd')} className="text-center py-2 border-l">{getMonthlyAttendanceIcon(staff.id, day)}</td>))}
+                    <td className="py-2 px-2 md:px-3 sticky left-0 bg-white group-hover:bg-violet-50 z-10 border-r cursor-pointer transition-colors" onClick={() => handleStaffSummaryClick(staff)} title={`View monthly summary for ${staff.name}`}>
+                      <div className="flex items-center">
+                        <Avatar src={staff.image} name={staff.name} className="h-9 w-9 mr-2 md:mr-3 flex-shrink-0" />
+                        <p className="text-sm font-medium text-gray-800 whitespace-nowrap truncate">{staff.name}</p>
+                      </div>
+                    </td>
+                    {daysInMonth.map((day) => (
+                      <td key={format(day, 'd')} className="text-center py-2 border-l">{getMonthlyAttendanceIcon(staff.id, day)}</td>
+                    ))}
                   </tr>
                 ))}
+                 {filteredStaff.length === 0 && (
+                    <tr><td colSpan={daysInMonth.length + 1} className="text-center py-12 text-gray-500">No staff members found for the selected month.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
