@@ -52,11 +52,22 @@ export default function StaffDashboardPage() {
 
     useEffect(() => {
         const fetchData = async () => {
+            if (!session?.user?.tenantId) {
+                // Do not fetch if tenantId is not available
+                return;
+            }
+
             setIsLoading(true);
             setError(null);
             try {
-                // Fetch from the correct API route
-                const res = await fetch('/api/stafflogin-dashboard');
+                // Fetch from the correct API route, now with the tenantId in headers
+                const res = await fetch('/api/stafflogin-dashboard', {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-tenant-id': session.user.tenantId, //  Sending tenantId in the request header
+                    },
+                });
+
                 if (!res.ok) {
                     const errorData = await res.json();
                     throw new Error(errorData.error || 'Failed to load dashboard data');
@@ -73,7 +84,7 @@ export default function StaffDashboardPage() {
         if (status === 'authenticated') {
             fetchData();
         }
-    }, [status]);
+    }, [status, session]); // Add session to the dependency array
 
     if (isLoading) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>;

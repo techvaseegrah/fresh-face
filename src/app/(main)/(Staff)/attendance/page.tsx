@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWeekend, addMonths, subMonths } from 'date-fns';
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Calendar, Bed, CheckCircle, XCircle, AlertTriangle, Info, Target, Clock, Coffee } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWeekend, addMonths, subMonths, startOfDay } from 'date-fns';
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Calendar, Bed, CheckCircle, XCircle, AlertTriangle, Target, Clock, Coffee, PlusCircle, ArrowRight } from 'lucide-react';
 import Button from '@/components/ui/Button';
 
 // --- Type Definitions ---
@@ -16,15 +16,17 @@ interface AttendanceRecord {
     totalWorkingMinutes: number;
     isWorkComplete: boolean;
     requiredMinutes: number;
+    overtimeHours?: number;
+    temporaryExits?: { startTime: string; endTime?: string; durationMinutes: number }[];
 }
 
-// --- Helper Components ---
+// ... (StatCard and formatDuration helpers remain the same) ...
 const StatCard: React.FC<{ icon: React.ReactNode; title: string; value: string; }> = ({ icon, title, value }) => (
-    <div className="bg-white p-5 rounded-xl shadow-sm border flex items-center gap-4">
-        <div className="flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center bg-gray-100 text-gray-600">{icon}</div>
+    <div className="bg-white p-4 rounded-xl shadow-sm border flex flex-col justify-center items-center text-center gap-2">
+        <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center text-gray-600">{icon}</div>
         <div>
             <p className="text-sm text-gray-500 font-medium">{title}</p>
-            <p className="text-2xl font-bold text-gray-800">{value}</p>
+            <p className="text-xl font-bold text-gray-800">{value}</p>
         </div>
     </div>
 );
@@ -36,70 +38,79 @@ const formatDuration = (minutes: number): string => {
     return `${hours}h ${mins}m`;
 };
 
+
 // --- Main Attendance Page Component ---
 export default function StaffAttendancePage() {
-    const { status } = useSession();
+    // ✅ MODIFICATION: Destructure 'data: session' to access tenantId
+    const { status, data: session } = useSession();
     const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
-    const [requiredMonthlyMinutes, setRequiredMonthlyMinutes] = useState(0);
+    const [monthlySummary, setMonthlySummary] = useState({ requiredMonthlyMinutes: 0 });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchAttendanceData = useCallback(async () => {
-        if (status !== 'authenticated') {
-            setIsLoading(false);
-            return;
-        }
+        // ✅ MODIFICATION: Check for session and tenantId before fetching
+        if (status !== 'authenticated' || !session?.user?.tenantId) return;
         setIsLoading(true);
         setError(null);
         try {
             const year = currentMonthDate.getFullYear();
             const month = currentMonthDate.getMonth() + 1;
             
-            // --- ✅ THIS IS THE FIX ---
-            // The API path is changed from '/api/attendance' to the new '/api/staff/attendance'
-            const res = await fetch(`/api/staff/attendance?year=${year}&month=${month}`);
-            
+            // ✅ MODIFICATION: Add the 'x-tenant-id' header to the fetch request
+            const res = await fetch(`/api/staff/attendance?year=${year}&month=${month}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-tenant-id': session.user.tenantId,
+                },
+            });
+
             const data = await res.json();
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || "Failed to fetch data.");
-            }
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to fetch data.");
+            
             setRecords(data.data.records);
-            setRequiredMonthlyMinutes(data.data.summary.requiredMonthlyMinutes);
+            setMonthlySummary(data.data.summary);
+
         } catch (err: any) {
             setError(err.message);
         } finally {
             setIsLoading(false);
         }
-    }, [currentMonthDate, status]);
+    // ✅ MODIFICATION: Add 'session' to the dependency array
+    }, [currentMonthDate, status, session]);
 
     useEffect(() => {
         fetchAttendanceData();
     }, [fetchAttendanceData]);
 
     const monthlyStats = useMemo(() => {
-        const presentDays = records.filter(r => ['present', 'late', 'incomplete'].includes(r.status)).length;
-        const absentDays = records.filter(r => r.status === 'absent').length;
-        const leaveDays = records.filter(r => r.status === 'on_leave').length;
-        const weekOffs = records.filter(r => r.status === 'week_off').length;
         const achievedMinutes = records.reduce((sum, r) => sum + (r.totalWorkingMinutes || 0), 0);
-        return { presentDays, absentDays, leaveDays, weekOffs, achievedMinutes };
-    }, [records]);
-    
-    const attendanceMap = useMemo(() => {
-        const map = new Map<string, AttendanceRecord>();
-        records.forEach(record => {
-            map.set(format(new Date(record.date), 'yyyy-MM-dd'), record);
-        });
-        return map;
-    }, [records]);
+        const totalOvertimeHours = records.reduce((sum, r) => sum + (r.overtimeHours || 0), 0);
+        
+        const presentDays = records.filter(r => (r.status === 'present' || r.status === 'late') && r.isWorkComplete).length;
+        const leaveDays = records.filter(r => r.status === 'on_leave' || (['present', 'late', 'incomplete'].includes(r.status) && !r.isWorkComplete)).length;
+        const weekOffs = records.filter(r => r.status === 'week_off').length;
+        
+        const attendanceMap = new Map(records.map(r => [format(new Date(r.date), 'yyyy-MM-dd'), r]));
+        let absentDays = 0;
+        const today = startOfDay(new Date());
 
-    const daysInMonth = useMemo(() => {
-        return eachDayOfInterval({
-            start: startOfMonth(currentMonthDate),
-            end: endOfMonth(currentMonthDate)
+        eachDayOfInterval({ start: startOfMonth(currentMonthDate), end: endOfMonth(currentMonthDate) }).forEach(day => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const record = attendanceMap.get(dayStr);
+            if (record?.status === 'absent') {
+                absentDays++;
+            } else if (!record && day < today && !isWeekend(day)) {
+                absentDays++;
+            }
         });
-    }, [currentMonthDate]);
+
+        return { presentDays, absentDays, leaveDays, weekOffs, achievedMinutes, totalOvertimeHours };
+    }, [records, currentMonthDate]);
+    
+    const attendanceMap = useMemo(() => new Map(records.map(r => [format(new Date(r.date), 'yyyy-MM-dd'), r])), [records]);
+    const daysInMonth = useMemo(() => eachDayOfInterval({ start: startOfMonth(currentMonthDate), end: endOfMonth(currentMonthDate) }), [currentMonthDate]);
 
     const getDayContent = (day: Date) => {
         const dayStr = format(day, 'yyyy-MM-dd');
@@ -110,20 +121,37 @@ export default function StaffAttendancePage() {
             if (isWeekend(day)) return <div className="text-gray-400">Weekend</div>;
             return <div className="text-red-500 font-semibold flex items-center justify-center gap-1 text-xs"><XCircle size={14} /> Absent</div>;
         }
+
+        const totalExitMinutes = (record.temporaryExits || []).reduce((sum, exit) => sum + exit.durationMinutes, 0);
+
         switch (record.status) {
             case 'present':
             case 'late':
             case 'incomplete':
                 return (
-                    <div className="text-center">
-                        <span className={`font-bold text-lg ${record.isWorkComplete ? 'text-green-600' : 'text-orange-500'}`}>{formatDuration(record.totalWorkingMinutes)}</span>
-                        <div className="text-xs text-gray-500 mt-1">{record.checkIn ? format(new Date(record.checkIn), 'HH:mm') : ''} - {record.checkOut ? format(new Date(record.checkOut), 'HH:mm') : ''}</div>
+                    <div className="text-center text-xs space-y-1 w-full">
+                        <div className={`font-bold text-sm ${record.isWorkComplete ? 'text-green-600' : 'text-orange-500'}`}>{formatDuration(record.totalWorkingMinutes)}</div>
+                        <div className="text-gray-500 flex items-center justify-center gap-1">
+                            {record.checkIn ? format(new Date(record.checkIn), 'HH:mm') : '--'}
+                            <ArrowRight size={10} />
+                            {record.checkOut ? format(new Date(record.checkOut), 'HH:mm') : 'Now'}
+                        </div>
+                        {totalExitMinutes > 0 && (
+                            <div className="text-purple-600 font-medium" title="Temporary Exits">
+                                Exits: {formatDuration(totalExitMinutes)}
+                            </div>
+                        )}
+                        <div className="text-gray-600 font-semibold border-t border-gray-100 pt-1 mt-1">
+                            Req: {formatDuration(record.requiredMinutes)}
+                        </div>
                     </div>
                 );
             case 'on_leave':
                 return <div className="text-blue-500 font-semibold flex items-center justify-center gap-1 text-sm"><Calendar size={14} /> On Leave</div>;
             case 'week_off':
                 return <div className="text-cyan-500 font-semibold flex items-center justify-center gap-1 text-sm"><Bed size={14} /> Week Off</div>;
+            case 'absent':
+                return <div className="text-red-500 font-semibold flex items-center justify-center gap-1 text-xs"><XCircle size={14} /> Absent</div>;
             default:
                 return <div className="text-gray-400">--</div>;
         }
@@ -149,12 +177,14 @@ export default function StaffAttendancePage() {
                 <div className="text-red-600 bg-red-50 p-4 rounded-md flex items-center gap-2"><AlertCircle/> {error}</div>
             ) : (
                 <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-                        <StatCard icon={<Target size={24}/>} title="Target Hours" value={formatDuration(requiredMonthlyMinutes)} />
-                        <StatCard icon={<Clock size={24}/>} title="Achieved Hours" value={formatDuration(monthlyStats.achievedMinutes)} />
-                        <StatCard icon={<CheckCircle size={24}/>} title="Present Days" value={`${monthlyStats.presentDays}`} />
-                        <StatCard icon={<XCircle size={24}/>} title="Absent Days" value={`${monthlyStats.absentDays}`} />
-                        <StatCard icon={<Coffee size={24}/>} title="Leaves / Offs" value={`${monthlyStats.leaveDays + monthlyStats.weekOffs}`} />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                        <StatCard icon={<Target size={24}/>} title="Target Hours" value={formatDuration(monthlySummary.requiredMonthlyMinutes)} />
+                        <StatCard icon={<Clock size={24}/>} title="Achieved" value={formatDuration(monthlyStats.achievedMinutes)} />
+                        <StatCard icon={<PlusCircle size={24}/>} title="OT Hours" value={formatDuration(monthlyStats.totalOvertimeHours * 60)} />
+                        <StatCard icon={<CheckCircle size={24}/>} title="Present" value={`${monthlyStats.presentDays}`} />
+                        <StatCard icon={<XCircle size={24}/>} title="Absent" value={`${monthlyStats.absentDays}`} />
+                        <StatCard icon={<Calendar size={24}/>} title="On Leave" value={`${monthlyStats.leaveDays}`} />
+                        <StatCard icon={<Bed size={24}/>} title="Week Offs" value={`${monthlyStats.weekOffs}`} />
                     </div>
 
                     <div className="bg-white p-6 rounded-xl shadow-sm border">
@@ -166,9 +196,9 @@ export default function StaffAttendancePage() {
                             {Array.from({ length: startOfMonth(currentMonthDate).getDay() }).map((_, i) => <div key={`empty-${i}`} className="border rounded-lg bg-gray-50"></div>)}
                             
                             {daysInMonth.map(day => (
-                                <div key={day.toString()} className={`p-2 border rounded-lg h-28 flex flex-col items-center justify-between text-sm ${isToday(day) ? 'bg-indigo-50 border-indigo-300' : 'bg-white'}`}>
+                                <div key={day.toString()} className={`p-2 border rounded-lg h-32 flex flex-col items-center justify-between text-sm ${isToday(day) ? 'bg-indigo-50 border-indigo-300' : 'bg-white'}`}>
                                     <div className="font-semibold self-start">{format(day, 'd')}</div>
-                                    <div className="flex-grow flex items-center justify-center">{getDayContent(day)}</div>
+                                    <div className="flex-grow flex items-center justify-center w-full">{getDayContent(day)}</div>
                                 </div>
                             ))}
                         </div>

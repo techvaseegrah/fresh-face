@@ -1,19 +1,25 @@
-// /app/api/stafflogin-dashboard/request/route.ts
+// /api/staff/advance-request/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongodb';
-import AdvancePayment from '@/models/advance'; // CRITICAL: Ensure this path is correct
+import AdvancePayment from '@/models/advance';
+import { getTenantIdOrBail } from '@/lib/tenant'; // ✅ 1. IMPORT the helper function
 
 export async function POST(request: NextRequest) {
+  // Session check still ensures the user is an authenticated staff member
   const session = await getServerSession(authOptions);
-
   if (!session?.user?.id || session.user.role.name !== 'staff') {
     return NextResponse.json({ success: false, error: 'Unauthorized: Access denied.' }, { status: 401 });
   }
 
-  const tenantId = session.user.tenantId;
+  // ✅ 2. GET tenantId from request headers using the new function
+  const tenantId = getTenantIdOrBail(request);
+  if (tenantId instanceof NextResponse) {
+    return tenantId; // Return the error response if the header is missing
+  }
+
   const staffId = session.user.id;
 
   try {
@@ -28,14 +34,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'A reason for the advance is required.' }, { status: 400 });
     }
 
-    // ✅ THE FIX IS HERE
-    // We are now including a default value for `repaymentPlan` to match your database schema.
     const newAdvanceRequest = new AdvancePayment({
-      tenantId,
+      tenantId, // ✅ 3. USE the tenantId obtained from the header
       staffId,
       amount,
       reason: reason.trim(),
-      repaymentPlan: 'One-time deduction', // Default value for staff requests
+      repaymentPlan: 'One-time deduction',
       requestDate: new Date(),
       status: 'pending',
     });
@@ -48,14 +52,9 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
 
   } catch (error: any) {
-    console.error('Error creating advance request:', error);
-    // This will now catch the validation error if it still occurs for other reasons
     if (error.name === 'ValidationError') {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
-    if (error instanceof SyntaxError) {
-      return NextResponse.json({ success: false, error: 'Invalid request format.' }, { status: 400 });
-    }
-    return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'An unexpected server error occurred.' }, { status: 500 });
   }
 }

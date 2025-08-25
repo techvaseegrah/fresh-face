@@ -1,8 +1,8 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState, FormEvent } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { 
     LayoutDashboard, LogOut, Loader2, PlusCircle, CalendarPlus, 
@@ -11,12 +11,28 @@ import {
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// --- (Your Modal components, like RequestLeaveModal, should remain here) ---
+const NavLink = ({ href, icon, children }: { href: string, icon: React.ReactNode, children: React.ReactNode }) => {
+    const pathname = usePathname();
+    const isActive = pathname === href;
+    
+    return (
+        <Link 
+            href={href}
+            className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
+                isActive 
+                ? 'bg-indigo-600 text-white font-semibold' 
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+        >
+            {icon}
+            <span>{children}</span>
+        </Link>
+    );
+};
 
 export default function StaffDashboardLayout({ children }: { children: React.ReactNode; }) {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
 
   useEffect(() => {
@@ -25,7 +41,7 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
     }
   }, [status, session, router]);
 
-  if (status === 'loading' || (status === 'authenticated' && session.user.role.name !== 'staff')) {
+  if (status === 'loading' || !session || session.user.role.name !== 'staff') {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-gray-100">
         <Loader2 className="h-12 w-12 animate-spin text-gray-600" />
@@ -36,8 +52,7 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
   return (
     <>
       <ToastContainer theme="colored" position="top-right" />
-      {/* <RequestAdvanceModal ... /> */}
-      {/* <RequestLeaveModal ... /> */}
+      {/* <RequestLeaveModal isOpen={isLeaveModalOpen} onClose={() => setIsLeaveModalOpen(false)} /> */}
 
       <div className="absolute inset-0 flex bg-gray-50">
         <aside className="w-64 bg-white shadow-md flex flex-col">
@@ -51,44 +66,28 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
               </div>
           </div>
           
-          {/* --- Static Navigation, no active state --- */}
           <nav className="flex-1 p-4 space-y-2">
-            <Link href="/staff-dashboard" className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
-              <LayoutDashboard size={20} />
-              <span>Dashboard</span>
-            </Link>
-            <Link href="/attendance" className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
-              <CalendarCheck size={20} />
-              <span>Attendance</span>
-            </Link>
-            <Link href="/performance" className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
-              <BarChart2 size={20} />
-              <span>Performance</span>
-            </Link>
-            <Link href="/incentives" className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
-              <IndianRupee size={20} />
-              <span>Incentives</span>
-            </Link>
-            <Link href="/payouts" className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
-              <Wallet size={20} />
-              <span>Payouts</span>
-            </Link>
-            <Link href="/shifts" className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
-              <Clock size={20} />
-              <span>My Shifts</span>
-            </Link>
+            <NavLink href="/staff-dashboard" icon={<LayoutDashboard size={20} />}>Dashboard</NavLink>
+            <NavLink href="/attendance" icon={<CalendarCheck size={20} />}>Attendance</NavLink>
+            
+            {/* ✅ FIX #1: "Request Advance" is now moved here */}
+            <NavLink href="/advance" icon={<PlusCircle size={20}/>}>Request Advance</NavLink>
+
+            <NavLink href="/performance" icon={<BarChart2 size={20} />}>Performance</NavLink>
+            <NavLink href="/incentives" icon={<IndianRupee size={20} />}>Incentives</NavLink>
+            
+            {/* ✅ FIX #2: "Payouts" is renamed */}
+            <NavLink href="/payouts" icon={<Wallet size={20} />}>Request Incentive Payout</NavLink>
+            
+            <NavLink href="/my-shifts" icon={<Clock size={20} />}>My Shifts</NavLink>
             <hr className="my-2"/>
-            <button onClick={() => setIsLeaveModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors text-left">
+            <button onClick={() => setIsLeaveModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 text-left">
               <CalendarPlus size={20}/> 
               <span>Request Leave</span>
             </button>
-            <button onClick={() => setIsAdvanceModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors text-left">
-              <PlusCircle size={20}/>
-              <span>Request Advance</span>
-            </button>
+            {/* The old "Request Advance" button is now removed from the bottom */}
           </nav>
           
-          {/* --- THE FIX: Restored the missing User Profile & Sign Out section --- */}
           <div className="p-4 border-t">
               <div className="flex items-center gap-3 w-full p-2 rounded-lg mb-2">
                   <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center font-bold">
@@ -101,8 +100,7 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
               </div>
               <button
                   onClick={() => signOut({ callbackUrl: '/login' })}
-                  className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
-                  title="Sign Out"
+                  className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600"
               >
                   <LogOut size={20} />
                   <span>Sign Out</span>
