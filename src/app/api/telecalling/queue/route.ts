@@ -6,10 +6,9 @@ import Appointment from '@/models/Appointment';
 import Customer from '@/models/customermodel';
 import mongoose from 'mongoose';
 import { decrypt } from '@/lib/crypto';
-import Setting from '@/models/Setting'; // 1. IMPORT the Setting model
+import Setting from '@/models/Setting';
 
-// --- HELPER FUNCTION ---
-// A safe decryption utility that prevents one bad record from crashing the entire API.
+// --- HELPER FUNCTION (Unchanged) ---
 const decryptCustomer = (customer: any) => {
   try {
     return {
@@ -27,10 +26,10 @@ const decryptCustomer = (customer: any) => {
 
 /**
  * @description API endpoint to generate an intelligent, prioritized telecalling queue.
- * It prioritizes due callbacks over general lapsed clients and uses a configurable setting.
+ * It prioritizes due callbacks, fetches a paginated list of lapsed clients, and uses a configurable setting.
  */
 export async function GET(request: Request) {
-  // 1. --- AUTHENTICATION & SETUP ---
+  // 1. --- AUTHENTICATION & SETUP (Unchanged) ---
   const session = await getServerSession(authOptions);
   if (!session?.user?.tenantId) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
@@ -41,7 +40,14 @@ export async function GET(request: Request) {
     const tenantId = new mongoose.Types.ObjectId(session.user.tenantId);
     const now = new Date();
 
-    // 2. --- GATHER IDs FOR PRIORITY 1: DUE CALLBACKS ---
+    // --- NEW: PARSE PAGINATION PARAMETERS FROM THE URL ---
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '10', 10); // A smaller default is better for pagination
+    const skip = (page - 1) * limit;
+
+    // 2. --- PRIORITY 1: DUE CALLBACKS (Unchanged) ---
+    // Note: Callbacks are high-priority and not paginated. They are always shown first.
     const dueCallbacks = await Customer.find({
       tenantId,
       telecallingStatus: 'Scheduled',
@@ -50,7 +56,7 @@ export async function GET(request: Request) {
 
     const dueCallbackIds = dueCallbacks.map(c => c._id);
 
-    // 3. --- EXECUTE AGGREGATION FOR PRIORITY 1 ---
+    // 3. --- AGGREGATION FOR PRIORITY 1 (Unchanged) ---
     let callbacks: any[] = [];
     if (dueCallbackIds.length > 0) {
       callbacks = await Appointment.aggregate([
@@ -76,19 +82,17 @@ export async function GET(request: Request) {
       ]);
     }
 
-    // 4. --- EXECUTE AGGREGATION FOR PRIORITY 2: LAPSED CLIENTS ---
-
-    // 2. REPLACE the hardcoded value with a dynamic database lookup
+    // 4. --- AGGREGATION FOR PRIORITY 2: LAPSED CLIENTS (UPDATED WITH PAGINATION) ---
     const setting = await Setting.findOne({ tenantId, key: 'telecallingDays' }).lean();
-    // Use the value from the database, or fall back to a safe default if it's not set.
-    const lapsedClientDays = setting?.value || 30; 
-    
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(now.getDate() - lapsedClientDays);
-    
+    const telecallingRange = setting?.value || { from: 30, to: 60 }; 
+    const newerCutoffDate = new Date();
+    newerCutoffDate.setDate(now.getDate() - telecallingRange.from);
+    const olderCutoffDate = new Date();
+    olderCutoffDate.setDate(now.getDate() - telecallingRange.to);
     const exclusionIds = dueCallbackIds;
 
-    const lapsed = await Appointment.aggregate([
+    const aggregationPipeline: mongoose.PipelineStage[] = [
+      // These first stages build the initial list of potential candidates
       { $match: { 
           tenantId, 
           status: "Paid", 
@@ -109,28 +113,61 @@ export async function GET(request: Request) {
       { $lookup: { from: 'staffs', localField: 'lastStylistId', foreignField: '_id', as: 'lastStylistInfo' } },
       { $unwind: { path: '$lastStylistInfo', preserveNullAndEmptyArrays: true } },
       { $match: { 
-          lastVisitDate: { $lt: thirtyDaysAgo }, // This now uses the dynamic date
+          lastVisitDate: { $lte: newerCutoffDate, $gte: olderCutoffDate },
           "customerInfo.doNotDisturb": { $ne: true },
-          "customerInfo.telecallingStatus": "Pending"
+          "customerInfo.telecallingStatus": { $nin: ["Scheduled", "Uninterested"] }
       }},
-      { $project: {
-          _id: "$customerInfo._id",
-          searchableName: "$customerInfo.searchableName",
-          phoneNumber: "$customerInfo.phoneNumber",
-          lastVisitDate: "$lastVisitDate",
-          isCallback: { $literal: false },
-          lastServiceNames: { $map: { input: "$lastServiceDetails", as: "service", in: "$$service.name" } },
-          lastStylistName: { $ifNull: ["$lastStylistInfo.name", "N/A"] },
-          lastBillAmount: { $ifNull: ["$lastFinalAmount", 0] },
-      }},
-      { $limit: 100 },
-    ]);
+      
+      // --- NEW: Use $facet for efficient pagination and counting ---
+      {
+        $facet: {
+          // Branch 1: Get the metadata (total count of all matching documents)
+          metadata: [
+            { $count: "total" }
+          ],
+          // Branch 2: Get the actual data for the current page
+          data: [
+            { $skip: skip },
+            { $limit: limit },
+            // The final projection goes inside this data branch
+            { $project: {
+                _id: "$customerInfo._id",
+                searchableName: "$customerInfo.searchableName",
+                phoneNumber: "$customerInfo.phoneNumber",
+                lastVisitDate: "$lastVisitDate",
+                isCallback: { $literal: false },
+                lastServiceNames: { $map: { input: "$lastServiceDetails", as: "service", in: "$$service.name" } },
+                lastStylistName: { $ifNull: ["$lastStylistInfo.name", "N/A"] },
+                lastBillAmount: { $ifNull: ["$lastFinalAmount", 0] },
+            }}
+          ]
+        }
+      }
+    ];
+
+    const lapsedResults = await Appointment.aggregate(aggregationPipeline);
+
+    // The result from $facet is an array with one object inside, structured like: [{ metadata: [ { total: X } ], data: [ ... ] }]
+    const lapsed = lapsedResults[0].data;
+    const totalLapsed = lapsedResults[0].metadata[0]?.total || 0;
+    const totalPages = Math.ceil(totalLapsed / limit);
 
     // 5. --- COMBINE, DECRYPT, AND SEND RESPONSE ---
+    // We combine the non-paginated priority callbacks with the paginated lapsed clients.
     const combinedList = [...callbacks, ...lapsed];
     const decryptedCustomers = combinedList.map(decryptCustomer);
 
-    return NextResponse.json({ queue: decryptedCustomers });
+    // --- NEW: Return the queue AND the pagination metadata in the response ---
+    return NextResponse.json({
+      queue: decryptedCustomers,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalResults: totalLapsed,
+        limit: limit,
+        priorityCount: callbacks.length // Optional: Useful for the UI
+      }
+    });
 
   } catch (error) {
     console.error('Failed to fetch telecalling queue:', error);

@@ -28,7 +28,7 @@ const VALID_OUTCOMES = [
 // ===================================================================================
 
 /**
- * @description API endpoint to RETRIEVE a list of telecalling logs for reporting.
+ * @description API endpoint to RETRIEVE a paginated list of telecalling logs for reporting.
  * Handles filtering by date range and outcome.
  */
 export async function GET(request: Request) {
@@ -39,11 +39,16 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 2. --- PARSE QUERY PARAMETERS ---
+    // 2. --- PARSE QUERY PARAMETERS (INCLUDING PAGINATION) ---
     const { searchParams } = new URL(request.url);
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
     const outcome = searchParams.get('outcome');
+    
+    // Parse pagination parameters sent by the frontend
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const skip = (page - 1) * limit;
 
     if (!startDateParam || !endDateParam) {
       return NextResponse.json({ message: 'startDate and endDate are required parameters' }, { status: 400 });
@@ -55,7 +60,6 @@ export async function GET(request: Request) {
     // 3. --- BUILD AGGREGATION PIPELINE ---
     const startDate = new Date(startDateParam);
     startDate.setHours(0, 0, 0, 0);
-
     const endDate = new Date(endDateParam);
     endDate.setHours(23, 59, 59, 999);
 
@@ -68,28 +72,65 @@ export async function GET(request: Request) {
       matchStage.outcome = outcome;
     }
 
-    const aggregationPipeline = [
+    const aggregationPipeline: mongoose.PipelineStage[] = [
+      // Stage 1: Match the logs based on filters
       { $match: matchStage },
       { $sort: { createdAt: -1 } },
+
+      // Stage 2: Get Customer Details
       { $lookup: { from: 'customers', localField: 'customerId', foreignField: '_id', as: 'customerDetails' } },
-      { $lookup: { from: 'users', localField: 'callerId', foreignField: '_id', as: 'callerDetails' } },
       { $unwind: { path: '$customerDetails', preserveNullAndEmptyArrays: true } },
+
+      // Stage 3: Get Caller Details
+      { $lookup: { from: 'users', localField: 'callerId', foreignField: '_id', as: 'callerDetails' } },
       { $unwind: { path: '$callerDetails', preserveNullAndEmptyArrays: true } },
-      { $project: {
-          _id: 1,
-          clientName: '$customerDetails.searchableName',
-          phoneNumber: '$customerDetails.phoneNumber',
-          outcome: 1,
-          notes: 1,
-          callerName: { $ifNull: ['$callerDetails.name', 'N/A'] },
-          createdAt: 1,
-          lastVisitDate: '$customerDetails.lastVisitDate',
-        },
+
+      // Stage 4: Dynamically find the last completed appointment for the customer
+      {
+        $lookup: {
+          from: 'appointments',
+          let: { customerId: '$customerId' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$customerId', '$$customerId'] }, status: { $in: ['Paid', 'Completed'] } } },
+            { $sort: { appointmentDateTime: -1 } },
+            { $limit: 1 }
+          ],
+          as: 'lastAppointment'
+        }
       },
+      { $unwind: { path: '$lastAppointment', preserveNullAndEmptyArrays: true } },
+
+      // Stage 5: Use $facet for efficient pagination and counting
+      {
+        $facet: {
+          metadata: [ { $count: "total" } ],
+          data: [
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                _id: 1,
+                clientName: '$customerDetails.searchableName',
+                phoneNumber: '$customerDetails.phoneNumber',
+                outcome: 1,
+                notes: 1,
+                callerName: { $ifNull: ['$callerDetails.name', 'N/A'] },
+                createdAt: 1,
+                lastVisitDate: '$lastAppointment.appointmentDateTime',
+              },
+            },
+          ]
+        }
+      }
     ];
 
-    const logs = await TelecallingLog.aggregate(aggregationPipeline);
+    const results = await TelecallingLog.aggregate(aggregationPipeline);
     
+    // Extract data from the $facet result, providing safe defaults for empty results
+    const logs = results[0]?.data || [];
+    const totalLogs = results[0]?.metadata[0]?.total || 0;
+    const totalPages = Math.ceil(totalLogs / limit);
+
     // 4. --- DECRYPT SENSITIVE DATA ---
     const decryptedLogs = logs.map(log => {
         try {
@@ -99,7 +140,16 @@ export async function GET(request: Request) {
         }
     });
 
-    return NextResponse.json(decryptedLogs);
+    // 5. --- SEND RESPONSE IN THE STRUCTURE THE FRONTEND EXPECTS ---
+    return NextResponse.json({
+      logs: decryptedLogs,
+      pagination: {
+        currentPage: page,
+        totalPages: totalPages,
+        totalResults: totalLogs,
+        limit: limit
+      }
+    });
 
   } catch (error) {
     console.error('Failed to fetch telecalling logs:', error);

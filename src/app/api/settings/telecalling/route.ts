@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
-import Setting from '@/models/Setting'; // Make sure this path is correct
+import Setting from '@/models/Setting';
 
-// The unique key for this specific setting.
 const SETTING_KEY = 'telecallingDays';
 
 /**
- * @description GET handler to retrieve the telecallingDays setting for the current tenant.
+ * @description GET handler to retrieve the telecallingDays setting range.
  */
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
@@ -19,15 +18,15 @@ export async function GET(request: Request) {
   try {
     await dbConnect();
     
-    // This query works perfectly with your existing model.
     const setting = await Setting.findOne({
       tenantId: session.user.tenantId,
       key: SETTING_KEY,
     }).lean();
 
-    // If the setting is not found in the DB, return a sensible default.
-    const telecallingDays = setting?.value || 30;
+    // If the setting is not found, return a sensible default range.
+    const telecallingDays = setting?.value || { from: 30, to: 60 };
 
+    // The key here is the same, but the value is now an object.
     return NextResponse.json({ telecallingDays });
 
   } catch (error) {
@@ -37,7 +36,7 @@ export async function GET(request: Request) {
 }
 
 /**
- * @description POST handler to update or create the telecallingDays setting.
+ * @description POST handler to update or create the telecallingDays setting range.
  */
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -47,24 +46,26 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { telecallingDays } = body;
+    // Expect `fromDays` and `toDays` from the frontend.
+    const { fromDays, toDays } = body;
 
-    // Validation remains crucial.
-    if (typeof telecallingDays !== 'number' || telecallingDays <= 0) {
-      return NextResponse.json({ message: 'telecallingDays must be a positive number' }, { status: 400 });
+    // --- NEW VALIDATION FOR THE RANGE ---
+    if (fromDays == null || toDays == null || Number(fromDays) <= 0 || Number(toDays) <= 0) {
+      return NextResponse.json({ message: 'Both "from" and "to" days must be positive numbers.' }, { status: 400 });
+    }
+    if (Number(fromDays) >= Number(toDays)) {
+      return NextResponse.json({ message: '"From" days must be less than "To" days.' }, { status: 400 });
     }
 
     await dbConnect();
 
-    // This query is designed for your schema. It will find the document by
-    // tenantId and key, and update it. If it doesn't exist, `upsert: true` creates it.
+    // The `value` field will now store an object.
     await Setting.findOneAndUpdate(
       { tenantId: session.user.tenantId, key: SETTING_KEY },
       { 
         $set: { 
-          value: telecallingDays,
-          // We can set the other fields from your model for completeness.
-          description: "The number of days after a client's last visit to add them to the telecalling queue.",
+          value: { from: Number(fromDays), to: Number(toDays) },
+          description: "The time window (in days ago) for when lapsed clients are added to the queue.",
           category: "Telecalling",
         } 
       },

@@ -1,22 +1,80 @@
 'use client';
 
+import { useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { toast } from 'react-toastify';
 import { TelecallingLog } from '../page';
 import Button from '@/components/ui/Button';
 import { Download, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-// 1. CHANGE THIS IMPORT: Import 'autoTable' as a named function
 import autoTable from 'jspdf-autotable';
 
+// --- CHANGE 1: Update the props to receive the filters object ---
 interface TableProps {
-  logs: TelecallingLog[];
+  logs: TelecallingLog[]; // This is still used to display the current page's data
+  filters: {
+    startDate: Date;
+    endDate: Date;
+    outcome: string;
+  };
 }
 
-export default function ReportTable({ logs }: TableProps) {
+export default function ReportTable({ logs, filters }: TableProps) {
+  const { data: session } = useSession();
+  // --- CHANGE 2: Add a loading state for the download buttons ---
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleExportToExcel = () => {
-    const data = logs.map(log => ({
+  // --- CHANGE 3: Rewrite the export handlers to fetch all data ---
+  const handleExport = async (formatType: 'excel' | 'pdf') => {
+    if (!session) {
+      toast.error('You must be logged in to download reports.');
+      return;
+    }
+    
+    setIsDownloading(true);
+    try {
+      // Build the URL with the current filters, just like the main page
+      const params = new URLSearchParams({
+        startDate: format(filters.startDate, 'yyyy-MM-dd'),
+        endDate: format(filters.endDate, 'yyyy-MM-dd'),
+        outcome: filters.outcome,
+      });
+
+      // Call the NEW export-specific API endpoint
+      const response = await fetch(`/api/telecalling/log/export?${params.toString()}`, {
+        headers: { 'x-tenant-id': session.user.tenantId },
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || 'Failed to download report data.');
+      }
+
+      const allLogs: TelecallingLog[] = await response.json(); // This contains ALL logs, not just one page
+
+      if (allLogs.length === 0) {
+        toast.info("No data to export for the selected filters.");
+        return;
+      }
+      
+      // Now, generate the file based on the full dataset
+      if (formatType === 'excel') {
+        generateExcel(allLogs);
+      } else {
+        generatePdf(allLogs);
+      }
+
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const generateExcel = (dataToExport: TelecallingLog[]) => {
+    const data = dataToExport.map(log => ({
       "Call Date": format(new Date(log.createdAt), 'dd-MM-yyyy HH:mm'),
       "Client Name": log.clientName,
       "Phone Number": log.phoneNumber,
@@ -32,20 +90,18 @@ export default function ReportTable({ logs }: TableProps) {
     XLSX.writeFile(workbook, `Telecalling_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
-  const handleExportToPDF = () => {
+  const generatePdf = (dataToExport: TelecallingLog[]) => {
     const doc = new jsPDF();
     
-    // 2. CHANGE THIS FUNCTION CALL: Call autoTable directly and pass the 'doc' instance to it.
     autoTable(doc, {
         head: [['Call Date', 'Client Name', 'Phone', 'Outcome', 'Caller']],
-        body: logs.map(log => [
+        body: dataToExport.map(log => [
             format(new Date(log.createdAt), 'dd-MM-yy HH:mm'),
             log.clientName,
             log.phoneNumber,
             log.outcome,
             log.callerName
         ]),
-        // Optional: Add a title to the PDF
         didDrawPage: (data) => {
             doc.setFontSize(18);
             doc.setTextColor(40);
@@ -60,11 +116,19 @@ export default function ReportTable({ logs }: TableProps) {
   return (
     <>
       <div className="p-4 flex justify-end space-x-3 border-b bg-gray-50">
-        <Button onClick={handleExportToExcel} className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2">
-          <Download size={18} /> Excel
+        <Button 
+          onClick={() => handleExport('excel')} 
+          disabled={isDownloading}
+          className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 disabled:opacity-50"
+        >
+          <Download size={18} /> {isDownloading ? 'Downloading...' : 'Excel'}
         </Button>
-        <Button onClick={handleExportToPDF} className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-2">
-          <FileText size={18} /> PDF
+        <Button 
+          onClick={() => handleExport('pdf')}
+          disabled={isDownloading}
+          className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-2 disabled:opacity-50"
+        >
+          <FileText size={18} /> {isDownloading ? 'Downloading...' : 'PDF'}
         </Button>
       </div>
       <div className="overflow-x-auto">
