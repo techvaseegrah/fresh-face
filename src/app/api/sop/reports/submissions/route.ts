@@ -9,6 +9,13 @@ import Sop from '@/models/Sop';
 import SopSubmission from '@/models/SopSubmission';
 import { startOfDay, endOfDay } from 'date-fns';
 
+/**
+ * GET: The main data source for the SOP Compliance Report.
+ * Fetches all necessary data for a given tenant and date range, ensuring data integrity.
+ * 1. A list of all active staff members.
+ * 2. A list of all active SOPs (checklists), including their detailed checklistItems.
+ * 3. A list of all submissions that belong to those active checklists within the date range.
+ */
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user || !hasPermission(session.user.role?.permissions || [], PERMISSIONS.SOP_REPORTS_READ)) {
@@ -29,32 +36,42 @@ export async function GET(req: NextRequest) {
     await dbConnect();
 
     try {
-        // 1. Get all active staff members for the tenant (This query is perfect)
-        const staffMembers = await User.find({ tenantId, isActive: true }).populate('roleId', 'displayName').select('name roleId').lean();
+        // 1. Get all active staff members for the tenant. This query is perfect.
+        const staffMembers = await User.find({ tenantId, isActive: true })
+            .populate('roleId', 'displayName _id')
+            .select('name roleId')
+            .lean();
 
-        // --- THIS IS THE FIX ---
-        // 2. Get all active SOPs that are any of the checklist types for the tenant
-        const checklists = await Sop.find({ 
+        // 2. Get all active SOPs that are any of the checklist types for the tenant.
+        const activeChecklists = await Sop.find({ 
             tenantId, 
-            type: { $in: ['daily', 'weekly', 'monthly'] }, // Find docs where type is in this array
+            type: { $in: ['daily', 'weekly', 'monthly'] },
             isActive: true 
-        }).select('title roles').lean();
-        // --- END OF FIX ---
+        })
+        // --- THE FIX ---: Explicitly include `checklistItems` for the review modal.
+        .select('_id title roles checklistItems') 
+        .lean();
 
-        // 3. Get all submissions within the selected date range (This query is perfect)
+        // Get the IDs of ONLY the active checklists.
+        const activeChecklistIds = activeChecklists.map(c => c._id);
+
+        // --- ROBUSTNESS IMPROVEMENT ---
+        // 3. Fetch only the submissions that belong to the active checklists.
+        // This prevents "orphaned" submissions from appearing in the report.
         const submissions = await SopSubmission.find({
             tenantId,
             submissionDate: {
                 $gte: startOfDay(new Date(startDate)),
                 $lte: endOfDay(new Date(endDate)),
-            }
+            },
+            sop: { $in: activeChecklistIds } // Crucial filter
         }).lean();
         
-        // 4. Return the raw data. The 'checklists' array will now be populated.
-        return NextResponse.json({ staff: staffMembers, checklists, submissions });
+        // 4. Return the clean, consistent data.
+        return NextResponse.json({ staff: staffMembers, checklists: activeChecklists, submissions });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error generating SOP report:", error);
-        return NextResponse.json({ message: 'Server Error' }, { status: 500 });
+        return NextResponse.json({ message: 'Server Error', error: error.message }, { status: 500 });
     }
 }

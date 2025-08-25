@@ -2,22 +2,41 @@
 
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { X, Check, PlayCircle, XCircle } from 'lucide-react';
+import { X, Check, PlayCircle, XCircle, MessageSquare } from 'lucide-react';
 import Image from 'next/image';
 import { format } from 'date-fns';
 import ImageZoomModal from '@/components/ImageZoomModal';
 import VideoPlayerModal from '@/components/VideoPlayerModal';
 
-export default function SubmissionDetailsModal({
-  details,
-  onClose,
-  onAcknowledged
-}: {
-  details: any;
+// --- ROBUSTNESS: Define strong types for props to replace 'any' ---
+interface Response {
+  _id: string;
+  text: string; // This is the enriched question text from the parent page
+  mediaUrl?: string;
+  answer: 'yes' | 'no' | '';
+  remarks?: string;
+}
+
+interface Submission {
+  _id: string;
+  checklistTitle: string;
+  status: 'pending_review' | 'approved' | 'rejected';
+  responses?: Response[];
+}
+
+interface Details {
+  staffName: string;
+  date: string | Date;
+  submissions: Submission[];
+}
+
+interface SubmissionDetailsModalProps {
+  details: Details;
   onClose: () => void;
-  // This function is now more generic, it signals a successful review action
   onAcknowledged: (submissionId: string, newStatus: 'approved' | 'rejected') => void;
-}) {
+}
+
+export default function SubmissionDetailsModal({ details, onClose, onAcknowledged }: SubmissionDetailsModalProps) {
   const { data: session } = useSession();
   const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
   const [zoomedVideoUrl, setZoomedVideoUrl] = useState<string | null>(null);
@@ -31,7 +50,7 @@ export default function SubmissionDetailsModal({
 
   // Handles the "Approve" action
   const handleApprove = async (submissionId: string) => {
-    if (!session) return;
+    if (!session?.user) return;
     setIsProcessing(true);
     setError(null);
 
@@ -46,7 +65,7 @@ export default function SubmissionDetailsModal({
             const errorData = await res.json();
             throw new Error(errorData.message || "Failed to approve the submission.");
         }
-        onAcknowledged(submissionId, 'approved'); // Signal success with the new status
+        onAcknowledged(submissionId, 'approved');
     } catch (err: any) {
         console.error(err);
         setError(err.message);
@@ -62,6 +81,7 @@ export default function SubmissionDetailsModal({
         alert("Please provide a reason for rejection.");
         return;
     }
+    if (!session?.user) return;
 
     setIsProcessing(true);
     setError(null);
@@ -79,7 +99,7 @@ export default function SubmissionDetailsModal({
             const errorData = await res.json();
             throw new Error(errorData.message || "Failed to reject the submission.");
         }
-        onAcknowledged(submissionId, 'rejected'); // Signal success with the new status
+        onAcknowledged(submissionId, 'rejected');
     } catch (err: any) {
         console.error(err);
         setError(err.message);
@@ -109,7 +129,7 @@ export default function SubmissionDetailsModal({
   return (
     <>
       <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
           <div className="flex justify-between items-center p-4 border-b">
             <div>
               <h2 className="text-xl font-bold text-gray-800">{details.staffName}'s Submissions</h2>
@@ -121,11 +141,10 @@ export default function SubmissionDetailsModal({
           </div>
           
           <div className="overflow-y-auto p-6 space-y-6">
-            {details.submissions.map((submission: any) => (
+            {details.submissions.map((submission: Submission) => (
                 <div key={submission._id}>
                   <div className="flex justify-between items-start mb-3 gap-4">
                     <h3 className="text-lg font-semibold text-gray-700">{submission.checklistTitle}</h3>
-                    {/* --- UPDATED ---: Show review actions only if status is 'pending_review' */}
                     {submission.status === 'pending_review' && (
                         <div className="flex items-center gap-2 flex-shrink-0">
                             <button onClick={() => handleApprove(submission._id)} disabled={isProcessing} className="flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 text-sm font-semibold rounded-lg hover:bg-green-200 disabled:opacity-50">
@@ -138,7 +157,6 @@ export default function SubmissionDetailsModal({
                     )}
                   </div>
                   
-                  {/* --- NEW ---: Rejection notes input section, shown dynamically */}
                   {rejectionState[submission._id]?.showInput && (
                     <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg animate-fade-in">
                         <label className="block text-sm font-medium text-red-800 mb-1">Reason for Rejection</label>
@@ -158,17 +176,32 @@ export default function SubmissionDetailsModal({
                   )}
 
                   <div className="space-y-4">
-                    {submission.responses?.map((response: any, index: number) => (
-                      <div key={index} className="flex items-start gap-4 p-3 border rounded-lg bg-gray-50">
-                        <p className="flex-1 font-medium text-gray-900">{response.text}</p>
+                    {submission.responses?.map((response: Response) => (
+                      <div key={response._id} className="flex flex-col md:flex-row md:items-start gap-4 p-3 border rounded-lg bg-gray-50">
+                        <div className="flex-1 space-y-2">
+                          <p className="font-medium text-gray-900">{response.text}</p>
+                          <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
+                            <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full ${
+                                response.answer === 'yes' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {response.answer.toUpperCase()}
+                            </span>
+                            
+                            {response.remarks && (
+                                <blockquote className="pl-2 border-l-2 border-gray-300 text-sm text-gray-600 italic flex items-center gap-2">
+                                    <MessageSquare size={14} className="flex-shrink-0"/>
+                                    "{response.remarks}"
+                                </blockquote>
+                            )}
+                          </div>
+                        </div>
                         
-                        {/* --- CORRECTED ---: Use 'mediaUrl' instead of 'imageUrl' */}
                         {response.mediaUrl ? (
                           (() => {
                             const isVideo = /\.(mp4|webm|mov)$/i.test(response.mediaUrl);
                             if (isVideo) {
                               return (
-                                <button type="button" className="flex-shrink-0 group relative" onClick={() => setZoomedVideoUrl(response.mediaUrl)}>
+                                <button type="button" className="flex-shrink-0 group relative" onClick={() => setZoomedVideoUrl(response.mediaUrl!)}>
                                   <div className="relative h-24 w-24 rounded-md overflow-hidden border bg-black">
                                     <video src={response.mediaUrl} className="object-cover h-full w-full" muted playsInline />
                                     <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -179,9 +212,9 @@ export default function SubmissionDetailsModal({
                               );
                             } else {
                               return (
-                                <button type="button" className="flex-shrink-0 cursor-zoom-in" onClick={() => setZoomedImageUrl(response.mediaUrl)}>
+                                <button type="button" className="flex-shrink-0 cursor-zoom-in" onClick={() => setZoomedImageUrl(response.mediaUrl!)}>
                                   <div className="relative h-24 w-24 rounded-md overflow-hidden border hover:opacity-80 transition-opacity">
-                                    <Image src={response.mediaUrl} alt={`Verification for ${response.text}`} layout="fill" className="object-cover" />
+                                    <Image src={response.mediaUrl!} alt={`Verification for ${response.text}`} layout="fill" className="object-cover" />
                                   </div>
                                 </button>
                               );

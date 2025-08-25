@@ -8,9 +8,13 @@ import SopSubmission from '@/models/SopSubmission';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 import { startOfDay } from 'date-fns';
 
+/**
+ * GET: The daily task list for the logged-in user.
+ * This API is compatible with the new detailed checklist and submission models.
+ */
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session?.user || !hasPermission(session.user.role?.permissions, PERMISSIONS.SOP_READ)) {
+    if (!session?.user || !hasPermission(session.user.role?.permissions || [], PERMISSIONS.SOP_READ)) {
         return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
 
@@ -18,47 +22,50 @@ export async function GET(req: NextRequest) {
     if (tenantId instanceof NextResponse) return tenantId;
     
     await dbConnect();
-    const today = startOfDay(new Date());
 
-    // 1. Find all daily SOP templates assigned to the user's role.
-    // This query is already correct and includes the necessary checklistItems.
-    const checklists = await Sop.find({
-        tenantId,
-        type: 'daily',
-        isActive: true,
-        roles: { $in: [session.user.role.id] },
-    })
-    .select('title description checklistItems') // Explicitly request the needed fields
-    .lean();
+    try {
+        const today = startOfDay(new Date());
 
-    if (checklists.length === 0) {
-        return NextResponse.json([]);
+        // 1. Find all daily SOP templates assigned to the user's role.
+        // This query correctly fetches the new, complex `checklistItems` array because the model has been updated.
+        const checklists = await Sop.find({
+            tenantId,
+            type: 'daily',
+            isActive: true,
+            roles: { $in: [session.user.role.id] },
+        })
+        .select('title description checklistItems') // Explicitly requesting the detailed items.
+        .lean();
+
+        if (checklists.length === 0) {
+            return NextResponse.json([]);
+        }
+
+        const checklistIds = checklists.map(c => c._id);
+
+        // 2. Find all submissions for these checklists for today.
+        // This will return the submission with its new, complex `responses` array.
+        const submissions = await SopSubmission.find({
+            tenantId,
+            staff: session.user.id,
+            submissionDate: today,
+            sop: { $in: checklistIds }
+        }).lean();
+
+        // 3. Map the results. This logic correctly attaches the entire submission object to its
+        //    corresponding SOP, giving the frontend all the data it needs.
+        const result = checklists.map(checklist => {
+            const submission = submissions.find(sub => sub.sop.toString() === checklist._id.toString());
+            return { 
+                ...checklist, 
+                submission: submission || null 
+            };
+        });
+
+        return NextResponse.json(result);
+
+    } catch (error: any) {
+        console.error("Error fetching daily checklist:", error);
+        return NextResponse.json({ message: "Server Error", error: error.message }, { status: 500 });
     }
-
-    const checklistIds = checklists.map(c => c._id);
-
-    // 2. Find all submissions for these checklists specifically for today.
-    // We now fetch the full submission object to get the status.
-    const submissions = await SopSubmission.find({
-        tenantId,
-        staff: session.user.id, // It's good practice to scope submissions to the user
-        submissionDate: today,
-        sop: { $in: checklistIds }
-    }).lean();
-
-    // --- THIS IS THE UPGRADED LOGIC ---
-    // 3. For each checklist, find its corresponding submission and attach it.
-    const result = checklists.map(checklist => {
-        // Find the submission object that matches this checklist's ID.
-        const submission = submissions.find(sub => sub.sop.toString() === checklist._id.toString());
-        
-        // Return the checklist data along with the full submission object (or null if not found).
-        return { 
-            ...checklist, 
-            submission: submission || null 
-        };
-    });
-    // --- END OF UPGRADED LOGIC ---
-
-    return NextResponse.json(result);
 }

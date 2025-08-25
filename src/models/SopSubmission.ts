@@ -1,23 +1,51 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
+import { ISop } from './Sop'; // Import the ISop interface to reference its sub-document
 
-// Define the possible statuses as a TypeScript type for better code safety and autocompletion
+// Define the possible statuses as a TypeScript type for better code safety
 export type SubmissionStatus = 'pending_review' | 'approved' | 'rejected';
 
+// --- NEW ---: Define a sub-schema for a single, detailed response.
+const ResponseSchema = new Schema({
+  // This is the crucial link back to the specific question in the Sop model.
+  checklistItem: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'Sop.checklistItems', // This ref path is conceptual; Mongoose doesn't enforce it for sub-docs
+    required: true 
+  },
+  // The user's answer (yes or no)
+  answer: { 
+    type: String,
+    enum: ['yes', 'no', ''], // Allow empty string if not answered
+    required: true,
+  },
+  // The optional text remarks from the user
+  remarks: { 
+    type: String,
+    trim: true,
+  },
+  // The optional media URL (image or video)
+  mediaUrl: { 
+    type: String 
+  },
+});
+
+// --- UPDATED ---: The main ISopSubmission interface now uses the new response structure.
 export interface ISopSubmission extends Document {
   sop: mongoose.Schema.Types.ObjectId;
   staff: mongoose.Schema.Types.ObjectId;
   tenantId: mongoose.Schema.Types.ObjectId;
   submissionDate: Date;
-  responses: {
-    text: string;
-    checked: boolean;
-    mediaUrl?: string; // Correctly named for video or image
-  }[];
-  createdAt: Date;
 
-  // New fields for the approval workflow
+  // The responses array now holds more complex answer objects.
+  responses: {
+    checklistItem: mongoose.Types.ObjectId;
+    answer: 'yes' | 'no' | '';
+    remarks?: string;
+    mediaUrl?: string;
+  }[];
+
   status: SubmissionStatus;
-  reviewNotes?: string; // Optional field for manager's feedback on rejection
+  reviewNotes?: string;
   reviewedBy?: mongoose.Schema.Types.ObjectId;
 }
 
@@ -26,35 +54,25 @@ const SopSubmissionSchema: Schema = new Schema({
   staff: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true },
   submissionDate: { type: Date, required: true },
-  responses: [{
-    text: { type: String, required: true },
-    checked: { type: Boolean, required: true },
-    // --- CORRECTED ---: Renamed 'imageUrl' to the more generic 'mediaUrl'
-    mediaUrl: { type: String, required: false }
-  }],
 
-  // --- NEW WORKFLOW FIELDS ---
-  // Replaced 'isReviewed' boolean with a more flexible 'status' string
+  // --- UPDATED ---: The schema now uses the ResponseSchema for the array.
+  responses: [ResponseSchema],
+
   status: {
     type: String,
-    enum: ['pending_review', 'approved', 'rejected'], // These are the only allowed values
-    default: 'pending_review', // New submissions will automatically get this status
+    enum: ['pending_review', 'approved', 'rejected'],
+    default: 'pending_review',
     required: true,
   },
-  // Added a new field for manager's notes on rejection
   reviewNotes: {
     type: String,
     required: false,
   },
-  
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
 
-}, { timestamps: true }); // Enable both createdAt and updatedAt
+}, { timestamps: true });
 
 // This index ensures a user can only submit a specific SOP once per day.
-// You might need to adjust or temporarily remove this if your re-submission logic
-// involves creating a new document. A better approach for re-submission would be to
-// update the existing 'rejected' document.
 SopSubmissionSchema.index({ sop: 1, staff: 1, submissionDate: 1 }, { unique: true });
 
 const SopSubmission: Model<ISopSubmission> = mongoose.models.SopSubmission || mongoose.model<ISopSubmission>('SopSubmission', SopSubmissionSchema);

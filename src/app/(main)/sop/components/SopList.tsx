@@ -1,58 +1,87 @@
 'use client';
 
-import { useCallback } from 'react'; // Import useCallback
+import { useCallback } from 'react';
 import useSWR from 'swr';
 import { useSession } from 'next-auth/react';
-import { FileText, ListChecks, Edit, Trash2, Eye } from 'lucide-react';
+import { FileText, ListChecks, Edit, Trash2, Eye, Loader2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-export default function SopList({ onEdit }) {
+// --- (1) DEFINE STRONG TYPES ---
+
+// The shape of a single role object
+interface Role {
+  _id: string;
+  displayName: string;
+}
+
+// The shape of a single SOP object
+interface Sop {
+  _id: string;
+  title: string;
+  description: string;
+  type: 'checklist' | 'document'; // Assuming these are the possible types
+  roles: Role[];
+}
+
+// The shape of the props for this component
+interface SopListProps {
+  onEdit: (sop: Sop) => void;
+}
+
+// --- (2) APPLY THE PROP TYPE TO THE COMPONENT ---
+export default function SopList({ onEdit }: SopListProps) {
   const { data: session } = useSession();
 
-  // Create a custom fetcher function that adds the authentication header.
   const fetcherWithAuth = useCallback(async (url: string) => {
-    // Wait until the session is loaded
-    if (!session) {
-      throw new Error("Session not loaded");
+    if (!session?.user?.tenantId) {
+      throw new Error("Session not ready");
     }
-
     const headers = new Headers();
     headers.append('x-tenant-id', session.user.tenantId);
-
     const res = await fetch(url, { headers });
-
-    // If the server responds with an error, throw an error to be caught by SWR
     if (!res.ok) {
       const errorInfo = await res.json();
-      const error = new Error(errorInfo.message || 'An error occurred while fetching the data.');
-      throw error;
+      throw new Error(errorInfo.message || 'An error occurred while fetching the data.');
     }
-
     return res.json();
-  }, [session]); // Re-create the fetcher only when the session changes
+  }, [session]);
 
-  // Use our new custom fetcher
-  const { data: sops, error, mutate } = useSWR('/api/sop', fetcherWithAuth);
+  // --- (3) APPLY THE SOP TYPE TO useSWR ---
+  // This tells SWR what to expect from the API
+  const { data: sops, error, mutate } = useSWR<Sop[]>('/api/sop', fetcherWithAuth);
 
   const canManage = hasPermission(session?.user?.role?.permissions || [], PERMISSIONS.SOP_MANAGE);
 
   const handleDelete = async (sopId: string) => {
-    if (!session) return; // Guard clause
+    if (!session) return;
     if (confirm('Are you sure you want to delete this SOP?')) {
       const headers = new Headers();
-      headers.append('x-tenant-id', session.user.tenantId); // Add header to DELETE request
-
+      headers.append('x-tenant-id', session.user.tenantId);
       await fetch(`/api/sop/${sopId}`, {
         method: 'DELETE',
         headers: headers
       });
-      mutate(); // Re-fetch the data
+      mutate();
     }
   };
 
-  if (error) return <div className="text-red-500">{error.message}</div>;
-  if (!sops) return <div>Loading...</div>;
+  if (error) {
+    return (
+      <div className="text-red-600 bg-red-50 p-4 rounded-lg flex items-center gap-3">
+        <AlertTriangle size={20} />
+        <span>{error.message}</span>
+      </div>
+    );
+  }
+
+  if (!sops) {
+    return (
+      <div className="flex justify-center items-center p-10">
+        <Loader2 className="animate-spin text-gray-400" size={32} />
+      </div>
+    );
+  }
 
   if (sops.length === 0) {
     return (
@@ -69,12 +98,13 @@ export default function SopList({ onEdit }) {
 
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      {sops.map((sop: any) => (
+      {/* --- (4) APPLY THE SOP TYPE IN THE MAP FUNCTION --- */}
+      {/* This removes the `any` type and gives you autocomplete */}
+      {sops.map((sop: Sop) => (
         <div 
           key={sop._id} 
           className="flex flex-col md:flex-row md:items-center justify-between p-4 border-b last:border-b-0 hover:bg-gray-50 transition-colors"
         >
-          {/* Main Info: Icon, Title, Description */}
           <div className="flex-1 min-w-0 mb-4 md:mb-0">
             <div className="flex items-center gap-4">
               {sop.type === 'checklist' ? 
@@ -93,14 +123,12 @@ export default function SopList({ onEdit }) {
             </div>
           </div>
 
-          {/* Assigned Roles */}
           <div className="flex flex-wrap gap-2 md:mx-4 flex-shrink-0 justify-start md:justify-center mb-4 md:mb-0">
-            {sop.roles.map((role: any) => (
+            {sop.roles.map((role: Role) => (
               <span key={role._id} className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded-full">{role.displayName}</span>
             ))}
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-shrink-0 self-end md:self-center">
             <Link href={`/sop/${sop._id}`} className="p-2 text-gray-500 hover:text-blue-600 transition-colors" title="View SOP">
               <Eye size={18} />

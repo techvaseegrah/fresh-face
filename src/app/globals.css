@@ -55,3 +55,15 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 } */
 
+@layer components {
+  .form-label { @apply block text-sm font-medium text-gray-700; }
+  .form-input { @apply block w-full px-4 py-3 text-gray-800 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
+  .form-select { @apply block w-full px-4 py-3 text-gray-800 bg-white border border-gray-300 rounded-lg shadow-sm transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
+  
+  .form-radio-card { @apply flex items-center p-4 border rounded-lg cursor-pointer transition-all duration-200 bg-white shadow-sm; }
+  .form-radio-card.selected { @apply border-2 border-blue-500 bg-blue-50 ring-2 ring-blue-200; }
+  .form-radio-card:not(.selected):hover { @apply border-gray-400 bg-gray-50; }
+
+  .btn-primary { @apply inline-flex items-center justify-center px-6 py-3 font-semibold text-white bg-blue-600 border border-transparent rounded-lg shadow-sm transition-all duration-200 ease-in-out hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-secondary { @apply inline-flex items-center justify-center px-6 py-3 font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm transition-all duration-200 ease-in-out hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500; }
+}

@@ -15,12 +15,15 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Helper function to upload media (remains the same)
-async function uploadMedia(buffer: Buffer, tenantId: string, staffId: string, date: string): Promise<string> {
+// Helper function to upload media. We need to detect if it's an image or video.
+async function uploadMedia(buffer: Buffer, fileType: string, tenantId: string, staffId: string, date: string): Promise<string> {
+  // --- UPDATED ---: Dynamically set resource_type based on the file's MIME type
+  const resource_type = fileType.startsWith('video/') ? 'video' : 'image';
+
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       { 
-        resource_type: 'video', 
+        resource_type, 
         folder: `sop-submissions/${tenantId}/${date}`,
         public_id: `staff_${staffId}_${Date.now()}`
       },
@@ -46,45 +49,54 @@ export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
         const sopId = formData.get('sopId') as string;
-        const responsesJson = formData.get('responses') as string;
-        const files = formData.getAll('files') as File[];
+        // The 'items' field now contains all the answer data as a JSON string
+        const itemsJson = formData.get('items') as string;
+        // The 'files' are now sent with a key that includes their original index
+        // e.g., 'files[0]', 'files[2]'
 
-        if (!sopId || !responsesJson || files.length === 0) {
+        if (!sopId || !itemsJson) {
             return NextResponse.json({ message: 'Missing required data' }, { status: 400 });
         }
-
-        // Server-side file size validation (remains the same and is crucial)
-        const MAX_FILE_SIZE_MB = 10;
-        const maxFileSizeBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
-        for (const file of files) {
-            if (file.size > maxFileSizeBytes) {
-                return NextResponse.json({ message: `File "${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB size limit.` }, { status: 400 });
-            }
-        }
-
-        const responses = JSON.parse(responsesJson);
+        
+        // This is the array of answers from the form
+        const items = JSON.parse(itemsJson);
         
         await dbConnect();
-        
-        // Upload all media files to Cloudinary in parallel
+
+        const dateString = new Date().toISOString().split('T')[0];
+
+        // --- MAJOR CHANGE: New logic to process detailed responses ---
         const processedResponses = await Promise.all(
-            responses.map(async (response: any, index: number) => {
-                const file = files[index];
+            items.map(async (item: any, index: number) => {
+                // The frontend will send files with a key like 'files[0]', 'files[1]' etc.
+                const file = formData.get(`files[${index}]`) as File | null;
+                
+                let mediaUrl: string | undefined = undefined;
+
                 if (file) {
+                    // File size validation
+                    const MAX_FILE_SIZE_MB = 10;
+                    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                        throw new Error(`File "${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`);
+                    }
+                    
                     const buffer = Buffer.from(await file.arrayBuffer());
-                    const dateString = new Date().toISOString().split('T')[0];
-                    const url = await uploadMedia(buffer, tenantId.toString(), session.user.id, dateString);
-                    // --- CORRECTED ---: Use the new 'mediaUrl' field name to match the schema
-                    return { ...response, mediaUrl: url };
+                    mediaUrl = await uploadMedia(buffer, file.type, tenantId.toString(), session.user.id, dateString);
                 }
-                return response;
+
+                // Construct the response object that matches the new DB schema
+                return {
+                    checklistItem: item.checklistItem,
+                    answer: item.answer,
+                    remarks: item.remarks,
+                    mediaUrl: mediaUrl,
+                };
             })
         );
         
         const today = startOfDay(new Date());
 
-        // --- NEW WORKFLOW LOGIC ---
-        // Check if there is an existing 'rejected' submission for this SOP, user, and day.
+        // The logic for updating a rejected submission or creating a new one is still valid
         const existingRejectedSubmission = await SopSubmission.findOne({
             sop: sopId,
             staff: session.user.id,
@@ -93,30 +105,26 @@ export async function POST(req: NextRequest) {
         });
 
         if (existingRejectedSubmission) {
-            // If a rejected submission exists, UPDATE it instead of creating a new one.
             existingRejectedSubmission.responses = processedResponses;
-            existingRejectedSubmission.status = 'pending_review'; // Reset the status for re-review
-            existingRejectedSubmission.reviewNotes = undefined; // Clear previous rejection notes
-            existingRejectedSubmission.reviewedBy = undefined; // Clear previous reviewer
+            existingRejectedSubmission.status = 'pending_review';
+            existingRejectedSubmission.reviewNotes = undefined;
+            existingRejectedSubmission.reviewedBy = undefined;
             
             await existingRejectedSubmission.save();
             return NextResponse.json({ message: 'Checklist re-submitted successfully' }, { status: 200 });
 
         } else {
-            // If no rejected submission exists, create a brand new submission.
             const newSubmission = new SopSubmission({
                 sop: sopId,
                 responses: processedResponses,
                 staff: session.user.id,
                 tenantId,
                 submissionDate: today,
-                // The 'status' will default to 'pending_review' as per the schema
             });
 
             await newSubmission.save();
             return NextResponse.json({ message: 'Checklist submitted successfully' }, { status: 201 });
         }
-        // --- END OF NEW WORKFLOW LOGIC ---
 
     } catch (error: any) {
         console.error("SOP Submission Error:", error);
