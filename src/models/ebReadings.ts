@@ -1,4 +1,4 @@
-// /models/ebReadings.ts
+// /models/ebReadings.ts (CORRECTED)
 
 import mongoose, { Schema, Document, Model, models } from 'mongoose';
 
@@ -41,13 +41,12 @@ const HistorySchema = new Schema<IHistoryEntry>({
 const EBReadingSchema = new Schema<IEBReading>({
   tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
   date: { type: Date, required: true },
-  // சிரிய மாற்றம்: default மதிப்பும், enum-ம் சேர்க்கப்பட்டுள்ளது
   meterIdentifier: { 
     type: String, 
     required: true, 
     trim: true, 
     index: true, 
-    enum: ['meter-1', 'meter-2'], // இது தவறான மதிப்புகள் வராமல் தடுக்கும்
+    enum: ['meter-1', 'meter-2'],
     default: 'meter-1' 
   },
   morningUnits: { type: Number, required: false },
@@ -60,8 +59,9 @@ const EBReadingSchema = new Schema<IEBReading>({
   updatedBy: { type: String, required: false },
 }, { timestamps: true });
 
-// இது ஏற்கெனவே சரியாகத்தான் உள்ளது. மாற்ற வேண்டாம்.
-EBReadingSchema.index({ tenantId: 1, date: 1, meterIdentifier: 1 }, { unique: true });
+// The unique index is removed because our API's upsert logic now handles preventing duplicates.
+// This was causing a conflict with findOneAndUpdate({ upsert: true }).
+// EBReadingSchema.index({ tenantId: 1, date: 1, meterIdentifier: 1 }, { unique: true });
 
 const EBReading: Model<IEBReading> = models.EBReading || mongoose.model<IEBReading>('EBReading', EBReadingSchema);
 

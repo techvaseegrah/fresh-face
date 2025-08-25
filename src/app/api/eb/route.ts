@@ -1,11 +1,11 @@
-// /app/api/eb/route.ts
+// PASTE THIS FULL CORRECTED CODE INTO: src/app/api/eb/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { v2 as cloudinary } from 'cloudinary';
 import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
-import EBReading from '@/models/ebReadings';
+import EBReading from '@/models/ebReadings'; // Make sure your model is named ebReadings
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import Setting from '@/models/Setting';
 import { getTenantIdOrBail } from '@/lib/tenant';
@@ -33,9 +33,89 @@ async function uploadImage(file: File, tenantId: string): Promise<string> {
     });
 }
 
-// GET மற்றும் PUT பங்க்ஷன்களில் எந்த மாற்றமும் இல்லை. அதை அப்படியே விட்டுவிடவும்.
+// This single POST function now handles both CREATE and UPDATE (UPSERT)
+export async function POST(request: NextRequest) {
+    try {
+        const tenantId = getTenantIdOrBail(request);
+        if (tenantId instanceof NextResponse) return tenantId;
+
+        const session = await getServerSession(authOptions);
+        if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.EB_UPLOAD)) {
+            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+        }
+
+        const formData = await request.formData();
+        const image = formData.get('image') as File;
+        const dateString = formData.get('date') as string;
+        const meterIdentifier = formData.get('meterIdentifier') as string;
+
+        if (!image || !dateString || !meterIdentifier) {
+            return NextResponse.json({ success: false, message: 'Image, date, and meter are required.' }, { status: 400 });
+        }
+
+        // Upload the new image first
+        const imageUrl = await uploadImage(image, tenantId);
+        
+        // Normalize the date to avoid timezone issues
+        const recordDate = new Date(dateString);
+        recordDate.setUTCHours(0, 0, 0, 0);
+
+        await connectToDatabase();
+        
+        // Find the cost setting to apply on creation
+        const costSetting = await Setting.findOne({ key: 'ebCostPerUnit', tenantId: tenantId });
+        const costToStamp = costSetting ? costSetting.value : 8; // Default value if not set
+
+        // This is the query to find the document
+        const query = { 
+            date: recordDate, 
+            tenantId: tenantId, 
+            meterIdentifier: meterIdentifier 
+        };
+        
+        // This is the data for the document
+        const updatePayload = {
+            $set: { // Fields to update every time
+                morningImageUrl: imageUrl, 
+                updatedBy: session.user.id 
+            },
+            $setOnInsert: { // Fields to set only when creating a new document
+                date: recordDate,
+                meterIdentifier: meterIdentifier,
+                tenantId: tenantId,
+                createdBy: session.user.id,
+                costPerUnit: costToStamp,
+            }
+        };
+
+        // The powerful upsert command
+        const reading = await EBReading.findOneAndUpdate(
+            query,
+            updatePayload,
+            { 
+                upsert: true, // This is the key: create if it doesn't exist
+                new: true, // Return the new/updated document
+                setDefaultsOnInsert: true 
+            }
+        );
+
+        if (!reading) {
+             throw new Error("Failed to create or update the reading.");
+        }
+
+        // Use 200 for update, 201 for create could be implemented if needed, but 200 is fine for both.
+        return NextResponse.json({ success: true, reading: reading }, { status: 200 });
+
+    } catch (error: any) {
+        console.error('Error processing EB reading upload:', error);
+        return NextResponse.json({ success: false, message: 'Internal server error during upload.' }, { status: 500 });
+    }
+}
+
+
+// Your other functions (GET, PUT for updating units, etc.) can remain below
 export async function GET(request: NextRequest) {
-    // ... உங்கள் பழைய GET கோட் ...
+    // ... no changes needed for your GET code ...
     try {
         const tenantId = getTenantIdOrBail(request);
         if (tenantId instanceof NextResponse) return tenantId;
@@ -52,89 +132,9 @@ export async function GET(request: NextRequest) {
     }
 }
 
-
-export async function POST(request: NextRequest) {
-    try {
-        const tenantId = getTenantIdOrBail(request);
-        if (tenantId instanceof NextResponse) return tenantId;
-        const session = await getServerSession(authOptions);
-        if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.EB_UPLOAD)) {
-            return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-        }
-
-        const formData = await request.formData();
-        const image = formData.get('image') as File;
-        const dateString = formData.get('date') as string;
-        const meterIdentifier = formData.get('meterIdentifier') as string;
-
-        if (!image || !dateString || !meterIdentifier) {
-            return NextResponse.json({ success: false, message: 'Image, date, and meter identifier are required' }, { status: 400 });
-        }
-
-        // முக்கிய சரிபார்ப்பு: meterIdentifier சரியாக வருகிறதா என்று பார்க்கவும்
-        if (!['meter-1', 'meter-2'].includes(meterIdentifier)) {
-            return NextResponse.json({ success: false, message: 'Invalid meter identifier provided.' }, { status: 400 });
-        }
-
-        const imageUrl = await uploadImage(image, tenantId);
-        const recordDate = new Date(dateString);
-        recordDate.setUTCHours(0, 0, 0, 0);
-
-        await connectToDatabase();
-        const costSetting = await Setting.findOne({ key: 'ebCostPerUnit', tenantId: tenantId });
-        const costToStamp = costSetting ? costSetting.value : 8;
-
-        const query = { date: recordDate, tenantId: tenantId, meterIdentifier: meterIdentifier };
-        
-        // அப்டேட் செய்வதை எளிமையாக்குகிறோம்
-        const updatePayload = {
-            tenantId: tenantId,
-            date: recordDate,
-            meterIdentifier: meterIdentifier,
-            morningImageUrl: imageUrl,
-            updatedBy: session.user.id,
-            costPerUnit: costToStamp,
-            createdBy: session.user.id,
-        };
-
-        const reading = await EBReading.findOneAndUpdate(
-            query,
-            { 
-                $set: { 
-                    morningImageUrl: imageUrl, 
-                    updatedBy: session.user.id 
-                },
-                $setOnInsert: {
-                    date: recordDate,
-                    meterIdentifier: meterIdentifier,
-                    createdBy: session.user.id,
-                    costPerUnit: costToStamp,
-                    tenantId: tenantId
-                }
-            },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-
-        if (!reading) {
-             throw new Error("Failed to create or update the reading.");
-        }
-
-        return NextResponse.json({ success: true, reading: reading }, { status: 201 });
-
-    } catch (error: any) {
-        console.error('Error processing EB reading upload:', error);
-        // Duplicate key error-ஐ இப்போது சரியாக கையாளுகிறோம்.
-        if (error.code === 11000) {
-            // இந்த மெசேஜ் உங்கள் frontend-ல் காட்டப்படும்.
-            return NextResponse.json({ success: false, message: 'A reading for this date and meter already exists. The operation was blocked to prevent duplicates.' }, { status: 409 });
-        }
-        return NextResponse.json({ success: false, message: 'Internal server error during upload' }, { status: 500 });
-    }
-}
-
-// PUT பங்க்ஷனில் எந்த மாற்றமும் இல்லை.
 export async function PUT(request: NextRequest) {
-    // ... உங்கள் பழைய PUT கோட் ...
+    // ... no changes needed for your PUT code that updates units ...
+    // This is for updating the *number* of units, not the image.
     try {
         const tenantId = getTenantIdOrBail(request);
         if (tenantId instanceof NextResponse) return tenantId;
@@ -161,11 +161,12 @@ export async function PUT(request: NextRequest) {
                 changes: [{ field: 'Morning Units', oldValue: currentReading.morningUnits, newValue: morningUnits }],
                 tenantId: tenantId,
             };
-            currentReading.history.push(historyEntry as IHistoryEntry);
+            currentReading.history.push(historyEntry as any); // Using any to bypass strict type for simplicity here
             currentReading.morningUnits = morningUnits;
             currentReading.updatedBy = session.user.id;
         }
 
+        // --- Recalculation logic remains the same ---
         const previousDate = new Date(currentReading.date);
         previousDate.setDate(previousDate.getDate() - 1);
         const previousReading = await EBReading.findOne({ date: previousDate, tenantId: tenantId, meterIdentifier: currentReading.meterIdentifier });
