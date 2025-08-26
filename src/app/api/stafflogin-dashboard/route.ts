@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongodb';
 import { startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns';
 import { getTenantIdOrBail } from '@/lib/tenant'; 
-import { decrypt } from '@/lib/crypto'; // Make sure to import decrypt
+import { decrypt } from '@/lib/crypto';
 
 // --- Import ALL necessary models ---
 import Staff from '@/models/staff';
@@ -16,9 +16,10 @@ import DailySale from '@/models/DailySale';
 import IncentivePayout from '@/models/IncentivePayout';
 import Shift, { IShift } from '@/models/Shift';
 import IncentiveRule from '@/models/IncentiveRule';
-import Appointment from '@/models/Appointment'; // <-- ADD THIS: Import Appointment model
-import Customer from '@/models/customermodel'; // <-- ADD THIS: Import Customer model
-import ServiceItem from '@/models/ServiceItem'; // <-- ADD THIS: Import ServiceItem model
+import Appointment from '@/models/Appointment';
+import Customer from '@/models/customermodel';
+import ServiceItem from '@/models/ServiceItem';
+import LeaveRequest from '@/models/LeaveRequest'; // <-- ADD THIS: Import LeaveRequest model
 
 
 // --- (Helper functions like calculateIncentive, IRule interface remain unchanged) ---
@@ -91,8 +92,8 @@ export async function GET(request: NextRequest) {
         const now = new Date();
         const monthStart = startOfMonth(now);
         const monthEnd = endOfMonth(now);
-        const todayStart = startOfDay(now); // <-- ADD THIS: Get start of today
-        const todayEnd = endOfDay(now);     // <-- ADD THIS: Get end of today
+        const todayStart = startOfDay(now);
+        const todayEnd = endOfDay(now);
 
         const [
             settings,
@@ -103,7 +104,8 @@ export async function GET(request: NextRequest) {
             monthlyPerformance,
             payoutRecords,
             todayShiftRecord,
-            todaysAppointments, // <-- ADD THIS: Fetch today's appointments
+            todaysAppointments,
+            recentLeaveRequests, // <-- ADD THIS: Variable for leave requests
         ] = await Promise.all([
             ShopSetting.findOne({ key: 'defaultSettings', tenantId }).lean(),
             Staff.findById(staffObjectId).select('position').lean(),
@@ -113,23 +115,21 @@ export async function GET(request: NextRequest) {
             DailySale.find({ staff: staffObjectId, tenantId: tenantId, date: { $gte: monthStart, $lte: monthEnd } }).lean(),
             IncentivePayout.find({ staff: staffObjectId, tenantId: tenantId, createdAt: { $gte: monthStart, $lte: monthEnd } }).lean(),
             Shift.findOne({ employeeId: staffObjectId, tenantId: tenantId, date: { $gte: startOfDay(now), $lte: endOfDay(now) } }).lean<IShift | null>(),
-            // --- V ADDED LOGIC V ---
             Appointment.find({
                 stylistId: staffObjectId,
                 tenantId: tenantId,
                 appointmentDateTime: { $gte: todayStart, $lte: todayEnd },
-                status: { $in: ['Appointment', 'Checked-In'] } // Filter for relevant statuses
+                status: { $in: ['Appointment', 'Checked-In'] }
             })
-            .populate({ 
-                path: 'customerId', 
-                select: 'name' 
-            })
-            .populate({
-                path: 'serviceIds',
-                select: 'name'
-            })
-            .sort({ appointmentDateTime: 1 }) // Sort by time
+            .populate({ path: 'customerId', select: 'name' })
+            .populate({ path: 'serviceIds', select: 'name' })
+            .sort({ appointmentDateTime: 1 })
             .lean(),
+            // --- V ADDED LOGIC V ---
+            LeaveRequest.find({ staff: staffObjectId, tenantId: tenantId })
+                .sort({ createdAt: -1 }) // Get the most recent requests
+                .limit(5) // Limit to 5 for the dashboard summary
+                .lean(),
             // --- ^ ADDED LOGIC ^ ---
         ]);
 
@@ -156,8 +156,7 @@ export async function GET(request: NextRequest) {
         const totalPayoutClaimed = payoutRecords.filter(p => p.status === 'approved').reduce((s, p) => s + p.amount, 0);
         const pendingPayouts = payoutRecords.filter(p => p.status === 'pending').length;
 
-        // --- V ADDED LOGIC V ---
-        // Decrypt customer names for the appointments
+        // --- (Appointment decryption logic remains unchanged) ---
         const decryptedAppointments = todaysAppointments.map(apt => {
             let decryptedCustomerName = 'Decryption Error';
             if ((apt.customerId as any)?.name) {
@@ -174,7 +173,6 @@ export async function GET(request: NextRequest) {
                 time: new Date(apt.appointmentDateTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
             };
         });
-        // --- ^ ADDED LOGIC ^ ---
 
 
         const dashboardData = {
@@ -184,7 +182,8 @@ export async function GET(request: NextRequest) {
             performance: { totalSales, customerCount },
             incentives: { totalEarned: totalIncentiveEarned },
             payouts: { totalClaimed: totalPayoutClaimed, pendingCount: pendingPayouts },
-            todaysAppointments: decryptedAppointments, // <-- ADD THIS: Attach the appointment data
+            todaysAppointments: decryptedAppointments,
+            leaveRequests: recentLeaveRequests, // <-- ADD THIS: Attach the leave request data
         };
 
         return NextResponse.json({ success: true, data: dashboardData });

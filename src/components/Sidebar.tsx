@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-// --- ADDITION #1: Import useState and useEffect ---
 import { useState, useEffect, useMemo } from 'react';
 import { hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 
@@ -11,12 +10,15 @@ import {
   HomeIcon, CalendarDaysIcon, UserGroupIcon, UsersIcon, CogIcon, Cog6ToothIcon, PowerIcon,
   LightBulbIcon, DocumentTextIcon, ShoppingCartIcon, BuildingStorefrontIcon, BanknotesIcon,
   BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon,
-  ChartBarIcon // <-- This is used for one of the sub-items
+  ChartBarIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig } from 'lucide-react';
 import { DocumentCheckIcon } from '@heroicons/react/24/solid';
 
+
+// Custom SVG icons
 const AttendanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg> );
 const AdvanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01M12 18v-2m0-8a6 6 0 100 12 6 6 0 000-12z"></path></svg> );
 const PerformanceIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg> );
@@ -30,27 +32,26 @@ const SwiftIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentCo
 interface NavSubItem { href: string; label: string; icon: JSX.Element; show: boolean; basePathForActive?: string; }
 interface NavItemConfig { href: string; label: string; icon: JSX.Element; show: boolean; subItems?: NavSubItem[]; }
 
-const Sidebar = () => {
+const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const pathname = usePathname();
   const { data: session, status } = useSession(); 
   const [openItemKey, setOpenItemKey] = useState<string | null>(null);
   
-  // --- ADDITION #2: Add isMounted state ---
-  const [isMounted, setIsMounted] = useState(false);
-  
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
 
   const navItems = useMemo((): NavItemConfig[] => {
-    // --- (Your existing nav logic is unchanged) ---
     const staffSubItems: NavSubItem[] = [
       { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ATTENDANCE_READ]) },
       { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ADVANCE_READ]) },
       { href: '/staffmanagement/performance', label: 'Performance', icon: <PerformanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_PERFORMANCE_READ]) },
       { href: '/staffmanagement/target', label: 'Target', icon: <TargetIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_TARGET_READ]) },
       { href: '/staffmanagement/incentives', label: 'Incentives', icon: <IncentivesIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_INCENTIVES_READ]) },
+      { href: '/staffmanagement/incentive-payout', label: 'Incentive Payout', icon: <AdvanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_INCENTIVE_PAYOUT_READ]) },
       { href: '/staffmanagement/salary', label: 'Salary', icon: <SalaryIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SALARY_READ]) },
       { href: '/staffmanagement/staff/stafflist', label: 'Staff List', icon: <StaffListIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_LIST_READ]), basePathForActive: '/staffmanagement/staff' },
       { href: '/staffmanagement/swift', label: 'Shift Management', icon: <SwiftIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
+      // I've updated the line below to add sizing to the PowerIcon
+      { href: '/staffmanagement/leave', label: 'Leave', icon:<PowerIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
     ];
 
     const adminSubItems: NavSubItem[] = [
@@ -64,29 +65,22 @@ const Sidebar = () => {
       { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
     ];
     
-     const sopSubItems: NavSubItem[] = [
-        { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]), basePathForActive: '/sop' },
-        { 
-          href: '/sop/tasks', 
-          label: 'My Daily Tasks', 
-          icon: <DocumentCheckIcon className="h-5 w-5" />, 
-          show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) 
-        },
-        { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
-    ];
+     // Inside your navItems useMemo hook in Sidebar.tsx
+
+const sopSubItems: NavSubItem[] = [
+    // BEFORE (The problem is here)
+    // { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]), basePathForActive: '/sop' },
+
+    // AFTER (Corrected configuration)
+    { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) }, // No basePathForActive
+
+    // These other links are already correct
+    { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
+    { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
+];
     const telecallingSubItems: NavSubItem[] = [
-      { 
-        href: '/telecalling', 
-        label: 'Workspace', 
-        icon: <PhoneForwarded className="h-5 w-5" />,
-        show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM])
-      },
-      { 
-        href: '/telecalling/reports/performance', 
-        label: 'Performance Report', 
-        icon: <BarChartBig className="h-5 w-5" />,
-        show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_VIEW_REPORTS]) 
-      }
+      { href: '/telecalling', label: 'Workspace', icon: <PhoneForwarded className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM]) },
+      { href: '/telecalling/reports', label: 'Telecalling Reports', icon: <BarChartBig className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_VIEW_REPORTS]) }
     ];
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
@@ -109,13 +103,7 @@ const Sidebar = () => {
       { href: '/eb-view', label: 'EB View & Calculate', icon: <DocumentTextIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EB_VIEW_CALCULATE]) },
       { href: '/inventory-checker', label: 'Inventory Checker', icon: <BeakerIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) },
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
-      { 
-        href: '/budgets', 
-        label: 'Budget Management', 
-        icon: <BanknotesIcon className="h-5 w-5" />, 
-        show: canSeeBudgetManagement, 
-        subItems: budgetSubItems.filter(item => item.show) 
-      },
+      { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
       { href: '/admin', label: 'Administration', icon: <Cog6ToothIcon className="h-5 w-5" />, show: canSeeAdministration, subItems: adminSubItems.filter(item => item.show) },
@@ -123,11 +111,6 @@ const Sidebar = () => {
     ];
   }, [userPermissions]);
   
-  // --- ADDITION #3: Add useEffect to set isMounted ---
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
@@ -137,23 +120,11 @@ const Sidebar = () => {
     setOpenItemKey(activeParent?.href || null);
   }, [pathname, navItems, status]);
   
-  // --- ADDITION #4: Modify the loading condition to check for isMounted ---
-  if (!isMounted) {
-    // On server-side and initial client-side render, show a simple placeholder
-    // to prevent hydration error. The classes should match the real sidebar's container.
-    return <div className="w-64 h-screen bg-white text-black fixed left-0 top-0 shadow-lg flex flex-col" />;
-  }
-  
   if (status === 'loading') {
-    return <div className="w-64 h-screen bg-white fixed" />;
+    return <div className="hidden md:block w-64 h-screen bg-white fixed" />;
   }
 
-  if (
-    status === 'unauthenticated' || 
-    pathname === '/login' || 
-    pathname === '/signup' || 
-    pathname.startsWith('/staff-dashboard')
-  ) {
+  if (status === 'unauthenticated' || pathname === '/login' || pathname === '/signup') {
     return null;
   }
 
@@ -169,21 +140,26 @@ const Sidebar = () => {
     return currentPath.startsWith(item.href);
   };
 
-  return (
-    <div className="w-64 h-screen bg-white text-black fixed left-0 top-0 shadow-lg flex flex-col">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200">
+  const sidebarContent = (isMobile = false) => (
+    <div className="w-full h-full bg-white text-black shadow-lg flex flex-col">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">FF</div>
             <div><h1 className="text-xl font-semibold text-gray-800">Fresh Face</h1><p className="text-xs text-gray-500">Salon Management</p></div>
           </div>
+          {isMobile && (
+            <button onClick={() => setSidebarOpen(false)} className="text-gray-500 hover:text-gray-800">
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+          )}
         </div>
-        {/* Navigation */}
+        
         <div className="flex-1 overflow-y-auto">
           <nav className="p-4 space-y-1">
             {navItems.filter(item => item.show).map((item) => {
               const isActive = isItemOrSubitemActive(item, pathname);
               const isOpen = openItemKey === item.href;
+              const mobileLinkClick = () => { if(isMobile) setSidebarOpen(false); };
               return (
                 <div key={item.href}>
                   {item.subItems?.length ? (
@@ -196,9 +172,16 @@ const Sidebar = () => {
                         {isOpen && (
                           <div className="mt-1 space-y-0.5 py-1">
                             {item.subItems.map((subItem) => {
-                              const isSubActive = pathname.startsWith(subItem.basePathForActive || subItem.href);
+                              // ▼▼▼ THE FIX IS HERE ▼▼▼
+                              // This logic is now more precise. It uses an exact match for standard links
+                              // and a broad `startsWith` match only when `basePathForActive` is provided.
+                              const isSubActive = subItem.basePathForActive
+                                ? pathname.startsWith(subItem.basePathForActive)
+                                : pathname === subItem.href;
+                              // ▲▲▲ END OF FIX ▲▲▲
+                              
                               return (
-                                <Link key={subItem.href} href={subItem.href} className={`flex items-center gap-3 pl-8 pr-4 py-2 rounded-lg transition-colors text-sm text-gray-600 ${ isSubActive ? 'bg-gray-200 text-black font-medium' : 'hover:bg-gray-100 hover:text-black' }`}>
+                                <Link onClick={mobileLinkClick} key={subItem.href} href={subItem.href} className={`flex items-center gap-3 pl-8 pr-4 py-2 rounded-lg transition-colors text-sm text-gray-600 ${ isSubActive ? 'bg-gray-200 text-black font-medium' : 'hover:bg-gray-100 hover:text-black' }`}>
                                   {subItem.icon}<span>{subItem.label}</span>
                                 </Link>
                               );
@@ -208,7 +191,7 @@ const Sidebar = () => {
                       </div>
                     </>
                   ) : (
-                    <Link href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
+                    <Link onClick={mobileLinkClick} href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-700 ${isActive ? 'bg-gray-100 text-black font-medium' : 'hover:bg-gray-50 hover:text-black'}`}>
                       {item.icon}<span>{item.label}</span>
                     </Link>
                   )}
@@ -217,7 +200,7 @@ const Sidebar = () => {
             })}
           </nav>
         </div>
-        {/* Footer */}
+        
         <div className="p-4 border-t border-gray-200">
           {session && (
             <div className="space-y-3">
@@ -237,6 +220,32 @@ const Sidebar = () => {
           )}
         </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Mobile Sidebar */}
+      <div
+        className={`fixed inset-y-0 left-0 z-30 w-64 transform ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } transition-transform duration-300 ease-in-out md:hidden`}
+      >
+        {sidebarContent(true)}
+      </div>
+
+      {/* Desktop Sidebar */}
+      <div className="hidden md:flex md:fixed md:inset-y-0 md:w-64">
+        {sidebarContent(false)}
+      </div>
+
+      {/* Overlay for Mobile */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
+    </>
   );
 };
 

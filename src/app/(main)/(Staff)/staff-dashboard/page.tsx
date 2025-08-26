@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-// --- MODIFIED: Imported Variants type from framer-motion ---
 import { motion, Variants } from 'framer-motion';
 import { 
     Loader2, 
@@ -19,8 +18,11 @@ import {
     Calendar as CalendarIcon, 
     Users, 
     Scissors,
-    CheckCircle2
+    CheckCircle2,
+    // --- ADDED ICON ---
+    CalendarOff 
 } from 'lucide-react';
+
 
 // --- (The StatCard component remains unchanged) ---
 const StatCard = ({ icon, title, value, subtext }: { icon: React.ReactNode, title: string, value: string | number, subtext: string }) => {
@@ -59,6 +61,19 @@ const StatCard = ({ icon, title, value, subtext }: { icon: React.ReactNode, titl
             </div>
         </div>
     );
+};
+
+
+// --- ADDED HELPER FUNCTION ---
+const getStatusChip = (status: string) => {
+    const baseClasses = "px-2 py-0.5 text-xs font-medium rounded-full capitalize";
+    if (status === 'Approved' || status === 'approved') {
+        return <span className={`${baseClasses} bg-green-100 text-green-800`}>{status}</span>;
+    }
+    if (status === 'Rejected' || status === 'rejected') {
+        return <span className={`${baseClasses} bg-red-100 text-red-800`}>{status}</span>;
+    }
+    return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>{status}</span>;
 };
 
 
@@ -110,7 +125,6 @@ export default function StaffDashboardPage() {
         return <div className="text-red-600 bg-red-50 p-4 rounded-md flex items-center gap-2"><AlertCircle/> {error}</div>;
     }
 
-    // --- MODIFIED: Explicitly typed the variants object ---
     const cardVariants: Variants = {
         hover: {
             scale: 1.03,
@@ -215,7 +229,8 @@ export default function StaffDashboardPage() {
                             subtext="Achieved vs. Target hours for the month" 
                         />
                     </motion.div>
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                     {/* --- MODIFIED: Grid layout changed to support three columns on large screens --- */}
+                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                         <motion.div className="bg-white p-6 rounded-xl shadow-sm border" variants={cardVariants} whileHover="hover">
                             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2"><Wallet/> Advance History</h2>
                             <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
@@ -227,6 +242,31 @@ export default function StaffDashboardPage() {
                                                 <span className={`px-2 py-0.5 text-xs font-medium rounded-full capitalize ${adv.status === 'approved' ? 'bg-green-100 text-green-800' : adv.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{adv.status}</span>
                                             </div>
                                             <p className="text-xs text-gray-500 mt-1">{new Date(adv.requestDate).toLocaleDateString()}</p>
+                                        </motion.div>
+                                    ))
+                                }
+                            </div>
+                        </motion.div>
+
+                        {/* --- ADDED: NEW LEAVE REQUESTS CARD --- */}
+                        <motion.div className="bg-white p-6 rounded-xl shadow-sm border" variants={cardVariants} whileHover="hover">
+                            <div className="flex justify-between items-start mb-4">
+                                <h2 className="text-xl font-semibold flex items-center gap-2"><CalendarOff/> Leave History</h2>
+                                <Link href="/leave" className="text-sm font-medium text-indigo-600 hover:text-indigo-800 flex-shrink-0">
+                                    View All
+                                </Link>
+                            </div>
+                            <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                               {dashboardData?.leaveRequests?.length === 0 ? <p className="text-center text-gray-500 py-10">No leave requests found.</p> :
+                                    dashboardData?.leaveRequests.map((req: any) => (
+                                        <motion.div key={req._id} className="p-3 bg-gray-50 rounded-md" whileHover={{ backgroundColor: "#f3f4f6" }}>
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-medium text-sm">{req.leaveType}</span>
+                                                {getStatusChip(req.status)}
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                {new Date(req.startDate).toLocaleDateString()} - {new Date(req.endDate).toLocaleDateString()}
+                                            </p>
                                         </motion.div>
                                     ))
                                 }

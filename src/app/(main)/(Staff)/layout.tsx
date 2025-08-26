@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { 
     LayoutDashboard, LogOut, Loader2, PlusCircle, CalendarPlus, 
     CalendarCheck, BarChart2, IndianRupee, Wallet, Clock, 
-    Briefcase // <-- ADD THIS ICON
+    Briefcase
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -34,7 +34,8 @@ const NavLink = ({ href, icon, children }: { href: string, icon: React.ReactNode
 export default function StaffDashboardLayout({ children }: { children: React.ReactNode; }) {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  // --- FIX: Removed state for modal ---
+  // const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
 
   useEffect(() => {
     if (status === 'unauthenticated' || (status === 'authenticated' && session.user.role.name !== 'staff')) {
@@ -53,7 +54,7 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
   return (
     <>
       <ToastContainer theme="colored" position="top-right" />
-      {/* <RequestLeaveModal isOpen={isLeaveModalOpen} onClose={() => setIsLeaveModalOpen(false)} /> */}
+      {/* --- FIX: Removed modal component --- */}
 
       <div className="absolute inset-0 flex bg-gray-50">
         <aside className="w-64 bg-white shadow-md flex flex-col">
@@ -69,9 +70,7 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
           
           <nav className="flex-1 p-4 space-y-2">
             <NavLink href="/staff-dashboard" icon={<LayoutDashboard size={20} />}>Dashboard</NavLink>
-            {/* --- V ADDED LINE V --- */}
             <NavLink href="/my-appointments" icon={<Briefcase size={20} />}>My Appointments</NavLink>
-            {/* --- ^ ADDED LINE ^ --- */}
             <NavLink href="/attendance" icon={<CalendarCheck size={20} />}>Attendance</NavLink>
             <NavLink href="/advance" icon={<PlusCircle size={20}/>}>Request Advance</NavLink>
             <NavLink href="/performance" icon={<BarChart2 size={20} />}>Performance</NavLink>
@@ -79,10 +78,11 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
             <NavLink href="/payouts" icon={<Wallet size={20} />}>Request Incentive Payout</NavLink>
             <NavLink href="/my-shifts" icon={<Clock size={20} />}>My Shifts</NavLink>
             <hr className="my-2"/>
-            <button onClick={() => setIsLeaveModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 text-left">
-              <CalendarPlus size={20}/> 
-              <span>Request Leave</span>
-            </button>
+            {/* --- FIX START: Replaced button with a NavLink to the leave page --- */}
+            <NavLink href="/leave" icon={<CalendarPlus size={20} />}>
+                Request Leave
+            </NavLink>
+            {/* --- FIX END --- */}
           </nav>
           
           <div className="p-4 border-t">
