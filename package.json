@@ -43,6 +43,7 @@
     "react-select": "^5.10.2",
     "react-toastify": "^11.0.5",
     "react-tooltip": "^5.29.1",
+    "recharts": "^3.1.2",
     "swr": "^2.3.6",
     "tooltip": "^1.6.1",
     "xlsx": "^0.18.5"
@@ -56,6 +57,7 @@
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
     "@types/react-dropzone": "^4.2.2",
+    "@types/recharts": "^1.8.29",
     "@types/xlsx": "^0.0.35",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",

@@ -2,15 +2,99 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Loader2, AlertCircle, IndianRupee, Wallet, PlusCircle, Clock, CheckCircle, XCircle } from 'lucide-react';
+// ✅ ADDED: Framer Motion for animations
+import { motion, Variants } from 'framer-motion'; 
+import { 
+    Loader2, 
+    AlertCircle, 
+    Wallet, 
+    PlusCircle, 
+    Clock, 
+    CheckCircle, 
+    XCircle, 
+    TrendingUp, // Icon for "Earned"
+    TrendingDown // Icon for "Paid"
+} from 'lucide-react';
 import { format } from 'date-fns';
 
-const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+// ===================================================================
+// ✅ NEW: The stylish, reusable StatCard component is now here
+// ===================================================================
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  gradient: string; // e.g., 'from-pink-500 to-red-500'
+}
+
+// Animation variants for the hover effect
+const cardVariants: Variants = {
+  hover: {
+    scale: 1.05,
+    y: -5, // Lifts the card up slightly
+    transition: {
+      type: "spring",
+      stiffness: 300,
+      damping: 15,
+    },
+  },
+};
+
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon, gradient }) => {
+  return (
+    <motion.div
+      variants={cardVariants}
+      whileHover="hover"
+      className={`relative p-6 rounded-2xl text-white shadow-lg overflow-hidden bg-gradient-to-br ${gradient}`}
+    >
+      {/* Large, decorative circle in the background */}
+      <div className="absolute top-0 right-0 -m-4 w-24 h-24 bg-white/10 rounded-full" />
+      
+      {/* Icon in a semi-transparent circle */}
+      <div className="absolute top-4 right-4 w-12 h-12 flex items-center justify-center bg-white/20 rounded-full">
+        {icon}
+      </div>
+      
+      {/* Main Content */}
+      <div className="relative z-10">
+        <p className="text-sm font-medium uppercase opacity-90">{title}</p>
+        <p className="text-4xl font-bold mt-2">{value}</p>
+      </div>
+    </motion.div>
+  );
+};
+// ===================================================================
+// End of StatCard Component
+// ===================================================================
+
+
+// Helper function to format currency
+const formatCurrency = (value: number | null | undefined) => {
+    if (typeof value !== 'number') {
+        return '₹0.00';
+    }
+    return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+};
+
+// Interface for payout history items
+interface Payout {
+    _id: string;
+    amount: number;
+    reason: string;
+    status: 'approved' | 'rejected' | 'pending';
+    createdAt: string;
+}
 
 export default function StaffPayoutsPage() {
-    const { data: session, status } = useSession(); // ✅ THE FIX: Get the session object
-    const [history, setHistory] = useState<any[]>([]);
+    const { data: session, status } = useSession();
+    const [history, setHistory] = useState<Payout[]>([]);
+    
+    // States for the dashboard cards
+    const [totalEarned, setTotalEarned] = useState(0);
+    const [totalPaid, setTotalPaid] = useState(0);
     const [balance, setBalance] = useState(0);
+
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -21,27 +105,35 @@ export default function StaffPayoutsPage() {
     const [formError, setFormError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
 
+    // The data fetching logic remains the same
     const fetchData = async () => {
-        // ✅ THE FIX: Make sure session and tenantId are available
         if (status !== 'authenticated' || !session?.user?.tenantId) return;
         setIsLoading(true);
         setError(null);
         
-        // ✅ THE FIX: Add headers with tenantId to API requests
         const headers = { 'x-tenant-id': session.user.tenantId };
 
         try {
-            const [historyRes, balanceRes] = await Promise.all([
+            const [historyRes, statsDashboardRes] = await Promise.all([
                 fetch('/api/staff/payouts', { headers }),
-                fetch('/api/staff/payouts?action=balance', { headers })
+                fetch('/api/stafflogin-dashboard', { headers })
             ]);
+            
             const historyData = await historyRes.json();
-            const balanceData = await balanceRes.json();
+            const statsDashboardData = await statsDashboardRes.json();
+
             if (!historyRes.ok || !historyData.success) throw new Error(historyData.error || 'Failed to load history.');
-            if (!balanceRes.ok || !balanceData.success) throw new Error(balanceData.error || 'Failed to load balance.');
+            if (!statsDashboardRes.ok || !statsDashboardData.success) throw new Error(statsDashboardData.error || 'Failed to load stats.');
             
             setHistory(historyData.data);
-            setBalance(balanceData.data.balance);
+
+            const earned = statsDashboardData.data.incentives.totalEarned || 0;
+            const paid = statsDashboardData.data.payouts.totalClaimed || 0;
+            
+            setTotalEarned(earned);
+            setTotalPaid(paid);
+            setBalance(earned - paid);
+
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -53,11 +145,11 @@ export default function StaffPayoutsPage() {
         if (status === 'authenticated') {
             fetchData();
         }
-    }, [status, session]); // ✅ THE FIX: Add session to dependency array
+    }, [status, session]);
     
+    // The rest of the component logic remains unchanged
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // ✅ THE FIX: Ensure session and tenantId are available before submitting
         if (!session?.user?.tenantId) {
             setFormError('Could not identify tenant. Please re-login.');
             return;
@@ -67,7 +159,6 @@ export default function StaffPayoutsPage() {
         try {
             const res = await fetch('/api/staff/payouts', {
                 method: 'POST',
-                // ✅ THE FIX: Add headers to the POST request
                 headers: { 
                     'Content-Type': 'application/json',
                     'x-tenant-id': session.user.tenantId,
@@ -78,11 +169,10 @@ export default function StaffPayoutsPage() {
             if (!res.ok || !data.success) {
                 throw new Error(data.error || 'Request failed.');
             }
-            // Success
             setAmount('');
             setReason('');
             setShowForm(false);
-            fetchData(); // Refresh all data
+            fetchData();
         } catch (err: any) {
             setFormError(err.message);
         } finally {
@@ -90,7 +180,6 @@ export default function StaffPayoutsPage() {
         }
     };
     
-    // ... (getStatusChip and JSX remain unchanged) ...
     const getStatusChip = (payoutStatus: string) => {
         switch (payoutStatus) {
             case 'approved': return <span className="flex items-center text-xs font-semibold px-2 py-1 rounded-full text-green-700 bg-green-100"><CheckCircle size={14} className="mr-1" />Approved</span>;
@@ -100,24 +189,42 @@ export default function StaffPayoutsPage() {
     };
 
     return (
-        <div className="space-y-8 p-4 md:p-8">
+        <div className="space-y-8 p-4 md:p-8 bg-gray-50 min-h-screen">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center">
                  <div>
                     <h1 className="text-3xl font-bold text-gray-900">My Payouts</h1>
-                    <p className="mt-1 text-md text-gray-600">Request payouts from your incentive balance.</p>
+                    <p className="mt-1 text-md text-gray-600">Request and track your incentive payouts.</p>
                 </div>
                  <button onClick={() => setShowForm(!showForm)} className="mt-4 md:mt-0 bg-black text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-gray-800 transition-colors flex items-center gap-2">
-                    <PlusCircle size={18} /> {showForm ? 'Cancel' : 'New Payout Request'}
+                    <PlusCircle size={18} /> {showForm ? 'Cancel Request' : 'New Payout Request'}
                 </button>
             </header>
 
             {isLoading ? <div className="text-center py-20"><Loader2 className="h-8 w-8 animate-spin mx-auto text-gray-500" /></div> : error ? <div className="text-red-600 bg-red-50 p-4 rounded-md flex items-center gap-2"><AlertCircle/> {error}</div> : (
                 <>
-                    <div className="bg-white p-6 rounded-xl shadow-sm border text-center">
-                        <p className="text-sm text-gray-500 flex items-center justify-center gap-2"><Wallet/> Available Balance</p>
-                        <p className="text-4xl font-bold text-indigo-600 mt-2">{formatCurrency(balance)}</p>
+                    {/* ✅ UPDATED: The new dashboard layout using StatCard */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <StatCard
+                            title="Total Earned"
+                            value={formatCurrency(totalEarned)}
+                            icon={<TrendingUp size={28} />}
+                            gradient="from-green-500 to-emerald-500"
+                        />
+                        <StatCard
+                            title="Total Paid"
+                            value={formatCurrency(totalPaid)}
+                            icon={<TrendingDown size={28} />}
+                            gradient="from-pink-500 to-red-500"
+                        />
+                        <StatCard
+                            title="Available Balance"
+                            value={formatCurrency(balance)}
+                            icon={<Wallet size={28} />}
+                            gradient="from-violet-500 to-purple-600"
+                        />
                     </div>
 
+                    {/* The form and history sections remain unchanged */}
                     {showForm && (
                         <div className="bg-white p-6 rounded-xl shadow-sm border">
                              <h2 className="text-xl font-semibold mb-4">New Request Form</h2>
@@ -143,8 +250,8 @@ export default function StaffPayoutsPage() {
                     <div className="bg-white rounded-xl shadow-sm border">
                         <h2 className="text-xl font-semibold p-6 border-b">Request History</h2>
                         <div className="space-y-4 p-6">
-                            {history.length === 0 ? <p className="text-center text-gray-500 py-8">No payout requests found.</p> : history.map(p => (
-                                <div key={p._id} className="p-4 border rounded-lg">
+                            {history.length === 0 ? <p className="text-center text-gray-500 py-8">No payout requests found.</p> : history.map((p: Payout) => (
+                                <div key={p._id} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <p className="font-bold text-lg text-gray-800">{formatCurrency(p.amount)}</p>

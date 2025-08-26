@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { 
     LayoutDashboard, LogOut, Loader2, PlusCircle, CalendarPlus, 
-    CalendarCheck, BarChart2, IndianRupee, Wallet, Clock 
+    CalendarCheck, BarChart2, IndianRupee, Wallet, Clock, 
+    Briefcase // <-- ADD THIS ICON
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -68,24 +69,20 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
           
           <nav className="flex-1 p-4 space-y-2">
             <NavLink href="/staff-dashboard" icon={<LayoutDashboard size={20} />}>Dashboard</NavLink>
+            {/* --- V ADDED LINE V --- */}
+            <NavLink href="/my-appointments" icon={<Briefcase size={20} />}>My Appointments</NavLink>
+            {/* --- ^ ADDED LINE ^ --- */}
             <NavLink href="/attendance" icon={<CalendarCheck size={20} />}>Attendance</NavLink>
-            
-            {/* ✅ FIX #1: "Request Advance" is now moved here */}
             <NavLink href="/advance" icon={<PlusCircle size={20}/>}>Request Advance</NavLink>
-
             <NavLink href="/performance" icon={<BarChart2 size={20} />}>Performance</NavLink>
             <NavLink href="/incentives" icon={<IndianRupee size={20} />}>Incentives</NavLink>
-            
-            {/* ✅ FIX #2: "Payouts" is renamed */}
             <NavLink href="/payouts" icon={<Wallet size={20} />}>Request Incentive Payout</NavLink>
-            
             <NavLink href="/my-shifts" icon={<Clock size={20} />}>My Shifts</NavLink>
             <hr className="my-2"/>
             <button onClick={() => setIsLeaveModalOpen(true)} className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-100 text-left">
               <CalendarPlus size={20}/> 
               <span>Request Leave</span>
             </button>
-            {/* The old "Request Advance" button is now removed from the bottom */}
           </nav>
           
           <div className="p-4 border-t">
