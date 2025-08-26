@@ -46,8 +46,6 @@ const EBReadingSchema = new Schema<IEBReading>({
     required: true, 
     trim: true, 
     index: true, 
-    enum: ['meter-1', 'meter-2'],
-    default: 'meter-1' 
   },
   morningUnits: { type: Number, required: false },
   unitsConsumed: { type: Number, required: false },

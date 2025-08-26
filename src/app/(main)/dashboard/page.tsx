@@ -251,7 +251,7 @@ export default function DashboardPage() {
                <SummaryStatCard title="Service Bills" value={<AnimatedNumber value={salesReportData.serviceBills} />} icon={DocumentTextIcon} color="pink" />
               <SummaryStatCard title="Total Revenue" value={<AnimatedNumber value={totalFilteredRevenue} prefix="₹" decimals={2} />} icon={CurrencyRupeeIcon} color="teal" />
               <SummaryStatCard title="Service Net" value={<AnimatedNumber value={salesReportData.serviceNet} prefix="₹" decimals={2} />} icon={ReceiptPercentIcon} color="orange" subtitle="Gross" subValue={<AnimatedNumber value={salesReportData.serviceGross} prefix="₹" decimals={2} />} />
-              <SummaryStatCard title="Product Net" value={<AnimatedNumber value={salesReportData.productNet} prefix="₹" decimals={2} />} icon={BanknotesIcon} color="purple" subtitle="Gross" subValue={<AnimatedNumber value={salesReportData.productGross} prefix="f=" decimals={2} />} />
+              <SummaryStatCard title="Product Net" value={<AnimatedNumber value={salesReportData.productNet} prefix="₹" decimals={2} />} icon={BanknotesIcon} color="purple" subtitle="Gross" subValue={<AnimatedNumber value={salesReportData.productGross} prefix="₹" decimals={2} />} />
             </div>
 
             {/* RESPONSIVE: 1 col on mobile, 3 on desktop. This will stack the 3 main data columns vertically, which is ideal for mobile. */}
