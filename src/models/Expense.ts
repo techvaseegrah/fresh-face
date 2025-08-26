@@ -1,59 +1,51 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Schema, Document, models, Model } from 'mongoose';
+
+// Define the different types of expenses
+export type ExpenseType = 'monthly' | 'weekly' | 'daily' | 'other';
 
 export interface IExpense extends Document {
-  tenantId: mongoose.Schema.Types.ObjectId; // <-- NEW
-  type: string;
-  description: string;
+  tenantId: mongoose.Schema.Types.ObjectId;
   amount: number;
-  date: Date;
-  frequency: 'Regular' | 'Once';
-  paymentMethod: string;
-  billUrl?: string;
+  description: string;
+  expenseType: ExpenseType;
+  category?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-const ExpenseSchema: Schema = new Schema({
-  // --- NEW ---
-  // Add a required, indexed reference to the Tenant model.
-  // This is the core of the multi-tenant data architecture.
-  tenantId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Tenant', 
-    required: true, 
-    index: true 
+const ExpenseSchema: Schema<IExpense> = new Schema(
+  {
+    tenantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Tenant',
+      required: true,
+    },
+    amount: {
+      type: Number,
+      required: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    // This field will store whether it's 'monthly', 'weekly', etc.
+    expenseType: {
+      type: String,
+      enum: ['monthly', 'weekly', 'daily', 'other'],
+      required: true,
+    },
+    category: {
+      type: String,
+    },
   },
-  type: {
-    type: String,
-    required: [true, 'Please provide an expense type.'],
-    trim: true,
-  },
-  description: {
-    type: String,
-    required: false,
-    trim: true,
-  },
-  amount: {
-    type: Number,
-    required: [true, 'Please provide the expense amount.'],
-    min: [0, 'Amount cannot be negative.'],
-  },
-  date: {
-    type: Date,
-    default: Date.now,
-  },
-  frequency: {
-    type: String,
-    enum: ['Regular', 'Once'],
-    required: [true, 'Please specify the expense frequency.']
-  },
-  paymentMethod: {
-    type: String,
-    required: [true, 'Please provide a payment method.'],
-    trim: true,
-  },
-  billUrl: {
-    type: String,
-    required: false,
-  },
-});
+  {
+    timestamps: true,
+  }
+);
 
-export default mongoose.models.Expense || mongoose.model<IExpense>('Expense', ExpenseSchema);
+ExpenseSchema.index({ tenantId: 1, expenseType: 1, createdAt: -1 });
+
+const Expense: Model<IExpense> =
+  models.Expense || mongoose.model<IExpense>('Expense', ExpenseSchema);
+
+export default Expense;

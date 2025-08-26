@@ -11,7 +11,8 @@ import {
   LightBulbIcon, DocumentTextIcon, ShoppingCartIcon, BuildingStorefrontIcon, BanknotesIcon,
   BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon,
   ChartBarIcon,
-  XMarkIcon
+  XMarkIcon,
+  PresentationChartLineIcon // <-- 1. IMPORT THE NEW ICON
 } from '@heroicons/react/24/outline';
 
 import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig } from 'lucide-react';
@@ -63,19 +64,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
     ];
     
-     // Inside your navItems useMemo hook in Sidebar.tsx
-
-const sopSubItems: NavSubItem[] = [
-    // BEFORE (The problem is here)
-    // { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]), basePathForActive: '/sop' },
-
-    // AFTER (Corrected configuration)
-    { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) }, // No basePathForActive
-
-    // These other links are already correct
-    { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
-    { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
-];
+    const sopSubItems: NavSubItem[] = [
+        { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) },
+        { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
+        { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
+    ];
     const telecallingSubItems: NavSubItem[] = [
       { href: '/telecalling', label: 'Workspace', icon: <PhoneForwarded className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM]) },
       { href: '/telecalling/reports', label: 'Telecalling Reports', icon: <BarChartBig className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_VIEW_REPORTS]) }
@@ -93,6 +86,10 @@ const sopSubItems: NavSubItem[] = [
       { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_CREATE]) },
       { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PRODUCTS_READ, PERMISSIONS.SERVICES_READ]) },
       { href: '/sales-report', label: 'Sales Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) },
+      
+      // <-- 2. ADD THE NEW PROFIT & LOSS MENU ITEM HERE
+      { href: '/profit-loss', label: 'Profit & Loss', icon: <PresentationChartLineIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ]) },
+      
       { href: '/staffmanagement', label: 'Staff Management', icon: <UsersIcon className="h-5 w-5" />, show: canSeeStaffManagement, subItems: staffSubItems.filter(item => item.show) },
       { href: '/DayendClosing', label:'Day-end Closing', icon: <BanknotesIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]) },
       { href: '/alerts', label: 'Alerts', icon: <BellAlertIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ALERTS_READ]) },
@@ -109,6 +106,7 @@ const sopSubItems: NavSubItem[] = [
     ];
   }, [userPermissions]);
   
+  // ... (the rest of your Sidebar.tsx file is unchanged)
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
@@ -170,13 +168,9 @@ const sopSubItems: NavSubItem[] = [
                         {isOpen && (
                           <div className="mt-1 space-y-0.5 py-1">
                             {item.subItems.map((subItem) => {
-                              // ▼▼▼ THE FIX IS HERE ▼▼▼
-                              // This logic is now more precise. It uses an exact match for standard links
-                              // and a broad `startsWith` match only when `basePathForActive` is provided.
                               const isSubActive = subItem.basePathForActive
                                 ? pathname.startsWith(subItem.basePathForActive)
                                 : pathname === subItem.href;
-                              // ▲▲▲ END OF FIX ▲▲▲
                               
                               return (
                                 <Link onClick={mobileLinkClick} key={subItem.href} href={subItem.href} className={`flex items-center gap-3 pl-8 pr-4 py-2 rounded-lg transition-colors text-sm text-gray-600 ${ isSubActive ? 'bg-gray-200 text-black font-medium' : 'hover:bg-gray-100 hover:text-black' }`}>

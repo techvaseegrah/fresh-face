@@ -1,3 +1,5 @@
+// src/lib/permissions.ts
+
 export const PERMISSIONS = {
   // User management
   USERS_CREATE: 'users:create',
@@ -30,8 +32,8 @@ export const PERMISSIONS = {
   CUSTOMERS_READ: 'customers:read',
   CUSTOMERS_UPDATE: 'customers:update',
   CUSTOMERS_DELETE: 'customers:delete',
-  CUSTOMERS_IMPORT: 'customers:import', // <-- Permission for the "Import" button
-  CUSTOMERS_EXPORT: 'customers:export', // <-- Permission for the "Export" button
+  CUSTOMERS_IMPORT: 'customers:import',
+  CUSTOMERS_EXPORT: 'customers:export',
   CUSTOMERS_MANAGE: 'customers:manage',
 
   // Appointment management
@@ -124,7 +126,7 @@ export const PERMISSIONS = {
   STAFF_TARGET_MANAGE: 'staff-target:manage',
   STAFF_INCENTIVES_READ: 'staff-incentives:read',
   STAFF_INCENTIVES_MANAGE: 'staff-incentives:manage',
-  STAFF_INCENTIVE_PAYOUT_READ: 'staff-incentive-payout:read', // <-- ADDED
+  STAFF_INCENTIVE_PAYOUT_READ: 'staff-incentive-payout:read',
   STAFF_INCENTIVE_PAYOUT_MANAGE: 'staff-incentive-payout:manage',
   STAFF_SALARY_READ: 'staff-salary:read',
   STAFF_SALARY_MANAGE: 'staff-salary:manage',
@@ -137,15 +139,20 @@ export const PERMISSIONS = {
   EXPENSES_DELETE: 'expenses:delete',
   EXPENSES_MANAGE: 'expenses:manage',
   
-  // Budget Management Permissions <<-- ADDED
+  // Budget Management Permissions
   BUDGET_READ: 'budget:read',
   BUDGET_MANAGE: 'budget:manage',
+  
   // NEW TELECALLING PERMISSIONS
   TELECALLING_PERFORM: 'telecalling:perform',
   TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
   TELECALLING_VIEW_REPORTS: 'telecalling:reports:read',
 
+  // Reports
   SALES_REPORT_READ: 'sales:report:read',
+  PROFIT_LOSS_READ: 'profit_loss:read',
+
+  // Other
   TENANTS_CREATE: 'tenants:create',
 
   ALL: '*'
@@ -154,7 +161,7 @@ export const PERMISSIONS = {
 export const PERMISSION_CATEGORIES = {
   USER_MANAGEMENT: 'User Management',
   ROLE_MANAGEMENT: 'Role Management',
-  STORE_MANAGEMENT: 'Store Management', // Added Category
+  STORE_MANAGEMENT: 'Store Management',
   CUSTOMER_MANAGEMENT: 'Customer Management',
   APPOINTMENT_MANAGEMENT: 'Appointment Management',
   BILLING_MANAGEMENT: 'Billing Management',
@@ -174,9 +181,10 @@ export const PERMISSION_CATEGORIES = {
   INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
   ALERTS_MANAGEMENT: 'Alerts Management',
   EXPENSES_MANAGEMENT: 'Expenses Management',
-  BUDGET_MANAGEMENT: 'Budget Management', // <<-- ADDED
+  BUDGET_MANAGEMENT: 'Budget Management',
   SOP_MANAGEMENT: 'SOP Management',
-  TELECALLING_MANAGEMENT: 'Telecalling Management' 
+  TELECALLING_MANAGEMENT: 'Telecalling Management',
+  PROFIT_LOSS_MANAGEMENT: 'Profit & Loss Management'
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -223,7 +231,7 @@ export const ALL_PERMISSIONS = [
   // Procurement Management
   { permission: PERMISSIONS.PROCUREMENT_CREATE, description: 'Create procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
   { permission: PERMISSIONS.PROCUREMENT_READ, description: 'View procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
-  { permission: PERMISSIONS.PROCUREMENT_UPDATE, description: 'Update procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
+  { permission: PERMISSIONS.PROCUREMENT_UPDATE, description: 'Update procurement records', category: PERMISSION_CATEGORIES.PROCurement_MANAGEMENT },
   { permission: PERMISSIONS.PROCUREMENT_DELETE, description: 'Delete procurement records', category: PERMISSION_CATEGORIES.PROCUREMENT_MANAGEMENT },
 
   // Procurement Workflow
@@ -236,7 +244,7 @@ export const ALL_PERMISSIONS = [
 
   // Day-end Closing Management
   { permission: PERMISSIONS.DAYEND_CREATE, description: 'Create day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
-  { permission: PERMISSIONS.DAYEND_READ, description: 'View day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
+  { permission: PERMISSIONS.DAYEND_READ, description: 'View day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT }, // <-- FIX IS HERE
   { permission: PERMISSIONS.DAYEND_UPDATE, description: 'Update day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
   { permission: PERMISSIONS.DAYEND_DELETE, description: 'Delete day-end closing reports', category: PERMISSION_CATEGORIES.DAYEND_MANAGEMENT },
 
@@ -294,8 +302,7 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.STAFF_TARGET_MANAGE, description: 'Manage staff targets', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_INCENTIVES_READ, description: 'Read staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_INCENTIVES_MANAGE, description: 'Manage staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  { permission: PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, description: 'Create, approve, reject, and delete incentive payouts', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT }, // <-- ADDED
-  
+  { permission: PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, description: 'Create, approve, reject, and delete incentive payouts', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SWIFT_MANAGE, description: 'Manage staff swift', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
@@ -307,20 +314,24 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.EXPENSES_DELETE, description: 'Delete expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   { permission: PERMISSIONS.EXPENSES_MANAGE, description: 'Manage all expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   
-  // Budget Management <<-- ADDED
+  // Budget Management
   { permission: PERMISSIONS.BUDGET_READ, description: 'View budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
   { permission: PERMISSIONS.BUDGET_MANAGE, description: 'Manage budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
 
-
-   // SOP Management (Add this new block)
+  // SOP Management
   { permission: PERMISSIONS.SOP_READ, description: 'View assigned SOPs and checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_SUBMIT_CHECKLIST, description: 'Submit daily SOP checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_REPORTS_READ, description: 'View SOP compliance reports for all staff', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  
   //Telecalling management
- { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_DASHBOARD,  description: 'View the performance dashboard for telecalling activities', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_REPORTS, description: 'View detailed performance reports for telecallers', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT},
+
+  // Profit & Loss Management
+  { permission: PERMISSIONS.PROFIT_LOSS_READ, description: 'View the Profit & Loss report', category: PERMISSION_CATEGORIES.PROFIT_LOSS_MANAGEMENT },
+
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];
