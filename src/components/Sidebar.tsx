@@ -11,7 +11,7 @@ import {
   LightBulbIcon, DocumentTextIcon, ShoppingCartIcon, BuildingStorefrontIcon, BanknotesIcon,
   BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon,
   ChartBarIcon,
-  XMarkIcon
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig } from 'lucide-react';
@@ -50,6 +50,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/staffmanagement/salary', label: 'Salary', icon: <SalaryIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SALARY_READ]) },
       { href: '/staffmanagement/staff/stafflist', label: 'Staff List', icon: <StaffListIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_LIST_READ]), basePathForActive: '/staffmanagement/staff' },
       { href: '/staffmanagement/swift', label: 'Shift Management', icon: <SwiftIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
+      // I've updated the line below to add sizing to the PowerIcon
+      { href: '/staffmanagement/leave', label: 'Leave', icon:<PowerIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
     ];
 
     const adminSubItems: NavSubItem[] = [

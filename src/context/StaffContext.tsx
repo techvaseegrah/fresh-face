@@ -29,7 +29,7 @@ export interface AttendanceRecordTypeFE { id: string; staff: PopulatedStaffInfoF
 // --- Context Type ---
 export interface StaffContextType {
   staffMembers: StaffMember[]; loadingStaff: boolean; errorStaff: string | null; fetchStaffMembers: () => Promise<void>; addStaffMember: (staffData: NewStaffPayload) => Promise<StaffMember>; deleteStaffMember: (staffId: string) => Promise<void>;
-  permanentlyDeleteStaffMember: (staffId: string) => Promise<void>; // ✅ ADDED
+  permanentlyDeleteStaffMember: (staffId: string) => Promise<void>;
   updateStaffMember: (staffId: string, updatedData: UpdateStaffPayload) => Promise<StaffMember>; getStaffById: (staffId: string) => StaffMember | undefined;
   positionOptions: PositionOption[]; addPositionOption: (option: PositionOption) => void;
   advancePayments: AdvancePaymentType[]; loadingAdvancePayments: boolean; errorAdvancePayments: string | null; fetchAdvancePayments: () => Promise<void>; requestAdvance: (payload: NewAdvancePaymentPayload) => Promise<void>; updateAdvanceStatus: (paymentId: string, status: 'approved' | 'rejected') => Promise<void>;
@@ -44,6 +44,8 @@ export interface StaffContextType {
   salaryRecords: SalaryRecordType[]; loadingSalary: boolean; errorSalary: string | null; fetchSalaryRecords: (filter?: { staffId?: string; year?: number; month?: string; populateStaff?: 'true' | 'false' | boolean; }) => Promise<void>;
   processSalary: (payload: ProcessSalaryPayload) => Promise<SalaryRecordType>;
   markSalaryAsPaid: (record: SalaryRecordType, staffDetails: StaffMember, paidDate: string) => Promise<SalaryRecordType>;
+  // ✅ --- ADDED: Type definition for the new password function ---
+  updateStaffPassword: (staffId: string, password: string) => Promise<void>;
 }
 
 const StaffContext = createContext<StaffContextType | undefined>(undefined);
@@ -153,7 +155,6 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     }
   }, [tenantAwareFetch]);
 
-  // ✅ --- ADDED: Function for PERMANENT deletion ---
   const permanentlyDeleteStaffMember = useCallback(async (staffId: string) => {
     setErrorStaff(null);
     try {
@@ -196,8 +197,35 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     }
   }, [tenantAwareFetch, positionOptions, addPositionOption]);
   
+  // ✅ --- ADDED: Function for updating the password ---
+  const updateStaffPassword = useCallback(async (staffId: string, password: string): Promise<void> => {
+    setErrorStaff(null); // Use staff error state for feedback
+    try {
+      const response = await tenantAwareFetch(`/api/staff?id=${staffId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ password }), // Only send the password
+      });
+
+      if (!response.ok) {
+        throw await handleApiResponseError(response, 'Failed to update password');
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'API call succeeded but failed to update password');
+      }
+      // No local state update is needed, success is handled by the component.
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error updating password';
+      setErrorStaff(msg); // Set error state for context consumers
+      console.error('Error updating staff password:', error);
+      throw new Error(msg); // Re-throw for the component to catch and show a toast
+    }
+  }, [tenantAwareFetch]);
+
   const getStaffById = useCallback((staffId: string) => staffMembers.find(m => m.id === staffId), [staffMembers]);
   
+  // ... (All other functions like fetchAdvancePayments, requestAdvance, etc., remain completely unchanged)
   const fetchAdvancePayments = useCallback(async () => {
     setLoadingAdvancePayments(true);
     setErrorAdvancePayments(null);
@@ -534,7 +562,6 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     }
   }, [tenantAwareFetch]);
 
-  // TENANT-AWARE: Guard the initial fetches to only run when tenantId is available
   useEffect(() => {
     if (tenantId) {
       fetchStaffMembers();
@@ -543,7 +570,6 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     }
   }, [tenantId, fetchStaffMembers, fetchAdvancePayments, fetchAttendanceRecords]);
   
-  // ✅ --- MODIFIED: Added permanentlyDeleteStaffMember to the context value ---
   const contextValue: StaffContextType = {
     staffMembers, loadingStaff, errorStaff, fetchStaffMembers, addStaffMember, deleteStaffMember, permanentlyDeleteStaffMember, updateStaffMember, getStaffById,
     positionOptions, addPositionOption,
@@ -552,6 +578,8 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     removeWeekOff,
     performanceRecords, loadingPerformance, errorPerformance, fetchPerformanceRecords, recordPerformance,
     salaryRecords, loadingSalary, errorSalary, fetchSalaryRecords, processSalary, markSalaryAsPaid,
+    // ✅ --- ADDED: The new password function is now available to the context ---
+    updateStaffPassword,
   };
 
   return <StaffContext.Provider value={contextValue}>{children}</StaffContext.Provider>;

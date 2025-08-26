@@ -2,8 +2,9 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+// Import usePathname to read the current URL
+import { useRouter, usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Bars3Icon } from '@heroicons/react/24/outline';
@@ -15,11 +16,17 @@ export default function MainLayout({
 }) {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Get the current URL path
+  const pathname = usePathname();
+
+  // --- NEW: Check if the current page is a staff page ---
+  // This assumes your staff routes start with '/staff-dashboard'
+  const isStaffPage = pathname.startsWith('/staff-dashboard');
 
   useEffect(() => {
     if (status === 'loading') return;
     
+    // The session check remains the same
     if (!session) {
       router.push('/login');
       return;
@@ -31,12 +38,22 @@ export default function MainLayout({
   }
 
   if (!session) {
+    // This also remains the same
     return null;
   }
+  
+  // --- NEW: Conditionally render the layout ---
+  // If it's a staff page, render *only* the children. This allows the 
+  // staff-specific layout to take full control of the page structure.
+  if (isStaffPage) {
+    return <>{children}</>;
+  }
 
+  // If it's NOT a staff page, render the standard admin layout with the sidebar.
   return (
-    <div className="relative flex h-screen bg-gray-50">
-      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar is only rendered for non-staff pages */}
+      <Sidebar />
       
       {/* --- CORRECTED MAIN CONTENT AREA --- */}
       {/* 
