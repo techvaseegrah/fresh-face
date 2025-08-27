@@ -1,0 +1,586 @@
+"use client";
+
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { format, parseISO, startOfDay, isEqual } from 'date-fns';
+import { toast } from 'react-toastify';
+// TENANT-AWARE: Import useSession to get the tenant ID
+import { useSession } from 'next-auth/react';
+
+// --- Type Definitions (unchanged) ---
+export interface PositionOption { value: string; label: string; }
+export interface StaffMember { id: string; staffIdNumber: string; name: string; email: string; phone: string; position: string; joinDate: string; salary: number; address?: string; image: string | null; status: 'active' | 'inactive'; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; createdAt?: string; updatedAt?: string; }
+export interface NewStaffPayload { staffIdNumber: string; name: string; email:string; phone: string; position: string; joinDate: string; salary: number; address?: string; image?: string | null; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; }
+export type UpdateStaffPayload = Partial<Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>>;
+export interface AdvancePaymentType { id: string; staffId: string | { id: string; name: string; image?: string; position?: string; }; requestDate: string; amount: number; reason: string; repaymentPlan: string; status: 'pending' | 'approved' | 'rejected'; approvedDate: string | null; createdAt?: string; updatedAt?: string; }
+export interface NewAdvancePaymentPayload { staffId: string; amount: number; reason: string; repaymentPlan: string; }
+export interface PerformanceMetrics { customersServed: number; salesGenerated: number; serviceQuality: number; }
+export interface PerformanceRecordType { id: string; staffId: { id: string; name: string; position: string; image: string | null; }; month: string; year: number; rating: number; comments: string; metrics: PerformanceMetrics; createdAt?: string; updatedAt?: string; }
+export interface NewPerformanceRecordPayload { staffId: string; month: string; year: number; rating: number; comments: string; metrics: PerformanceMetrics; }
+interface PerformanceRecordAPIType { _id: string; staffId: { _id: string; name: string; position: string; image: string | null; }; month: string; year: number; rating: number; comments: string; metrics: PerformanceMetrics; createdAt?: string; updatedAt?: string; }
+export interface SalaryRecordType { id: string; staffId: string | { id: string; name: string; image?: string | null; position?: string; }; month: string; year: number; baseSalary: number; otHours: number; otAmount: number; extraDays: number; extraDayPay: number; foodDeduction: number; recurExpense: number; totalEarnings: number; totalDeductions: number; advanceDeducted: number; netSalary: number; isPaid: boolean; paidDate: string | null; createdAt?: string; updatedAt?: string; staffDetails?: {  id: string;  name: string;  image?: string | null;  position: string;  staffIdNumber?: string; } | null; }
+export interface ProcessSalaryPayload { staffId: string; month: string; year: number; baseSalary: number; otHours: number; otAmount: number; extraDays: number; extraDayPay: number; foodDeduction: number; recurExpense: number; totalEarnings: number; totalDeductions: number; advanceDeducted: number; netSalary: number; isPaid: boolean; paidDate: string | null; }
+interface PopulatedStaffInfoAPI { _id: string; name: string; image?: string | null; position?: string; staffIdNumber?: string; }
+export interface TemporaryExitTypeAPI { _id: string; attendanceId: string; startTime: string; endTime: string | null; reason: string | null; durationMinutes: number; }
+export interface AttendanceRecordTypeAPI { _id: string; staffId: PopulatedStaffInfoAPI; date: string; checkIn: string | null; checkOut: string | null; status: 'present' | 'absent' | 'late' | 'incomplete' | 'on_leave' | 'week_off'; temporaryExits: TemporaryExitTypeAPI[]; totalWorkingMinutes: number; requiredMinutes: number; isWorkComplete: boolean; notes?: string; createdAt?: string; updatedAt?: string; }
+interface PopulatedStaffInfoFE { id: string; name: string; image?: string | null; position?: string; staffIdNumber?: string; }
+export interface TemporaryExitTypeFE { id: string; attendanceId: string; startTime: Date; endTime: Date | null; reason: string | null; durationMinutes: number; isOngoing: boolean; }
+export interface AttendanceRecordTypeFE { id: string; staff: PopulatedStaffInfoFE; date: Date; checkIn: Date | null; checkOut: Date | null; status: 'present' | 'absent' | 'late' | 'incomplete' | 'on_leave' | 'week_off'; temporaryExits: TemporaryExitTypeFE[]; totalWorkingMinutes: number; requiredMinutes: number; isWorkComplete: boolean; notes?: string; createdAt?: Date; updatedAt?: Date; }
+
+// --- Context Type ---
+export interface StaffContextType {
+  staffMembers: StaffMember[]; loadingStaff: boolean; errorStaff: string | null; fetchStaffMembers: () => Promise<void>; addStaffMember: (staffData: NewStaffPayload) => Promise<StaffMember>; deleteStaffMember: (staffId: string) => Promise<void>;
+  permanentlyDeleteStaffMember: (staffId: string) => Promise<void>;
+  updateStaffMember: (staffId: string, updatedData: UpdateStaffPayload) => Promise<StaffMember>; getStaffById: (staffId: string) => StaffMember | undefined;
+  positionOptions: PositionOption[]; addPositionOption: (option: PositionOption) => void;
+  advancePayments: AdvancePaymentType[]; loadingAdvancePayments: boolean; errorAdvancePayments: string | null; fetchAdvancePayments: () => Promise<void>; requestAdvance: (payload: NewAdvancePaymentPayload) => Promise<void>; updateAdvanceStatus: (paymentId: string, status: 'approved' | 'rejected') => Promise<void>;
+  attendanceRecordsFE: AttendanceRecordTypeFE[]; loadingAttendance: boolean; errorAttendance: string | null; fetchAttendanceRecords: (filter?: { staffId?: string; year?: number; month?: number; date?: string; startDate?: string; endDate?: string; }) => Promise<void>;
+  checkInStaff: (staffId: string, requiredHours: number) => Promise<AttendanceRecordTypeFE>;
+  checkOutStaff: (attendanceId: string, requiredHours: number) => Promise<AttendanceRecordTypeFE>;
+  startTemporaryExit: (attendanceId: string, reason: string) => Promise<TemporaryExitTypeFE>;
+  endTemporaryExit: (attendanceId: string, tempExitId: string) => Promise<TemporaryExitTypeFE>;
+  applyWeekOff: (payload: { staffIds: string[]; date: Date }) => Promise<void>;
+  removeWeekOff: (attendanceId: string) => Promise<void>;
+  performanceRecords: PerformanceRecordType[]; loadingPerformance: boolean; errorPerformance: string | null; fetchPerformanceRecords: (filter: { month?: string; year?: number; staffId?: string }) => Promise<void>; recordPerformance: (payload: NewPerformanceRecordPayload) => Promise<void>;
+  salaryRecords: SalaryRecordType[]; loadingSalary: boolean; errorSalary: string | null; fetchSalaryRecords: (filter?: { staffId?: string; year?: number; month?: string; populateStaff?: 'true' | 'false' | boolean; }) => Promise<void>;
+  processSalary: (payload: ProcessSalaryPayload) => Promise<SalaryRecordType>;
+  markSalaryAsPaid: (record: SalaryRecordType, staffDetails: StaffMember, paidDate: string) => Promise<SalaryRecordType>;
+  // ✅ --- ADDED: Type definition for the new password function ---
+  updateStaffPassword: (staffId: string, password: string) => Promise<void>;
+}
+
+const StaffContext = createContext<StaffContextType | undefined>(undefined);
+export const useStaff = (): StaffContextType => { const context = useContext(StaffContext); if (!context) { throw new Error('useStaff must be used within a StaffProvider'); } return context; };
+interface StaffProviderProps { children: ReactNode; }
+const initialPositionOptionsData: PositionOption[] = [ { value: "", label: "Select Position" }, { value: "Lead Stylist", label: "Lead Stylist" }, { value: "Creative Director", label: "Creative Director" }, ];
+
+// --- Helper Functions (unchanged) ---
+const mapApiAttendanceToFE = (apiRecord: AttendanceRecordTypeAPI): AttendanceRecordTypeFE => { const localDate = parseISO(apiRecord.date); return { id: apiRecord._id, staff: { id: apiRecord.staffId._id, name: apiRecord.staffId.name, image: apiRecord.staffId.image, position: apiRecord.staffId.position, staffIdNumber: apiRecord.staffId.staffIdNumber }, date: localDate, checkIn: apiRecord.checkIn ? parseISO(apiRecord.checkIn) : null, checkOut: apiRecord.checkOut ? parseISO(apiRecord.checkOut) : null, status: apiRecord.status, temporaryExits: (apiRecord.temporaryExits || []).map(apiExit => ({ id: apiExit._id, attendanceId: apiExit.attendanceId, startTime: parseISO(apiExit.startTime), endTime: apiExit.endTime ? parseISO(apiExit.endTime) : null, reason: apiExit.reason, durationMinutes: apiExit.durationMinutes, isOngoing: !apiExit.endTime, })).sort((a, b) => a.startTime.getTime() - b.startTime.getTime()), totalWorkingMinutes: apiRecord.totalWorkingMinutes, requiredMinutes: apiRecord.requiredMinutes, isWorkComplete: apiRecord.isWorkComplete, notes: apiRecord.notes, createdAt: apiRecord.createdAt ? parseISO(apiRecord.createdAt) : undefined, updatedAt: apiRecord.updatedAt ? parseISO(apiRecord.updatedAt) : undefined, }; };
+const mapApiPerformanceToFE = (apiRecord: PerformanceRecordAPIType): PerformanceRecordType => ({ id: apiRecord._id, staffId: { id: apiRecord.staffId._id, name: apiRecord.staffId.name, position: apiRecord.staffId.position, image: apiRecord.staffId.image, }, month: apiRecord.month, year: apiRecord.year, rating: apiRecord.rating, comments: apiRecord.comments, metrics: apiRecord.metrics, createdAt: apiRecord.createdAt, updatedAt: apiRecord.updatedAt, });
+async function handleApiResponseError(response: Response, defaultErrorMessage: string): Promise<Error> { let errorMsg = defaultErrorMessage; if (!response.ok) { errorMsg = `HTTP error! status: ${response.status}`; try { const errorData = await response.json(); if (errorData && errorData.error) { errorMsg = errorData.error; } else if (errorData && errorData.message) { errorMsg = errorData.message; } } catch (e) { /* Ignore */ } } else { try { const result = await response.clone().json(); if (result && result.success === false && (result.error || result.message)) { errorMsg = result.error || result.message || defaultErrorMessage; } } catch (e) { /* Ignore */ } } return new Error(errorMsg); }
+
+
+export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
+  // TENANT-AWARE: Get session data to extract tenantId
+  const { data: session } = useSession();
+  const tenantId = session?.user?.tenantId;
+
+  // --- State declarations (unchanged) ---
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState<boolean>(true);
+  const [errorStaff, setErrorStaff] = useState<string | null>(null);
+  const [positionOptions, setPositionOptions] = useState<PositionOption[]>(initialPositionOptionsData);
+  const [advancePayments, setAdvancePayments] = useState<AdvancePaymentType[]>([]);
+  const [loadingAdvancePayments, setLoadingAdvancePayments] = useState<boolean>(true);
+  const [errorAdvancePayments, setErrorAdvancePayments] = useState<string | null>(null);
+  const [performanceRecords, setPerformanceRecords] = useState<PerformanceRecordType[]>([]);
+  const [loadingPerformance, setLoadingPerformance] = useState<boolean>(true);
+  const [errorPerformance, setErrorPerformance] = useState<string | null>(null);
+  const [salaryRecords, setSalaryRecords] = useState<SalaryRecordType[]>([]);
+  const [loadingSalary, setLoadingSalary] = useState<boolean>(true);
+  const [errorSalary, setErrorSalary] = useState<string | null>(null);
+  const [attendanceRecordsFE, setAttendanceRecordsFE] = useState<AttendanceRecordTypeFE[]>([]);
+  const [loadingAttendance, setLoadingAttendance] = useState<boolean>(true);
+  const [errorAttendance, setErrorAttendance] = useState<string | null>(null);
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  // TENANT-AWARE: Create a centralized, tenant-aware fetch wrapper
+  const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
+    if (!tenantId) {
+      throw new Error("Tenant information is not available. Please try logging in again.");
+    }
+    const headers = new Headers(options.headers || {});
+    headers.set('x-tenant-id', tenantId);
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return fetch(url, { ...options, headers });
+  }, [tenantId]);
+
+  // --- All API-calling functions are now updated to use `tenantAwareFetch` ---
+
+  const fetchStaffMembers = useCallback(async () => {
+    setLoadingStaff(true);
+    setErrorStaff(null);
+    try {
+      const response = await tenantAwareFetch('/api/staff?action=list');
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to fetch staff');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to fetch staff');
+      setStaffMembers(result.data.map((s: any) => ({...s, id: s._id})));
+      const currentPositions = new Set(positionOptions.map(p => p.value.toLowerCase()));
+      result.data.forEach((staff: StaffMember) => { if (staff.position && !currentPositions.has(staff.position.toLowerCase())) { currentPositions.add(staff.position.toLowerCase()); setPositionOptions(prev => !prev.find(p=>p.value.toLowerCase()===staff.position.toLowerCase()) ? [...prev, {value: staff.position, label: staff.position}] : prev); } });
+    } catch (err) {
+      setErrorStaff(err instanceof Error ? err.message : 'Unknown error fetching staff');
+      console.error("Error fetching staff:", err);
+    } finally {
+      setLoadingStaff(false);
+    }
+  }, [tenantAwareFetch, positionOptions]);
+  
+  const addPositionOption = useCallback((option: PositionOption) => { setPositionOptions(prev => !prev.some(p => p.value.toLowerCase() === option.value.toLowerCase()) ? [...prev, option] : prev); }, []);
+  
+  const addStaffMember = useCallback(async (staffData: NewStaffPayload): Promise<StaffMember> => {
+    setErrorStaff(null);
+    try {
+      const response = await tenantAwareFetch('/api/staff', { method: 'POST', body: JSON.stringify(staffData) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to add staff member');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to add staff');
+      const newStaffApi = result.data as any;  const newStaff: StaffMember = {...newStaffApi, id: newStaffApi._id};  setStaffMembers(prev => [newStaff, ...prev].sort((a,b)=>a.name.localeCompare(b.name)));
+      if (newStaff.position && !positionOptions.some(p => p.value.toLowerCase() === newStaff.position.toLowerCase())) { addPositionOption({ value: newStaff.position, label: newStaff.position }); }
+      return newStaff;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error adding staff';
+      setErrorStaff(msg);
+      console.error('Error adding staff member:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch, positionOptions, addPositionOption]);
+  
+  const deleteStaffMember = useCallback(async (staffId: string) => {
+    setErrorStaff(null);
+    try {
+      const response = await tenantAwareFetch(`/api/staff?id=${staffId}`, { method: 'DELETE' });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to deactivate staff member');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to deactivate staff');
+      const deactivatedStaffApi = result.data as any;
+      const deactivatedStaff: StaffMember = {...deactivatedStaffApi, id: deactivatedStaffApi._id};
+      setStaffMembers(prev => prev.map(m => m.id === staffId ? deactivatedStaff : m));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error deactivating staff';
+      setErrorStaff(msg);
+      console.error('Error deactivating staff member:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch]);
+
+  const permanentlyDeleteStaffMember = useCallback(async (staffId: string) => {
+    setErrorStaff(null);
+    try {
+      const response = await tenantAwareFetch(`/api/staff?id=${staffId}&permanent=true`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw await handleApiResponseError(response, 'Failed to permanently delete staff member');
+      }
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to permanently delete staff');
+      }
+      setStaffMembers(prev => prev.filter(m => m.id !== staffId));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error during permanent deletion';
+      setErrorStaff(msg);
+      console.error('Error permanently deleting staff member:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch]);
+  
+  const updateStaffMember = useCallback(async (staffId: string, updatedData: UpdateStaffPayload): Promise<StaffMember> => {
+    setErrorStaff(null);
+    try {
+      const response = await tenantAwareFetch(`/api/staff?id=${staffId}`, { method: 'PUT', body: JSON.stringify(updatedData) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to update staff member');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to update staff');
+      const updatedStaffApi = result.data as any;
+      const updatedStaff: StaffMember = {...updatedStaffApi, id: updatedStaffApi._id};
+      setStaffMembers(prev => prev.map(m => (m.id === staffId ? updatedStaff : m)).sort((a,b)=>a.name.localeCompare(b.name)));
+      if (updatedStaff.position && !positionOptions.some(p => p.value.toLowerCase() === updatedStaff.position.toLowerCase())) { addPositionOption({ value: updatedStaff.position, label: updatedStaff.position }); }
+      return updatedStaff;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error updating staff';
+      setErrorStaff(msg);
+      console.error('Error updating staff member:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch, positionOptions, addPositionOption]);
+  
+  // ✅ --- ADDED: Function for updating the password ---
+  const updateStaffPassword = useCallback(async (staffId: string, password: string): Promise<void> => {
+    setErrorStaff(null); // Use staff error state for feedback
+    try {
+      const response = await tenantAwareFetch(`/api/staff?id=${staffId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ password }), // Only send the password
+      });
+
+      if (!response.ok) {
+        throw await handleApiResponseError(response, 'Failed to update password');
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'API call succeeded but failed to update password');
+      }
+      // No local state update is needed, success is handled by the component.
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error updating password';
+      setErrorStaff(msg); // Set error state for context consumers
+      console.error('Error updating staff password:', error);
+      throw new Error(msg); // Re-throw for the component to catch and show a toast
+    }
+  }, [tenantAwareFetch]);
+
+  const getStaffById = useCallback((staffId: string) => staffMembers.find(m => m.id === staffId), [staffMembers]);
+  
+  // ... (All other functions like fetchAdvancePayments, requestAdvance, etc., remain completely unchanged)
+  const fetchAdvancePayments = useCallback(async () => {
+    setLoadingAdvancePayments(true);
+    setErrorAdvancePayments(null);
+    try {
+      const response = await tenantAwareFetch('/api/advancepayment');
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to fetch advance payments');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to fetch advance payments');
+      setAdvancePayments(result.data);
+    } catch (err) {
+      setErrorAdvancePayments(err instanceof Error ? err.message : 'Unknown error fetching advance payments');
+      console.error("Error fetching advance payments:", err);
+    } finally {
+      setLoadingAdvancePayments(false);
+    }
+  }, [tenantAwareFetch]);
+  
+  const requestAdvance = useCallback(async (payload: NewAdvancePaymentPayload) => {
+    setErrorAdvancePayments(null);
+    try {
+      const response = await tenantAwareFetch('/api/advancepayment', { method: 'POST', body: JSON.stringify(payload) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to request advance payment');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to request advance');
+      const newAdvance: AdvancePaymentType = result.data;
+      setAdvancePayments(prev => [newAdvance, ...prev.filter(p => p.id !== newAdvance.id)].sort((a,b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime()));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error requesting advance';
+      setErrorAdvancePayments(msg);
+      console.error('Error requesting advance:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch]);
+  
+  const updateAdvanceStatus = useCallback(async (paymentId: string, status: 'approved' | 'rejected') => {
+    setErrorAdvancePayments(null);
+    try {
+      const response = await tenantAwareFetch(`/api/advancepayment/${paymentId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to update advance status');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Failed to update advance status');
+      const updatedAdvance: AdvancePaymentType = result.data;
+      setAdvancePayments(prev => prev.map(p => (p.id === paymentId ? updatedAdvance : p)));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error updating advance status';
+      setErrorAdvancePayments(msg);
+      console.error('Error updating advance status:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch]);
+  
+  const fetchAttendanceRecords = useCallback(async (filter?: { staffId?: string; year?: number; month?: number; date?: string; startDate?: string; endDate?: string; }) => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    let url = '/api/attendance';
+    const queryParams = new URLSearchParams();
+    if (filter?.date) { queryParams.append('action', 'getToday'); queryParams.append('date', filter.date); } 
+    else if (filter?.year && filter?.month) { queryParams.append('action', 'getMonthly'); queryParams.append('year', String(filter.year)); queryParams.append('month', String(filter.month)); } 
+    else if (filter?.staffId) { queryParams.append('action', 'getStaffHistory'); queryParams.append('staffId', filter.staffId); if (filter.startDate) queryParams.append('startDate', filter.startDate); if (filter.endDate) queryParams.append('endDate', filter.endDate); } 
+    else { queryParams.append('action', 'getToday'); queryParams.append('date', format(new Date(), 'yyyy-MM-dd')); }
+    if (queryParams.toString()) { url += `?${queryParams.toString()}`; }
+    try {
+      const response = await tenantAwareFetch(url);
+      if (!response.ok) throw await handleApiResponseError(response, `API failed to fetch attendance from ${url}`);
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'API failed to fetch attendance');
+      const newFeRecords = (result.data as AttendanceRecordTypeAPI[]).map(mapApiAttendanceToFE);
+      setAttendanceRecordsFE(prevRecords => {
+        const recordsCache = new Map<string, AttendanceRecordTypeFE>();
+        prevRecords.forEach(record => recordsCache.set(record.id, record));
+        newFeRecords.forEach(record => recordsCache.set(record.id, record));
+        const updatedRecords = Array.from(recordsCache.values());
+        return updatedRecords.sort((a, b) => b.date.getTime() - a.date.getTime() || a.staff.name.localeCompare(b.staff.name));
+      });
+    } catch (err) {
+      setErrorAttendance(err instanceof Error ? err.message : 'Unknown error fetching attendance');
+      console.error(`Error fetching attendance from ${url}:`, err);
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const checkInStaff = useCallback(async (staffId: string, requiredHours: number): Promise<AttendanceRecordTypeFE> => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    try {
+      const response = await tenantAwareFetch('/api/attendance?action=checkIn', { method: 'POST', body: JSON.stringify({ staffId, requiredHours }), });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to check-in staff');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to check-in staff');
+      const newApiRecord = result.data as AttendanceRecordTypeAPI;
+      const newFeRecord = mapApiAttendanceToFE(newApiRecord);
+      setAttendanceRecordsFE(prevRecords => {
+        const recordDateStart = startOfDay(newFeRecord.date);
+        const otherRecords = prevRecords.filter(r => !(r.staff.id === newFeRecord.staff.id && isEqual(startOfDay(r.date), recordDateStart)));
+        return [...otherRecords, newFeRecord].sort((a, b) => b.date.getTime() - a.date.getTime() || a.staff.name.localeCompare(b.staff.name));
+      });
+      return newFeRecord;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error during check-in');
+      setErrorAttendance(err.message);
+      console.error('Error checking in staff:', err);
+      throw err;
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const applyWeekOff = useCallback(async (payload: { staffIds: string[]; date: Date }) => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    try {
+      const response = await tenantAwareFetch('/api/attendance?action=weekOff', { method: 'POST', body: JSON.stringify({ staffIds: payload.staffIds, date: format(payload.date, 'yyyy-MM-dd') }), });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to apply week off');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to apply week off');
+      toast.success(`Successfully applied week off for ${payload.staffIds.length} staff.`);
+      const updatedApiRecords = result.data as AttendanceRecordTypeAPI[];
+      const updatedFeRecords = updatedApiRecords.map(mapApiAttendanceToFE);
+      setAttendanceRecordsFE(prevRecords => {
+        const dateToUpdate = startOfDay(payload.date);
+        const staffIdsToUpdate = new Set(payload.staffIds);
+        const recordsToKeep = prevRecords.filter(r => !( staffIdsToUpdate.has(r.staff.id) && isEqual(startOfDay(r.date), dateToUpdate) ));
+        return [...recordsToKeep, ...updatedFeRecords].sort((a,b) => b.date.getTime() - a.date.getTime() || a.staff.name.localeCompare(b.staff.name));
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error applying week off');
+      setErrorAttendance(err.message);
+      toast.error(err.message);
+      console.error('Error applying week off:', err);
+      throw err;
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const checkOutStaff = useCallback(async (attendanceId: string, requiredHours: number): Promise<AttendanceRecordTypeFE> => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    try {
+      const response = await tenantAwareFetch(`/api/attendance?action=checkOut&attendanceId=${attendanceId}&requiredHours=${requiredHours}`, { method: 'POST' });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to check-out staff');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to check-out staff');
+      const updatedApiRecord = result.data as AttendanceRecordTypeAPI;
+      const updatedFeRecord = mapApiAttendanceToFE(updatedApiRecord);
+      setAttendanceRecordsFE(prevRecords => prevRecords.map(r => (r.id === updatedFeRecord.id ? updatedFeRecord : r)) .sort((a, b) => b.date.getTime() - a.date.getTime() || a.staff.name.localeCompare(b.staff.name)) );
+      return updatedFeRecord;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error during check-out');
+      setErrorAttendance(err.message);
+      console.error('Error checking out staff:', err);
+      throw err;
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const startTemporaryExit = useCallback(async (attendanceId: string, reason: string): Promise<TemporaryExitTypeFE> => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    try {
+      const response = await tenantAwareFetch(`/api/attendance?action=startTempExit&attendanceId=${attendanceId}`, { method: 'POST', body: JSON.stringify({ reason }) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to start temporary exit');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to start temporary exit');
+      const newTempExitApi = result.data as TemporaryExitTypeAPI;
+      const newTempExitFe: TemporaryExitTypeFE = { id: newTempExitApi._id, attendanceId: newTempExitApi.attendanceId, startTime: parseISO(newTempExitApi.startTime), endTime: newTempExitApi.endTime ? parseISO(newTempExitApi.endTime) : null, reason: newTempExitApi.reason, durationMinutes: newTempExitApi.durationMinutes, isOngoing: !newTempExitApi.endTime, };
+      setAttendanceRecordsFE(prevRecords => prevRecords.map(ar => { if (ar.id === attendanceId) { return { ...ar, temporaryExits: [...(ar.temporaryExits || []), newTempExitFe] .sort((a,b) => a.startTime.getTime() - b.startTime.getTime()), }; } return ar; }).sort((a, b) => b.date.getTime() - a.date.getTime() || a.staff.name.localeCompare(b.staff.name)) );
+      return newTempExitFe;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error starting temporary exit');
+      setErrorAttendance(err.message);
+      console.error('Error starting temporary exit:', err);
+      throw err;
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const endTemporaryExit = useCallback(async (attendanceId: string, tempExitId: string): Promise<TemporaryExitTypeFE> => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    try {
+      const response = await tenantAwareFetch(`/api/attendance?action=endTempExit&tempExitId=${tempExitId}`, { method: 'PUT' });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to end temporary exit');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to end temporary exit');
+      const updatedTempExitApi = result.data as TemporaryExitTypeAPI;
+      const updatedTempExitFe: TemporaryExitTypeFE = { id: updatedTempExitApi._id, attendanceId: updatedTempExitApi.attendanceId, startTime: parseISO(updatedTempExitApi.startTime), endTime: updatedTempExitApi.endTime ? parseISO(updatedTempExitApi.endTime) : null, reason: updatedTempExitApi.reason, durationMinutes: updatedTempExitApi.durationMinutes, isOngoing: !updatedTempExitApi.endTime, };
+      setAttendanceRecordsFE(prevRecords => prevRecords.map(ar => { if (ar.id === attendanceId) { return { ...ar, temporaryExits: (ar.temporaryExits || []).map(te => te.id === updatedTempExitFe.id ? updatedTempExitFe : te ).sort((a,b) => a.startTime.getTime() - b.startTime.getTime()), }; } return ar; }).sort((a, b) => b.date.getTime() - a.date.getTime() || a.staff.name.localeCompare(b.staff.name)) );
+      return updatedTempExitFe;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error ending temporary exit');
+      setErrorAttendance(err.message);
+      console.error('Error ending temporary exit:', err);
+      throw err;
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const removeWeekOff = useCallback(async (attendanceId: string): Promise<void> => {
+    setLoadingAttendance(true);
+    setErrorAttendance(null);
+    try {
+      const response = await tenantAwareFetch(`/api/attendance?id=${attendanceId}`, { method: 'DELETE' });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to remove week off');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'API failed to remove week off');
+      setAttendanceRecordsFE(prevRecords => prevRecords.filter(record => record.id !== attendanceId) );
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error removing week off');
+      setErrorAttendance(err.message);
+      toast.error(err.message);
+      console.error('Error removing week off:', err);
+      throw err;
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, [tenantAwareFetch]);
+
+  const fetchPerformanceRecords = useCallback(async (filter: { month?: string; year?: number; staffId?: string }) => {
+    setLoadingPerformance(true);
+    setErrorPerformance(null);
+    const queryParams = new URLSearchParams();
+    if (filter.month) queryParams.append('month', filter.month);
+    if (filter.year) queryParams.append('year', String(filter.year));
+    if (filter.staffId) queryParams.append('staffId', filter.staffId);
+    try {
+      const response = await tenantAwareFetch(`/api/performance?${queryParams.toString()}`);
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to fetch performance records');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'API failed to fetch performance records');
+      const mappedData = (result.data as PerformanceRecordAPIType[]).map(mapApiPerformanceToFE);
+      setPerformanceRecords(mappedData);
+    } catch (err) {
+      setErrorPerformance(err instanceof Error ? err.message : 'Unknown error fetching performance records');
+      console.error("Error fetching performance records:", err);
+    } finally {
+      setLoadingPerformance(false);
+    }
+  }, [tenantAwareFetch]);
+  
+  const recordPerformance = useCallback(async (payload: NewPerformanceRecordPayload): Promise<void> => {
+    setErrorPerformance(null);
+    try {
+      const response = await tenantAwareFetch('/api/performance', { method: 'POST', body: JSON.stringify(payload) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to record performance');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to record performance');
+      const newRecord = mapApiPerformanceToFE(result.data as PerformanceRecordAPIType);
+      setPerformanceRecords(prev => [...prev, newRecord].sort((a,b) => (b.year - a.year) || (months.indexOf(b.month) - months.indexOf(a.month)) ));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error recording performance';
+      setErrorPerformance(msg);
+      console.error('Error recording performance:', error);
+      throw new Error(msg);
+    }
+  }, [tenantAwareFetch, months]);
+  
+  const fetchSalaryRecords = useCallback(async (filter?: { staffId?: string; year?: number; month?: string; populateStaff?: 'true' | 'false' | boolean }) => {
+    setLoadingSalary(true);
+    setErrorSalary(null);
+    let url = '/api/salary';
+    const queryParams = new URLSearchParams();
+    if (filter?.staffId) queryParams.append('staffId', filter.staffId);
+    if (filter?.year) queryParams.append('year', String(filter.year));
+    if (filter?.month) queryParams.append('month', filter.month);
+    if (filter?.populateStaff) queryParams.append('populateStaff', String(filter.populateStaff));
+    if (queryParams.toString()) { url += `?${queryParams.toString()}`; }
+    try {
+      const response = await tenantAwareFetch(url);
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to fetch salary records');
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'API failed to fetch salary records');
+      setSalaryRecords(result.data);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Unknown error fetching salary records');
+      setErrorSalary(error.message);
+      console.error("Error fetching salary records:", error);
+      setSalaryRecords([]);
+    } finally {
+      setLoadingSalary(false);
+    }
+  }, [tenantAwareFetch]);
+  
+  const processSalary = useCallback(async (payload: ProcessSalaryPayload): Promise<SalaryRecordType> => {
+    setLoadingSalary(true);
+    setErrorSalary(null);
+    try {
+      const response = await tenantAwareFetch('/api/salary', { method: 'POST', body: JSON.stringify(payload) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to process salary record');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to process salary');
+      const processedRecord = result.data as SalaryRecordType;
+      setSalaryRecords(prev => {
+        const index = prev.findIndex(r => r.id === processedRecord.id);
+        if (index > -1) { const updated = [...prev]; updated[index] = processedRecord; return updated; }
+        return [...prev, processedRecord];
+      });
+      return processedRecord;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error processing salary');
+      setErrorSalary(err.message);
+      console.error('Error processing salary:', err);
+      throw err;
+    } finally {
+      setLoadingSalary(false);
+    }
+  }, [tenantAwareFetch]);
+  
+  const markSalaryAsPaid = useCallback(async (recordToUpdate: SalaryRecordType, staffDetails: StaffMember, paidDate: string): Promise<SalaryRecordType> => {
+    setLoadingSalary(true);
+    setErrorSalary(null);
+    try {
+      // Re-using the processSalary endpoint is correct based on the original code
+      const payload: ProcessSalaryPayload = { ...recordToUpdate, staffId: typeof recordToUpdate.staffId === 'string' ? recordToUpdate.staffId : (recordToUpdate.staffId as any).id, isPaid: true, paidDate: paidDate };
+      const response = await tenantAwareFetch('/api/salary', { method: 'POST', body: JSON.stringify(payload) });
+      if (!response.ok) throw await handleApiResponseError(response, 'Failed to mark salary as paid');
+      const result = await response.json();
+      if (!result.success || !result.data) throw new Error(result.error || 'API failed to mark salary as paid');
+      const updatedRecordFromApi = result.data as SalaryRecordType;
+      const finalRecordForState: SalaryRecordType = { ...updatedRecordFromApi, staffDetails: staffDetails };
+      setSalaryRecords(prev => prev.map(r => (r.id === finalRecordForState.id ? finalRecordForState : r)) );
+      return finalRecordForState;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error marking salary as paid');
+      setErrorSalary(err.message);
+      console.error('Error marking salary as paid:', err);
+      throw err;
+    } finally {
+      setLoadingSalary(false);
+    }
+  }, [tenantAwareFetch]);
+
+  useEffect(() => {
+    if (tenantId) {
+      fetchStaffMembers();
+      fetchAdvancePayments();
+      fetchAttendanceRecords({ date: format(new Date(), 'yyyy-MM-dd') });
+    }
+  }, [tenantId, fetchStaffMembers, fetchAdvancePayments, fetchAttendanceRecords]);
+  
+  const contextValue: StaffContextType = {
+    staffMembers, loadingStaff, errorStaff, fetchStaffMembers, addStaffMember, deleteStaffMember, permanentlyDeleteStaffMember, updateStaffMember, getStaffById,
+    positionOptions, addPositionOption,
+    advancePayments, loadingAdvancePayments, errorAdvancePayments, fetchAdvancePayments, requestAdvance, updateAdvanceStatus,
+    attendanceRecordsFE, loadingAttendance, errorAttendance, fetchAttendanceRecords, checkInStaff, checkOutStaff, startTemporaryExit, endTemporaryExit, applyWeekOff,
+    removeWeekOff,
+    performanceRecords, loadingPerformance, errorPerformance, fetchPerformanceRecords, recordPerformance,
+    salaryRecords, loadingSalary, errorSalary, fetchSalaryRecords, processSalary, markSalaryAsPaid,
+    // ✅ --- ADDED: The new password function is now available to the context ---
+    updateStaffPassword,
+  };
+
+  return <StaffContext.Provider value={contextValue}>{children}</StaffContext.Provider>;
+};
