@@ -63,7 +63,7 @@ const staffSchema = new Schema<IStaff>({
     type: String,
     required: [true, 'Password is required for staff members.'],
     minlength: 6,
-    maxlength: 15, // ✨ ADD THIS LINE ✨
+   maxlength: 60, // ✨ CHANGE THIS LINE FROM 15 TO 60 ✨
     select: false, // Important: Hides password from default queries
   },
 }, { timestamps: true });
