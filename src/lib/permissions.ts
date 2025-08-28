@@ -124,22 +124,15 @@ export const PERMISSIONS = {
   STAFF_TARGET_MANAGE: 'staff-target:manage',
   STAFF_INCENTIVES_READ: 'staff-incentives:read',
   STAFF_INCENTIVES_MANAGE: 'staff-incentives:manage',
-<<<<<<< HEAD
-  STAFF_INCENTIVE_PAYOUT_READ: 'staff-incentive-payout:read', // <-- ADDED
-=======
   STAFF_INCENTIVE_PAYOUT_READ: 'staff-incentive-payout:read',
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   STAFF_INCENTIVE_PAYOUT_MANAGE: 'staff-incentive-payout:manage',
   STAFF_SALARY_READ: 'staff-salary:read',
   STAFF_SALARY_MANAGE: 'staff-salary:manage',
   STAFF_SWIFT_MANAGE: 'staff-swift:manage',
-<<<<<<< HEAD
-=======
   // --- [NEW PERMISSIONS ADDED HERE] ---
   STAFF_LEAVE_READ: 'staff:leave:read',
   STAFF_LEAVE_MANAGE: 'staff:leave:manage',
   // --- END OF NEW PERMISSIONS ---
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 
   // Expenses Management Permissions
   EXPENSES_CREATE: 'expenses:create',
@@ -148,11 +141,7 @@ export const PERMISSIONS = {
   EXPENSES_DELETE: 'expenses:delete',
   EXPENSES_MANAGE: 'expenses:manage',
   
-<<<<<<< HEAD
-  // Budget Management Permissions <<-- ADDED
-=======
   // Budget Management Permissions
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   BUDGET_READ: 'budget:read',
   BUDGET_MANAGE: 'budget:manage',
   // NEW TELECALLING PERMISSIONS
@@ -189,11 +178,7 @@ export const PERMISSION_CATEGORIES = {
   INVENTORY_CHECKER_MANAGEMENT: 'Inventory Checker Management',
   ALERTS_MANAGEMENT: 'Alerts Management',
   EXPENSES_MANAGEMENT: 'Expenses Management',
-<<<<<<< HEAD
-  BUDGET_MANAGEMENT: 'Budget Management', // <<-- ADDED
-=======
   BUDGET_MANAGEMENT: 'Budget Management',
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   SOP_MANAGEMENT: 'SOP Management',
   TELECALLING_MANAGEMENT: 'Telecalling Management' 
 } as const;
@@ -313,13 +298,6 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.STAFF_TARGET_MANAGE, description: 'Manage staff targets', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_INCENTIVES_READ, description: 'Read staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_INCENTIVES_MANAGE, description: 'Manage staff incentives', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-<<<<<<< HEAD
-  { permission: PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, description: 'Create, approve, reject, and delete incentive payouts', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT }, // <-- ADDED
-  
-  { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  { permission: PERMISSIONS.STAFF_SWIFT_MANAGE, description: 'Manage staff swift', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-=======
   { permission: PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, description: 'Create, approve, reject, and delete incentive payouts', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
@@ -328,7 +306,6 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.STAFF_LEAVE_READ, description: 'Read staff leave requests', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_LEAVE_MANAGE, description: 'Manage staff leave requests', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   // --- END OF NEW PERMISSIONS ---
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 
   // Expenses Management
   { permission: PERMISSIONS.EXPENSES_CREATE, description: 'Create expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
@@ -337,18 +314,10 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.EXPENSES_DELETE, description: 'Delete expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   { permission: PERMISSIONS.EXPENSES_MANAGE, description: 'Manage all expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
   
-<<<<<<< HEAD
-  // Budget Management <<-- ADDED
-  { permission: PERMISSIONS.BUDGET_READ, description: 'View budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
-  { permission: PERMISSIONS.BUDGET_MANAGE, description: 'Manage budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
-
-
-=======
   // Budget Management
   { permission: PERMISSIONS.BUDGET_READ, description: 'View budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
   { permission: PERMISSIONS.BUDGET_MANAGE, description: 'Manage budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
 
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
    // SOP Management (Add this new block)
   { permission: PERMISSIONS.SOP_READ, description: 'View assigned SOPs and checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
@@ -362,11 +331,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];
 
-<<<<<<< HEAD
-=======
 // ... (The rest of the file remains unchanged)
 
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 export const hasPermission = (userPermissions: string[], requiredPermission: string): boolean => {
   // Super admin has all permissions
   if (userPermissions.includes('*')) return true;
