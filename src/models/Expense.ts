@@ -1,8 +1,9 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IExpense extends Document {
-  tenantId: mongoose.Schema.Types.ObjectId; // <-- NEW
-  type: string;
+  tenantId: mongoose.Schema.Types.ObjectId;
+  category: string;      // RENAMED from 'type'
+  subCategory: string;   // NEW: For specific expense items
   description: string;
   amount: number;
   date: Date;
@@ -12,18 +13,22 @@ export interface IExpense extends Document {
 }
 
 const ExpenseSchema: Schema = new Schema({
-  // --- NEW ---
-  // Add a required, indexed reference to the Tenant model.
-  // This is the core of the multi-tenant data architecture.
   tenantId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Tenant', 
     required: true, 
     index: true 
   },
-  type: {
+  // RENAMED 'type' to 'category' to directly link with a budget category.
+  category: {
     type: String,
-    required: [true, 'Please provide an expense type.'],
+    required: [true, 'Please provide an expense category.'],
+    trim: true,
+  },
+  // Added a subCategory for more detailed expense descriptions.
+  subCategory: {
+    type: String,
+    required: [true, 'Please provide a sub-category or item name.'],
     trim: true,
   },
   description: {
