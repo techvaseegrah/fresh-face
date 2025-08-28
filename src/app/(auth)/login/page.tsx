@@ -1,10 +1,11 @@
-// /app/(auth)/login/page.tsx - FINAL, TRULY SCROLLABLE RESPONSIVE VERSION
+// /app/(auth)/login/page.tsx - FINAL CORRECTED VERSION
 
 'use client';
 
 import { useState, useEffect, Suspense, FormEvent } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Eye, EyeOff, Building, User, AtSign, KeyRound } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -131,7 +132,7 @@ function UnifiedLoginForm() {
           </div>
         </div>
         <div>
-          <button type="submit" disabled={isLoading} className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed">
+          <button type="submit" disabled={isLoading} className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 disabled:opacity-50">
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </div>
@@ -143,33 +144,24 @@ function UnifiedLoginForm() {
 export default function LoginPage() {
   return (
     <>
-      {/*
-        KEY FIX:
-        - Removed `min-h-screen` to allow the container to grow with its content and enable native browser scrolling.
-        - Using generous vertical padding (`py-12`) to create space at the top and bottom. This vertically centers short content on large screens while ensuring long content on small screens is scrollable from the top.
-      */}
-      <div className="flex justify-center items-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
-            <div className="mx-auto h-14 w-14 sm:h-16 sm:w-16 bg-black rounded-full flex items-center justify-center">
-              <span className="text-white text-xl sm:text-2xl font-bold">FF</span>
+            <div className="mx-auto h-16 w-16 bg-black rounded-full flex items-center justify-center">
+              <span className="text-white text-2xl font-bold">FF</span>
             </div>
-            <h2 className="mt-6 text-2xl sm:text-3xl font-extrabold text-gray-900">Sign in to Fresh Face</h2>
+            <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Sign in to Fresh Face</h2>
             <p className="mt-2 text-sm text-gray-600">Salon Management System</p>
           </div>
-
-          <div className="bg-white p-6 sm:p-8 shadow-xl rounded-lg">
-            <Suspense fallback={<div className="text-center text-gray-500">Loading Form...</div>}>
-              <UnifiedLoginForm />
-            </Suspense>
-          </div>
-
-          <div className="p-4 bg-gray-100 rounded-md text-center sm:text-left">
+          <Suspense fallback={<div>Loading...</div>}>
+            <UnifiedLoginForm />
+          </Suspense>
+          <div className="mt-6 p-4 bg-gray-50 rounded-md">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
             <p className="text-xs text-gray-600">
-              <span className="font-semibold">Email:</span> superadmin@freshface.com
-              <br className="sm:hidden"/> 
-              <span className="sm:ml-4 font-semibold">Password:</span> SuperAdmin123!
+              Email: superadmin@freshface.com
+              <br />
+              Password: SuperAdmin123!
             </p>
           </div>
         </div>
