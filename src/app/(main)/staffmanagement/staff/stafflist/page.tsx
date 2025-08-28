@@ -13,37 +13,11 @@ import {
 } from 'next/navigation';
 
 import {
-<<<<<<< HEAD
-  Plus, 
-  Edit, 
-  Trash, 
-  Search, 
-  Filter, 
-  RefreshCw, 
-  X, 
-  Users, 
-  UserCheck, 
-  UserX,
-  Phone, 
-  Home, 
-  CreditCard, 
-  Calendar, 
-  Briefcase, 
-  AtSign, 
-  Badge,
-  FileText, 
-  Banknote, 
-  ShieldCheck, 
-  XCircle,
-  UserPlus,
-  Trash2
-=======
   Plus, Edit, Trash, Search, Filter, RefreshCw, X, Users, UserCheck, 
   UserX, Phone, Home, CreditCard, Calendar, Briefcase, AtSign, Badge,
   FileText, Banknote, ShieldCheck, XCircle, UserPlus, Trash2,
   // ✅ ICONS FOR PASSWORD MODAL
   Key, Eye, EyeOff
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 } from 'lucide-react';
 
 import { ToastContainer, toast } from 'react-toastify';
@@ -59,8 +33,6 @@ import Button from '../../../../../components/ui/Button';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions'; 
 
-<<<<<<< HEAD
-=======
 //================================================================================
 // 1. NEW COMPONENT: Reset Password Modal
 //================================================================================
@@ -148,7 +120,6 @@ const ResetPasswordModal: React.FC<{
 // (No changes to DocumentViewerModal, DetailItem, StatCard, StaffCard)
 //================================================================================
 
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 const DocumentViewerModal: React.FC<{ 
   src: string | null; 
   title: string; 
@@ -183,9 +154,6 @@ const DetailItem: React.FC<{
       </div>
     </div>
 );
-<<<<<<< HEAD
-  
-=======
 
 const StatCard: React.FC<{ 
   icon: React.ReactNode; 
@@ -239,19 +207,14 @@ const StaffCard: React.FC<{
 //================================================================================
 // 2. UPDATED COMPONENT: Staff Detail Sidebar
 //================================================================================
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 interface StaffDetailSidebarProps {
   staff: StaffMember | null;
   onClose: () => void;
   onDeactivate: (staff: StaffMember) => void;
   onDeletePermanent: (staff: StaffMember) => void;
   onReactivate: (staff: StaffMember) => void;
-<<<<<<< HEAD
-  onViewDocument: (src: string, title: string) => void; // ✅ Prop is now expected
-=======
   onViewDocument: (src: string, title: string) => void;
   onResetPassword: (staff: StaffMember) => void; // ✅ Prop for reset password
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   isProcessing: string | null;
   canUpdate: boolean;
   canDelete: boolean;
@@ -264,12 +227,8 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({
   onDeactivate, 
   onDeletePermanent, 
   onReactivate, 
-<<<<<<< HEAD
-  onViewDocument, // ✅ Prop is now received
-=======
   onViewDocument,
   onResetPassword, // ✅ Receive prop
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   isProcessing, 
   canUpdate, 
   canDelete,
@@ -361,22 +320,6 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({
             </div>
           </div>
   
-<<<<<<< HEAD
-          <footer className="p-4 border-t border-slate-200 bg-white flex flex-col gap-3">
-            {staff.status === 'active' ? (
-              <div className="flex gap-3">
-                {canUpdate && (
-                  <Button variant="outline" className="flex-1" icon={<Edit size={16} />} onClick={() => router.push(`/staffmanagement/staff/editstaff?staffId=${staff.id}`)} disabled={isCurrentlyProcessing} >
-                    Edit Profile
-                  </Button>
-                )}
-                {canDelete && (
-                  <Button variant="danger" className="flex-1" icon={isCurrentlyProcessing ? <RefreshCw className="animate-spin" size={16} /> : <Trash size={16} />} onClick={() => onDeactivate(staff)} disabled={isCurrentlyProcessing} >
-                    {isCurrentlyProcessing ? 'Deactivating...' : 'Deactivate'}
-                  </Button>
-                )}
-              </div>
-=======
           {/* ✅ UPDATED FOOTER SECTION */}
           <footer className="p-4 border-t border-slate-200 bg-white flex flex-col gap-3">
             {staff.status === 'active' ? (
@@ -399,7 +342,6 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({
                   </Button>
                 )}
               </>
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
             ) : (
               <>
                 {canUpdate && (
@@ -419,61 +361,6 @@ const StaffDetailSidebar: React.FC<StaffDetailSidebarProps> = ({
       </>
     );
 };
-<<<<<<< HEAD
-  
-const StatCard: React.FC<{ 
-  icon: React.ReactNode; 
-  title: string; 
-  value: string | number; 
-  color: string 
-}> = ({ icon, title, value, color }) => (
-    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-      <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center ${color}`}>
-        {icon}
-      </div>
-      <div>
-        <p className="text-sm text-slate-500 font-medium">{title}</p>
-        <p className="text-2xl font-bold text-slate-800">{value}</p>
-      </div>
-    </div>
-);
-  
-const StaffCard: React.FC<{ 
-  staff: StaffMember; 
-  onSelect: (staff: StaffMember) => void 
-}> = ({ staff, onSelect }) => (
-    <div 
-      className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer"
-      onClick={() => onSelect(staff)}
-    >
-      <div className="flex items-center gap-4">
-        <img
-          className="h-14 w-14 rounded-full object-cover ring-2 ring-slate-100"
-          src={staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name)}&background=random&color=fff`}
-          alt={staff.name}
-        />
-        <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-slate-800 text-md truncate">{staff.name}</h3>
-          <p className="text-sm text-slate-500 truncate">{staff.position}</p>
-          <p className="text-xs text-slate-400 mt-1 truncate">ID: {staff.staffIdNumber || 'N/A'}</p>
-        </div>
-      </div>
-      <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
-         <div className="flex items-center gap-2 text-sm text-slate-600 min-w-0">
-           <Phone size={14} className="text-slate-400 flex-shrink-0"/>
-           <span className="truncate">{staff.phone || 'N/A'}</span>
-         </div>
-         <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full flex-shrink-0 ${ staff.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }`}>
-            {staff.status.charAt(0).toUpperCase() + staff.status.slice(1)}
-         </span>
-      </div>
-    </div>
-);
-  
-const StaffList: React.FC = () => {
-  const { data: session } = useSession();
-  const { staffMembers, loadingStaff, errorStaff, fetchStaffMembers, deleteStaffMember, permanentlyDeleteStaffMember, updateStaffMember } = useStaff();
-=======
 
 //================================================================================
 // 3. UPDATED COMPONENT: Main Staff List Page
@@ -482,7 +369,6 @@ const StaffList: React.FC = () => {
   const { data: session } = useSession();
   // ✅ Make sure `updateStaffPassword` is provided by your StaffContext
   const { staffMembers, loadingStaff, errorStaff, fetchStaffMembers, deleteStaffMember, permanentlyDeleteStaffMember, updateStaffMember, updateStaffPassword } = useStaff();
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
@@ -495,12 +381,9 @@ const StaffList: React.FC = () => {
 
   const [viewingDocument, setViewingDocument] = useState<{src: string | null, title: string}>({ src: null, title: '' });
 
-<<<<<<< HEAD
-=======
   // ✅ STATE FOR THE RESET PASSWORD MODAL
   const [staffToReset, setStaffToReset] = useState<StaffMember | null>(null);
 
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
   const canCreate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_CREATE), [userPermissions]);
   const canUpdate = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_LIST_UPDATE), [userPermissions]);
@@ -589,8 +472,6 @@ const StaffList: React.FC = () => {
     }
   };
   
-<<<<<<< HEAD
-=======
   // ✅ HANDLERS FOR RESET PASSWORD MODAL
   const handleOpenResetModal = (staff: StaffMember) => {
     setStaffToReset(staff);
@@ -619,7 +500,6 @@ const StaffList: React.FC = () => {
     }
   };
 
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   const toggleFilter = () => { if (!isFilterOpen) setTempFilters(filters); setIsFilterOpen(!isFilterOpen); };
   const handleApplyFilters = () => { setFilters(tempFilters); setIsFilterOpen(false); };
   const handleResetFilters = () => { setTempFilters({ position: '', status: '' }); setFilters({ position: '', status: '' }); setIsFilterOpen(false); };
@@ -628,8 +508,6 @@ const StaffList: React.FC = () => {
     <div className="relative">
       <ToastContainer position="top-right" autoClose={4000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
       <DocumentViewerModal src={viewingDocument.src} title={viewingDocument.title} onClose={() => setViewingDocument({ src: null, title: '' })} />
-<<<<<<< HEAD
-=======
       
       {/* ✅ RENDER THE RESET PASSWORD MODAL */}
       {staffToReset && (
@@ -640,7 +518,6 @@ const StaffList: React.FC = () => {
           isProcessing={isProcessing === staffToReset.id}
         />
       )}
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 
       <div className="bg-slate-50 min-h-screen">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -723,10 +600,7 @@ const StaffList: React.FC = () => {
         onDeletePermanent={handleDeletePermanent}
         onReactivate={handleReactivateStaff}
         onViewDocument={(src, title) => setViewingDocument({ src, title })}
-<<<<<<< HEAD
-=======
         onResetPassword={handleOpenResetModal} // ✅ Pass the handler to the sidebar
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
         isProcessing={isProcessing}
         canUpdate={canUpdate}
         canDelete={canDelete}
