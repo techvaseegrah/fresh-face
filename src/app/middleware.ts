@@ -1,16 +1,18 @@
-// src/middleware.ts - DEBUG VERSION
+// /src/middleware.ts - FINAL CORRECTED VERSION
+
 export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getUserFromToken, extractTokenFromRequest, hasPermission } from '@/lib/auth';
+import { hasPermission } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import Tenant from '@/models/Tenant';
+import { getToken } from 'next-auth/jwt';
 
-console.log("--- CLEAN REBUILD - MIDDLEWARE LOADED AT " + new Date().toLocaleTimeString() + " ---");
-
+// ✅ FIX: Throw error immediately if ROOT_DOMAIN is not set.
+// This satisfies TypeScript and provides a clear startup error.
 const ROOT_DOMAIN = process.env.NEXT_PUBLIC_ROOT_DOMAIN;
 if (!ROOT_DOMAIN) {
-  throw new Error('NEXT_PUBLIC_ROOT_DOMAIN is not set in the environment variables.');
+  throw new Error('FATAL: NEXT_PUBLIC_ROOT_DOMAIN is not set in the environment variables.');
 }
 
 const ROUTE_PERMISSIONS: Record<string, string[]> = {
@@ -26,94 +28,73 @@ const ROUTE_PERMISSIONS: Record<string, string[]> = {
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl;
-  const hostname = request.headers.get('host') || ROOT_DOMAIN;
+  
+  // ✅ FIX: Check for hostname right away to prevent undefined errors.
+  const hostname = request.headers.get('host');
+  if (!hostname) {
+    return new Response(null, { status: 400, statusText: 'Bad Request: Host header is missing.' });
+  }
 
-  console.log(`\n--- [MIDDLEWARE] Request received for: ${url.pathname} ---`);
-  console.log(`[MIDDLEWARE] Host header: ${hostname}`);
+  console.log(`\n--- [MIDDLEWARE] Request for: ${url.pathname} on Host: ${hostname} ---`);
 
-  // Exclude special Next.js paths, static assets, and auth routes
+  // --- 1. Bypass Public Routes ---
   if (
-    url.pathname.startsWith('/api/auth') ||
-    url.pathname === '/login' ||
-    url.pathname.startsWith('/_next') ||
-    url.pathname.startsWith('/static') ||
-    url.pathname.startsWith('/public') ||
-    url.pathname === '/favicon.ico'
+    url.pathname.startsWith('/api/auth') || url.pathname === '/login' ||
+    url.pathname.startsWith('/_next') || url.pathname.startsWith('/static') ||
+    url.pathname.startsWith('/public') || url.pathname === '/favicon.ico'
   ) {
-    console.log("[MIDDLEWARE] Path is public or internal. Bypassing.");
     return NextResponse.next();
   }
 
-  // --- SUBDOMAIN EXTRACTION ---
+  // --- 2. Enforce Root Domain Security Rule ---
   const subdomain = hostname.split('.')[0];
-  console.log(`[MIDDLEWARE] Extracted subdomain: '${subdomain}'`);
+  const isRootDomain = subdomain === 'localhost' || subdomain === 'www' || subdomain === ROOT_DOMAIN.split(':')[0];
   
-  if (subdomain === 'www' || subdomain === ROOT_DOMAIN.split(':')[0]) {
-    console.log("[MIDDLEWARE] Root domain detected. No tenant ID will be added.");
-    // Even on the root domain, we must check for a token for protected pages
+  if (isRootDomain) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('error', 'Please use your salon-specific URL to access this page.');
+      return NextResponse.redirect(loginUrl);
   }
 
-  // --- TENANT LOOKUP ---
+  // --- 3. Perform Subdomain Security Checks ---
   await dbConnect();
   const tenant = await Tenant.findOne({ subdomain }).lean();
+  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
 
-  if (!tenant) {
-    console.error(`[MIDDLEWARE] FAILED: Tenant not found for subdomain '${subdomain}'. Redirecting to root.`);
-    const protocol = hostname.includes('localhost') ? 'http://' : 'https';
-    const rootUrl = new URL('/', `${protocol}${ROOT_DOMAIN}`);
-    return NextResponse.redirect(rootUrl);
-  }
+  if (!tenant) { return NextResponse.redirect(new URL('/login?error=InvalidSalon', request.url)); }
+  if (!token) { return redirectToLogin(request); }
+  
   const tenantIdFromHost = tenant._id.toString();
-  console.log(`[MIDDLEWARE] Tenant from Host: '${tenant.name}' with ID: ${tenantIdFromHost}`);
-
-  // --- USER AUTHENTICATION ---
-  const token = extractTokenFromRequest(request);
-  if (!token) {
-    console.warn("[MIDDLEWARE] FAILED: No token found. Redirecting to login.");
-    return redirectToLogin(request);
+  if (token.tenantId !== tenantIdFromHost) {
+      return redirectToLogin(request);
   }
 
-  const user = await getUserFromToken(token);
-  if (!user) {
-    console.error("[MIDDLEWARE] FAILED: Token is present, but getUserFromToken returned null. The token might be invalid or expired.");
-    return redirectToLogin(request);
-  }
-  console.log("[MIDDLEWARE] User decoded from token:", { id: user.id, email: user.email, tenantId: user.tenantId });
+  // --- 4. Perform Role-Based Authorization ---
+  const isStaffRoute = url.pathname.startsWith('/staff');
+  const userRole = token.role;
 
-  // --- THE CRITICAL SECURITY CHECK ---
-  console.log(`[MIDDLEWARE] Comparing Tenant ID from Host ('${tenantIdFromHost}') with User's Tenant ID from Token ('${user.tenantId}')`);
-  if (user.tenantId !== tenantIdFromHost) {
-    console.error("--- [MIDDLEWARE] SECURITY CHECK FAILED! TENANT ID MISMATCH. ---");
-    console.warn(`SECURITY ALERT: User ${user.id} from tenant ${user.tenantId} attempted to access tenant ${tenantIdFromHost}`);
-    return redirectToLogin(request);
-  }
-  console.log("[MIDDLEWARE] Security check PASSED.");
-
-  // --- PERMISSION CHECK ---
-  const requiredPermissions = getRequiredPermissions(url.pathname);
-  if (requiredPermissions.length > 0) {
-    const hasAccess = requiredPermissions.some(permission =>
-      hasPermission(user.permissions, permission)
-    );
-
-    if (!hasAccess) {
-      console.warn(`[MIDDLEWARE] PERMISSION DENIED: User ${user.id} does not have required permissions for ${url.pathname}.`);
+  if (isStaffRoute) {
+    if (userRole?.name !== 'staff') {
       return NextResponse.redirect(new URL('/unauthorized', request.url));
     }
-    console.log(`[MIDDLEWARE] Permission check PASSED for ${url.pathname}.`);
+  } else {
+    const userPermissions = userRole?.permissions || [];
+    const requiredPermissions = getRequiredPermissions(url.pathname);
+    if (requiredPermissions.length > 0) {
+      const hasAccess = requiredPermissions.some(permission => hasPermission(userPermissions, permission));
+      if (!hasAccess) {
+        return NextResponse.redirect(new URL('/unauthorized', request.url));
+      }
+    }
   }
 
-  // --- SUCCESS ---
-  console.log("[MIDDLEWARE] All checks passed. Adding headers and continuing to the API route.");
+  // --- 5. Success ---
   const response = NextResponse.next();
   response.headers.set('x-tenant-id', tenantIdFromHost);
-  response.headers.set('x-user-id', user.id);
-  response.headers.set('x-user-permissions', JSON.stringify(user.permissions));
-
+  response.headers.set('x-user-id', token.id as string);
   return response;
 }
 
-// --- Helper functions (no changes needed) ---
 function redirectToLogin(request: NextRequest) {
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('redirect', request.nextUrl.pathname);
@@ -121,19 +102,13 @@ function redirectToLogin(request: NextRequest) {
 }
 
 function getRequiredPermissions(pathname: string): string[] {
-  if (ROUTE_PERMISSIONS[pathname]) {
-    return ROUTE_PERMISSIONS[pathname];
-  }
+  if (ROUTE_PERMISSIONS[pathname]) { return ROUTE_PERMISSIONS[pathname]; }
   for (const [pattern, permissions] of Object.entries(ROUTE_PERMISSIONS)) {
-    if (pathname.startsWith(pattern)) {
-      return permissions;
-    }
+    if (pathname.startsWith(pattern)) { return permissions; }
   }
   return [];
 }
 
 export const config = {
-  matcher: [
-    '/((?!api/auth|_next/static|_next/image|favicon.ico).*)',
-  ],
+  matcher: [ '/((?!api/auth|_next/static|_next/image|favicon.ico|login).*)' ],
 };

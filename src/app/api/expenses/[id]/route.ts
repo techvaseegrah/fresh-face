@@ -1,11 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'; // <-- NEW: Use NextRequest
+import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/dbConnect';
 import Expense from '@/models/Expense';
 import { v2 as cloudinary } from 'cloudinary';
-import { getTenantIdOrBail } from '@/lib/tenant'; // <-- NEW: Import tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
 
-// Cloudinary config remains the same
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -13,7 +12,6 @@ cloudinary.config({
   secure: true,
 });
 
-// Helper to extract Cloudinary public_id from URL remains the same
 const getPublicIdFromUrl = (url: string) => {
     try {
         const parts = url.split('/');
@@ -26,17 +24,16 @@ const getPublicIdFromUrl = (url: string) => {
 };
 
 // --- PUT: Update an existing expense for a specific tenant ---
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) { // <-- NEW: Use NextRequest
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const { id } = params;
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return NextResponse.json({ success: false, error: 'Invalid expense ID' }, { status: 400 });
   }
 
   try {
-    // --- NEW: Securely get tenantId or exit ---
     const tenantId = getTenantIdOrBail(request);
     if (tenantId instanceof NextResponse) {
-        return tenantId; // Return error response if tenantId is missing
+        return tenantId;
     }
 
     await dbConnect();
@@ -44,6 +41,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const formData = await request.formData();
     const updateData: { [key: string]: any } = {};
 
+    // This generic loop correctly handles the new 'category' and 'subCategory' fields
     formData.forEach((value, key) => {
         if (key !== 'billFile' && key !== '_id') {
             if (key === 'amount') updateData[key] = parseFloat(value as string);
@@ -54,14 +52,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const file: File | null = formData.get('billFile') as File | null;
     
-    // --- UPDATED: Find the expense by ID AND tenantId for security ---
     const existingExpense = await Expense.findOne({ _id: id, tenantId });
     if (!existingExpense) {
-      // Return 404 if not found OR if it belongs to another tenant
       return NextResponse.json({ success: false, error: 'Expense not found' }, { status: 404 });
     }
 
-    // --- File Handling Logic (remains the same) ---
     if (file) {
       if (existingExpense.billUrl) {
           const publicId = getPublicIdFromUrl(existingExpense.billUrl);
@@ -82,7 +77,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       updateData.billUrl = null;
     }
 
-    // --- UPDATED: Update the expense ensuring it matches the tenantId ---
     const updatedExpense = await Expense.findOneAndUpdate({ _id: id, tenantId }, updateData, {
       new: true,
       runValidators: true,
@@ -98,25 +92,22 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 // --- DELETE: Remove an expense for a specific tenant ---
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) { // <-- NEW: Use NextRequest
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
     const { id } = params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
         return NextResponse.json({ success: false, error: 'Invalid expense ID' }, { status: 400 });
     }
 
     try {
-        // --- NEW: Securely get tenantId or exit ---
         const tenantId = getTenantIdOrBail(request);
         if (tenantId instanceof NextResponse) {
-            return tenantId; // Return error response if tenantId is missing
+            return tenantId;
         }
 
         await dbConnect();
 
-        // --- UPDATED: Find the expense by ID AND tenantId to ensure ownership ---
         const expenseToDelete = await Expense.findOne({ _id: id, tenantId });
         if (!expenseToDelete) {
-            // Return 404 if not found OR if it belongs to another tenant
             return NextResponse.json({ success: false, error: 'Expense not found' }, { status: 404 });
         }
 
@@ -129,7 +120,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
             }
         }
 
-        // --- UPDATED: Securely delete using both ID and tenantId ---
         await Expense.deleteOne({ _id: id, tenantId });
         return NextResponse.json({ success: true, message: 'Expense deleted successfully' });
 

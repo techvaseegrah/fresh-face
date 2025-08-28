@@ -1,15 +1,11 @@
-// FILE: /app/api/expenses/route.ts
-// No changes to GET function. Only the POST function is modified below.
-
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/dbConnect';
 import Expense from '@/models/Expense';
 import { v2 as cloudinary } from 'cloudinary';
 import { getTenantIdOrBail } from '@/lib/tenant';
-import { checkBudgetThreshold } from '@/lib/budgetAlerts'; // <-- 1. IMPORT THE ALERT FUNCTION
+import { checkBudgetThreshold } from '@/lib/budgetAlerts';
 
-// Cloudinary config remains the same
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -46,7 +42,9 @@ export async function POST(request: NextRequest) {
     
     const formData = await request.formData();
     
-    const type = formData.get('type') as string;
+    // MODIFIED: Read category and subCategory from form
+    const category = formData.get('category') as string;
+    const subCategory = formData.get('subCategory') as string;
     const description = formData.get('description') as string;
     const amount = parseFloat(formData.get('amount') as string);
     const date = new Date(formData.get('date') as string);
@@ -75,9 +73,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // MODIFIED: Use new fields in the expense data object
     const expenseData = {
-        tenantId: new mongoose.Types.ObjectId(tenantId), // Ensure tenantId is stored as ObjectId
-        type,
+        tenantId: new mongoose.Types.ObjectId(tenantId),
+        category,
+        subCategory,
         description,
         amount,
         date,
@@ -88,10 +88,8 @@ export async function POST(request: NextRequest) {
 
     const expense = await Expense.create(expenseData);
 
-    // --- 2. TRIGGER THE BUDGET CHECK AFTER CREATING THE EXPENSE ---
-    // This runs in the background (`void`) so the API response is not delayed.
     if (expense) {
-      void checkBudgetThreshold(tenantId, expense.type, expense.date);
+      void checkBudgetThreshold(tenantId, expense.category, expense.date);
     }
     
     return NextResponse.json({ success: true, data: expense }, { status: 201 });

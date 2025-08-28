@@ -2,11 +2,19 @@
 
 import React, { useState, FormEvent, ChangeEvent, useEffect } from "react";
 import { useRouter } from "next/navigation";
+<<<<<<< HEAD
 import { useSession } from "next-auth/react"; // <-- ✅ FIX: Import useSession
 import {
   ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
   Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
   Calendar, IndianRupee, MapPin, Image as ImageIcon, Badge,
+=======
+import { useSession } from "next-auth/react";
+import {
+  ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
+  Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
+  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, // ✅ IMPORT EyeOff
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -28,6 +36,10 @@ interface StaffFormData {
   aadharImage: string | null;
   passbookImage: string | null;
   agreementImage: string | null;
+<<<<<<< HEAD
+=======
+  password: string;
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 }
 
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
@@ -127,8 +139,11 @@ const FileUploadInput: React.FC<{
 const AddStaffPage: React.FC = () => {
   const router = useRouter();
   const { addStaffMember, positionOptions: contextPositionOptions = [], addPositionOption } = useStaff();
+<<<<<<< HEAD
   
   // ✅ FIX: Get session and status to access tenant ID
+=======
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   const { data: session, status: sessionStatus } = useSession();
 
   const [formData, setFormData] = useState<StaffFormData>({
@@ -137,6 +152,10 @@ const AddStaffPage: React.FC = () => {
     joinDate: new Date().toISOString().split("T")[0],
     salary: "", address: "", image: DEFAULT_STAFF_IMAGE, aadharNumber: "",
     aadharImage: null, passbookImage: null, agreementImage: null,
+<<<<<<< HEAD
+=======
+    password: "",
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -145,18 +164,28 @@ const AddStaffPage: React.FC = () => {
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
   const [viewingDocument, setViewingDocument] = useState<{ src: string | null; title: string; }>({ src: null, title: "" });
+<<<<<<< HEAD
 
   // ✅ FIX: Correctly fetch the next staff ID using the tenant ID from the session
+=======
+  const [showPassword, setShowPassword] = useState(false); // ✅ STATE FOR PASSWORD VISIBILITY
+
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
   useEffect(() => {
     const fetchNextId = async (tenantId: string) => {
       try {
         const response = await fetch("/api/staff?action=getNextId", {
+<<<<<<< HEAD
           headers: {
             'X-Tenant-ID': tenantId // Send tenant ID for the backend to scope the request
           },
           cache: 'no-store'
         });
         
+=======
+          headers: { 'X-Tenant-ID': tenantId }, cache: 'no-store'
+        });
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
         if (!response.ok) {
           const errData = await response.json();
           throw new Error(errData.error || "Failed to fetch Staff ID from server.");
@@ -172,6 +201,7 @@ const AddStaffPage: React.FC = () => {
         toast.error(`Could not load Staff ID: ${err.message}`);
       }
     };
+<<<<<<< HEAD
 
     // Only run the fetch logic when the session is authenticated and tenantId is available
     if (sessionStatus === 'authenticated') {
@@ -179,6 +209,12 @@ const AddStaffPage: React.FC = () => {
       if (tenantId) {
         fetchNextId(tenantId);
       } else {
+=======
+    if (sessionStatus === 'authenticated') {
+      const tenantId = session?.user?.tenantId;
+      if (tenantId) { fetchNextId(tenantId); }
+      else {
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
         setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
         toast.error("Could not load Staff ID: Tenant ID is missing.");
       }
@@ -186,7 +222,11 @@ const AddStaffPage: React.FC = () => {
         setFormData((prev) => ({ ...prev, staffIdNumber: "Error" }));
         toast.error("Could not load Staff ID: Not authenticated.");
     }
+<<<<<<< HEAD
   }, [sessionStatus, session]); // Depend on session status
+=======
+  }, [sessionStatus, session]);
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
 
   useEffect(() => {
     setPositionOptions(contextPositionOptions);
@@ -233,6 +273,16 @@ const AddStaffPage: React.FC = () => {
     setIsSubmitting(true);
     if (formData.staffIdNumber === "Loading..." || formData.staffIdNumber === "Error") { toast.error("Staff ID is not available. Please refresh."); setIsSubmitting(false); return; }
     if (!formData.name.trim() || !formData.phone.trim() || !formData.position.trim() || !formData.aadharNumber.trim()) { toast.warn("Please fill in Name, Phone, Aadhar Number, and Position."); setIsSubmitting(false); return; }
+<<<<<<< HEAD
+=======
+    
+    if (!formData.password || formData.password.length < 6) {
+        toast.error("Password is required and must be at least 6 characters.");
+        setIsSubmitting(false);
+        return;
+    }
+
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
     if (!/^\d{12}$/.test(formData.aadharNumber.trim())) { toast.error("Aadhar Number must be 12 digits."); setIsSubmitting(false); return; }
     if (formData.salary !== "" && Number(formData.salary) < 0) { toast.error("Salary cannot be negative."); setIsSubmitting(false); return; }
 
@@ -242,6 +292,10 @@ const AddStaffPage: React.FC = () => {
       salary: Number(formData.salary) || 0, address: formData.address || undefined,
       image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image, aadharNumber: formData.aadharNumber,
       aadharImage: formData.aadharImage, passbookImage: formData.passbookImage, agreementImage: formData.agreementImage,
+<<<<<<< HEAD
+=======
+      password: formData.password,
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
     };
 
     try {
@@ -304,6 +358,38 @@ const AddStaffPage: React.FC = () => {
             <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number*"/>
             <input id="aadharNumber" name="aadharNumber" type="text" required pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
+<<<<<<< HEAD
+=======
+
+          {/* ✅ MODIFIED PASSWORD FIELD WITH VISIBILITY TOGGLE */}
+          <div>
+            <IconLabel htmlFor="password" icon={<ShieldCheck size={14} className="text-gray-500" />} text="Password*"/>
+            <div className="relative">
+              <input 
+                id="password" 
+                name="password" 
+                type={showPassword ? "text" : "password"} // ✅ DYNAMIC TYPE
+                required 
+                minLength={6}
+                maxLength={15} // ✨ ADDED MAX LENGTH ✨
+                value={formData.password} 
+                onChange={handleInputChange} 
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100 pr-10" // ✅ ADD PADDING RIGHT FOR ICON
+                disabled={isSubmitting}
+                placeholder="Min. 6 characters,Max. 15 characters"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+>>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
           <div>
             <IconLabel htmlFor="position" icon={<Briefcase size={14} className="text-gray-500" />} text="Position*"/>
             <div className="flex items-center space-x-2">
