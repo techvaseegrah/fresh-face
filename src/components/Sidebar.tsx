@@ -12,9 +12,10 @@ import {
   BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon,
   ChartBarIcon,
   XMarkIcon,
+  BriefcaseIcon, // ▼▼▼ FIX 1: IMPORT THE NEW ICON ▼▼▼
 } from '@heroicons/react/24/outline';
 
-import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig } from 'lucide-react';
+import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon } from 'lucide-react';
 import { DocumentCheckIcon } from '@heroicons/react/24/solid';
 
 
@@ -50,8 +51,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/staffmanagement/salary', label: 'Salary', icon: <SalaryIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SALARY_READ]) },
       { href: '/staffmanagement/staff/stafflist', label: 'Staff List', icon: <StaffListIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_LIST_READ]), basePathForActive: '/staffmanagement/staff' },
       { href: '/staffmanagement/swift', label: 'Shift Management', icon: <SwiftIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
-      // I've updated the line below to add sizing to the PowerIcon
-      { href: '/staffmanagement/leave', label: 'Leave', icon:<PowerIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_SWIFT_MANAGE]) },
+      { href: '/staffmanagement/leave', label: 'Leave', icon:<PowerIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_LEAVE_MANAGE]) },
     ];
 
     const adminSubItems: NavSubItem[] = [
@@ -65,22 +65,42 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
     ];
     
-     // Inside your navItems useMemo hook in Sidebar.tsx
+    const sopSubItems: NavSubItem[] = [
+      { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) },
+      { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
+      { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
+    ];
 
-const sopSubItems: NavSubItem[] = [
-    // BEFORE (The problem is here)
-    // { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]), basePathForActive: '/sop' },
-
-    // AFTER (Corrected configuration)
-    { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) }, // No basePathForActive
-
-    // These other links are already correct
-    { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
-    { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
-];
     const telecallingSubItems: NavSubItem[] = [
       { href: '/telecalling', label: 'Workspace', icon: <PhoneForwarded className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM]) },
       { href: '/telecalling/reports', label: 'Telecalling Reports', icon: <BarChartBig className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_VIEW_REPORTS]) }
+    ];
+    
+     const reconciliationSubItems: NavSubItem[] = [
+      { 
+        href: '/back-office/reconciliation', 
+        label: 'Daily Entry', 
+        icon: <PencilIcon className="h-5 w-5" />, 
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.RECONCILIATION_READ]),
+      },
+      { 
+        href: '/back-office/reconciliation/history', 
+        label: 'History Report', 
+        icon: <BookOpenIcon className="h-5 w-5" />, 
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.RECONCILIATION_READ])
+      },
+      { 
+        href: '/back-office/pnl-summary', 
+        label: 'Profit-loss', 
+        icon: <ChartBarIcon className="h-5 w-5" />, 
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ])
+      },
+      { 
+        href: '/back-office/monthly-comparison', 
+        label: 'profit-loss comparison', 
+        icon: <ScaleIcon className="h-5 w-5" />, 
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ])
+      },
     ];
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
@@ -88,6 +108,7 @@ const sopSubItems: NavSubItem[] = [
     const canSeeBudgetManagement = budgetSubItems.some(item => item.show);
     const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
+    const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
     
     return [
       { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.DASHBOARD_READ, PERMISSIONS.DASHBOARD_MANAGE]) },
@@ -106,6 +127,15 @@ const sopSubItems: NavSubItem[] = [
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
+      // ▼▼▼ FIX 2: CHANGE THE PARENT ICON HERE ▼▼▼
+      { 
+        href: '/back-office/reconciliation', 
+        label: 'Back Office', 
+        icon: <BriefcaseIcon className="h-5 w-5" />, // Changed from ScaleIcon to BriefcaseIcon
+        show: canSeeReconciliation, 
+        subItems: reconciliationSubItems.filter(item => item.show) 
+      },
+      // ▲▲▲ END OF FIX ▲▲▲
       { href: '/admin', label: 'Administration', icon: <Cog6ToothIcon className="h-5 w-5" />, show: canSeeAdministration, subItems: adminSubItems.filter(item => item.show) },
       { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [ PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, PERMISSIONS.ATTENDANCE_SETTINGS_READ, PERMISSIONS.LOYALTY_SETTINGS_READ, ])},
     ];
@@ -172,13 +202,7 @@ const sopSubItems: NavSubItem[] = [
                         {isOpen && (
                           <div className="mt-1 space-y-0.5 py-1">
                             {item.subItems.map((subItem) => {
-                              // ▼▼▼ THE FIX IS HERE ▼▼▼
-                              // This logic is now more precise. It uses an exact match for standard links
-                              // and a broad `startsWith` match only when `basePathForActive` is provided.
-                              const isSubActive = subItem.basePathForActive
-                                ? pathname.startsWith(subItem.basePathForActive)
-                                : pathname === subItem.href;
-                              // ▲▲▲ END OF FIX ▲▲▲
+                              const isSubActive = pathname === subItem.href || (subItem.basePathForActive && pathname.startsWith(subItem.basePathForActive));
                               
                               return (
                                 <Link onClick={mobileLinkClick} key={subItem.href} href={subItem.href} className={`flex items-center gap-3 pl-8 pr-4 py-2 rounded-lg transition-colors text-sm text-gray-600 ${ isSubActive ? 'bg-gray-200 text-black font-medium' : 'hover:bg-gray-100 hover:text-black' }`}>

@@ -9,8 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@headlessui/react": "^2.2.4",
-    "@heroicons/react": "^2.2.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@headlessui/react": "^2.2.4",
@@ -35,6 +33,7 @@
     "next": "^14.2.30",
     "next-auth": "^4.24.11",
     "nodemailer": "^6.10.1",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.17.1",
     "playwright": "^1.53.2",
     "react": "^18.2.0",
@@ -49,8 +48,8 @@
     "react-select": "^5.10.2",
     "react-toastify": "^11.0.5",
     "react-tooltip": "^5.29.1",
-    "sonner": "^2.0.7",
     "recharts": "^3.1.2",
+    "sonner": "^2.0.7",
     "swr": "^2.3.6",
     "tooltip": "^1.6.1",
     "xlsx": "^0.18.5"

@@ -149,6 +149,11 @@ export const PERMISSIONS = {
   TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
   TELECALLING_VIEW_REPORTS: 'telecalling:reports:read',
 
+  RECONCILIATION_READ: 'reconciliation:read',   // Permission to view the page and history
+  RECONCILIATION_MANAGE: 'reconciliation:manage', // Permission to save a daily report
+  PROFIT_LOSS_READ:'profitloss:read',
+  PROFIT_LOSS_MANAGE: 'profitloss:manage', 
+
   SALES_REPORT_READ: 'sales:report:read',
   TENANTS_CREATE: 'tenants:create',
 
@@ -180,7 +185,8 @@ export const PERMISSION_CATEGORIES = {
   EXPENSES_MANAGEMENT: 'Expenses Management',
   BUDGET_MANAGEMENT: 'Budget Management',
   SOP_MANAGEMENT: 'SOP Management',
-  TELECALLING_MANAGEMENT: 'Telecalling Management' 
+  TELECALLING_MANAGEMENT: 'Telecalling Management',
+  BACK_OFFICE_MANAGEMENT:'Back Office Management'
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -327,6 +333,19 @@ export const ALL_PERMISSIONS = [
  { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_DASHBOARD,  description: 'View the performance dashboard for telecalling activities', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_REPORTS, description: 'View detailed performance reports for telecallers', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT},
+
+  { permission: PERMISSIONS.RECONCILIATION_READ,description: 'View the daily reconciliation page and history reports',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
+  {permission: PERMISSIONS.RECONCILIATION_MANAGE, description: 'Save daily reconciliation reports and manage data',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
+  { 
+      permission: PERMISSIONS.PROFIT_LOSS_READ,
+      description: 'View the Profit & Loss reports (view only)',
+      category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT
+    },
+    { 
+      permission: PERMISSIONS.PROFIT_LOSS_MANAGE, 
+      description: 'Change dates, generate, and download P&L reports', 
+      category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT 
+    },
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];
