@@ -26,13 +26,28 @@ export async function GET(request: Request) {
             return NextResponse.json({ message: 'Authentication failed or tenant not found.' }, { status: 401 });
         }
         const tenantId = new mongoose.Types.ObjectId(session.user.tenantId);
+        
+        // --- MODIFIED ---: Read date range from query parameters
+        const { searchParams } = new URL(request.url);
+        const startDateParam = searchParams.get('startDate');
+        const endDateParam = searchParams.get('endDate');
 
+        let startDate: Date;
+        let endDate: Date;
         const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+        if (startDateParam && endDateParam) {
+            startDate = new Date(startDateParam);
+            endDate = new Date(endDateParam);
+            endDate.setHours(23, 59, 59, 999); // Set to the end of the day
+        } else {
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        }
+
+        // --- Use current month for fetching targets, as targets are typically monthly ---
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
-        // --- CORRECTED ---: Query now includes tenantId.
         let targetSheet = await TargetSheet.findOne({ month: monthIdentifier, tenantId: tenantId });
 
         if (!targetSheet) {
@@ -49,11 +64,11 @@ export async function GET(request: Request) {
             netSales: (targetSheet.target?.service || 0) + (targetSheet.target?.retail || 0),
         };
 
-        // --- CORRECTED ---: Aggregation now matches by tenantId.
         const invoiceAggregation = await Invoice.aggregate([
             { $match: { 
                 tenantId: tenantId, 
-                createdAt: { $gte: startOfMonth, $lte: endOfMonth }, 
+                // --- MODIFIED ---: Use dynamic date range
+                createdAt: { $gte: startDate, $lte: endDate }, 
                 paymentStatus: 'Paid' 
             }},
             { $project: {
@@ -78,10 +93,10 @@ export async function GET(request: Request) {
 
         const achievedResult = invoiceAggregation[0] || {};
         
-        // --- CORRECTED ---: Query now includes tenantId.
         const achievedAppointmentsCount = await Appointment.countDocuments({
             tenantId: tenantId,
-            appointmentDateTime: { $gte: startOfMonth, $lte: endOfMonth },
+            // --- MODIFIED ---: Use dynamic date range
+            appointmentDateTime: { $gte: startDate, $lte: endDate },
             status: { $nin: ['Cancelled', 'No-Show'] }
         });
 
@@ -96,20 +111,28 @@ export async function GET(request: Request) {
             callbacks: 0,
             appointments: achievedAppointmentsCount,
         };
+        
+        // --- MODIFIED ---: Updated projection logic for custom date ranges
+        let headingTo = { ...achieved }; // Default to achieved if the range is in the past.
+        const today = new Date();
 
-        const daysInMonth = endOfMonth.getDate();
-        const dayOfMonth = now.getDate();
-        const projectionFactor = dayOfMonth > 0 ? daysInMonth / dayOfMonth : 0;
+        // Only calculate projection if the selected range includes today
+        if (today >= startDate && today <= endDate) {
+            const totalDaysInRange = (endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24) + 1;
+            const daysPassedInRange = (today.getTime() - startDate.getTime()) / (1000 * 3600 * 24) + 1;
+            const projectionFactor = daysPassedInRange > 0 ? totalDaysInRange / daysPassedInRange : 0;
+            
+            headingTo = {
+                service: roundToTwo(achieved.service * projectionFactor),
+                retail: roundToTwo(achieved.retail * projectionFactor),
+                bills: Math.round(achieved.bills * projectionFactor),
+                netSales: roundToTwo(achieved.netSales * projectionFactor),
+                abv: achieved.abv, // ABV is an average, so we don't project it.
+                callbacks: Math.round(achieved.callbacks * projectionFactor),
+                appointments: Math.round(achieved.appointments * projectionFactor),
+            };
+        }
 
-        const headingTo = {
-            service: roundToTwo(achieved.service * projectionFactor),
-            retail: roundToTwo(achieved.retail * projectionFactor),
-            bills: roundToTwo(achieved.bills * projectionFactor),
-            netSales: roundToTwo(achieved.netSales * projectionFactor),
-            abv: achieved.abv,
-            callbacks: roundToTwo(achieved.callbacks * projectionFactor),
-            appointments: roundToTwo(achieved.appointments * projectionFactor),
-        };
 
         return NextResponse.json({
             month: monthIdentifier,
@@ -123,6 +146,7 @@ export async function GET(request: Request) {
     }
 }
 
+// --- PUT function remains unchanged ---
 export async function PUT(request: Request) {
     await dbConnect();
     try {
@@ -136,12 +160,10 @@ export async function PUT(request: Request) {
         const now = new Date();
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
-        // --- CORRECTED ---: The query to find the document now includes tenantId.
         await TargetSheet.findOneAndUpdate(
             { month: monthIdentifier, tenantId: tenantId },
             { 
                 $set: {
-                    // --- CORRECTED ---: Ensure tenantId is set when creating a new document.
                     tenantId: tenantId,
                     'target.service': Number(body.service) || 0,
                     'target.retail': Number(body.retail) || 0,

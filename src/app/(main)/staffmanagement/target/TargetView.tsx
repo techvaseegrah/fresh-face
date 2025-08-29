@@ -8,15 +8,15 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
-    Target, X, IndianRupee, ShoppingCart, Receipt, Wrench, 
+    Target, X, IndianRupee, ShoppingCart, Receipt, Wrench,
     Calculator, PhoneCall, CalendarCheck, TrendingUp,
-    FileSpreadsheet, FileText,
+    FileSpreadsheet, FileText, Filter,
 } from 'lucide-react';
-import type { TargetSheetData, SummaryMetrics } from '@/models/TargetSheet'; 
+import type { TargetSheetData, SummaryMetrics } from '@/models/TargetSheet';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
-// --- HELPER FUNCTIONS ---
+// --- HELPER FUNCTIONS (Unchanged) ---
 const formatCurrency = (value: number | undefined | null) => {
     if (value === undefined || value === null) return '₹0.00';
     return new Intl.NumberFormat('en-IN', {
@@ -41,7 +41,7 @@ const calculatePercentage = (achieved: number = 0, target: number = 0) => {
     return Math.round((achieved / target) * 100);
 };
 
-// --- HELPER COMPONENTS ---
+// --- HELPER COMPONENTS (Unchanged) ---
 interface ProgressBarProps { value: number; }
 const ProgressBar = ({ value }: ProgressBarProps) => {
     const safeValue = Math.max(0, Math.min(100, value));
@@ -93,11 +93,17 @@ export default function TargetView({ initialData }: TargetViewProps) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [formState, setFormState] = useState<Partial<SummaryMetrics>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const [dateRange, setDateRange] = useState({
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+        end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0),
+    });
 
     useEffect(() => { setData(initialData); }, [initialData]);
 
     const openModal = () => {
-        const currentTargets = initialData?.summary?.target ?? {};
+        const currentTargets = data?.summary?.target ?? {};
         setFormState(currentTargets);
         setIsModalOpen(true);
     };
@@ -107,7 +113,32 @@ export default function TargetView({ initialData }: TargetViewProps) {
         setFormState(prev => ({ ...prev, [name]: value === '' ? undefined : parseFloat(value) }));
     };
 
-    // --- CORRECTED ---: This function now provides detailed server error messages.
+    const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setDateRange(prev => ({ ...prev, [name]: new Date(value) }));
+    };
+
+    const handleFilterData = async () => {
+        setIsLoading(true);
+        const startDate = dateRange.start.toISOString().split('T')[0];
+        const endDate = dateRange.end.toISOString().split('T')[0];
+
+        try {
+            const res = await fetch(`/api/target?startDate=${startDate}&endDate=${endDate}`);
+            if (!res.ok) {
+                throw new Error('Failed to fetch data for the selected range.');
+            }
+            const newData = await res.json();
+            setData(newData);
+        } catch (error) {
+            alert((error as Error).message);
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -130,7 +161,7 @@ export default function TargetView({ initialData }: TargetViewProps) {
             }
 
             setIsModalOpen(false);
-            router.refresh(); 
+            router.refresh();
         } catch (error) {
             alert(`Error updating targets: ${(error as Error).message}`);
         } finally {
@@ -143,7 +174,7 @@ export default function TargetView({ initialData }: TargetViewProps) {
     }
 
     const { target = {}, achieved = {}, headingTo = {} } = data.summary || {};
-    
+
     const mainMetrics = [
         { title: 'Net Sales', achieved: achieved.netSales, target: target.netSales, isCurrency: true, icon: <TrendingUp className="text-green-500" size={24} /> },
         { title: 'Service', achieved: achieved.service, target: target.service, isCurrency: true, icon: <Wrench className="text-blue-500" size={24} /> },
@@ -161,10 +192,16 @@ export default function TargetView({ initialData }: TargetViewProps) {
     ];
 
     const getExportFileName = () => {
-        const currentDate = new Date();
-        const monthName = currentDate.toLocaleString('default', { month: 'long' });
-        const year = currentDate.getFullYear();
-        return `Shop_Target_Report_${monthName}_${year}`;
+        const startStr = dateRange.start.toLocaleDateString('en-CA');
+        const endStr = dateRange.end.toLocaleDateString('en-CA');
+        const now = new Date();
+        const isCurrentMonth = dateRange.start.getMonth() === now.getMonth() && dateRange.start.getFullYear() === now.getFullYear();
+        if (isCurrentMonth && !isLoading) {
+             const monthName = now.toLocaleString('default', { month: 'long' });
+             const year = now.getFullYear();
+             return `Shop_Target_Report_${monthName}_${year}`;
+        }
+        return `Shop_Target_Report_${startStr}_to_${endStr}`;
     };
 
     const handleExportExcel = () => {
@@ -206,6 +243,7 @@ export default function TargetView({ initialData }: TargetViewProps) {
                     <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-2xl relative">
                         <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600" disabled={isSubmitting}><X size={24} /></button>
                         <h3 className="text-2xl font-bold mb-6 text-gray-800">Set Monthly Targets</h3>
+                        <p className="text-sm text-gray-500 mb-6 -mt-4">Targets are for the current calendar month.</p>
                         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
                             {(['service', 'retail', 'bills', 'abv', 'callbacks', 'appointments'] as const).map(fieldName => (
                                 <div key={fieldName}>
@@ -221,32 +259,61 @@ export default function TargetView({ initialData }: TargetViewProps) {
                     </div>
                 </div>
             )}
-            <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+            
+            {/* --- REVISED HEADER --- */}
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                 {/* Left Side: Title */}
                  <div>
                     <h1 className="text-3xl font-bold text-gray-800">Shop Targets Dashboard</h1>
-                    <p className="text-gray-500 mt-1">Monthly Shop summary and targets.</p>
+                    <p className="text-gray-500 mt-1">{`Showing data for: ${dateRange.start.toLocaleDateString()} - ${dateRange.end.toLocaleDateString()}`}</p>
                  </div>
-                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                    <button onClick={handleExportExcel} className="flex items-center justify-center gap-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm">
-                        <FileSpreadsheet size={18} className="text-green-600" />
-                        Export Excel
+
+                 {/* Right Side: Single row of actions */}
+                 <div className="flex flex-wrap items-center justify-end gap-2">
+                    <input 
+                        type="date" 
+                        name="start" 
+                        value={dateRange.start.toISOString().split('T')[0]} 
+                        onChange={handleDateChange} 
+                        className="bg-white p-2 border border-gray-300 rounded-lg text-sm h-10"
+                    />
+                    <input 
+                        type="date" 
+                        name="end" 
+                        value={dateRange.end.toISOString().split('T')[0]} 
+                        onChange={handleDateChange} 
+                        className="bg-white p-2 border border-gray-300 rounded-lg text-sm h-10"
+                    />
+                    <button 
+                        onClick={handleFilterData} 
+                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow h-10 disabled:bg-gray-400" 
+                        disabled={isLoading}
+                    >
+                        <Filter size={18} />
+                        <span>{isLoading ? '...' : 'Filter'}</span>
                     </button>
-                    <button onClick={handleExportPdf} className="flex items-center justify-center gap-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm">
+                    <button onClick={handleExportExcel} className="flex items-center justify-center gap-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm h-10">
+                        <FileSpreadsheet size={18} className="text-green-600" />
+                        Excel
+                    </button>
+                    <button onClick={handleExportPdf} className="flex items-center justify-center gap-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm h-10">
                         <FileText size={18} className="text-red-600" />
-                        Export PDF
+                        PDF
                     </button>
                     {canManageTarget && (
-                        <button onClick={openModal} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-black text-white font-bold py-2 px-4 rounded-lg shadow">
+                        <button onClick={openModal} className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-black text-white font-bold py-2 px-4 rounded-lg shadow h-10">
                             <Target size={18} />
                             Set Target
                         </button>
                     )}
-                </div>
+                 </div>
             </header>
-            {/* ... Rest of the JSX is unchanged and correct ... */}
+            
+            {/* --- REST OF THE PAGE (Unchanged) --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 {mainMetrics.map(metric => (<MetricCard key={metric.title} title={metric.title} achieved={metric.achieved ?? 0} target={metric.target ?? 0} isCurrency={metric.isCurrency} icon={metric.icon} />))}
             </div>
+            
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <h3 className="text-xl font-bold text-gray-800 p-6">Detailed Metrics</h3>
                 <div className="overflow-x-auto hidden md:block">

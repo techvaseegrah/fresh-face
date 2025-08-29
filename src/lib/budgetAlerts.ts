@@ -46,16 +46,11 @@ export async function checkBudgetThreshold(
         const result: Array<{ totalSpent: number }> = await Expense.aggregate([
             {
                 $match: {
-<<<<<<< HEAD
-                    tenantId: tenantObjectId, // CRITICAL: Use ObjectId here
-                    type: expenseCategory,
-=======
                     tenantId: tenantObjectId,
                     // --- THIS IS THE CORRECTED LINE ---
                     // The field was renamed from 'type' to 'category' in the Expense model.
                     // This is the only change made to this file.
                     category: expenseCategory,
->>>>>>> 5d822a6484c517a3f0fac76405cac7b9d5a20624
                     date: { $gte: startDate, $lte: endDate }
                 }
             },

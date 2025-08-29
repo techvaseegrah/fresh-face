@@ -19,18 +19,15 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { whatsAppService } from '@/lib/whatsapp';
 import { decrypt } from '@/lib/crypto';
 
+// ✅ --- ADD THESE TWO IMPORTS FOR THE INCENTIVE LOGIC ---
+import DailySale from '@/models/DailySale';
+import IncentiveRule, { IIncentiveRule } from '@/models/IncentiveRule';
+
 const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 
 export async function POST(req: NextRequest) {
-  // --- MT: Get tenantId and check permissions first ---
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) return tenantId;
-
-  // The user's permission check is commented out as per their provided code.
-  // const authSession = await getServerSession(authOptions);
-  // if (!authSession || !hasPermission(authSession.user.role.permissions, PERMISSIONS.BILLING_CREATE)) {
-  //     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  // }
 
   const dbSession = await mongoose.startSession();
   dbSession.startTransaction();
@@ -49,16 +46,10 @@ export async function POST(req: NextRequest) {
       manualDiscountType, manualDiscountValue, finalManualDiscountApplied,
     } = body;
 
-    // =========================================================================
-    // === THE FIX TO RESOLVE THE VALIDATION ERROR ===
-    // This maps over the incoming `items` array and injects the `tenantId`
-    // into each individual line item object before saving.
-    // =========================================================================
     const lineItemsWithTenantId = items.map((item: any) => ({
-      ...item, // Copy all existing item properties (name, price, etc.)
-      tenantId: tenantId, // Add the tenantId from the current request
+      ...item,
+      tenantId: tenantId,
     }));
-    // =========================================================================
 
     // --- 1. PRE-VALIDATION ---
     if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
@@ -116,7 +107,7 @@ export async function POST(req: NextRequest) {
       productId: item.itemId,
       productName: item.name,
       quantityToDeduct: item.quantity,
-      unit: 'piece', // Assuming retail products are sold in pieces
+      unit: 'piece',
     }));
     allInventoryUpdates.push(...retailProductUpdates);
 
@@ -137,7 +128,7 @@ export async function POST(req: NextRequest) {
       customerId,
       stylistId,
       billingStaffId,
-      lineItems: lineItemsWithTenantId, // USE THE CORRECTED ARRAY
+      lineItems: lineItemsWithTenantId,
       serviceTotal,
       productTotal,
       subtotal,
@@ -154,7 +145,7 @@ export async function POST(req: NextRequest) {
       }
     });
     await invoice.save({ session: dbSession });
-    createdInvoiceId = invoice._id; // Store for response
+    createdInvoiceId = invoice._id;
 
     // --- 6. UPDATE APPOINTMENT ---
     await Appointment.updateOne({ _id: appointmentId, tenantId }, {
@@ -196,14 +187,85 @@ export async function POST(req: NextRequest) {
       }, { session: dbSession });
     }
 
+    // ===================================================================
+    // ✅ --- 8a. UPDATE INCENTIVES (WITH CUSTOMER COUNT) ---
+    // ===================================================================
+    const allStaffIdsInvolved = [...new Set(items.map((item: any) => item.staffId).filter(Boolean).map(String))];
+
+    if (allStaffIdsInvolved.length > 0) {
+        const correctDate = appointment.appointmentDateTime;
+        const dayStart = new Date(Date.UTC(correctDate.getUTCFullYear(), correctDate.getUTCMonth(), correctDate.getUTCDate()));
+        const dayEnd = new Date(Date.UTC(correctDate.getUTCFullYear(), correctDate.getUTCMonth(), correctDate.getUTCDate(), 23, 59, 59, 999));
+
+        const activeRuleDb = await IncentiveRule.findOne({
+            type: 'daily', tenantId, createdAt: { $lte: dayEnd }
+        }).sort({ createdAt: -1 }).session(dbSession).lean<IIncentiveRule>();
+
+        const defaultDaily = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
+        const ruleSnapshot = {
+            target: { ...defaultDaily.target, ...(activeRuleDb?.target || {}) },
+            sales: { ...defaultDaily.sales, ...(activeRuleDb?.sales || {}) },
+            incentive: { ...defaultDaily.incentive, ...(activeRuleDb?.incentive || {}) }
+        };
+
+        const allPaidInvoicesForDay = await Invoice.find({
+            tenantId,
+            createdAt: { $gte: dayStart, $lte: dayEnd },
+            paymentStatus: 'Paid'
+        }).session(dbSession).lean();
+
+        for (const staffId of allStaffIdsInvolved) {
+            let newServiceSale = 0;
+            let newProductSale = 0;
+            const customerIds = new Set<string>();
+
+            for (const item of items) {
+                if (item.staffId?.toString() === staffId) {
+                    if (item.itemType === 'service') newServiceSale += item.finalPrice;
+                    if (item.itemType === 'product') newProductSale += item.finalPrice;
+                }
+            }
+            
+            for (const inv of [...allPaidInvoicesForDay, invoice.toObject()]) {
+                 for (const item of (inv.lineItems || [])) {
+                    if (item.staffId?.toString() === staffId) {
+                        customerIds.add(inv.customerId.toString());
+                        break;
+                    }
+                }
+            }
+
+            if (newServiceSale > 0 || newProductSale > 0) {
+                await DailySale.findOneAndUpdate(
+                    { staff: staffId, date: dayStart, tenantId },
+                    {
+                        $inc: {
+                            serviceSale: newServiceSale,
+                            productSale: newProductSale,
+                        },
+                        $set: { 
+                            customerCount: customerIds.size,
+                            appliedRule: ruleSnapshot, 
+                            tenantId: tenantId 
+                        },
+                        $setOnInsert: { reviewsWithName: 0, reviewsWithPhoto: 0 }
+                    },
+                    { new: true, upsert: true, setDefaultsOnInsert: true, session: dbSession }
+                );
+            }
+        }
+    }
+    // ===================================================================
+    // ✅ --- END: INCENTIVE LOGIC BLOCK ---
+    // ===================================================================
+
     // --- 9. COMMIT TRANSACTION ---
     await dbSession.commitTransaction();
 
     // --- 10. POST-TRANSACTION ACTIONS (WHATSAPP NOTIFICATION) ---
-    // This logic runs only if the database operations were successful.
     if (customer && customer.phoneNumber) {
       try {
-        let billingStaffName = 'Staff'; // Default name
+        let billingStaffName = 'Staff';
         if (billingStaffId && mongoose.Types.ObjectId.isValid(billingStaffId)) {
           const billingUser = await User.findById(billingStaffId, 'name').lean().exec();
           if (billingUser && billingUser.name) {
@@ -215,9 +277,8 @@ export async function POST(req: NextRequest) {
 
         const safeDecrypt = (data: string, fieldName: string): string => {
           if (!data) return '';
-          // Basic check if data looks encrypted. Adjust regex if your encrypted format differs.
           if (!/^[0-9a-fA-F]{32,}/.test(data)) { 
-            return data; // Assume it's plain text
+            return data;
           }
           try {
             return decrypt(data);
@@ -233,22 +294,12 @@ export async function POST(req: NextRequest) {
 
         if (cleanPhone.length >= 10) {
           const serviceItems = items.filter((item: any) => item.itemType === 'service' || item.itemType === 'fee');
-          const servicesText = serviceItems.length > 0
-            ? serviceItems.map((item: any) => `${item.name} x${item.quantity} = ₹${item.finalPrice.toFixed(0)}`).join(', ')
-            : '';
-
+          const servicesText = serviceItems.length > 0 ? serviceItems.map((item: any) => `${item.name} x${item.quantity} = ₹${item.finalPrice.toFixed(0)}`).join(', ') : '';
           const productItems = items.filter((item: any) => item.itemType === 'product');
-          const productsText = productItems.length > 0
-            ? productItems.map((item: any) => `${item.name} x${item.quantity} = ₹${item.finalPrice.toFixed(0)}`).join(', ')
-            : '';
-
+          const productsText = productItems.length > 0 ? productItems.map((item: any) => `${item.name} x${item.quantity} = ₹${item.finalPrice.toFixed(0)}`).join(', ') : '';
           const totalDiscountAmount = (membershipDiscount || 0) + (finalManualDiscountApplied || 0);
           const discountsText = totalDiscountAmount > 0 ? `₹${totalDiscountAmount.toFixed(0)} saved` : '';
-
-          const paymentSummary = Object.entries(paymentDetails)
-            .filter(([_, amount]) => Number(amount) > 0)
-            .map(([method, _]) => method.charAt(0).toUpperCase() + method.slice(1))
-            .join(', ');
+          const paymentSummary = Object.entries(paymentDetails).filter(([_, amount]) => Number(amount) > 0).map(([method, _]) => method.charAt(0).toUpperCase() + method.slice(1)).join(', ');
 
           await whatsAppService.sendBillingConfirmation({
             phoneNumber: cleanPhone,
@@ -266,7 +317,6 @@ export async function POST(req: NextRequest) {
           console.warn(`Invalid phone number: '${cleanPhone}', skipping WhatsApp notification.`);
         }
       } catch (whatsappError: any) {
-        // Log the error but don't fail the entire request, as billing is already complete.
         console.error('Failed to send WhatsApp billing confirmation:', whatsappError?.message || 'Unknown WhatsApp error');
       }
     } else {
@@ -282,12 +332,10 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     await dbSession.abortTransaction();
     console.error("Billing transaction failed and was aborted:", error);
-    // Provide more specific error messages to the client
     if (error.name === 'ValidationError') {
       return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
     }
     return NextResponse.json({ success: false, message: error.message || 'Failed to process payment' }, { status: 500 });
-
   } finally {
     dbSession.endSession();
   }
