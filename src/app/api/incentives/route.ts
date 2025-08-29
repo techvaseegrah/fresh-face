@@ -1,3 +1,5 @@
+// src/app/api/incentives/route.ts
+
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
@@ -5,6 +7,7 @@ import Invoice from '@/models/invoice'; // Import Invoice model
 import IncentiveRule, { IIncentiveRule } from '@/models/IncentiveRule';
 import { getTenantIdOrBail } from '@/lib/tenant';
 
+// Define a type for the rule snapshot object
 type IRuleSnapshot = {
   target: { multiplier: number };
   sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
@@ -29,11 +32,11 @@ export async function POST(request: Request) {
     const dayStart = new Date(Date.UTC(year, month - 1, day));
     const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
 
-    // This logic to find the historical rule is correct.
+    // --- Step 1: Find the historically correct incentive rule ---
     const activeRuleDb = await IncentiveRule.findOne({
       tenantId,
       type: 'daily',
-      createdAt: { $lte: dayEnd }
+      createdAt: { $lte: dayEnd } // Find the last rule created on or before this date
     }).sort({ createdAt: -1 }).lean<IIncentiveRule>();
 
     const defaultRule: IRuleSnapshot = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
@@ -44,58 +47,53 @@ export async function POST(request: Request) {
         incentive: { ...defaultRule.incentive, ...(activeRuleDb?.incentive || {}) }
     };
 
-    // 1. Fetch ALL invoices for the day for the entire tenant.
+    // --- Step 2: Sync sales data for this specific staff member on this day ---
     const allInvoicesForDay = await Invoice.find({
       tenantId: tenantId,
       createdAt: { $gte: dayStart, $lte: dayEnd }
     }).lean();
 
-    // 2. Initialize totals and customer tracking for the SPECIFIC staff member being saved.
     const totals = { serviceSale: 0, productSale: 0 };
     const customerIds = new Set<string>();
 
-    // 3. Loop through every invoice and every line item.
     for (const invoice of allInvoicesForDay) {
         let staffWasInvolvedInThisInvoice = false;
         for (const item of (invoice.lineItems || [])) {
-            // 4. Check if THIS line item belongs to the staff member we are currently saving for.
             if (item.staffId?.toString() === staffId) {
                 if (item.itemType === 'service') {
                     totals.serviceSale += item.finalPrice;
                 } else if (item.itemType === 'product') {
                     totals.productSale += item.finalPrice;
                 }
-                // Mark that this staff member worked on this invoice
                 staffWasInvolvedInThisInvoice = true;
             }
         }
-        // 5. If they worked on the invoice, add the customer to their unique customer count for the day.
         if (staffWasInvolvedInThisInvoice) {
             customerIds.add(invoice.customerId.toString());
         }
     }
 
-    // --- Create or Update the DailySale record with the CORRECT, isolated totals ---
+    // --- Step 3: Create or Update the DailySale record with the correct logic ---
     const updatedRecord = await DailySale.findOneAndUpdate(
       { staff: staffId, date: dayStart, tenantId },
       { 
-        // $set ensures we are overwriting any previous incorrect data for the day with a fresh, accurate calculation.
+        // $set: Overwrites these fields with the latest, freshly calculated data.
         $set: {
           serviceSale: totals.serviceSale,
           productSale: totals.productSale,
           customerCount: customerIds.size,
-          appliedRule: ruleSnapshot,
+          appliedRule: ruleSnapshot, // Locks in the rule
           tenantId: tenantId,
         },
-        // $inc correctly adds the new review counts to any existing ones.
+        // $inc: Increments the review counts, adding new values to existing ones.
         $inc: { 
           reviewsWithName: Number(reviewsWithName) || 0,
           reviewsWithPhoto: Number(reviewsWithPhoto) || 0,
         },
       },
       { 
-        new: true,
-        upsert: true,
+        new: true, // Return the modified document
+        upsert: true, // Create the document if it doesn't exist
         setDefaultsOnInsert: true
       }
     );

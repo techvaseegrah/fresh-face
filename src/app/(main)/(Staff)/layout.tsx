@@ -123,6 +123,7 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
             <NavLink href="/attendance" icon={<CalendarCheck size={20} />} onClick={closeMobileMenu}>Attendance</NavLink>
             <NavLink href="/advance" icon={<PlusCircle size={20}/>} onClick={closeMobileMenu}>Request Advance</NavLink>
             <NavLink href="/performance" icon={<BarChart2 size={20} />} onClick={closeMobileMenu}>Performance</NavLink>
+            <NavLink href="/overall-perfomance" icon={<BarChart2 size={20} />} onClick={closeMobileMenu}>Overall Performance</NavLink>
             <NavLink href="/incentives" icon={<IndianRupee size={20} />} onClick={closeMobileMenu}>Incentives</NavLink>
             <NavLink href="/payouts" icon={<Wallet size={20} />} onClick={closeMobileMenu}>Request Incentive Payout</NavLink>
             <NavLink href="/my-shifts" icon={<Clock size={20} />} onClick={closeMobileMenu}>My Shifts</NavLink>
