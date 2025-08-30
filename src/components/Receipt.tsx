@@ -2,7 +2,7 @@
 
 import React from 'react';
 // Make sure this import path correctly points to your billingmodal.tsx file
-import { FinalizedInvoice } from '@/app/(main)/appointment/billingmodal'; 
+import { FinalizedInvoice} from '@/app/(main)/appointment/components/billing/billing.types';
 
 interface BusinessDetails {
   name: string;
@@ -89,7 +89,7 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
             <div key={`${item.itemId}-${index}`} className="flex">
               <div className="flex-grow pr-1">{item.name}</div>
               <div className="w-6 text-center">{item.quantity}</div>
-              <div className="w-16 text-right">₹{item.finalPrice.toFixed(2)}</div>
+              <div className="w-16 text-right">₹{item.unitPrice.toFixed(2)}</div>
             </div>
           ))}
         </div>
