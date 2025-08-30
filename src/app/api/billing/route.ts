@@ -2,28 +2,46 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
-import mongoose from 'mongoose';
-import Appointment from '@/models/Appointment';
-import Invoice from '@/models/invoice';
+import mongoose, { Document, Types } from 'mongoose';
+import Appointment, { IAppointment } from '@/models/Appointment';
+import Invoice, { IInvoice } from '@/models/invoice';
 import Stylist from '@/models/Stylist';
-import Customer from '@/models/customermodel';
+import Customer, { ICustomer } from '@/models/customermodel';
 import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import Setting from '@/models/Setting';
 import Product, { IProduct } from '@/models/Product';
 import User from '@/models/user';
 import { InventoryManager, InventoryUpdate } from '@/lib/inventoryManager';
 import { getTenantIdOrBail } from '@/lib/tenant';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { whatsAppService } from '@/lib/whatsapp';
 import { decrypt } from '@/lib/crypto';
-
-// ✅ --- ADD THESE TWO IMPORTS FOR THE INCENTIVE LOGIC ---
 import DailySale from '@/models/DailySale';
 import IncentiveRule, { IIncentiveRule } from '@/models/IncentiveRule';
 
 const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
+
+// Helper function for decryption
+const safeDecrypt = (data: string, fieldName: string): string => {
+  if (!data) return '';
+  // Basic check to see if the data looks like our encrypted format
+  if (!/^[0-9a-fA-F]{32,}/.test(data)) { 
+    return data; // Assume it's plain text if it doesn't match the pattern
+  }
+  try {
+    return decrypt(data);
+  } catch (e: any) {
+    console.warn(`Decryption failed for ${fieldName}: ${e.message}. Using as plain text.`);
+    return data;
+  }
+};
+
+// Interface for the shape of the populated invoice, including the full customer object
+interface PopulatedInvoiceForReceipt extends Omit<IInvoice, 'customerId' | 'stylistId' | 'billingStaffId'> {
+  customerId: ICustomer | null;
+  stylistId: { name: string; } | null;
+  billingStaffId: { name: string; } | null;
+}
+
 
 export async function POST(req: NextRequest) {
   const tenantId = getTenantIdOrBail(req);
@@ -62,15 +80,12 @@ export async function POST(req: NextRequest) {
 
     // --- 2. CRITICAL STOCK VALIDATION ---
     const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
-
     if (productItemsToBill.length > 0) {
       const productIds = productItemsToBill.map((item: any) => item.itemId);
       const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
-
       if (productsInDb.length !== productIds.length) {
         throw new Error('One or more products being billed are invalid for this salon.');
       }
-
       const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
       for (const item of productItemsToBill) {
         const dbProduct = productMap.get(item.itemId);
@@ -81,28 +96,25 @@ export async function POST(req: NextRequest) {
     }
 
     // --- 3. DATA FETCHING ---
-    const appointment = await Appointment.findOne({ _id: appointmentId, tenantId }).populate('serviceIds').session(dbSession);
+    const appointment = await Appointment.findOne({ _id: appointmentId, tenantId }).populate('serviceIds').session(dbSession) as (IAppointment & Document) | null;
     if (!appointment) throw new Error('Appointment not found');
     if (appointment.status === 'Paid') {
       throw new Error('This appointment has already been paid for.');
     }
-
-    const customer = await Customer.findOne({ _id: customerId, tenantId }).session(dbSession);
+    const customer = await Customer.findOne({ _id: customerId, tenantId }).session(dbSession) as (ICustomer & Document) | null;
     if (!customer) throw new Error('Customer not found');
     const customerGender = customer.gender || 'other';
 
     // --- 4. INVENTORY LOGIC ---
     let allInventoryUpdates: InventoryUpdate[] = [];
     let lowStockProducts: IProduct[] = [];
-
-    const serviceIds = appointment.serviceIds.map((s: any) => s._id.toString());
+    const serviceIds = (appointment.serviceIds as any[]).map((s: any) => s._id.toString());
     if (serviceIds.length > 0) {
       const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
         serviceIds, customerGender, tenantId
       );
       allInventoryUpdates.push(...serviceProductUpdates);
     }
-
     const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map((item: any) => ({
       productId: item.itemId,
       productName: item.name,
@@ -110,7 +122,6 @@ export async function POST(req: NextRequest) {
       unit: 'piece',
     }));
     allInventoryUpdates.push(...retailProductUpdates);
-
     if (allInventoryUpdates.length > 0) {
       const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates, dbSession, tenantId);
       if (inventoryUpdateResult.success) {
@@ -187,77 +198,27 @@ export async function POST(req: NextRequest) {
       }, { session: dbSession });
     }
 
-    // ===================================================================
-    // ✅ --- 8a. UPDATE INCENTIVES (WITH CUSTOMER COUNT) ---
-    // ===================================================================
+    // --- 8a. UPDATE INCENTIVES (WITH CUSTOMER COUNT) ---
     const allStaffIdsInvolved = [...new Set(items.map((item: any) => item.staffId).filter(Boolean).map(String))];
-
     if (allStaffIdsInvolved.length > 0) {
         const correctDate = appointment.appointmentDateTime;
         const dayStart = new Date(Date.UTC(correctDate.getUTCFullYear(), correctDate.getUTCMonth(), correctDate.getUTCDate()));
         const dayEnd = new Date(Date.UTC(correctDate.getUTCFullYear(), correctDate.getUTCMonth(), correctDate.getUTCDate(), 23, 59, 59, 999));
-
-        const activeRuleDb = await IncentiveRule.findOne({
-            type: 'daily', tenantId, createdAt: { $lte: dayEnd }
-        }).sort({ createdAt: -1 }).session(dbSession).lean<IIncentiveRule>();
-
+        const activeRuleDb = await IncentiveRule.findOne({ type: 'daily', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean<IIncentiveRule>();
         const defaultDaily = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
-        const ruleSnapshot = {
-            target: { ...defaultDaily.target, ...(activeRuleDb?.target || {}) },
-            sales: { ...defaultDaily.sales, ...(activeRuleDb?.sales || {}) },
-            incentive: { ...defaultDaily.incentive, ...(activeRuleDb?.incentive || {}) }
-        };
-
-        const allPaidInvoicesForDay = await Invoice.find({
-            tenantId,
-            createdAt: { $gte: dayStart, $lte: dayEnd },
-            paymentStatus: 'Paid'
-        }).session(dbSession).lean();
-
+        const ruleSnapshot = { target: { ...defaultDaily.target, ...(activeRuleDb?.target || {}) }, sales: { ...defaultDaily.sales, ...(activeRuleDb?.sales || {}) }, incentive: { ...defaultDaily.incentive, ...(activeRuleDb?.incentive || {}) } };
+        const allPaidInvoicesForDay = await Invoice.find({ tenantId, createdAt: { $gte: dayStart, $lte: dayEnd }, paymentStatus: 'Paid' }).session(dbSession).lean();
         for (const staffId of allStaffIdsInvolved) {
             let newServiceSale = 0;
             let newProductSale = 0;
             const customerIds = new Set<string>();
-
-            for (const item of items) {
-                if (item.staffId?.toString() === staffId) {
-                    if (item.itemType === 'service') newServiceSale += item.finalPrice;
-                    if (item.itemType === 'product') newProductSale += item.finalPrice;
-                }
-            }
-            
-            for (const inv of [...allPaidInvoicesForDay, invoice.toObject()]) {
-                 for (const item of (inv.lineItems || [])) {
-                    if (item.staffId?.toString() === staffId) {
-                        customerIds.add(inv.customerId.toString());
-                        break;
-                    }
-                }
-            }
-
+            for (const item of items) { if (item.staffId?.toString() === staffId) { if (item.itemType === 'service') newServiceSale += item.finalPrice; if (item.itemType === 'product') newProductSale += item.finalPrice; } }
+            for (const inv of [...allPaidInvoicesForDay, invoice.toObject()]) { for (const item of (inv.lineItems || [])) { if (item.staffId?.toString() === staffId) { customerIds.add(inv.customerId.toString()); break; } } }
             if (newServiceSale > 0 || newProductSale > 0) {
-                await DailySale.findOneAndUpdate(
-                    { staff: staffId, date: dayStart, tenantId },
-                    {
-                        $inc: {
-                            serviceSale: newServiceSale,
-                            productSale: newProductSale,
-                        },
-                        $set: { 
-                            customerCount: customerIds.size,
-                            appliedRule: ruleSnapshot, 
-                            tenantId: tenantId 
-                        },
-                        $setOnInsert: { reviewsWithName: 0, reviewsWithPhoto: 0 }
-                    },
-                    { new: true, upsert: true, setDefaultsOnInsert: true, session: dbSession }
-                );
+                await DailySale.findOneAndUpdate( { staff: staffId, date: dayStart, tenantId }, { $inc: { serviceSale: newServiceSale, productSale: newProductSale, }, $set: { customerCount: customerIds.size, appliedRule: ruleSnapshot, tenantId: tenantId }, $setOnInsert: { reviewsWithName: 0, reviewsWithPhoto: 0 } }, { new: true, upsert: true, setDefaultsOnInsert: true, session: dbSession });
             }
         }
     }
-    // ===================================================================
-    // ✅ --- END: INCENTIVE LOGIC BLOCK ---
-    // ===================================================================
 
     // --- 9. COMMIT TRANSACTION ---
     await dbSession.commitTransaction();
@@ -267,27 +228,11 @@ export async function POST(req: NextRequest) {
       try {
         let billingStaffName = 'Staff';
         if (billingStaffId && mongoose.Types.ObjectId.isValid(billingStaffId)) {
-          const billingUser = await User.findById(billingStaffId, 'name').lean().exec();
+          const billingUser = await User.findById(billingStaffId, 'name').lean().exec() as { name: string } | null;
           if (billingUser && billingUser.name) {
             billingStaffName = billingUser.name;
-          } else {
-            console.warn('Billing staff not found in User model for ID:', billingStaffId);
-          }
+          } else { console.warn('Billing staff not found in User model for ID:', billingStaffId); }
         }
-
-        const safeDecrypt = (data: string, fieldName: string): string => {
-          if (!data) return '';
-          if (!/^[0-9a-fA-F]{32,}/.test(data)) { 
-            return data;
-          }
-          try {
-            return decrypt(data);
-          } catch (e: any) {
-            console.warn(`Decryption failed for ${fieldName}: ${e.message}. Using as plain text.`);
-            return data;
-          }
-        };
-
         const decryptedPhone = safeDecrypt(customer.phoneNumber, 'phoneNumber');
         const decryptedName = safeDecrypt(customer.name, 'name');
         const cleanPhone = decryptedPhone.replace(/\D/g, '');
@@ -300,34 +245,56 @@ export async function POST(req: NextRequest) {
           const totalDiscountAmount = (membershipDiscount || 0) + (finalManualDiscountApplied || 0);
           const discountsText = totalDiscountAmount > 0 ? `₹${totalDiscountAmount.toFixed(0)} saved` : '';
           const paymentSummary = Object.entries(paymentDetails).filter(([_, amount]) => Number(amount) > 0).map(([method, _]) => method.charAt(0).toUpperCase() + method.slice(1)).join(', ');
-
-          await whatsAppService.sendBillingConfirmation({
-            phoneNumber: cleanPhone,
-            customerName: decryptedName,
-            servicesDetails: servicesText,
-            productsDetails: productsText,
-            finalAmount: `₹${grandTotal.toFixed(0)}`,
-            discountsApplied: discountsText,
-            paymentMethod: paymentSummary,
-            staffName: billingStaffName,
-            loyaltyPoints: `${pointsEarned} points`,
-          });
+          await whatsAppService.sendBillingConfirmation({ phoneNumber: cleanPhone, customerName: decryptedName, servicesDetails: servicesText, productsDetails: productsText, finalAmount: `₹${grandTotal.toFixed(0)}`, discountsApplied: discountsText, paymentMethod: paymentSummary, staffName: billingStaffName, loyaltyPoints: `${pointsEarned} points`, });
           console.log('WhatsApp billing confirmation sent successfully.');
-        } else {
-          console.warn(`Invalid phone number: '${cleanPhone}', skipping WhatsApp notification.`);
-        }
-      } catch (whatsappError: any) {
-        console.error('Failed to send WhatsApp billing confirmation:', whatsappError?.message || 'Unknown WhatsApp error');
+        } else { console.warn(`Invalid phone number: '${cleanPhone}', skipping WhatsApp notification.`); }
+      } catch (whatsappError: unknown) {
+        const errorMessage = (whatsappError instanceof Error) ? whatsappError.message : String(whatsappError);
+        console.error('Failed to send WhatsApp billing confirmation:', errorMessage);
       }
-    } else {
-      console.warn("No customer phone number found. Skipping billing confirmation message.");
+    } else { console.warn("No customer phone number found. Skipping billing confirmation message."); }
+    
+    // ===================================================================
+    // PREPARE AND SEND FINAL RESPONSE FOR RECEIPT
+    // ===================================================================
+
+    if (!createdInvoiceId) {
+      throw new Error("Invoice was created but its ID was not captured.");
     }
+    
+    const populatedInvoice = await Invoice.findById(createdInvoiceId)
+      .populate('customerId')
+      .populate('stylistId')
+      .populate('billingStaffId')
+      .lean() as PopulatedInvoiceForReceipt | null;
+
+    if (!populatedInvoice) {
+      throw new Error('Failed to retrieve the created invoice after saving.');
+    }
+
+    const customerName = populatedInvoice.customerId ? safeDecrypt(populatedInvoice.customerId.name, 'customerName') : 'N/A';
+    const stylistName = populatedInvoice.stylistId ? populatedInvoice.stylistId.name : 'N/A';
+    const billingStaffName = populatedInvoice.billingStaffId ? populatedInvoice.billingStaffId.name : 'N/A';
+
+    const responsePayload = {
+      _id: populatedInvoice._id.toString(),
+      invoiceNumber: populatedInvoice.invoiceNumber,
+      grandTotal: populatedInvoice.grandTotal,
+      createdAt: populatedInvoice.createdAt.toISOString(),
+      finalManualDiscountApplied: populatedInvoice.manualDiscount.appliedAmount,
+      membershipDiscount: populatedInvoice.membershipDiscount,
+      paymentDetails: populatedInvoice.paymentDetails,
+      lineItems: populatedInvoice.lineItems,
+      customer: { name: customerName },
+      stylist: { name: stylistName },
+      billingStaff: { name: billingStaffName },
+    };
     
     return NextResponse.json({
       success: true,
-      message: 'Payment processed successfully!',
-      invoiceId: createdInvoiceId,
+      invoice: responsePayload,
     });
+    // ===================================================================
 
   } catch (error: any) {
     await dbSession.abortTransaction();
@@ -335,7 +302,8 @@ export async function POST(req: NextRequest) {
     if (error.name === 'ValidationError') {
       return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 });
     }
-    return NextResponse.json({ success: false, message: error.message || 'Failed to process payment' }, { status: 500 });
+    const errorMessage = error.message || String(error);
+    return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   } finally {
     dbSession.endSession();
   }

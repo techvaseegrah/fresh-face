@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback, FC } from 'react';
 import BookAppointmentForm, { NewBookingData } from './BookAppointmentForm';
-import BillingModal from './billingmodal';
+import BillingModal, { FinalizeBillingPayload, FinalizedInvoice } from './billingmodal';
 import {
   PlusIcon,
   ChevronLeftIcon,
@@ -56,9 +56,6 @@ const getStatusColor = (status: string) => {
   }
 };
 
-// ===================================================================
-// Mobile Appointment Card Component
-// ===================================================================
 const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt: AppointmentWithCustomer) => void; canUpdate: boolean; }> = ({ appointment, onEdit, canUpdate }) => {
     const customerName = appointment.customerId?.name || 'N/A';
     const customerPhone = appointment.customerId?.phoneNumber || 'N/A';
@@ -69,7 +66,6 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-4">
-            {/* Card Header */}
             <div className="flex justify-between items-start">
                 <div>
                     <p className="font-bold text-gray-800">{customerName}</p>
@@ -84,14 +80,12 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
                 </div>
             </div>
 
-            {/* Card Body */}
             <div className="border-t border-b border-gray-200 py-3 space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Services:</span> <span className="font-semibold text-right">{serviceNames}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Stylist:</span> <span className="font-semibold">{stylistName}</span></div>
                 {appointment.finalAmount != null && <div className="flex justify-between"><span className="text-gray-500">Amount:</span> <span className="font-bold text-green-600">₹{appointment.finalAmount.toFixed(2)}</span></div>}
             </div>
             
-            {/* Card Footer */}
             <div className="flex justify-end items-center">
                 {isActionable && canUpdate ? (
                     isPaid ? (
@@ -128,7 +122,7 @@ export default function AppointmentPage() {
 
   useEffect(() => {
     const checkScreenSize = () => {
-        setIsDesktop(window.innerWidth >= 1024); // Use lg breakpoint for table
+        setIsDesktop(window.innerWidth >= 1024);
     };
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
@@ -186,6 +180,7 @@ export default function AppointmentPage() {
         throw err;
       }
   };
+  
   const handleEditAppointment = (appointment: AppointmentWithCustomer) => {
     if (appointment.status === 'Paid') {
       setSelectedAppointmentForBilling(appointment);
@@ -195,6 +190,7 @@ export default function AppointmentPage() {
       setIsEditModalOpen(true);
     }
   };
+
   const handleUpdateAppointment = async (appointmentId: string, updateData: any) => {
     try {
       const response = await tenantFetch(`/api/appointment/${appointmentId}`, { method: 'PUT', body: JSON.stringify(updateData) });
@@ -214,20 +210,39 @@ export default function AppointmentPage() {
       throw err;
     }
   };
-  const handleFinalizeBill = async (finalPayload: any) => {
-    if (!selectedAppointmentForBilling) return;
+
+  const handleFinalizeBill = async (finalPayload: FinalizeBillingPayload): Promise<FinalizedInvoice> => {
+    if (!selectedAppointmentForBilling) {
+      throw new Error("No appointment selected for billing.");
+    }
     const isUpdating = !!selectedAppointmentForBilling.invoiceId;
     const url = isUpdating ? `/api/billing/${selectedAppointmentForBilling.invoiceId?._id}` : '/api/billing';
     const method = isUpdating ? 'PUT' : 'POST';
+
     try {
       const response = await tenantFetch(url, { method, body: JSON.stringify(finalPayload) });
       const result = await response.json();
-      if (!response.ok) { throw new Error(result.message || (isUpdating ? 'Failed to update.' : 'Failed to create invoice.')); }
-      toast.success(isUpdating ? 'Invoice corrected!' : 'Payment completed!');
-      handleCloseBillingModal();
-    } catch (err: any) { toast.error(err.message); }
+
+      if (!response.ok || !result.success || !result.invoice) {
+        throw new Error(result.message || (isUpdating ? 'Failed to update invoice.' : 'Failed to create invoice.'));
+      }
+      
+      // Return the invoice data to the modal for the success screen
+      return result.invoice;
+
+    } catch (err: any) {
+      // Show error to the user, but re-throw it so the modal can stop its loading state.
+      toast.error(err.message || 'An unexpected error occurred.');
+      throw err;
+    }
   };
-  const handleCloseBillingModal = () => { setIsBillingModalOpen(false); setSelectedAppointmentForBilling(null); fetchAppointments(); };
+
+  const handleCloseBillingModal = () => {
+    setIsBillingModalOpen(false);
+    setSelectedAppointmentForBilling(null);
+    fetchAppointments();
+  };
+
   const handleFilterChange = (newStatus: string) => { setStatusFilter(newStatus); };
   const canCreateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE));
   const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
@@ -343,7 +358,17 @@ export default function AppointmentPage() {
       
       <BookAppointmentForm isOpen={isBookAppointmentModalOpen} onClose={() => setIsBookAppointmentModalOpen(false)} onBookAppointment={handleBookNewAppointment} />
       <EditAppointmentForm isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setSelectedAppointmentForEdit(null); }} appointment={selectedAppointmentForEdit} onUpdateAppointment={handleUpdateAppointment} />
-      {selectedAppointmentForBilling && isBillingModalOpen && (<BillingModal isOpen={isBillingModalOpen} onClose={handleCloseBillingModal} appointment={selectedAppointmentForBilling} customer={selectedAppointmentForBilling.customerId} stylist={selectedAppointmentForBilling.stylistId} onFinalizeAndPay={handleFinalizeBill} />)}
+      
+      {selectedAppointmentForBilling && isBillingModalOpen && (
+        <BillingModal 
+            isOpen={isBillingModalOpen} 
+            onClose={handleCloseBillingModal} 
+            appointment={selectedAppointmentForBilling} 
+            customer={selectedAppointmentForBilling.customerId} 
+            stylist={selectedAppointmentForBilling.stylistId} 
+            onFinalizeAndPay={handleFinalizeBill} 
+        />
+      )}
 
       <Tooltip id="app-tooltip" variant="dark" style={{ backgroundColor: '#2D3748', color: '#FFF', borderRadius: '6px', padding: '4px 8px', fontSize: '12px' }} />
     </div>

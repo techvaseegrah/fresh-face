@@ -9,7 +9,9 @@ interface Tenant {
   name: string;
   subdomain: string;
   createdAt: string;
-  // This assumes your API can provide admin details for pre-filling the edit form
+  address?: string;
+  phone?: string;
+  gstin?: string;
   admin?: {
     name: string;
     email: string;
@@ -72,11 +74,14 @@ export default function TenantsPage() {
 
   // State for forms
   const [storeName, setStoreName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [gstin, setGstin] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [changePassword, setChangePassword] = useState(false); // Only for Edit modal
+  const [changePassword, setChangePassword] = useState(false);
   
   // General Action State
   const [loading, setLoading] = useState(false);
@@ -111,6 +116,9 @@ export default function TenantsPage() {
   // Reset all form and message states
   const resetAllStates = () => {
     setStoreName('');
+    setAddress('');
+    setPhone('');
+    setGstin('');
     setAdminName('');
     setAdminEmail('');
     setAdminPassword('');
@@ -130,6 +138,9 @@ export default function TenantsPage() {
     resetAllStates();
     setSelectedTenant(tenant);
     setStoreName(tenant.name);
+    setAddress(tenant.address || '');
+    setPhone(tenant.phone || '');
+    setGstin(tenant.gstin || '');
     setAdminName(tenant.admin?.name || '');
     setAdminEmail(tenant.admin?.email || '');
     setEditModalOpen(true);
@@ -158,7 +169,7 @@ export default function TenantsPage() {
       const response = await fetch('/api/admin/create-tenant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeName, adminName, adminEmail, adminPassword }),
+        body: JSON.stringify({ storeName, address, phone, gstin, adminName, adminEmail, adminPassword }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Failed to create store.');
@@ -181,6 +192,9 @@ export default function TenantsPage() {
 
     const updateData: any = {
         name: storeName,
+        address: address,
+        phone: phone,
+        gstin: gstin,
         admin: { name: adminName, email: adminEmail },
     };
 
@@ -292,6 +306,18 @@ export default function TenantsPage() {
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createStoreName">Store Name</label>
              <input id="createStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
            </div>
+           <div>
+             <label className="block text-gray-700 font-bold mb-2" htmlFor="createAddress">Store Address</label>
+             <input id="createAddress" type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+           </div>
+           <div>
+             <label className="block text-gray-700 font-bold mb-2" htmlFor="createPhone">Store Phone</label>
+             <input id="createPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+           </div>
+           <div>
+             <label className="block text-gray-700 font-bold mb-2" htmlFor="createGstin">GSTIN (Optional)</label>
+             <input id="createGstin" type="text" value={gstin} onChange={(e) => setGstin(e.target.value.toUpperCase())} className="w-full px-3 py-2 border rounded-lg" />
+           </div>
            <hr className="my-2" />
            <h3 className="text-xl font-semibold pt-2">Store Administrator Account</h3>
            <div>
@@ -327,6 +353,20 @@ export default function TenantsPage() {
                 <label className="block text-gray-700 font-bold mb-2" htmlFor="editStoreName">Store Name</label>
                 <input id="editStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
             </div>
+            <div>
+              <label className="block text-gray-700 font-bold mb-2" htmlFor="editAddress">Store Address</label>
+              <input id="editAddress" type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-gray-700 font-bold mb-2" htmlFor="editPhone">Store Phone</label>
+              <input id="editPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-gray-700 font-bold mb-2" htmlFor="editGstin">GSTIN (Optional)</label>
+              <input id="editGstin" type="text" value={gstin} onChange={(e) => setGstin(e.target.value.toUpperCase())} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <hr className="my-2" />
+            <h3 className="text-xl font-semibold pt-2">Store Administrator Account</h3>
              <div>
                <label className="block text-gray-700 font-bold mb-2" htmlFor="editAdminName">Admin's Full Name</label>
                <input id="editAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
@@ -335,7 +375,6 @@ export default function TenantsPage() {
                <label className="block text-gray-700 font-bold mb-2" htmlFor="editAdminEmail">Admin's Email (Login ID)</label>
                <input id="editAdminEmail" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
              </div>
-            <hr className="my-2" />
             <div className="flex items-center">
                 <input id="changePassword" type="checkbox" checked={changePassword} onChange={(e) => setChangePassword(e.target.checked)} className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
                 <label htmlFor="changePassword" className="ml-2 block text-sm font-medium text-gray-900">Change Password</label>

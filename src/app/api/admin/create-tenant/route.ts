@@ -166,7 +166,9 @@ export async function POST(req: NextRequest) {
 
   try {
     await connectToDatabase();
-    const { storeName, adminEmail, adminName, adminPassword } = await req.json();
+    
+    // ✅ 1. ADD 'address' AND 'phone' TO THE DESTRUCTURED BODY
+    const { storeName, adminEmail, adminName, adminPassword, address, phone, gstin } = await req.json();
 
     if (!storeName || !adminEmail || !adminName || !adminPassword) {
       throw new Error("Store name, admin email, name, and password are required.");
@@ -183,13 +185,16 @@ export async function POST(req: NextRequest) {
         throw new Error(`A user with the email "${adminEmail}" already exists.`);
     }
 
+    // ✅ 2. INCLUDE THE NEW FIELDS WHEN CREATING THE TENANT
     const newTenant = new Tenant({
       name: storeName,
       subdomain: subdomain,
+      address: address || '', // Use the provided address or an empty string
+      phone: phone || '',     // Use the provided phone or an empty string
+      gstin: gstin || '',     // Use the provided gstin or an empty string
     });
     await newTenant.save({ session: dbSession });
     
-    // The new role will now be created with the complete list of permissions.
     const adminRole = new Role({
       tenantId: newTenant._id,
       name: 'ADMINISTRATOR',
@@ -214,7 +219,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Tenant and admin user created successfully!',
-      tenant: { name: newTenant.name, subdomain: newTenant.subdomain },
+      tenant: { 
+        name: newTenant.name, 
+        subdomain: newTenant.subdomain,
+        address: newTenant.address, // ✅ 3. RETURN THE NEW FIELDS IN THE RESPONSE
+        phone: newTenant.phone
+      },
       user: { email: newAdminUser.email, name: newAdminUser.name }
     }, { status: 201 });
 

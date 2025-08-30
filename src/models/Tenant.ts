@@ -1,8 +1,12 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface ITenant extends Document {
-  name: string; // Example: "Fresh Face Salon"
-  subdomain: string; // Example: "fresh-face-salon"
+  name: string;
+  subdomain: string;
+  // ✅ ADD THESE NEW FIELDS
+  address?: string;
+  phone?: string;
+  gstin?: string; // Optional field for GST Identification Number
 }
 
 const TenantSchema: Schema<ITenant> = new Schema({
@@ -18,9 +22,18 @@ const TenantSchema: Schema<ITenant> = new Schema({
     lowercase: true,
     trim: true
   },
+  // ✅ DEFINE THE NEW FIELDS IN THE SCHEMA
+  address: {
+    type: String,
+  },
+  phone: {
+    type: String,
+  },
+  gstin: {
+    type: String,
+  }
 }, { timestamps: true });
 
-// Prevent model recompilation in Next.js
 const Tenant: Model<ITenant> = mongoose.models.Tenant || mongoose.model<ITenant>('Tenant', TenantSchema);
 
 export default Tenant;

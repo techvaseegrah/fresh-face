@@ -3,6 +3,13 @@ import connectToDatabase from '@/lib/mongodb';
 import Tenant from '@/models/Tenant';
 import User from '@/models/user';
 import Role from '@/models/role';
+// ✅ Import other models you'll need for a complete deletion
+import Customer from '@/models/customermodel';
+import Appointment from '@/models/Appointment';
+import Product from '@/models/Product';
+import Service from '@/models/ServiceCategory';
+// ... import any other tenant-specific models
+
 import mongoose from 'mongoose';
 
 interface RouteParams {
@@ -23,10 +30,11 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     try {
         await connectToDatabase();
-        const { name, admin, password } = await req.json();
+        // ✅ 1. DESTRUCTURE THE NEW FIELDS FROM THE REQUEST BODY
+        const { name, address, phone, gstin, admin, password } = await req.json();
 
         if (!name || !admin || !admin.name || !admin.email) {
-            return NextResponse.json({ message: 'Missing required fields for update.' }, { status: 400 });
+            return NextResponse.json({ message: 'Missing required tenant or admin details for update.' }, { status: 400 });
         }
         
         const tenant = await Tenant.findById(tenantId).session(dbSession);
@@ -34,9 +42,15 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
             throw new Error('Tenant not found.');
         }
         
+        // ✅ 2. UPDATE ALL TENANT FIELDS
         tenant.name = name;
         tenant.subdomain = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        // Only update these fields if they are provided in the request
+        if (address !== undefined) tenant.address = address;
+        if (phone !== undefined) tenant.phone = phone;
+        if (gstin !== undefined) tenant.gstin = gstin;
         
+        // --- Admin user update logic remains the same ---
         const adminUser = await User.findOne({ tenantId: tenant._id }).session(dbSession);
         if (adminUser) {
             adminUser.name = admin.name;
@@ -82,17 +96,22 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ message: 'Tenant not found.' }, { status: 404 });
     }
 
-    // Delete all data associated with this tenant
+    // ✅ IMPORTANT: Delete ALL data associated with this tenant to avoid orphaned documents.
+    // This is crucial for maintaining a clean database.
     await User.deleteMany({ tenantId: tenantId }).session(dbSession);
     await Role.deleteMany({ tenantId: tenantId }).session(dbSession);
-    // Add other model deletions here (e.g., Products, Appointments, etc.)
+    await Customer.deleteMany({ tenantId: tenantId }).session(dbSession);
+    await Appointment.deleteMany({ tenantId: tenantId }).session(dbSession);
+    await Product.deleteMany({ tenantId: tenantId }).session(dbSession);
+    await Service.deleteMany({ tenantId: tenantId }).session(dbSession);
+    // ... add `deleteMany` for every other model that has a `tenantId` field ...
 
     // Finally, delete the tenant document itself
     await Tenant.findByIdAndDelete(tenantId).session(dbSession);
     
     await dbSession.commitTransaction();
 
-    return NextResponse.json({ message: `Tenant "${tenantToDelete.name}" was deleted.` }, { status: 200 });
+    return NextResponse.json({ message: `Tenant "${tenantToDelete.name}" was deleted successfully.` }, { status: 200 });
 
   } catch (error: any) {
     await dbSession.abortTransaction();
