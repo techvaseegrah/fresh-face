@@ -202,7 +202,7 @@ export default function IncentivesPage() {
         head: [tableColumn], body: tableRows,
         didDrawPage: (data: HookData) => { doc.text(`Incentive Report: ${weekDays[0].toLocaleDateString()} - ${weekDays[6].toLocaleDateString()}`, data.settings.margin.left, 15); },
         styles: { halign: 'center' }, headStyles: { fillColor: '#34495E' },
-        columnStyles: { 0: { halign: 'left', cellWidth: 45 }, 8: { fontStyle: 'bold' as 'bold' } }
+        columnStyles: { 0: { halign: 'left', cellWidth: 45 }, 8: { fontStyle: 'bold' } }
     });
     doc.save(`incentive_report_${toLocalDateString(weekDays[0])}_${toLocalDateString(weekDays[6])}.pdf`);
   };
