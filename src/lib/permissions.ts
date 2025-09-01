@@ -129,10 +129,8 @@ export const PERMISSIONS = {
   STAFF_SALARY_READ: 'staff-salary:read',
   STAFF_SALARY_MANAGE: 'staff-salary:manage',
   STAFF_SWIFT_MANAGE: 'staff-swift:manage',
-  // --- [NEW PERMISSIONS ADDED HERE] ---
   STAFF_LEAVE_READ: 'staff:leave:read',
   STAFF_LEAVE_MANAGE: 'staff:leave:manage',
-  // --- END OF NEW PERMISSIONS ---
 
   // Expenses Management Permissions
   EXPENSES_CREATE: 'expenses:create',
@@ -144,6 +142,7 @@ export const PERMISSIONS = {
   // Budget Management Permissions
   BUDGET_READ: 'budget:read',
   BUDGET_MANAGE: 'budget:manage',
+
   // NEW TELECALLING PERMISSIONS
   TELECALLING_PERFORM: 'telecalling:perform',
   TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
@@ -156,6 +155,20 @@ export const PERMISSIONS = {
 
   SALES_REPORT_READ: 'sales:report:read',
   TENANTS_CREATE: 'tenants:create',
+
+  // Task & Issue Management
+  TASKS_READ: 'tasks:read',
+  TASKS_MANAGE: 'tasks:manage',
+  ISSUES_READ: 'issues:read',
+  ISSUES_MANAGE: 'issues:manage',
+  
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Task Management (like SOP)
+  TASK_READ: 'task:read',
+  TASK_MANAGE: 'task:manage',
+  TASK_SUBMIT_CHECKLIST: 'task:submit_checklist',
+  TASK_REPORTS_READ: 'task:reports:read',
+  // ▲▲▲ END OF ADDITION ▲▲▲
 
   ALL: '*'
 } as const;
@@ -186,7 +199,11 @@ export const PERMISSION_CATEGORIES = {
   BUDGET_MANAGEMENT: 'Budget Management',
   SOP_MANAGEMENT: 'SOP Management',
   TELECALLING_MANAGEMENT: 'Telecalling Management',
-  BACK_OFFICE_MANAGEMENT:'Back Office Management'
+  BACK_OFFICE_MANAGEMENT:'Back Office Management',
+  TASK_ISSUE_MANAGEMENT: 'Task & Issue Management',
+  // ▼▼▼ ADD THIS LINE ▼▼▼
+  TASK_MANAGEMENT: 'Task Management',
+  // ▲▲▲ END OF ADDITION ▲▲▲
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -308,10 +325,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SWIFT_MANAGE, description: 'Manage staff swift', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  // --- [NEW PERMISSIONS ADDED HERE] ---
   { permission: PERMISSIONS.STAFF_LEAVE_READ, description: 'Read staff leave requests', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_LEAVE_MANAGE, description: 'Manage staff leave requests', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  // --- END OF NEW PERMISSIONS ---
 
   // Expenses Management
   { permission: PERMISSIONS.EXPENSES_CREATE, description: 'Create expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
@@ -329,13 +344,14 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_SUBMIT_CHECKLIST, description: 'Submit daily SOP checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_REPORTS_READ, description: 'View SOP compliance reports for all staff', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  
   //Telecalling management
- { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_DASHBOARD,  description: 'View the performance dashboard for telecalling activities', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_REPORTS, description: 'View detailed performance reports for telecallers', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT},
 
   { permission: PERMISSIONS.RECONCILIATION_READ,description: 'View the daily reconciliation page and history reports',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
-  {permission: PERMISSIONS.RECONCILIATION_MANAGE, description: 'Save daily reconciliation reports and manage data',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
+  { permission: PERMISSIONS.RECONCILIATION_MANAGE, description: 'Save daily reconciliation reports and manage data',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
   { 
       permission: PERMISSIONS.PROFIT_LOSS_READ,
       description: 'View the Profit & Loss reports (view only)',
@@ -346,6 +362,21 @@ export const ALL_PERMISSIONS = [
       description: 'Change dates, generate, and download P&L reports', 
       category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT 
     },
+    
+  // Task & Issue Management
+  { permission: PERMISSIONS.TASKS_READ, description: 'View tasks', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
+  { permission: PERMISSIONS.TASKS_MANAGE, description: 'Create, update, assign, and delete tasks', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
+  { permission: PERMISSIONS.ISSUES_READ, description: 'View issues', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
+  { permission: PERMISSIONS.ISSUES_MANAGE, description: 'Create, update, assign, and delete issues', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
+  
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Task Management
+  { permission: PERMISSIONS.TASK_READ, description: 'View assigned Tasks and checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  { permission: PERMISSIONS.TASK_MANAGE, description: 'Create, update, and delete all Tasks', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  { permission: PERMISSIONS.TASK_SUBMIT_CHECKLIST, description: 'Submit daily Task checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  { permission: PERMISSIONS.TASK_REPORTS_READ, description: 'View Task compliance reports for all staff', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  // ▲▲▲ END OF ADDITION ▲▲▲
+
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];
