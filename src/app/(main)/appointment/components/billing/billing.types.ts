@@ -17,7 +17,7 @@ export interface SearchableItem {
   name: string;
   price: number;
   membershipRate?: number;
-  type: 'service' | 'product' | 'fee';
+type: 'service' | 'product' | 'fee' | 'gift_card';
   categoryName?: string;
   unit?: string;
 }
@@ -70,6 +70,11 @@ export interface FinalizeBillingPayload {
   manualDiscountType: 'fixed' | 'percentage' | null;
   manualDiscountValue: number;
   finalManualDiscountApplied: number;
+  giftCardRedemption?: {
+    cardId: string;
+    amount: number;
+  };
+
 }
 
 export interface FinalizedInvoice {
@@ -84,6 +89,12 @@ export interface FinalizedInvoice {
   createdAt: string;
   finalManualDiscountApplied: number;
   membershipDiscount: number;
+  issuedGiftCards?: {
+    _id: string;
+    uniqueCode: string;
+    initialBalance: number;
+    // Add other fields you might want to display
+  }[];
 }
 
 export interface BusinessDetails {

@@ -1,5 +1,4 @@
 // /app/(auth)/login/page.tsx - FINAL, TRULY SCROLLABLE RESPONSIVE VERSION
-
 'use client';
 
 import { useState, useEffect, Suspense, FormEvent } from 'react';

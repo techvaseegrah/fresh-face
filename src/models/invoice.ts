@@ -1,10 +1,11 @@
 import mongoose, { Schema, model, models, Document } from 'mongoose';
-import Counter from './Counter'; // Ensure this Counter model exists and is correct
+import Counter from './Counter';
 
 // --- INTERFACES ---
 interface ILineItem {
-  tenantId: mongoose.Schema.Types.ObjectId; // CORRECTED TYPE
-  itemType: 'service' | 'product' | 'fee';
+  tenantId: mongoose.Schema.Types.ObjectId;
+  // --- MODIFICATION: Add 'gift_card' to the allowed item types ---
+  itemType: 'service' | 'product' | 'fee' | 'gift_card';
   itemId: string;
   name: string;
   quantity: number;
@@ -12,11 +13,12 @@ interface ILineItem {
   membershipRate?: number;
   finalPrice: number;
   membershipDiscount?: number;
-  staffId: mongoose.Schema.Types.ObjectId;
+  // --- MODIFICATION: Make staffId optional for gift cards ---
+  staffId?: mongoose.Schema.Types.ObjectId;
 }
 
 export interface IInvoice extends Document {
-  tenantId: mongoose.Schema.Types.ObjectId; // CORRECTED TYPE
+  tenantId: mongoose.Schema.Types.ObjectId;
   invoiceNumber: string;
   appointmentId: mongoose.Schema.Types.ObjectId;
   customerId: mongoose.Schema.Types.ObjectId;
@@ -39,6 +41,11 @@ export interface IInvoice extends Document {
     upi: number;
     other: number;
   };
+  // --- MODIFICATION: Add optional giftCardPayment property ---
+  giftCardPayment?: {
+    cardId: mongoose.Schema.Types.ObjectId;
+    amount: number;
+  };
   paymentStatus: 'Paid' | 'Pending' | 'Refunded';
   notes?: string;
   customerWasMember: boolean;
@@ -47,10 +54,11 @@ export interface IInvoice extends Document {
 
 // --- SUB-SCHEMA for each item in the invoice ---
 const lineItemSchema = new Schema<ILineItem>({
-  // --- FIX 1: Correct the data type for tenantId ---
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
   
-  itemType: { type: String, enum: ['service', 'product', 'fee'], required: true },
+  // --- MODIFICATION: Add 'gift_card' to the enum validator ---
+  itemType: { type: String, enum: ['service', 'product', 'fee', 'gift_card'], required: true },
+  
   itemId: { type: String, required: true }, 
   name: { type: String, required: true },
   quantity: { type: Number, required: true, default: 1 },
@@ -58,15 +66,17 @@ const lineItemSchema = new Schema<ILineItem>({
   membershipRate: { type: Number, sparse: true }, 
   finalPrice: { type: Number, required: true },
   membershipDiscount: { type: Number, default: 0 },
-  staffId: { type: Schema.Types.ObjectId, ref: 'Staff', required: [true, 'A staff member must be assigned to each line item.'], index: true },
+  
+  // --- MODIFICATION: Make staffId not required ---
+  // A staff member is not required for a gift card sale.
+  // The validation should be handled in the API logic before saving.
+  staffId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
 }, { _id: false });
 
 
 // --- MAIN SCHEMA for the entire invoice ---
 const invoiceSchema = new Schema<IInvoice>({
-  // --- FIX 2: Correct the main data type for tenantId ---
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
-
   invoiceNumber: { type: String }, 
   appointmentId: { type: Schema.Types.ObjectId, ref: 'Appointment', required: true, index: true },
   customerId: { type: Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
@@ -89,6 +99,11 @@ const invoiceSchema = new Schema<IInvoice>({
     upi: { type: Number, default: 0, min: 0 }, 
     other: { type: Number, default: 0, min: 0 } 
   },
+  // --- MODIFICATION: Add giftCardPayment to the schema ---
+  giftCardPayment: {
+    cardId: { type: Schema.Types.ObjectId, ref: 'GiftCard' },
+    amount: { type: Number },
+  },
   paymentStatus: { type: String, enum: ['Paid', 'Pending', 'Refunded'], default: 'Paid' },
   notes: { type: String, trim: true },
   customerWasMember: { type: Boolean, default: false },
@@ -96,12 +111,11 @@ const invoiceSchema = new Schema<IInvoice>({
 }, { timestamps: true });
 
 
-// --- This part remains the same and is correct ---
+// --- This part remains the same ---
 invoiceSchema.index({ tenantId: 1, invoiceNumber: 1 }, { unique: true, sparse: true });
 
 invoiceSchema.pre('save', async function(next) {
     if (this.isNew && !this.invoiceNumber) {
-        // --- FIX 3: Ensure the counter ID is a string, which it already is ---
         const counterId = `invoice_counter_${this.tenantId.toString()}`;
         
         const counter = await Counter.findByIdAndUpdate(

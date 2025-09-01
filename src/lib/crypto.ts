@@ -64,3 +64,17 @@ export function decrypt(hash: string): string {
 export function createSearchHash(text: string): string {
     return createHash('sha256').update(text).digest('hex');
 }
+
+export const safeDecrypt = (data: string, fieldName: string): string => {
+  if (!data) return '';
+  // Basic check to see if the data looks like our encrypted format
+  if (!/^[0-9a-fA-F]{32,}/.test(data)) { 
+    return data; // Assume it's plain text if it doesn't match the pattern
+  }
+  try {
+    return decrypt(data);
+  } catch (e: any) {
+    console.warn(`Decryption failed for ${fieldName}: ${e.message}. Using as plain text.`);
+    return data;
+  }
+};

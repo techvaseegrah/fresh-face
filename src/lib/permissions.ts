@@ -30,8 +30,8 @@ export const PERMISSIONS = {
   CUSTOMERS_READ: 'customers:read',
   CUSTOMERS_UPDATE: 'customers:update',
   CUSTOMERS_DELETE: 'customers:delete',
-  CUSTOMERS_IMPORT: 'customers:import', // <-- Permission for the "Import" button
-  CUSTOMERS_EXPORT: 'customers:export', // <-- Permission for the "Export" button
+  CUSTOMERS_IMPORT: 'customers:import',
+  CUSTOMERS_EXPORT: 'customers:export',
   CUSTOMERS_MANAGE: 'customers:manage',
 
   // Appointment management
@@ -97,6 +97,7 @@ export const PERMISSIONS = {
   ATTENDANCE_SETTINGS_READ: 'attendance_settings:read',
   SETTINGS_STAFF_ID_MANAGE: 'settings:staff_id:manage',
   POSITION_HOURS_SETTINGS_MANAGE: 'position_hours_settings:manage',
+  GIFT_CARD_SETTINGS_MANAGE: 'settings:gift-cards:manage',
 
   // Inventory Checker management
   INVENTORY_CHECKER_CREATE: 'inventory-checker:create',
@@ -129,10 +130,8 @@ export const PERMISSIONS = {
   STAFF_SALARY_READ: 'staff-salary:read',
   STAFF_SALARY_MANAGE: 'staff-salary:manage',
   STAFF_SWIFT_MANAGE: 'staff-swift:manage',
-  // --- [NEW PERMISSIONS ADDED HERE] ---
   STAFF_LEAVE_READ: 'staff:leave:read',
   STAFF_LEAVE_MANAGE: 'staff:leave:manage',
-  // --- END OF NEW PERMISSIONS ---
 
   // Expenses Management Permissions
   EXPENSES_CREATE: 'expenses:create',
@@ -144,26 +143,36 @@ export const PERMISSIONS = {
   // Budget Management Permissions
   BUDGET_READ: 'budget:read',
   BUDGET_MANAGE: 'budget:manage',
-  // NEW TELECALLING PERMISSIONS
+  
+  // Telecalling Permissions
   TELECALLING_PERFORM: 'telecalling:perform',
   TELECALLING_VIEW_DASHBOARD: 'telecalling:view_dashboard',
   TELECALLING_VIEW_REPORTS: 'telecalling:reports:read',
 
-  RECONCILIATION_READ: 'reconciliation:read',   // Permission to view the page and history
-  RECONCILIATION_MANAGE: 'reconciliation:manage', // Permission to save a daily report
+  // Back Office Permissions
+  RECONCILIATION_READ: 'reconciliation:read',
+  RECONCILIATION_MANAGE: 'reconciliation:manage',
   PROFIT_LOSS_READ:'profitloss:read',
   PROFIT_LOSS_MANAGE: 'profitloss:manage', 
 
+  // Reports Permissions
   SALES_REPORT_READ: 'sales:report:read',
+  REPORT_GIFT_CARD_SOLD_READ: 'reports:gift-card-sold:read',
+  REPORT_GIFT_CARD_REDEMPTION_READ: 'reports:gift-card-redemption:read',
+  REPORT_GIFT_CARD_SOLD_MANAGE: 'reports:gift-card-sold:manage',
+  REPORT_GIFT_CARD_REDEMPTION_MANAGE: 'reports:gift-card-redemption:manage',
+
+  // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 
+  // Super Admin
   ALL: '*'
 } as const;
 
 export const PERMISSION_CATEGORIES = {
   USER_MANAGEMENT: 'User Management',
   ROLE_MANAGEMENT: 'Role Management',
-  STORE_MANAGEMENT: 'Store Management', // Added Category
+  STORE_MANAGEMENT: 'Store Management',
   CUSTOMER_MANAGEMENT: 'Customer Management',
   APPOINTMENT_MANAGEMENT: 'Appointment Management',
   BILLING_MANAGEMENT: 'Billing Management',
@@ -202,7 +211,7 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.ROLES_UPDATE, description: 'Update role information', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
   { permission: PERMISSIONS.ROLES_DELETE, description: 'Delete roles', category: PERMISSION_CATEGORIES.ROLE_MANAGEMENT },
 
-  // Store Management (New Section)
+  // Store Management
   { permission: PERMISSIONS.STORES_CREATE, description: 'Create new stores', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
   { permission: PERMISSIONS.STORES_READ, description: 'View store information', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
   { permission: PERMISSIONS.STORES_UPDATE, description: 'Update store information', category: PERMISSION_CATEGORIES.STORE_MANAGEMENT },
@@ -277,6 +286,14 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.ATTENDANCE_SETTINGS_READ, description: 'Read attendance settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, description: 'Manage staff ID settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.POSITION_HOURS_SETTINGS_MANAGE, description: 'Manage position hours settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.GIFT_CARD_SETTINGS_MANAGE, description: 'Manage gift card templates', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+
+  // Reports Access
+  { permission: PERMISSIONS.SALES_REPORT_READ, description: 'View sales reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ, description: 'View the Gift Card Sold report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ, description: 'View the Gift Card Redemption report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+   { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE, description: 'Download the Gift Card Sold report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_MANAGE, description: 'Download the Gift Card Redemption report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
@@ -308,10 +325,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.STAFF_SALARY_READ, description: 'Read staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SALARY_MANAGE, description: 'Manage staff salary', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_SWIFT_MANAGE, description: 'Manage staff swift', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  // --- [NEW PERMISSIONS ADDED HERE] ---
   { permission: PERMISSIONS.STAFF_LEAVE_READ, description: 'Read staff leave requests', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
   { permission: PERMISSIONS.STAFF_LEAVE_MANAGE, description: 'Manage staff leave requests', category: PERMISSION_CATEGORIES.STAFF_MANAGEMENT },
-  // --- END OF NEW PERMISSIONS ---
 
   // Expenses Management
   { permission: PERMISSIONS.EXPENSES_CREATE, description: 'Create expenses', category: PERMISSION_CATEGORIES.EXPENSES_MANAGEMENT },
@@ -324,65 +339,57 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.BUDGET_READ, description: 'View budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
   { permission: PERMISSIONS.BUDGET_MANAGE, description: 'Manage budget information', category: PERMISSION_CATEGORIES.BUDGET_MANAGEMENT },
 
-   // SOP Management (Add this new block)
+   // SOP Management
   { permission: PERMISSIONS.SOP_READ, description: 'View assigned SOPs and checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_MANAGE, description: 'Create, update, and delete all SOPs', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_SUBMIT_CHECKLIST, description: 'Submit daily SOP checklists', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
   { permission: PERMISSIONS.SOP_REPORTS_READ, description: 'View SOP compliance reports for all staff', category: PERMISSION_CATEGORIES.SOP_MANAGEMENT },
+  
   //Telecalling management
- { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
+  { permission: PERMISSIONS.TELECALLING_PERFORM, description: 'Access the telecalling page to follow up with clients', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_DASHBOARD,  description: 'View the performance dashboard for telecalling activities', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT },
   { permission: PERMISSIONS.TELECALLING_VIEW_REPORTS, description: 'View detailed performance reports for telecallers', category: PERMISSION_CATEGORIES.TELECALLING_MANAGEMENT},
 
+  // Back Office Management
   { permission: PERMISSIONS.RECONCILIATION_READ,description: 'View the daily reconciliation page and history reports',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
-  {permission: PERMISSIONS.RECONCILIATION_MANAGE, description: 'Save daily reconciliation reports and manage data',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
+  { permission: PERMISSIONS.RECONCILIATION_MANAGE, description: 'Save daily reconciliation reports and manage data',category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT},
   { 
       permission: PERMISSIONS.PROFIT_LOSS_READ,
       description: 'View the Profit & Loss reports (view only)',
       category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT
-    },
-    { 
+  },
+  { 
       permission: PERMISSIONS.PROFIT_LOSS_MANAGE, 
       description: 'Change dates, generate, and download P&L reports', 
       category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT 
-    },
+  },
+  
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];
 
-// ... (The rest of the file remains unchanged)
-
 export const hasPermission = (userPermissions: string[], requiredPermission: string): boolean => {
-  // Super admin has all permissions
   if (userPermissions.includes('*')) return true;
-
-  // Direct permission match
   if (userPermissions.includes(requiredPermission)) return true;
-
   return false;
 };
 
-// Helper function to check multiple permissions (user needs ANY of the permissions)
 export const hasAnyPermission = (userPermissions: string[], requiredPermissions: string[]): boolean => {
   return requiredPermissions.some(permission => hasPermission(userPermissions, permission));
 };
 
-// Helper function to check multiple permissions (user needs ALL of the permissions)
 export const hasAllPermissions = (userPermissions: string[], requiredPermissions: string[]): boolean => {
   return requiredPermissions.every(permission => hasPermission(userPermissions, permission));
 };
 
-// Helper function to get permissions by category
 export const getPermissionsByCategory = (category: string) => {
   return ALL_PERMISSIONS.filter(p => p.category === category);
 };
 
-// Helper function to get all categories
 export const getAllCategories = () => {
   return Object.values(PERMISSION_CATEGORIES);
 };
 
-// Predefined role templates
 export const ROLE_TEMPLATES = {
   SUPER_ADMIN: {
     name: 'Super Admin',
@@ -450,7 +457,6 @@ export const ROLE_TEMPLATES = {
   }
 };
 
-// Type definitions for better TypeScript support
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 export type PermissionCategory = typeof PERMISSION_CATEGORIES[keyof typeof PERMISSION_CATEGORIES];
 

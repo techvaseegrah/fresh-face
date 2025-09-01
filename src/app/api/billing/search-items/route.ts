@@ -1,14 +1,12 @@
-// app/api/billing/search-items/route.ts - MULTI-TENANT REFACTORED VERSION
+// app/api/billing/search-items/route.ts - MODIFIED TO INCLUDE GIFT CARDS
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import ServiceItem from '@/models/ServiceItem';
 import Product from '@/models/Product';
 import Setting from '@/models/Setting';
+import { GiftCardTemplate } from '@/models/GiftCardTemplate'; // --- START ADDITION: Import GiftCardTemplate model ---
 import { getTenantIdOrBail } from '@/lib/tenant';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 
@@ -17,14 +15,8 @@ const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 // ===================================================================================
 export async function GET(req: NextRequest) {
   try {
-    // --- MT: Get tenantId and check permissions first ---
     const tenantId = getTenantIdOrBail(req);
     if (tenantId instanceof NextResponse) return tenantId;
-
-    // const session = await getServerSession(authOptions);
-    // if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.BILLING_CREATE)) { // Assuming a permission
-    //   return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-    // }
 
     await connectToDatabase();
     
@@ -37,14 +29,13 @@ export async function GET(req: NextRequest) {
 
     const searchRegex = new RegExp(query, 'i');
 
-    // --- MT: Create a scoped search condition ---
     const searchCondition = {
       tenantId: tenantId,
       name: { $regex: searchRegex }
     };
 
-    // Search both services and products in parallel, now scoped by tenant
-    const [services, products] = await Promise.all([
+    // --- START MODIFICATION: Add GiftCardTemplate to the parallel search ---
+    const [services, products, giftCardTemplates] = await Promise.all([
       ServiceItem.find(searchCondition)
         .select('name price membershipRate')
         .limit(5)
@@ -58,10 +49,20 @@ export async function GET(req: NextRequest) {
       .populate('subCategory', 'name')
       .select('name price sku unit brand numberOfItems') 
       .limit(5)
+      .lean(),
+
+      // --- ADDITION: Search for active gift card templates ---
+      GiftCardTemplate.find({
+        ...searchCondition,
+        isActive: true // Only show templates that are active and can be sold
+      })
+      .select('name amount')
+      .limit(3) // Limit to a few results to not overwhelm
       .lean()
     ]);
+    // --- END MODIFICATION ---
 
-    // Format the results (your existing logic is good)
+    // Format the results
     let items = [
       ...services.map(service => ({
         id: service._id.toString(),
@@ -79,13 +80,19 @@ export async function GET(req: NextRequest) {
         unit: product.unit,
         categoryName: (product.brand as any)?.name || 'Product', 
         stock: (product as any).numberOfItems
+      })),
+      // --- START ADDITION: Format gift card templates into billable items ---
+      ...giftCardTemplates.map(template => ({
+        id: template._id.toString(),
+        name: template.name,
+        price: template.amount, // Note: The field is 'amount' in the model
+        type: 'gift_card' as const // This type is crucial for the frontend
       }))
+      // --- END ADDITION ---
     ];
 
-    // --- MT: Inject the TENANT-SPECIFIC membership fee ---
     const lowerCaseQuery = query.toLowerCase();
     if ('membership fee'.includes(lowerCaseQuery)) {
-      // --- MT: Scope the Setting lookup by tenantId ---
       const feeSetting = await Setting.findOne({ key: 'membershipFee', tenantId }).lean();
       
       if (feeSetting && feeSetting.value) {

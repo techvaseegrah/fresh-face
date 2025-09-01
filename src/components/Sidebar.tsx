@@ -12,7 +12,7 @@ import {
   BellAlertIcon, ReceiptPercentIcon, ChevronDownIcon,
   ChartBarIcon,
   XMarkIcon,
-  BriefcaseIcon, // ▼▼▼ FIX 1: IMPORT THE NEW ICON ▼▼▼
+  BriefcaseIcon,
 } from '@heroicons/react/24/outline';
 
 import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon } from 'lucide-react';
@@ -103,19 +103,47 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       },
     ];
 
+    const reportSubItems: NavSubItem[] = [
+      { 
+          href: '/sales-report', 
+          label: 'Sales Report', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) 
+      },
+      { 
+          href: '/reports/gift-card-sold', 
+          label: 'Gift Card Sold', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ]) 
+      },
+      { 
+          href: '/reports/gift-card-redemption', 
+          label: 'Gift Card Redemption', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ]) 
+      },
+    ];
+
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
     const canSeeBudgetManagement = budgetSubItems.some(item => item.show);
     const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
+    const canSeeReports = reportSubItems.some(item => item.show);
     
     return [
       { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.DASHBOARD_READ, PERMISSIONS.DASHBOARD_MANAGE]) },
       { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.APPOINTMENTS_READ, PERMISSIONS.APPOINTMENTS_CREATE]) },
       { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_CREATE]) },
       { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PRODUCTS_READ, PERMISSIONS.SERVICES_READ]) },
-      { href: '/sales-report', label: 'Sales Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) },
+      { 
+        href: '/reports', 
+        label: 'Reports', 
+        icon: <ChartBarIcon className="h-5 w-5" />, 
+        show: canSeeReports, 
+        subItems: reportSubItems.filter(item => item.show) 
+      },
       { href: '/staffmanagement', label: 'Staff Management', icon: <UsersIcon className="h-5 w-5" />, show: canSeeStaffManagement, subItems: staffSubItems.filter(item => item.show) },
       { href: '/DayendClosing', label:'Day-end Closing', icon: <BanknotesIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]) },
       { href: '/alerts', label: 'Alerts', icon: <BellAlertIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ALERTS_READ]) },
@@ -127,15 +155,13 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
-      // ▼▼▼ FIX 2: CHANGE THE PARENT ICON HERE ▼▼▼
       { 
         href: '/back-office/reconciliation', 
         label: 'Back Office', 
-        icon: <BriefcaseIcon className="h-5 w-5" />, // Changed from ScaleIcon to BriefcaseIcon
+        icon: <BriefcaseIcon className="h-5 w-5" />,
         show: canSeeReconciliation, 
         subItems: reconciliationSubItems.filter(item => item.show) 
       },
-      // ▲▲▲ END OF FIX ▲▲▲
       { href: '/admin', label: 'Administration', icon: <Cog6ToothIcon className="h-5 w-5" />, show: canSeeAdministration, subItems: adminSubItems.filter(item => item.show) },
       { href: '/settings', label: 'Settings', icon: <Cog6ToothIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [ PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, PERMISSIONS.ATTENDANCE_SETTINGS_READ, PERMISSIONS.LOYALTY_SETTINGS_READ, ])},
     ];
@@ -145,6 +171,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
       const activeCheckPath = subItem.basePathForActive || subItem.href;
+      if (item.href === '/reports') {
+        return pathname.startsWith('/reports/') || pathname.startsWith('/sales-report');
+      }
       return pathname.startsWith(activeCheckPath);
     }));
     setOpenItemKey(activeParent?.href || null);
@@ -162,6 +191,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const handleSignOut = () => signOut({ callbackUrl: '/login' });
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
     if (item.subItems?.length) {
+      if (item.href === '/reports') {
+        return currentPath.startsWith('/reports/') || currentPath.startsWith('/sales-report');
+      }
       return item.subItems.some(subItem => currentPath.startsWith(subItem.basePathForActive || subItem.href));
     }
     if (item.href === '/dashboard') {
