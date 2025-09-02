@@ -168,7 +168,15 @@ export const PERMISSIONS = {
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 
-  // Super Admin
+  
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Task Management (like SOP)
+  TASK_READ: 'task:read',
+  TASK_MANAGE: 'task:manage',
+  TASK_SUBMIT_CHECKLIST: 'task:submit_checklist',
+  TASK_REPORTS_READ: 'task:reports:read',
+  // ▲▲▲ END OF ADDITION ▲▲▲
+
   ALL: '*'
 } as const;
 
@@ -198,7 +206,10 @@ export const PERMISSION_CATEGORIES = {
   BUDGET_MANAGEMENT: 'Budget Management',
   SOP_MANAGEMENT: 'SOP Management',
   TELECALLING_MANAGEMENT: 'Telecalling Management',
-  BACK_OFFICE_MANAGEMENT:'Back Office Management'
+  BACK_OFFICE_MANAGEMENT:'Back Office Management',
+  // ▼▼▼ ADD THIS LINE ▼▼▼
+  TASK_MANAGEMENT: 'Task Management',
+  // ▲▲▲ END OF ADDITION ▲▲▲
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -365,8 +376,17 @@ export const ALL_PERMISSIONS = [
       permission: PERMISSIONS.PROFIT_LOSS_MANAGE, 
       description: 'Change dates, generate, and download P&L reports', 
       category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT 
-  },
+    },
+    
   
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Task Management
+  { permission: PERMISSIONS.TASK_READ, description: 'View assigned Tasks and checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  { permission: PERMISSIONS.TASK_MANAGE, description: 'Create, update, and delete all Tasks', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  { permission: PERMISSIONS.TASK_SUBMIT_CHECKLIST, description: 'Submit daily Task checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  { permission: PERMISSIONS.TASK_REPORTS_READ, description: 'View Task compliance reports for all staff', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+  // ▲▲▲ END OF ADDITION ▲▲▲
+
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];

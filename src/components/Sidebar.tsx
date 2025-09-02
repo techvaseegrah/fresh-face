@@ -13,6 +13,7 @@ import {
   ChartBarIcon,
   XMarkIcon,
   BriefcaseIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
 import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon } from 'lucide-react';
@@ -28,7 +29,6 @@ const StaffListIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="curre
 const TargetIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 21a9 9 0 100-18 9 9 0 000 18z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12a3 3 0 100-6 3 3 0 000 6z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v2m0 16v2m-8-9H2m18 0h-2"></path></svg> );
 const IncentivesIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg> );
 const SwiftIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> );
-
 
 interface NavSubItem { href: string; label: string; icon: JSX.Element; show: boolean; basePathForActive?: string; }
 interface NavItemConfig { href: string; label: string; icon: JSX.Element; show: boolean; subItems?: NavSubItem[]; }
@@ -65,11 +65,20 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
     ];
     
+    // Original SOP sub-items (unchanged)
     const sopSubItems: NavSubItem[] = [
       { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) },
       { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
       { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
     ];
+
+    // ▼▼▼ NEW: Task Management sub-items ▼▼▼
+    const taskSubItems: NavSubItem[] = [
+        { href: '/task', label: 'Task Library', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_READ]) },
+        { href: '/task/my-tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_SUBMIT_CHECKLIST]) },
+        { href: '/task/compliance', label: 'Task Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_REPORTS_READ]) }
+    ];
+    // ▲▲▲ END OF ADDITION ▲▲▲
 
     const telecallingSubItems: NavSubItem[] = [
       { href: '/telecalling', label: 'Workspace', icon: <PhoneForwarded className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM]) },
@@ -129,6 +138,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const canSeeBudgetManagement = budgetSubItems.some(item => item.show);
     const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
+    const canSeeTaskManagement = taskSubItems.some(item => item.show); // New
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
     const canSeeReports = reportSubItems.some(item => item.show);
     
@@ -153,7 +163,14 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/inventory-checker', label: 'Inventory Checker', icon: <BeakerIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) },
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
+      
+      // Original SOP Management section (unchanged)
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
+
+      // ▼▼▼ NEW: Task Management main menu item ▼▼▼
+      { href: '/task-management', label: 'Task Management', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: canSeeTaskManagement, subItems: taskSubItems.filter(item => item.show) },
+      // ▲▲▲ END OF ADDITION ▲▲▲
+
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
       { 
         href: '/back-office/reconciliation', 
@@ -167,6 +184,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
   }, [userPermissions]);
   
+  // ... (The rest of the file is unchanged)
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
