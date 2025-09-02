@@ -1,15 +1,20 @@
 // /app/(auth)/login/page.tsx - FINAL, TRULY SCROLLABLE RESPONSIVE VERSION
-
 'use client';
 
+// ... (keep all the existing imports for UnifiedLoginForm)
 import { useState, useEffect, Suspense, FormEvent } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, Building, User, AtSign, KeyRound } from 'lucide-react';
 
+// NEW: Import the next/image component
+import Image from 'next/image';
+
 export const dynamic = 'force-dynamic';
 
+// ... (Your UnifiedLoginForm component remains exactly the same as before)
 function UnifiedLoginForm() {
+  // ... no changes here
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loginMode, setLoginMode] = useState<'admin' | 'staff'>('admin');
@@ -140,20 +145,22 @@ function UnifiedLoginForm() {
   );
 }
 
+
 export default function LoginPage() {
   return (
     <>
-      {/*
-        KEY FIX:
-        - Removed `min-h-screen` to allow the container to grow with its content and enable native browser scrolling.
-        - Using generous vertical padding (`py-12`) to create space at the top and bottom. This vertically centers short content on large screens while ensuring long content on small screens is scrollable from the top.
-      */}
       <div className="flex justify-center items-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
-            <div className="mx-auto h-14 w-14 sm:h-16 sm:w-16 bg-black rounded-full flex items-center justify-center">
-              <span className="text-white text-xl sm:text-2xl font-bold">FF</span>
-            </div>
+            {/* --- UPDATED LOGO PATH --- */}
+            <Image
+              src="/login.png" // The path to your new logo in the `public` folder
+              alt="Fresh Face Logo"
+              width={64} // Corresponds to w-16, for intrinsic size
+              height={64} // Corresponds to h-16, for intrinsic size
+              className="mx-auto h-14 w-14 sm:h-16 sm:w-16" // These classes control the displayed size
+            />
+            {/* --- END UPDATED CODE --- */}
             <h2 className="mt-6 text-2xl sm:text-3xl font-extrabold text-gray-900">Sign in to Fresh Face</h2>
             <p className="mt-2 text-sm text-gray-600">Salon Management System</p>
           </div>

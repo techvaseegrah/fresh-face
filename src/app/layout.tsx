@@ -1,30 +1,31 @@
-// app/layout.tsx
-'use client'
+// This can now be a Server Component, which is better!
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { Providers } from "./providers"; // <-- Import your new component
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
-import { Inter } from "next/font/google"
-import "./globals.css"
-// DO NOT import Sidebar here
-import { ToastContainer } from 'react-toastify'
-import 'react-toastify/dist/ReactToastify.css'
-import { SessionProvider } from "next-auth/react"
+const inter = Inter({ subsets: ["latin"] });
 
-const inter = Inter({ subsets: ["latin"] })
+// You can also add metadata here if you want
+// export const metadata = {
+//   title: 'Fresh Face Salon',
+//   description: 'Salon Management System',
+// };
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="en">
       <body className={`${inter.className} bg-gray-50`}>
-        {/* SessionProvider wraps everything, which is correct */}
-        <SessionProvider>
-          {/* 
-            The `children` here will be your actual pages.
-            For routes like /login, it will be the login page.
-            For routes like /dashboard, it will be the MainLayout, which in turn contains the dashboard page.
-          */}
+        {/*
+          Now, the SessionProvider is correctly wrapped inside its own client component,
+          and it wraps everything else in your application.
+        */}
+        <Providers>
           {children}
           
           <ToastContainer
@@ -39,8 +40,8 @@ export default function RootLayout({
             pauseOnHover
             theme="light"
           />
-        </SessionProvider>
+        </Providers>
       </body>
     </html>
-  )
+  );
 }
