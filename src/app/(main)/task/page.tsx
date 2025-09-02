@@ -25,8 +25,7 @@ interface ITaskViewModel {
   checklistQuestions?: IChecklistQuestion[];
 }
 
-// --- Reusable Components & Modals (No changes needed) ---
-// ... (Your existing ViewTaskModal, EditTaskModal, and ChecklistDisplay components go here)
+// --- Reusable Components & Modals (No changes) ---
 const ChecklistDisplay = ({ questions }: { questions: IChecklistQuestion[] }) => (
     <div className="mt-6 pt-4 border-t border-gray-200">
       <h3 className="text-lg font-semibold text-gray-800 mb-3">Checklist</h3>
@@ -77,7 +76,8 @@ const ChecklistDisplay = ({ questions }: { questions: IChecklistQuestion[] }) =>
   
   const EditTaskModal = ({ task, onClose, onSave }: { task: ITaskViewModel | null, onClose: () => void, onSave: (updatedData: any) => void }) => {
     const [taskName, setTaskName] = useState(task?.taskName || '');
-    const [dueDate, setDueDate] = useState(task ? new Date(task.dueDate).toISOString().split('T')[0] : '');
+    // ✅ FIX: Added a check for a valid task object before creating a date to prevent crash
+    const [dueDate, setDueDate] = useState(task?.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
     const [checklist, setChecklist] = useState<IChecklistQuestion[]>(task?.checklistQuestions || []);
   
     if (!task) return null;
@@ -171,7 +171,11 @@ const TaskPage = (): JSX.Element => {
     const [newTask, setNewTask] = useState(initialNewTaskState);
     const [checklistQuestions, setChecklistQuestions] = useState<IChecklistQuestion[]>([{ questionText: '', responseType: 'Yes/No', mediaUpload: 'None' }]);
 
-    // All functions (makeApiRequest, fetchAllData, handlers) remain the same
+    const [staffSearch, setStaffSearch] = useState('');
+    const [isStaffDropdownOpen, setStaffDropdownOpen] = useState(false);
+    const [positionSearch, setPositionSearch] = useState('');
+    const [isPositionDropdownOpen, setPositionDropdownOpen] = useState(false);
+
     const makeApiRequest = useCallback(async (url: string, options: RequestInit = {}) => {
         if (!session?.user?.tenantId) throw new Error('Session not found.');
         const headers = new Headers(options.headers || {});
@@ -214,12 +218,76 @@ const TaskPage = (): JSX.Element => {
         }
       }, [allTasks, activeFilter]);
     
-      const openViewModal = async (taskId: string) => { /* ... unchanged ... */ };
-      const openEditModal = async (taskId: string) => { /* ... unchanged ... */ };
-      const handleDeleteTask = async (taskId: string) => { /* ... unchanged ... */ };
-      const handleSaveChanges = async (updatedData: any) => { /* ... unchanged ... */ };
+      // ✅ FIX: Changed URL to use the dynamic route for fetching a single task
+      const openViewModal = async (taskId: string) => {
+        setIsModalLoading(true);
+        try {
+          const result = await makeApiRequest(`/api/tasks/${taskId}`);
+          if (result.success) {
+            setViewingTask(result.data);
+          } else {
+            throw new Error(result.error || 'Failed to fetch task details.');
+          }
+        } catch (error: any) {
+          alert(`Error: ${error.message}`);
+        } finally {
+          setIsModalLoading(false);
+        }
+      };
+
+      // ✅ FIX: Changed URL to use the dynamic route for fetching a single task
+      const openEditModal = async (taskId: string) => {
+        setIsModalLoading(true);
+        try {
+          const result = await makeApiRequest(`/api/tasks/${taskId}`);
+          if (result.success) {
+            setEditingTask(result.data);
+          } else {
+            throw new Error(result.error || 'Failed to fetch task details.');
+          }
+        } catch (error: any) {
+          alert(`Error: ${error.message}`);
+        } finally {
+          setIsModalLoading(false);
+        }
+      };
+
+      // ✅ FIX: Changed URL to use the dynamic route and removed the request body
+      const handleDeleteTask = async (taskId: string) => {
+        if (window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+          try {
+            await makeApiRequest(`/api/tasks/${taskId}`, {
+              method: 'DELETE',
+            });
+            alert('Task deleted successfully!');
+            fetchAllData(); // Refresh the task list
+          } catch (error: any) {
+            alert(`Failed to delete task: ${error.message}`);
+          }
+        }
+      };
+
+      // ✅ FIX: Changed URL to use the dynamic route and switched method to PATCH
+      const handleSaveChanges = async (updatedData: any) => {
+        if (!editingTask) return;
+        try {
+          await makeApiRequest(`/api/tasks/${editingTask._id}`, {
+            method: 'PATCH', // Changed from PUT to PATCH to match the backend route
+            body: JSON.stringify(updatedData),
+          });
+          alert('Task updated successfully!');
+          setEditingTask(null); // Close the modal
+          fetchAllData(); // Refresh the task list
+        } catch (error: any) {
+          alert(`Failed to update task: ${error.message}`);
+        }
+      };
     
       const positions = useMemo(() => [...new Set(staffList.map(s => s.position.trim()).filter(p => p))], [staffList]);
+
+      const filteredStaff = useMemo(() => staffList.filter(s => s.name.toLowerCase().includes(staffSearch.toLowerCase())), [staffList, staffSearch]);
+      const filteredPositions = useMemo(() => positions.filter(p => p.toLowerCase().includes(positionSearch.toLowerCase())), [positions, positionSearch]);
+
       const handleAddQuestion = () => setChecklistQuestions([...checklistQuestions, { questionText: '', responseType: 'Yes/No', mediaUpload: 'None' }]);
       const handleRemoveQuestion = (index: number) => setChecklistQuestions(checklistQuestions.filter((_, i) => i !== index));
       const handleQuestionChange = (index: number, field: keyof IChecklistQuestion, value: string) => {
@@ -232,11 +300,13 @@ const TaskPage = (): JSX.Element => {
         setCreateModalOpen(false);
         setNewTask(initialNewTaskState);
         setChecklistQuestions([{ questionText: '', responseType: 'Yes/No', mediaUpload: 'None' }]);
+        setStaffSearch('');
+        setPositionSearch('');
       };
     
       const handleCreateTask = async (e: FormEvent) => {
         e.preventDefault();
-        if (!session?.user?.id || !newTask.assignee) return alert("Please select who to assign the task to.");
+        if (!session?.user?.id || !newTask.assignee) return alert("Please search and select who to assign the task to.");
         const finalChecklist = checklistQuestions.filter(q => q.questionText.trim() !== '');
         try {
           const taskData = { ...newTask, createdBy: session.user.id, checklistQuestions: finalChecklist };
@@ -247,8 +317,15 @@ const TaskPage = (): JSX.Element => {
         } catch (error: any) { alert(`Failed to create task: ${error.message}`); }
       };
     
-      const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setNewTask(prev => ({ ...prev, [e.target.name]: e.target.value }));
-      const handleAssignmentTypeChange = (type: 'Individual' | 'Position') => setNewTask(prev => ({ ...prev, assignmentType: type, assignee: '' }));
+      const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setNewTask(prev => ({ ...prev, [e.target.name]: e.target.value }));
+      
+      const handleAssignmentTypeChange = (type: 'Individual' | 'Position') => {
+        setNewTask(prev => ({ ...prev, assignmentType: type, assignee: '' }));
+        setStaffSearch('');
+        setPositionSearch('');
+        setStaffDropdownOpen(false);
+        setPositionDropdownOpen(false);
+      };
       const handleFrequencyChange = (frequency: 'Daily' | 'Weekly' | 'Monthly') => setNewTask(prev => ({ ...prev, frequency }));
 
     if (sessionStatus === 'loading') return <div className="p-8 text-center">Loading...</div>;
@@ -273,7 +350,6 @@ const TaskPage = (): JSX.Element => {
                 </div>
             </div>
 
-            {/* ✅ FIX: The task list rendering logic is now restored. */}
             <div className="bg-white shadow-lg rounded-xl">
                 <div className="divide-y divide-gray-200">
                     {isLoading ? ( <div className="text-center py-10 text-gray-500">Loading tasks...</div> )
@@ -308,10 +384,9 @@ const TaskPage = (): JSX.Element => {
 
             {isModalLoading && <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center z-[60]"><div className="bg-white text-gray-700 font-semibold px-6 py-3 rounded-lg shadow-lg">Loading Details...</div></div>}
             
-            {/* The fully corrected Create Task Modal */}
             {isCreateModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-                    <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all">
+                    <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-3xl transform transition-all">
                         <div className="flex justify-between items-center pb-4 border-b border-gray-200">
                             <h2 className="text-2xl font-bold text-gray-800">Create New Task</h2>
                             <button onClick={closeCreateModal} className="p-1 rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600"><CloseIcon /></button>
@@ -320,86 +395,121 @@ const TaskPage = (): JSX.Element => {
                             
                             <div>
                                 <label htmlFor="taskName" className="block text-sm font-medium text-gray-700 mb-1">Task Name</label>
-                                <input id="taskName" type="text" name="taskName" value={newTask.taskName} onChange={handleInputChange} className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" required />
+                                <input 
+                                    id="taskName" 
+                                    type="text" 
+                                    name="taskName" 
+                                    value={newTask.taskName} 
+                                    onChange={handleInputChange} 
+                                    className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="e.g., Clean the front reception area"
+                                    required 
+                                />
                             </div>
 
                             <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Assign To</label>
-                            <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-lg">
-                                <button type="button" onClick={() => handleAssignmentTypeChange('Individual')} className={`w-full py-1.5 rounded-md text-sm font-semibold transition-colors ${newTask.assignmentType === 'Individual' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>Individual</button>
-                                <button type="button" onClick={() => handleAssignmentTypeChange('Position')} className={`w-full py-1.5 rounded-md text-sm font-semibold transition-colors ${newTask.assignmentType === 'Position' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>Position</button>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Assign To</label>
+                                <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-lg">
+                                    <button type="button" onClick={() => handleAssignmentTypeChange('Individual')} className={`w-full py-1.5 rounded-md text-sm font-semibold transition-colors ${newTask.assignmentType === 'Individual' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>Individual</button>
+                                    <button type="button" onClick={() => handleAssignmentTypeChange('Position')} className={`w-full py-1.5 rounded-md text-sm font-semibold transition-colors ${newTask.assignmentType === 'Position' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>Position</button>
+                                </div>
                             </div>
-                            </div>
-
-                            <div>
-                                {newTask.assignmentType === 'Individual' 
-                                ? (<select name="assignee" value={newTask.assignee} onChange={handleInputChange} className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" required><option value="" disabled>Select staff...</option>{staffList.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}</select>) 
-                                : (<select name="assignee" value={newTask.assignee} onChange={handleInputChange} className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" required><option value="" disabled>Select position...</option>{positions.map(p => <option key={p} value={p}>{p}</option>)}</select>)}
+                            
+                            <div className='relative'>
+                                {newTask.assignmentType === 'Individual' ? (
+                                    <div>
+                                        <input type="text" placeholder="Search and select staff..." value={staffSearch} 
+                                            onChange={(e) => { setStaffSearch(e.target.value); if (newTask.assignee) setNewTask(p => ({...p, assignee: ''})); if (!isStaffDropdownOpen) setStaffDropdownOpen(true); }}
+                                            onFocus={() => setStaffDropdownOpen(true)} onBlur={() => setTimeout(() => setStaffDropdownOpen(false), 200)}
+                                            className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" autoComplete="off"
+                                        />
+                                        {isStaffDropdownOpen && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {filteredStaff.length > 0 ? filteredStaff.map(s => (
+                                                    <div key={s._id} onMouseDown={() => { setNewTask(p => ({ ...p, assignee: s._id })); setStaffSearch(s.name); setStaffDropdownOpen(false); }} 
+                                                        className="p-2 cursor-pointer hover:bg-blue-50">{s.name}</div>
+                                                )) : <div className="p-2 text-gray-500">No staff found.</div>}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <input type="text" placeholder="Search and select position..." value={positionSearch} 
+                                            onChange={(e) => { setPositionSearch(e.target.value); if (newTask.assignee) setNewTask(p => ({...p, assignee: ''})); if (!isPositionDropdownOpen) setPositionDropdownOpen(true); }}
+                                            onFocus={() => setPositionDropdownOpen(true)} onBlur={() => setTimeout(() => setPositionDropdownOpen(false), 200)}
+                                            className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" autoComplete="off"
+                                        />
+                                        {isPositionDropdownOpen && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {filteredPositions.length > 0 ? filteredPositions.map(p => (
+                                                    <div key={p} onMouseDown={() => { setNewTask(prev => ({ ...prev, assignee: p })); setPositionSearch(p); setPositionDropdownOpen(false); }} 
+                                                        className="p-2 cursor-pointer hover:bg-blue-50">{p}</div>
+                                                )) : <div className="p-2 text-gray-500">No positions found.</div>}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             
                             <div>
-                            <label htmlFor="dueDate" className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-                            <input id="dueDate" type="date" name="dueDate" value={newTask.dueDate} onChange={handleInputChange} className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" required />
+                                <label htmlFor="dueDate" className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                                <input id="dueDate" type="date" name="dueDate" value={newTask.dueDate} onChange={handleInputChange} className="w-full border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500" required />
                             </div>
 
                             <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Checklist Frequency</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <button type="button" onClick={() => handleFrequencyChange('Daily')} className={`p-4 border rounded-lg text-left transition-all ${newTask.frequency === 'Daily' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500' : 'bg-white hover:border-gray-400'}`}>
-                                    <DailyIcon />
-                                    <h4 className="font-semibold mt-2">Daily</h4>
-                                    <p className="text-xs text-gray-500">Tasks for every day.</p>
-                                </button>
-                                <button type="button" onClick={() => handleFrequencyChange('Weekly')} className={`p-4 border rounded-lg text-left transition-all ${newTask.frequency === 'Weekly' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500' : 'bg-white hover:border-gray-400'}`}>
-                                    <WeeklyIcon />
-                                    <h4 className="font-semibold mt-2">Weekly</h4>
-                                    <p className="text-xs text-gray-500">Once-a-week tasks.</p>
-                                </button>
-                                <button type="button" onClick={() => handleFrequencyChange('Monthly')} className={`p-4 border rounded-lg text-left transition-all ${newTask.frequency === 'Monthly' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500' : 'bg-white hover:border-gray-400'}`}>
-                                    <MonthlyIcon />
-                                    <h4 className="font-semibold mt-2">Monthly</h4>
-                                    <p className="text-xs text-gray-500">Once-a-month tasks.</p>
-                                </button>
-                            </div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Checklist Frequency</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <button type="button" onClick={() => handleFrequencyChange('Daily')} className={`p-4 border rounded-lg text-left transition-all ${newTask.frequency === 'Daily' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500' : 'bg-white hover:border-gray-400'}`}>
+                                        <DailyIcon />
+                                        <h4 className="font-semibold mt-2">Daily</h4>
+                                        <p className="text-xs text-gray-500">Tasks for every day.</p>
+                                    </button>
+                                    <button type="button" onClick={() => handleFrequencyChange('Weekly')} className={`p-4 border rounded-lg text-left transition-all ${newTask.frequency === 'Weekly' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500' : 'bg-white hover:border-gray-400'}`}>
+                                        <WeeklyIcon />
+                                        <h4 className="font-semibold mt-2">Weekly</h4>
+                                        <p className="text-xs text-gray-500">Once-a-week tasks.</p>
+                                    </button>
+                                    <button type="button" onClick={() => handleFrequencyChange('Monthly')} className={`p-4 border rounded-lg text-left transition-all ${newTask.frequency === 'Monthly' ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500' : 'bg-white hover:border-gray-400'}`}>
+                                        <MonthlyIcon />
+                                        <h4 className="font-semibold mt-2">Monthly</h4>
+                                        <p className="text-xs text-gray-500">Once-a-month tasks.</p>
+                                    </button>
+                                </div>
                             </div>
                             
                             <div className="pt-4 border-t border-gray-200">
                                 <h3 className="text-lg font-semibold text-gray-700 mb-3">Checklist Questions</h3>
                                 <div className="space-y-4">
                                     {checklistQuestions.map((q, index) => (
-                                    <div key={index} className="space-y-3">
+                                    <div key={index} className="space-y-3 bg-gray-50 p-4 rounded-lg border">
                                         <div className="flex justify-between items-center">
-                                            <label className="block text-sm font-medium text-gray-700">Question Text</label>
+                                            <label className="block text-sm font-medium text-gray-700">Question {index + 1}</label>
                                             {index > 0 && <button type="button" onClick={() => handleRemoveQuestion(index)} className="text-red-500 hover:text-red-700 font-bold text-xl leading-none p-1">&times;</button>}
                                         </div>
-                                        <textarea 
-                                            placeholder="e.g., Arrived 5 mins early and set up front desk..." 
-                                            value={q.questionText} 
-                                            onChange={(e) => handleQuestionChange(index, 'questionText', e.target.value)} 
-                                            className="w-full border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500" 
-                                            rows={2}
-                                        />
+                                        <textarea placeholder="e.g., Arrived 5 mins early and set up front desk..." value={q.questionText} onChange={(e) => handleQuestionChange(index, 'questionText', e.target.value)} className="w-full border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500" rows={2} />
                                         <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-medium text-gray-500 mb-1">Response Type</label>
                                             <select value={q.responseType} onChange={(e) => handleQuestionChange(index, 'responseType', e.target.value)} className="w-full border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
-                                            <option value="Yes/No">Yes / No</option>
-                                            <option value="Yes/No + Remarks">Yes / No + Remarks</option>
+                                                <option value="Yes/No">Yes / No</option>
+                                                <option value="Yes/No + Remarks">Yes / No + Remarks</option>
                                             </select>
                                         </div>
                                         <div>
                                             <label className="block text-xs font-medium text-gray-500 mb-1">Media Upload</label>
                                             <select value={q.mediaUpload} onChange={(e) => handleQuestionChange(index, 'mediaUpload', e.target.value)} className="w-full border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
-                                            <option value="None">None</option>
-                                            <option value="Optional">Optional</option>
-                                            <option value="Required">Required</option>
+                                                <option value="None">None</option>
+                                                <option value="Optional">Optional</option>
+                                                <option value="Required">Required</option>
                                             </select>
                                         </div>
                                         </div>
                                     </div>
                                     ))}
                                 </div>
-                                <button type="button" onClick={handleAddQuestion} className="mt-4 text-sm text-blue-600 font-semibold hover:text-blue-800 transition-colors">+ Add Question</button>
+                                <div className="text-center">
+                                    <button type="button" onClick={handleAddQuestion} className="mt-4 text-sm text-blue-600 font-semibold hover:text-blue-800 transition-colors">+ Add Question</button>
+                                </div>
                             </div>
 
                             <div className="flex justify-end gap-4 pt-6 mt-4 border-t border-gray-200">

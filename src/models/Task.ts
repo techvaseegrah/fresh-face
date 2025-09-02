@@ -1,5 +1,3 @@
-// src/models/Task.ts - FINAL CORRECTED VERSION
-
 import mongoose, { Document, Schema, Model, Types } from 'mongoose';
 
 // --- Interfaces ---
@@ -20,7 +18,6 @@ export interface ITask extends Document {
   taskName: string;
   assignedTo?: Types.ObjectId;
   position: string;
-  // ✅ UPDATED: The list of allowed statuses now includes your full workflow.
   status: 'Ongoing' | 'Overdue' | 'Completed' | 'Pending' | 'Awaiting Review' | 'Approved' | 'Rejected';
   priority: 'High' | 'Medium' | 'Low' | 'None';
   dueDate: Date;
@@ -31,6 +28,8 @@ export interface ITask extends Document {
   parentTaskId?: Types.ObjectId;
   checklistQuestions?: IChecklistQuestion[];
   checklistAnswers?: IChecklistAnswer[];
+  // --- LINE ADDED HERE ---
+  reviewedAt?: Date; // To store the timestamp of the approval/rejection
 }
 
 // --- Schemas ---
@@ -52,7 +51,6 @@ const TaskSchema: Schema<ITask> = new Schema({
   taskName: { type: String, required: true, trim: true },
   assignedTo: { type: Schema.Types.ObjectId, ref: 'Staff' },
   position: { type: String, required: true, trim: true },
-  // ✅ UPDATED: The enum in the schema must match the interface exactly.
   status: { type: String, enum: ['Ongoing', 'Overdue', 'Completed', 'Pending', 'Awaiting Review', 'Approved', 'Rejected'], default: 'Pending' },
   priority: { type: String, enum: ['High', 'Medium', 'Low', 'None'], default: 'None' },
   dueDate: { type: Date, required: true },
@@ -63,6 +61,10 @@ const TaskSchema: Schema<ITask> = new Schema({
   parentTaskId: { type: Schema.Types.ObjectId, ref: 'Task' },
   checklistQuestions: [ChecklistQuestionSchema],
   checklistAnswers: [ChecklistAnswerSchema],
+  // --- FIELD ADDED HERE ---
+  reviewedAt: {
+    type: Date, // Defines the field in the database
+  },
 }, { timestamps: true });
 
 TaskSchema.index({ tenantId: 1, status: 1 });

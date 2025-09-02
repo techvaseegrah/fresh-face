@@ -1,5 +1,3 @@
-// src/app/api/tasks/review/route.ts - FINAL VERSION
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Task from '@/models/Task';
@@ -32,7 +30,11 @@ export async function POST(request: NextRequest) {
         status: 'Awaiting Review', // Only act on tasks that are ready for review
       },
       {
-        $set: { status: newStatus },
+        // --- THIS IS THE ONLY CHANGE ---
+        $set: {
+          status: newStatus,
+          reviewedAt: new Date(), // This line was added
+        },
       }
     );
 

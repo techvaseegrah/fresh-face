@@ -66,7 +66,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         assignedTo: { $in: staffIds },
         dueDate: { $gte: startDate, $lte: endDate },
         isGroupMaster: { $ne: true },
-      }).select('_id taskName assignedTo dueDate status checklistAnswers').lean();
+        // --- THIS IS THE ONLY CHANGE ---
+        // 'reviewedAt' has been added to the select list.
+      }).select('_id taskName assignedTo dueDate status checklistAnswers reviewedAt').lean();
 
       const reportData = {
           staff: staffMembers,

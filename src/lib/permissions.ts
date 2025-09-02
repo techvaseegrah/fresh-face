@@ -165,11 +165,6 @@ export const PERMISSIONS = {
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 
-  // Task & Issue Management
-  TASKS_READ: 'tasks:read',
-  TASKS_MANAGE: 'tasks:manage',
-  ISSUES_READ: 'issues:read',
-  ISSUES_MANAGE: 'issues:manage',
   
   // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Task Management (like SOP)
@@ -209,7 +204,6 @@ export const PERMISSION_CATEGORIES = {
   SOP_MANAGEMENT: 'SOP Management',
   TELECALLING_MANAGEMENT: 'Telecalling Management',
   BACK_OFFICE_MANAGEMENT:'Back Office Management',
-  TASK_ISSUE_MANAGEMENT: 'Task & Issue Management',
   // ▼▼▼ ADD THIS LINE ▼▼▼
   TASK_MANAGEMENT: 'Task Management',
   // ▲▲▲ END OF ADDITION ▲▲▲
@@ -381,11 +375,6 @@ export const ALL_PERMISSIONS = [
       category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT 
     },
     
-  // Task & Issue Management
-  { permission: PERMISSIONS.TASKS_READ, description: 'View tasks', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
-  { permission: PERMISSIONS.TASKS_MANAGE, description: 'Create, update, assign, and delete tasks', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
-  { permission: PERMISSIONS.ISSUES_READ, description: 'View issues', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
-  { permission: PERMISSIONS.ISSUES_MANAGE, description: 'Create, update, assign, and delete issues', category: PERMISSION_CATEGORIES.TASK_ISSUE_MANAGEMENT },
   
   // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Task Management

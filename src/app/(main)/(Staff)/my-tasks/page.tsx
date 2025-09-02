@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, ChangeEvent } from 'react';
 import { useSession } from 'next-auth/react';
 
-// --- Interfaces (These should match your Task model) ---
+// --- Interfaces (No changes) ---
 interface IChecklistQuestion {
   questionText: string;
   responseType: 'Yes/No' | 'Yes/No + Remarks';
@@ -25,7 +25,7 @@ interface ITaskViewModel {
   checklistQuestions?: IChecklistQuestion[];
 }
 
-// --- Reusable Media Preview Modal ---
+// --- Reusable Media Preview Modal (No changes) ---
 const MediaPreviewModal = ({ mediaUrl, onClose }: { mediaUrl: string; onClose: () => void; }) => {
     const isVideo = ['.mp4', '.webm', '.ogg'].some(ext => mediaUrl.toLowerCase().endsWith(ext));
     return (
@@ -44,7 +44,7 @@ const MediaPreviewModal = ({ mediaUrl, onClose }: { mediaUrl: string; onClose: (
     );
 };
 
-// --- Reusable Checklist Modal ---
+// --- Reusable Checklist Modal (No changes) ---
 const ChecklistModal = ({ task, onClose, onSubmit }: { task: ITaskViewModel, onClose: () => void, onSubmit: (answers: IChecklistAnswer[], taskId: string) => void }) => {
   const [answers, setAnswers] = useState<IChecklistAnswer[]>(
     task.checklistQuestions?.map(q => ({ questionText: q.questionText, answer: null, remarks: '', mediaUrl: '' })) || []
@@ -61,11 +61,7 @@ const ChecklistModal = ({ task, onClose, onSubmit }: { task: ITaskViewModel, onC
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>, index: number) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        alert("File is too large. Maximum size is 10MB.");
-        return;
-    }
+    if (file.size > 10 * 1024 * 1024) { alert("File is too large. Maximum size is 10MB."); return; }
     setUploadingIndex(index);
     try {
         const fileData = await new Promise<string>((resolve, reject) => {
@@ -74,12 +70,7 @@ const ChecklistModal = ({ task, onClose, onSubmit }: { task: ITaskViewModel, onC
             reader.onload = () => resolve(reader.result as string);
             reader.onerror = error => reject(error);
         });
-
-        const response = await fetch('/api/tasks/upload-media', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileData }),
-        });
+        const response = await fetch('/api/tasks/upload-media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileData }), });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Upload failed.');
         handleAnswerChange(index, 'mediaUrl', result.url);
@@ -91,16 +82,9 @@ const ChecklistModal = ({ task, onClose, onSubmit }: { task: ITaskViewModel, onC
   };
 
   const handleSubmit = () => {
-    // Validation check before submitting
     for (let i = 0; i < (task.checklistQuestions?.length ?? 0); i++) {
-        if (!answers[i].answer) {
-            alert(`Please provide an answer for question ${i + 1}.`);
-            return;
-        }
-        if (task.checklistQuestions![i].mediaUpload === 'Required' && !answers[i].mediaUrl) {
-            alert(`A media upload is required for question ${i + 1}.`);
-            return;
-        }
+        if (!answers[i].answer) { alert(`Please provide an answer for question ${i + 1}.`); return; }
+        if (task.checklistQuestions![i].mediaUpload === 'Required' && !answers[i].mediaUrl) { alert(`A media upload is required for question ${i + 1}.`); return; }
     }
     onSubmit(answers, task._id);
   };
@@ -138,13 +122,12 @@ const ChecklistModal = ({ task, onClose, onSubmit }: { task: ITaskViewModel, onC
           </div>
         </div>
       </div>
-      {/* ✅ FIX WAS HERE: Changed 'MediaPreviewUrl' to the correct component name 'MediaPreviewModal' */}
       {mediaPreviewUrl && <MediaPreviewModal mediaUrl={mediaPreviewUrl} onClose={() => setMediaPreviewUrl(null)} />}
     </>
   );
 };
 
-// --- Main Page Component for Staff ---
+// --- Main Staff Page Component ---
 const MyTasksPage = () => {
   const { data: session, status: sessionStatus } = useSession();
   const [myTasks, setMyTasks] = useState<ITaskViewModel[]>([]);
@@ -153,16 +136,14 @@ const MyTasksPage = () => {
   const [activeFilter, setActiveFilter] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
   const [selectedTask, setSelectedTask] = useState<ITaskViewModel | null>(null);
 
+  // --- Logic and Data Fetching (No Changes) ---
   const makeApiRequest = useCallback(async (url: string, options: RequestInit = {}) => {
     if (!session?.user?.tenantId) throw new Error('Session not found.');
     const headers = new Headers(options.headers || {});
     headers.set('x-tenant-id', session.user.tenantId);
     if(options.body) headers.set('Content-Type', 'application/json');
     const response = await fetch(url, { ...options, headers });
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'API Request Failed');
-    }
+    if (!response.ok) { const err = await response.json(); throw new Error(err.error || 'API Request Failed'); }
     return response.json();
   }, [session]);
 
@@ -179,9 +160,7 @@ const MyTasksPage = () => {
     }
   }, [sessionStatus, makeApiRequest]);
 
-  useEffect(() => {
-    fetchMyTasks();
-  }, [fetchMyTasks]);
+  useEffect(() => { fetchMyTasks(); }, [fetchMyTasks]);
 
   const filteredTasks = useMemo(() => {
     const actionableTasks = myTasks.filter((task: ITaskViewModel) => task.status !== 'Approved');
@@ -204,50 +183,67 @@ const MyTasksPage = () => {
 
   const StatusDisplay = ({ task }: { task: ITaskViewModel }) => {
     switch (task.status) {
-      case 'Awaiting Review': return <span className="px-3 py-1.5 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Pending Review</span>;
-      case 'Rejected': return <button type="button" onClick={() => setSelectedTask(task)} className="bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">Resubmit</button>;
-      default: return <button type="button" onClick={() => setSelectedTask(task)} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Start Task</button>;
+      case 'Awaiting Review': return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Awaiting Review</span>;
+      case 'Rejected': return <button type="button" onClick={() => setSelectedTask(task)} className="bg-red-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold hover:bg-red-700">Resubmit</button>;
+      default: return <button type="button" onClick={() => setSelectedTask(task)} className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold hover:bg-blue-700">Start Task</button>;
     }
   };
 
   if (isLoading || sessionStatus === 'loading') {
-    return <div className="p-8 text-center">Loading your tasks...</div>;
+    return <div className="flex justify-center items-center h-screen bg-gray-50"><div className="text-center"><p className="text-lg font-semibold text-gray-700">Loading Your Tasks...</p><p className="text-sm text-gray-500">Please wait a moment.</p></div></div>;
   }
   if (error) {
-    return <div className="p-8 text-center text-red-600 bg-red-50 rounded-lg">{error}</div>;
+    return <div className="flex justify-center items-center h-screen bg-red-50"><div className="text-center p-8 border border-red-200 rounded-lg bg-white"><h2 className="text-xl font-bold text-red-600 mb-2">An Error Occurred</h2><p className="text-red-500">{error}</p></div></div>;
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen p-6">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">My Tasks</h1>
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-6">
-          {(['Daily', 'Weekly', 'Monthly'] as const).map(f => (
-            <button key={f} type="button" onClick={() => setActiveFilter(f)} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeFilter === f ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{f} Tasks</button>
-          ))}
-        </nav>
-      </div>
-      {filteredTasks.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-lg shadow-sm">
-          <h3 className="text-lg font-medium">All tasks completed!</h3>
-          <p className="mt-1 text-sm text-gray-500">No pending {activeFilter.toLowerCase()} tasks.</p>
+    <div className="bg-gray-50 min-h-screen">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-800">My Checklists</h1>
+          <p className="mt-1 text-md text-gray-500">Tasks to be completed for {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredTasks.map((task: ITaskViewModel) => (
-            <div key={task._id} className="bg-white rounded-xl shadow p-5 flex flex-col justify-between">
-              <div>
-                <p className="font-semibold text-gray-800">{task.taskName}</p>
-                <p className="text-sm text-gray-500">{task.position}</p>
-              </div>
-              <div className="mt-4 pt-4 border-t flex items-center justify-between">
-                <p className="text-sm text-gray-500">Due: {new Date(task.dueDate).toLocaleDateString()}</p>
-                <StatusDisplay task={task} />
-              </div>
+        <div className="mb-8">
+            <div className="flex items-center space-x-4">
+                {(['Daily', 'Weekly', 'Monthly'] as const).map(f => (
+                    <button key={f} onClick={() => setActiveFilter(f)} className={`relative flex items-center justify-center gap-2 px-6 py-2 rounded-lg text-sm font-medium transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${activeFilter === f ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
+                        {f === 'Daily' && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>}
+                        {f !== 'Daily' && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
+                        <span>{f}</span>
+                        {activeFilter === f && filteredTasks.length > 0 && (<span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center ring-2 ring-white">{filteredTasks.length}</span>)}
+                    </button>
+                ))}
             </div>
-          ))}
         </div>
-      )}
+        <div className="space-y-4">
+          {filteredTasks.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-lg shadow-sm">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">All tasks completed!</h3>
+              <p className="mt-1 text-sm text-gray-500">No {activeFilter.toLowerCase()} tasks are currently pending.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {/* --- ✅✅✅ MODIFICATION START HERE ✅✅✅ --- */}
+              {filteredTasks.map((task: ITaskViewModel) => (
+                <div key={task._id} className="bg-white rounded-xl shadow-md flex flex-col justify-between transform transition-all duration-300 ease-in-out hover:shadow-lg hover:scale-105 hover:-translate-y-1">
+                  {/* Card Body */}
+                  <div className="p-5">
+                      <p className="text-lg font-semibold text-gray-800 truncate">{task.taskName}</p>
+                      <p className="text-sm text-gray-500 mt-1">({task.position})</p>
+                  </div>
+                   {/* Card Footer with Due Date */}
+                  <div className="mt-2 p-5 border-t border-gray-100 flex items-center justify-between">
+                    <p className="text-sm text-gray-500">Due: <span className="font-medium">{new Date(task.dueDate).toLocaleDateString()}</span></p>
+                    <StatusDisplay task={task} />
+                  </div>
+                </div>
+              ))}
+              {/* --- ✅✅✅ MODIFICATION END HERE ✅✅✅ --- */}
+            </div>
+          )}
+        </div>
+      </div>
       {selectedTask && <ChecklistModal task={selectedTask} onClose={() => setSelectedTask(null)} onSubmit={handleSubmitChecklist} />}
     </div>
   );
