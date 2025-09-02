@@ -162,6 +162,9 @@ export const PERMISSIONS = {
   REPORT_GIFT_CARD_SOLD_MANAGE: 'reports:gift-card-sold:manage',
   REPORT_GIFT_CARD_REDEMPTION_MANAGE: 'reports:gift-card-redemption:manage',
 
+  PACKAGES_SETTINGS_READ: 'read:packages-settings',
+  PACKAGES_SETTINGS_MANAGE: 'manage:packages-settings',
+
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 

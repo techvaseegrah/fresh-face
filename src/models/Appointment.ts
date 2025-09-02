@@ -5,6 +5,25 @@ import './staff';
 import './ServiceItem';
 import './customermodel';
 import './user'; // Make sure the User model is imported for the ref
+import './CustomerPackage';
+
+const RedeemedItemSchema = new Schema({
+  customerPackageId: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'CustomerPackage', 
+    required: true 
+  },
+  redeemedItemId: { 
+    type: Schema.Types.ObjectId, 
+    required: true 
+    // We don't need a ref here as the itemType tells us which model to look in
+  },
+  redeemedItemType: { 
+    type: String, 
+    enum: ['service', 'product'], 
+    required: true 
+  },
+}, { _id: false });
 
 const appointmentSchema = new Schema({
   tenantId: { 
@@ -79,7 +98,11 @@ const appointmentSchema = new Schema({
   },
   invoiceId: { type: Schema.Types.ObjectId, ref: 'Invoice', sparse: true },
   estimatedDuration: { type: Number, required: true },
-  actualDuration: { type: Number, sparse: true }
+  actualDuration: { type: Number, sparse: true },
+   redeemedItems: {
+    type: [RedeemedItemSchema],
+    default: undefined, // Ensures the field is not created if empty
+  },
   
 }, { timestamps: true });
 

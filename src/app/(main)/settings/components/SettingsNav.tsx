@@ -1,4 +1,4 @@
-// /app/(main)/settings/components/SettingsNav.tsx
+'use client'; // This component needs to be a client component because of the hooks
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -31,11 +31,16 @@ const settingsNavigation = [
     href: '/settings/staffid', 
     permission: PERMISSIONS.SETTINGS_STAFF_ID_MANAGE 
   },
-  // --- START ADDITION ---
   { 
     name: 'Gift Cards', 
     href: '/settings/gift-cards', 
-    permission: PERMISSIONS.GIFT_CARD_SETTINGS_MANAGE 
+    permission: PERMISSIONS.GIFT_CARD_SETTINGS_MANAGE // Assuming you might change this to _READ
+  },
+  // --- START ADDITION ---
+  { 
+    name: 'Packages', 
+    href: '/settings/package', 
+    permission: PERMISSIONS.PACKAGES_SETTINGS_READ // Link visibility is controlled by the READ permission
   },
   // --- END ADDITION ---
 ];

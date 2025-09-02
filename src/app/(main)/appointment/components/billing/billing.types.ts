@@ -1,7 +1,7 @@
 // appointment/components/billing/billing.types.ts
 
 export interface BillLineItem {
-  itemType: 'service' | 'product' | 'fee';
+  itemType: 'service' | 'product' | 'fee'| 'package';
   itemId: string;
   name: string;
   unitPrice: number;
@@ -10,6 +10,10 @@ export interface BillLineItem {
   finalPrice: number;
   staffId?: string;
   isRemovable?: boolean;
+  redemptionInfo?: {
+    customerPackageId: string;
+    redeemedItemId: string;
+  };
 }
 
 export interface SearchableItem {
@@ -17,7 +21,7 @@ export interface SearchableItem {
   name: string;
   price: number;
   membershipRate?: number;
-type: 'service' | 'product' | 'fee' | 'gift_card';
+type: 'service' | 'product' | 'fee' | 'gift_card'|'package';
   categoryName?: string;
   unit?: string;
 }
@@ -74,6 +78,7 @@ export interface FinalizeBillingPayload {
     cardId: string;
     amount: number;
   };
+   packageRedemptions?: Omit<PackageRedemption, 'itemDetails'>[];
 
 }
 
@@ -116,4 +121,23 @@ export interface BillingTotals {
   totalNewPaid: number;
   balance: number;
   changeDue: number;
+}
+export interface PackageTemplate {
+  _id: string;
+  name:string;
+  price: number;
+}
+
+export interface PackageRedemption {
+  customerPackageId: string;
+  redeemedItemId: string;
+  redeemedItemType: 'service' | 'product';
+  quantityRedeemed: number;
+  // This is the full service/product object needed to add it to the bill
+  itemDetails: {
+    _id: string;
+    name: string;
+    price: number;
+    // ... any other relevant fields from your ServiceItem/Product model
+  };
 }

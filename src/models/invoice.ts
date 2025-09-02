@@ -5,7 +5,7 @@ import Counter from './Counter';
 interface ILineItem {
   tenantId: mongoose.Schema.Types.ObjectId;
   // --- MODIFICATION: Add 'gift_card' to the allowed item types ---
-  itemType: 'service' | 'product' | 'fee' | 'gift_card';
+  itemType: 'service' | 'product' | 'fee' | 'gift_card'|'package';
   itemId: string;
   name: string;
   quantity: number;
@@ -57,7 +57,7 @@ const lineItemSchema = new Schema<ILineItem>({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
   
   // --- MODIFICATION: Add 'gift_card' to the enum validator ---
-  itemType: { type: String, enum: ['service', 'product', 'fee', 'gift_card'], required: true },
+  itemType: { type: String, enum: ['service', 'product', 'fee', 'gift_card', 'package'], required: true },
   
   itemId: { type: String, required: true }, 
   name: { type: String, required: true },

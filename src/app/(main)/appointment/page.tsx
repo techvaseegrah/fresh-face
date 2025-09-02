@@ -3,7 +3,8 @@
 
 import React, { useState, useEffect, useCallback, FC } from 'react';
 import BookAppointmentForm, { NewBookingData } from './BookAppointmentForm';
-import BillingModal, { FinalizeBillingPayload, FinalizedInvoice } from './billingmodal';
+import BillingModal from './billingmodal';
+import { FinalizeBillingPayload, FinalizedInvoice, AppointmentForModal } from './components/billing/billing.types';
 import {
   PlusIcon,
   ChevronLeftIcon,
@@ -43,6 +44,11 @@ interface AppointmentWithCustomer {
     _id: string;
     invoiceNumber: string;
   } | null;
+  redeemedItems?: {
+    customerPackageId: string;
+    redeemedItemId: string;
+    redeemedItemType: 'service' | 'product';
+  }[];
 }
 
 const getStatusColor = (status: string) => {
