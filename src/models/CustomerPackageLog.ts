@@ -26,7 +26,7 @@ const CustomerPackageLogSchema = new Schema<ICustomerPackageLog>({
   quantityRedeemed: { type: Number, required: true, default: 1 },
   redemptionDate: { type: Date, default: Date.now },
   invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', required: true },
-  redeemedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  redeemedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', required: true },
 }, { timestamps: true });
 
 const CustomerPackageLog: Model<ICustomerPackageLog> = mongoose.models.CustomerPackageLog || mongoose.model<ICustomerPackageLog>('CustomerPackageLog', CustomerPackageLogSchema);

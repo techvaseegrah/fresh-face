@@ -7,14 +7,19 @@ import dbConnect from '@/lib/dbConnect';
 // --- Import all required models for this transaction ---
 import CustomerPackage from '@/models/CustomerPackage';
 import PackageTemplate from '@/models/PackageTemplate';
-import Customer from '@/models/customermodel'; // To verify customer exists
+import Customer from '@/models/customermodel';
+import Staff from '@/models/staff'; // Ensure Staff model is imported for validation if needed
 // --------------------------------------------------------
 
+// ▼▼▼ INTERFACE UPDATED ▼▼▼
+// The frontend must now send the purchasePrice
 interface SellPackageRequestBody {
   customerId: string;
   packageTemplateId: string;
+  purchasePrice: number; // Price is now a required field for the sale
   purchaseDate?: string; // Optional, defaults to now
 }
+// ▲▲▲ END OF UPDATE ▲▲▲
 
 /**
  * @method POST
@@ -24,18 +29,28 @@ interface SellPackageRequestBody {
 export async function POST(request: NextRequest) {
     try {
         const session = await getServerSession(authOptions);
-        if (!session?.user?.tenantId) {
-            return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+        // A sale must be performed by a logged-in user (staff)
+        if (!session?.user?.tenantId || !session?.user?.id) {
+            return NextResponse.json({ message: 'Unauthorized: You must be logged in to perform a sale.' }, { status: 401 });
         }
         const tenantId = session.user.tenantId;
+        const soldByStaffId = session.user.id; // Get the logged-in staff member's ID
 
         const body: SellPackageRequestBody = await request.json();
-        const { customerId, packageTemplateId, purchaseDate } = body;
+        // ▼▼▼ DESTRUCTURING UPDATED ▼▼▼
+        const { customerId, packageTemplateId, purchasePrice, purchaseDate } = body;
+        // ▲▲▲ END OF UPDATE ▲▲▲
 
         // --- Server-side Validation ---
-        if (!customerId || !packageTemplateId || !mongoose.Types.ObjectId.isValid(customerId) || !mongoose.Types.ObjectId.isValid(packageTemplateId)) {
-            return NextResponse.json({ message: 'Validation Error: Invalid customerId or packageTemplateId provided.' }, { status: 400 });
+        // ▼▼▼ VALIDATION UPDATED ▼▼▼
+        if (
+            !customerId || !packageTemplateId ||
+            !mongoose.Types.ObjectId.isValid(customerId) || !mongoose.Types.ObjectId.isValid(packageTemplateId) ||
+            typeof purchasePrice !== 'number' || purchasePrice < 0
+        ) {
+            return NextResponse.json({ message: 'Validation Error: Invalid customerId, packageTemplateId, or purchasePrice provided.' }, { status: 400 });
         }
+        // ▲▲▲ END OF UPDATE ▲▲▲
 
         await dbConnect();
 
@@ -62,6 +77,8 @@ export async function POST(request: NextRequest) {
             remainingQuantity: item.quantity,
         }));
         
+        // ▼▼▼ NEW CUSTOMER PACKAGE CREATION UPDATED ▼▼▼
+        // Now includes the two new required fields for sales reporting
         const newCustomerPackage = new CustomerPackage({
             tenantId,
             customerId,
@@ -70,8 +87,11 @@ export async function POST(request: NextRequest) {
             expiryDate,
             status: 'active',
             remainingItems,
-            packageName: template.name, // Denormalize name for easy display
+            packageName: template.name,
+            purchasePrice: purchasePrice, // Store the price of the sale
+            soldBy: soldByStaffId,      // Store the ID of the staff who made the sale
         });
+        // ▲▲▲ END OF UPDATE ▲▲▲
         
         await newCustomerPackage.save();
 

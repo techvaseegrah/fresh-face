@@ -18,7 +18,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/permissions"
 import StylistFormModal from "./StylistFormModal"
 import StylistHistoryModal from "../StylistHistoryModal"
 import ReportDownloadModal from "./../ReportDownloadModal" // <-- Import new modal
-import { downloadReport } from "@/lib/reportService" // <-- Import new service
+
 
 // Import the IStylist interface from your models
 import type { IStylist } from "@/models/Stylist"
@@ -101,7 +101,7 @@ export default function StylistManager() {
   const handleDownloadReport = async (params: { startDate: Date; endDate: Date; format: "pdf" | "excel" }) => {
     setIsDownloading(true)
     try {
-      await downloadReport('api/stylists/report',params)
+      //await downloadReport('api/stylists/report',params)
       setIsReportModalOpen(false) // Close modal on successful download trigger
     } catch (error: any) {
       alert(`Download failed: ${error.message}`) // Provide feedback to the user

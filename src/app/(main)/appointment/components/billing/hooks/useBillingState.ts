@@ -156,7 +156,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
       setIsLoadingBill(true);
       setError(null);
 
-      // Reset state fields that should be cleared on every open
       setBillItems([]);
       setPackageRedemptions([]);
       setNotes('');
@@ -164,7 +163,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
       setDiscountType('fixed');
       setAppliedGiftCard(null);
 
-      // Fetch independent data
       Promise.all([
         fetchAllActiveStaff(),
         fetchBillingProcessors(),
@@ -219,8 +217,9 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
                 membershipRate: undefined,
                 quantity: 1,
                 finalPrice: 0,
-                staffId: stylist._id,
+                staffId: '', // Corrected: Set to empty to force user selection
                 isRemovable: true,
+                isRedemption: true, // Ensure this flag is present
                 redemptionInfo: {
                   customerPackageId: itemToRedeem.customerPackageId,
                   redeemedItemId: itemToRedeem.redeemedItemId,
@@ -230,8 +229,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
           }
     
           const regularServices = appointment.serviceIds?.filter(
-            // ✅ BUG FIX: Cast both IDs to strings to correctly filter out pre-redeemed services
-            service => !finalBillItems.some(redeemed => String(redeemed.itemId) === String(service._id))
+            (service) => !finalBillItems.some(redeemed => String(redeemed.itemId) === String(service._id))
           ).map(service => {
             const finalPrice = (isMember && typeof service.membershipRate === 'number') ? service.membershipRate : service.price;
             return { itemType: 'service' as const, itemId: service._id, name: service.name, unitPrice: service.price, membershipRate: service.membershipRate, quantity: 1, finalPrice, staffId: stylist._id, isRemovable: !isCorrectionMode };
@@ -302,12 +300,27 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   
   const handleRedeemPackageItem = useCallback((redemptionData: PackageRedemption) => {
     const { itemDetails } = redemptionData;
-    const newItem: BillLineItem = { itemType: redemptionData.redeemedItemType, itemId: itemDetails._id, name: `(Package) ${itemDetails.name}`, unitPrice: itemDetails.price, membershipRate: undefined, quantity: 1, finalPrice: 0, staffId: stylist._id, isRemovable: true, redemptionInfo: { customerPackageId: redemptionData.customerPackageId, redeemedItemId: redemptionData.redeemedItemId, } };
+    const newItem: BillLineItem = {
+      itemType: redemptionData.redeemedItemType,
+      itemId: itemDetails._id,
+      name: `(Package) ${itemDetails.name}`,
+      unitPrice: itemDetails.price,
+      membershipRate: undefined,
+      quantity: 1,
+      finalPrice: 0,
+      staffId: '', // Corrected: Set to empty to force user selection
+      isRemovable: true,
+      redemptionInfo: {
+        customerPackageId: redemptionData.customerPackageId,
+        redeemedItemId: redemptionData.redeemedItemId,
+      },
+      isRedemption: true, // This flag is now correctly added
+    };
     setBillItems(prev => [...prev, newItem]);
     setPackageRedemptions(prev => [...prev, redemptionData]);
     if (newItem.itemType === 'service') { fetchInventoryImpact([...billItems, newItem]); }
     toast.success(`Redeemed "${itemDetails.name}" and added to bill.`);
-  }, [billItems, stylist._id, fetchInventoryImpact]);
+  }, [billItems, fetchInventoryImpact]);
 
   const handleFinalizeClick = useCallback(async () => {
     if (billItems.length === 0 || totals.trueGrandTotal < 0) { setError('Cannot finalize an empty or negative value bill.'); return; }
@@ -345,22 +358,10 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
 
         const invoiceData = await onFinalizeAndPay(finalPayload);
         
-        const soldPackages = billItems.filter(item => item.itemType === 'package');
-        if (soldPackages.length > 0) {
-          console.log(`Finalizing sale of ${soldPackages.length} package(s)...`);
-          try {
-            await Promise.all(soldPackages.map(pkg => tenantFetch('/api/packages/sell', { method: 'POST', body: JSON.stringify({ customerId: customer._id, packageTemplateId: pkg.itemId, }) })));
-            toast.success("Package(s) successfully assigned to customer!");
-          } catch (packageError) {
-            console.error("CRITICAL: Invoice was created but the package sale failed.", packageError);
-            toast.error("Error assigning package. Please do it manually from CRM or contact support.");
-          }
-        }
-        
         setFinalizedInvoiceData(invoiceData);
         setModalView('success');
     } catch (err: any) { setError(err.message || "An unknown error occurred during finalization."); } finally { setIsLoading(false); }
-  }, [ billItems, totals, selectedStaffId, originalPaymentDetails, newPaymentDetails, appointment, customer, stylist, notes, membershipGranted, discount, discountType, onFinalizeAndPay, appliedGiftCard, tenantFetch, packageRedemptions ]);
+  }, [ billItems, totals, selectedStaffId, originalPaymentDetails, newPaymentDetails, appointment, customer, stylist, notes, membershipGranted, discount, discountType, onFinalizeAndPay, appliedGiftCard, packageRedemptions ]);
   
   // =================================================================================
   // VII. RETURNED VALUES

@@ -65,20 +65,17 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
     ];
     
-    // Original SOP sub-items (unchanged)
     const sopSubItems: NavSubItem[] = [
       { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) },
       { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
       { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
     ];
 
-    // ▼▼▼ NEW: Task Management sub-items ▼▼▼
     const taskSubItems: NavSubItem[] = [
         { href: '/task', label: 'Task Library', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_READ]) },
         { href: '/task/my-tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_SUBMIT_CHECKLIST]) },
         { href: '/task/compliance', label: 'Task Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_REPORTS_READ]) }
     ];
-    // ▲▲▲ END OF ADDITION ▲▲▲
 
     const telecallingSubItems: NavSubItem[] = [
       { href: '/telecalling', label: 'Workspace', icon: <PhoneForwarded className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM]) },
@@ -131,6 +128,20 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           icon: <DocumentTextIcon className="h-5 w-5" />, 
           show: hasAnyPermission(userPermissions, [PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ]) 
       },
+      // ▼▼▼ ADD THIS BLOCK ▼▼▼
+      { 
+          href: '/reports/package-sales', 
+          label: 'Package Sales', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.PACKAGES_REPORTS_READ]) 
+      },
+      { 
+          href: '/reports/package-redemptions', 
+          label: 'Package Redemptions', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.PACKAGES_REPORTS_READ]) 
+      },
+      // ▲▲▲ END OF ADDITION ▲▲▲
     ];
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
@@ -138,7 +149,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const canSeeBudgetManagement = budgetSubItems.some(item => item.show);
     const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
-    const canSeeTaskManagement = taskSubItems.some(item => item.show); // New
+    const canSeeTaskManagement = taskSubItems.some(item => item.show);
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
     const canSeeReports = reportSubItems.some(item => item.show);
     
@@ -164,13 +175,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       
-      // Original SOP Management section (unchanged)
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
-
-      // ▼▼▼ NEW: Task Management main menu item ▼▼▼
       { href: '/task-management', label: 'Task Management', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: canSeeTaskManagement, subItems: taskSubItems.filter(item => item.show) },
-      // ▲▲▲ END OF ADDITION ▲▲▲
-
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
       { 
         href: '/back-office/reconciliation', 
@@ -184,7 +190,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
   }, [userPermissions]);
   
-  // ... (The rest of the file is unchanged)
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {

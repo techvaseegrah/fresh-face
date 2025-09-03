@@ -438,7 +438,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     } finally {
       setIsLoadingCustomerDetails(false);
     }
-  }, [tenantAwareFetch, isLoadingCustomerDetails]);
+  }, [tenantAwareFetch]);
 
   useEffect(() => {
     if (searchMode !== 'phone') return;

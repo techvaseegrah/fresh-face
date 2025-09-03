@@ -19,8 +19,11 @@ export interface ICustomerPackage extends Document {
   expiryDate: Date;
   status: 'active' | 'completed' | 'expired';
   remainingItems: IRemainingItem[];
-  // We can store a denormalized name for easier display
   packageName: string; 
+  // ▼▼▼ ADD THESE TWO FIELDS TO THE INTERFACE ▼▼▼
+  purchasePrice: number;
+  soldBy: mongoose.Schema.Types.ObjectId;
+  // ▲▲▲ END OF ADDITION ▲▲▲
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +44,19 @@ const CustomerPackageSchema = new Schema<ICustomerPackage>({
   status: { type: String, enum: ['active', 'completed', 'expired'], default: 'active', index: true },
   remainingItems: [RemainingItemSchema],
   packageName: { type: String, required: true },
+
+  // ▼▼▼ ADD THESE TWO FIELDS TO THE SCHEMA DEFINITION ▼▼▼
+  purchasePrice: {
+    type: Number,
+    required: true,
+  },
+  soldBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Staff', // This must match your Staff model name
+    required: true,
+  },
+  // ▲▲▲ END OF ADDITION ▲▲▲
+
 }, { timestamps: true });
 
 const CustomerPackage: Model<ICustomerPackage> = mongoose.models.CustomerPackage || mongoose.model<ICustomerPackage>('CustomerPackage', CustomerPackageSchema);

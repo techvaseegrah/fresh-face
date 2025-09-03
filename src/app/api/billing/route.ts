@@ -1,7 +1,5 @@
 // ===================================================================================
-//  API ROUTE: /api/billing
-//  Handles the entire billing finalization process for an appointment.
-//  This is a critical, transactional endpoint.
+//  API ROUTE: /api/billing (Updated as per request)
 // ===================================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -25,6 +23,8 @@ import { GiftCard } from '@/models/GiftCard';
 import { GiftCardLog } from '@/models/GiftCardLog';
 import CustomerPackage from '@/models/CustomerPackage';
 import CustomerPackageLog from '@/models/CustomerPackageLog';
+import PackageTemplate from '@/models/PackageTemplate';
+import Staff from '@/models/staff';
 
 const MEMBERSHIP_FEE_ITEM_ID = 'MEMBERSHIP_FEE_PRODUCT_ID';
 
@@ -49,9 +49,9 @@ export async function POST(req: NextRequest) {
 
   const dbSession = await mongoose.startSession();
   
-  // Declare variables in a higher scope to be accessible throughout the function
   let createdInvoiceId: mongoose.Types.ObjectId | null = null;
   let pointsEarned = 0;
+  const newlySoldPackages = [];
   const body = await req.json();
   const {
       appointmentId, customerId, stylistId, billingStaffId, items,
@@ -61,14 +61,14 @@ export async function POST(req: NextRequest) {
       giftCardRedemption, packageRedemptions,
   } = body;
 
-  // ===================================================================================
-  // --- START: CRITICAL DATABASE TRANSACTION BLOCK ---
-  // All database writes must happen inside this try...catch block.
-  // ===================================================================================
   try {
     dbSession.startTransaction();
     await connectToDatabase();
-    
+
+    // --- CHANGE 1: REMOVED BILLER VERIFICATION ---
+    // The check for an associated staff profile for the billing user has been removed.
+    // Any logged-in user can now process a bill.
+
     const lineItemsWithTenantId = items.map((item: any) => ({ ...item, tenantId: tenantId, }));
 
     const totalPaidByMethods = Object.values(paymentDetails).reduce((sum: number, amount: unknown) => sum + (Number(amount) || 0), 0);
@@ -91,26 +91,42 @@ export async function POST(req: NextRequest) {
       for (const redemption of packageRedemptions) {
         const { customerPackageId, redeemedItemId, redeemedItemType, quantityRedeemed } = redemption;
         const customerPackage = await CustomerPackage.findOne({ _id: customerPackageId, tenantId }).session(dbSession);
-
-          if (!customerPackage) { 
-              throw new Error(`Package not found.`); 
-          }
-
-          // THIS IS THE CRITICAL PART
-          if (customerPackage.status !== 'active' || new Date() > customerPackage.expiryDate) {
-              // We can also perform a "just-in-time" update to fix the status
-              if (customerPackage.status === 'active') {
-                  customerPackage.status = 'expired';
-                  await customerPackage.save({ session: dbSession });
-              }
-              throw new Error(`Package redemption failed: The package is not active or has expired.`);
-          }
+        if (!customerPackage) { throw new Error(`Package not found.`); }
+        if (customerPackage.status !== 'active' || new Date() > customerPackage.expiryDate) {
+            if (customerPackage.status === 'active') { customerPackage.status = 'expired'; await customerPackage.save({ session: dbSession }); }
+            throw new Error(`Package redemption failed: The package is not active or has expired.`);
+        }
         const itemToRedeem = customerPackage.remainingItems.find((item) => item.itemId.toString() === redeemedItemId && item.itemType === redeemedItemType);
         if (!itemToRedeem || itemToRedeem.remainingQuantity < quantityRedeemed) { throw new Error(`Package redemption failed: Insufficient quantity for item ${redeemedItemId}.`); }
         itemToRedeem.remainingQuantity -= quantityRedeemed;
         if (customerPackage.remainingItems.every(item => item.remainingQuantity === 0)) { customerPackage.status = 'completed'; }
         await customerPackage.save({ session: dbSession });
       }
+    }
+
+    const packageItemsToSell = items.filter((item: any) => item.itemType === 'package');
+    for (const packageItem of packageItemsToSell) {
+      const packageTemplateId = packageItem.itemId;
+      const purchasePrice = packageItem.finalPrice;
+      const template = await PackageTemplate.findById(packageTemplateId).session(dbSession).lean();
+      if (!template || !template.isActive) { throw new Error(`The package "${packageItem.name}" is no longer available for sale.`); }
+      const purchaseDate = new Date();
+      const expiryDate = new Date(purchaseDate);
+      expiryDate.setDate(expiryDate.getDate() + template.validityInDays);
+      const remainingItems = template.items.map(item => ({ itemType: item.itemType, itemId: item.itemId, totalQuantity: item.quantity, remainingQuantity: item.quantity, }));
+      
+      // --- CHANGE 2: ENFORCE AND USE ITEM-LEVEL STAFF ID FOR SALES ---
+      const staffIdForSale = packageItem.staffId;
+      if (!staffIdForSale) {
+        throw new Error(`The package "${packageItem.name}" must be assigned to a staff member to be sold.`);
+      }
+
+      const newCustomerPackage = new CustomerPackage({
+        tenantId, customerId, packageTemplateId, purchaseDate, expiryDate, status: 'active', remainingItems, packageName: template.name, purchasePrice: purchasePrice, 
+        soldBy: staffIdForSale, // Correctly uses the staff from the dropdown
+      });
+      await newCustomerPackage.save({ session: dbSession });
+      newlySoldPackages.push(newCustomerPackage.toObject());
     }
 
     const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
@@ -145,17 +161,32 @@ export async function POST(req: NextRequest) {
 
     if (giftCardRedemption && giftCardRedemption.cardId && giftCardRedemption.amount > 0) { const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession); if (giftCard) { await GiftCardLog.create([{ tenantId, giftCardId: giftCardRedemption.cardId, invoiceId: createdInvoiceId, customerId, amountRedeemed: giftCardRedemption.amount, balanceBefore: giftCard.currentBalance + giftCardRedemption.amount, balanceAfter: giftCard.currentBalance, }], { session: dbSession }); } }
     
+    // --- CHANGE 3: ENFORCE AND USE ITEM-LEVEL STAFF ID FOR REDEMPTIONS ---
     if (packageRedemptions && Array.isArray(packageRedemptions) && packageRedemptions.length > 0) {
-      const logEntries = packageRedemptions.map(redemption => ({
-        tenantId,
-        customerPackageId: redemption.customerPackageId,
-        customerId: customerId,
-        redeemedItemId: redemption.redeemedItemId,
-        redeemedItemType: redemption.redeemedItemType,
-        quantityRedeemed: redemption.quantityRedeemed,
-        invoiceId: createdInvoiceId,
-        redeemedBy: billingStaffId,
-      }));
+      const logEntries = packageRedemptions.map(redemption => {
+        const billItem = items.find((item: any) =>
+            item.itemId === redemption.redeemedItemId &&
+            item.itemType === redemption.redeemedItemType &&
+            (item.isRedemption || item.finalPrice === 0)
+        );
+        const staffIdForRedemption = billItem?.staffId;
+        if (!staffIdForRedemption) {
+          // Construct a better item name for the error message
+          const redeemedItemName = items.find(i => i.itemId === redemption.redeemedItemId)?.name || `item ID ${redemption.redeemedItemId}`;
+          throw new Error(`A staff member must be assigned to the redeemed item: "${redeemedItemName}".`);
+        }
+        
+        return {
+          tenantId,
+          customerPackageId: redemption.customerPackageId,
+          customerId: customerId,
+          redeemedItemId: redemption.redeemedItemId,
+          redeemedItemType: redemption.redeemedItemType,
+          quantityRedeemed: redemption.quantityRedeemed,
+          invoiceId: createdInvoiceId,
+          redeemedBy: staffIdForRedemption, // Correctly uses the staff from the dropdown
+        };
+      });
       await CustomerPackageLog.create(logEntries, { session: dbSession });
     }
 
@@ -188,9 +219,6 @@ export async function POST(req: NextRequest) {
     const errorMessage = error.message || String(error);
     return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   }
-  // --- END: CRITICAL DATABASE TRANSACTION BLOCK ---
-  
-  // If we reach this point, the transaction was successful and payment is secured.
   
   const newlyIssuedCards = [];
   try {
@@ -205,7 +233,6 @@ export async function POST(req: NextRequest) {
         if (!response.ok) { throw new Error(`Failed to issue gift card, status: ${response.status}`); }
         const issuedCard = await response.json();
         newlyIssuedCards.push(issuedCard);
-        console.log(`Successfully triggered gift card issue for template: ${item.itemId}`);
       }
     }
 
@@ -256,6 +283,7 @@ export async function POST(req: NextRequest) {
       billingStaff: { name: billingStaffName },
       giftCardPayment: populatedInvoice.giftCardPayment,
       issuedGiftCards: newlyIssuedCards,
+      soldPackages: newlySoldPackages,
     };
     
     return NextResponse.json({ success: true, invoice: responsePayload, });

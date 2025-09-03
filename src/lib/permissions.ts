@@ -162,20 +162,23 @@ export const PERMISSIONS = {
   REPORT_GIFT_CARD_SOLD_MANAGE: 'reports:gift-card-sold:manage',
   REPORT_GIFT_CARD_REDEMPTION_MANAGE: 'reports:gift-card-redemption:manage',
 
+  // Package Permissions
   PACKAGES_SETTINGS_READ: 'read:packages-settings',
   PACKAGES_SETTINGS_MANAGE: 'manage:packages-settings',
+  
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  PACKAGES_REPORTS_READ: 'packages:reports:read',
+  PACKAGES_REPORTS_MANAGE: 'packages:reports:manage',
+  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 
-  
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Task Management (like SOP)
   TASK_READ: 'task:read',
   TASK_MANAGE: 'task:manage',
   TASK_SUBMIT_CHECKLIST: 'task:submit_checklist',
   TASK_REPORTS_READ: 'task:reports:read',
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
   ALL: '*'
 } as const;
@@ -207,9 +210,7 @@ export const PERMISSION_CATEGORIES = {
   SOP_MANAGEMENT: 'SOP Management',
   TELECALLING_MANAGEMENT: 'Telecalling Management',
   BACK_OFFICE_MANAGEMENT:'Back Office Management',
-  // ▼▼▼ ADD THIS LINE ▼▼▼
   TASK_MANAGEMENT: 'Task Management',
-  // ▲▲▲ END OF ADDITION ▲▲▲
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -301,13 +302,20 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.SETTINGS_STAFF_ID_MANAGE, description: 'Manage staff ID settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.POSITION_HOURS_SETTINGS_MANAGE, description: 'Manage position hours settings', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
   { permission: PERMISSIONS.GIFT_CARD_SETTINGS_MANAGE, description: 'Manage gift card templates', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.PACKAGES_SETTINGS_READ, description: 'View package templates', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
+  { permission: PERMISSIONS.PACKAGES_SETTINGS_MANAGE, description: 'Manage package templates', category: PERMISSION_CATEGORIES.SETTINGS_MANAGEMENT },
 
   // Reports Access
   { permission: PERMISSIONS.SALES_REPORT_READ, description: 'View sales reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ, description: 'View the Gift Card Sold report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ, description: 'View the Gift Card Redemption report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
-   { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE, description: 'Download the Gift Card Sold report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE, description: 'Download the Gift Card Sold report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_MANAGE, description: 'Download the Gift Card Redemption report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  { permission: PERMISSIONS.PACKAGES_REPORTS_READ, description: 'View Package Sales and Redemption reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.PACKAGES_REPORTS_MANAGE, description: 'Download Package reports (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
@@ -379,13 +387,11 @@ export const ALL_PERMISSIONS = [
     },
     
   
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Task Management
   { permission: PERMISSIONS.TASK_READ, description: 'View assigned Tasks and checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_MANAGE, description: 'Create, update, and delete all Tasks', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_SUBMIT_CHECKLIST, description: 'Submit daily Task checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_REPORTS_READ, description: 'View Task compliance reports for all staff', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
