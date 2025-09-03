@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
   Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
-  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, // ✅ IMPORT EyeOff
+  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff,
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -145,7 +145,7 @@ const AddStaffPage: React.FC = () => {
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
   const [viewingDocument, setViewingDocument] = useState<{ src: string | null; title: string; }>({ src: null, title: "" });
-  const [showPassword, setShowPassword] = useState(false); // ✅ STATE FOR PASSWORD VISIBILITY
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const fetchNextId = async (tenantId: string) => {
@@ -191,8 +191,20 @@ const AddStaffPage: React.FC = () => {
     }
   }, [contextPositionOptions, formData.position]);
 
+  // --- MODIFIED: Added real-time input validation ---
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData((prevData) => ({ ...prevData, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    let processedValue = value;
+
+    if (name === "name") {
+      // Allow only letters and spaces
+      processedValue = value.replace(/[^a-zA-Z\s]/g, "");
+    } else if (name === "phone" || name === "aadharNumber" || name === "salary") {
+      // Allow only numbers
+      processedValue = value.replace(/[^0-9]/g, "");
+    }
+
+    setFormData((prevData) => ({ ...prevData, [name]: processedValue }));
   };
 
   const handleFileChange = (fieldName: keyof StaffFormData, fileData: string | null) => {
@@ -291,7 +303,8 @@ const AddStaffPage: React.FC = () => {
           </div>
           <div>
             <IconLabel htmlFor="name" icon={<User size={14} className="text-gray-500" />} text="Full Name*"/>
-            <input id="name" name="name" type="text" required value={formData.name} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
+            {/* --- MODIFIED: Added maxLength --- */}
+            <input id="name" name="name" type="text" required maxLength={50} value={formData.name} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
             <IconLabel htmlFor="email" icon={<Mail size={14} className="text-gray-500" />} text="Email Address"/>
@@ -299,27 +312,27 @@ const AddStaffPage: React.FC = () => {
           </div>
           <div>
             <IconLabel htmlFor="phone" icon={<Phone size={14} className="text-gray-500" />} text="Phone Number*"/>
-            <input id="phone" name="phone" type="tel" required value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
+            {/* --- MODIFIED: Added maxLength --- */}
+            <input id="phone" name="phone" type="tel" required maxLength={10} value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
             <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number*"/>
             <input id="aadharNumber" name="aadharNumber" type="text" required pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
 
-          {/* ✅ MODIFIED PASSWORD FIELD WITH VISIBILITY TOGGLE */}
           <div>
             <IconLabel htmlFor="password" icon={<ShieldCheck size={14} className="text-gray-500" />} text="Password*"/>
             <div className="relative">
               <input 
                 id="password" 
                 name="password" 
-                type={showPassword ? "text" : "password"} // ✅ DYNAMIC TYPE
+                type={showPassword ? "text" : "password"}
                 required 
                 minLength={6}
-                maxLength={15} // ✨ ADDED MAX LENGTH ✨
+                maxLength={15}
                 value={formData.password} 
                 onChange={handleInputChange} 
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100 pr-10" // ✅ ADD PADDING RIGHT FOR ICON
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100 pr-10"
                 disabled={isSubmitting}
                 placeholder="Min. 6 characters,Max. 15 characters"
               />
@@ -360,7 +373,7 @@ const AddStaffPage: React.FC = () => {
           </div>
           <div>
             <IconLabel htmlFor="salary" icon={<IndianRupee size={14} className="text-gray-500" />} text="Monthly Salary*"/>
-            <input id="salary" name="salary" type="number" required min="0" step="any" value={formData.salary} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
+            <input id="salary" name="salary" type="text" required min="0" value={formData.salary} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div className="md:col-span-2">
             <IconLabel htmlFor="address" icon={<MapPin size={14} className="text-gray-500" />} text="Address"/>

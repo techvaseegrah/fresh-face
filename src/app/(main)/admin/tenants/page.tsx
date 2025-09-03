@@ -304,7 +304,8 @@ export default function TenantsPage() {
         <form onSubmit={handleCreateSubmit} className="space-y-4">
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createStoreName">Store Name</label>
-             <input id="createStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+             {/* --- MODIFIED: Added validation for letters and spaces only --- */}
+             <input id="createStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))} className="w-full px-3 py-2 border rounded-lg" required />
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createAddress">Store Address</label>
@@ -312,7 +313,8 @@ export default function TenantsPage() {
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createPhone">Store Phone</label>
-             <input id="createPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+             {/* --- MODIFIED: Added validation for numbers only and maxLength --- */}
+             <input id="createPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))} maxLength={10} className="w-full px-3 py-2 border rounded-lg" />
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createGstin">GSTIN (Optional)</label>
@@ -322,7 +324,8 @@ export default function TenantsPage() {
            <h3 className="text-xl font-semibold pt-2">Store Administrator Account</h3>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createAdminName">Admin's Full Name</label>
-             <input id="createAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+             {/* --- MODIFIED: Added validation for letters and spaces only --- */}
+             <input id="createAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))} className="w-full px-3 py-2 border rounded-lg" required />
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createAdminEmail">Admin's Email (Login ID)</label>
@@ -351,7 +354,8 @@ export default function TenantsPage() {
         <form onSubmit={handleEditSubmit} className="space-y-4">
             <div>
                 <label className="block text-gray-700 font-bold mb-2" htmlFor="editStoreName">Store Name</label>
-                <input id="editStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+                 {/* --- MODIFIED: Added validation for letters and spaces only --- */}
+                <input id="editStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))} className="w-full px-3 py-2 border rounded-lg" required />
             </div>
             <div>
               <label className="block text-gray-700 font-bold mb-2" htmlFor="editAddress">Store Address</label>
@@ -359,7 +363,8 @@ export default function TenantsPage() {
             </div>
             <div>
               <label className="block text-gray-700 font-bold mb-2" htmlFor="editPhone">Store Phone</label>
-              <input id="editPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+              {/* --- MODIFIED: Added validation for numbers only and maxLength --- */}
+              <input id="editPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))} maxLength={10} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
               <label className="block text-gray-700 font-bold mb-2" htmlFor="editGstin">GSTIN (Optional)</label>
@@ -369,7 +374,8 @@ export default function TenantsPage() {
             <h3 className="text-xl font-semibold pt-2">Store Administrator Account</h3>
              <div>
                <label className="block text-gray-700 font-bold mb-2" htmlFor="editAdminName">Admin's Full Name</label>
-               <input id="editAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+               {/* --- MODIFIED: Added validation for letters and spaces only --- */}
+               <input id="editAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))} className="w-full px-3 py-2 border rounded-lg" required />
              </div>
              <div>
                <label className="block text-gray-700 font-bold mb-2" htmlFor="editAdminEmail">Admin's Email (Login ID)</label>

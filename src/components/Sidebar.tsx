@@ -1,4 +1,4 @@
-// You can place this file at a path like: src/components/Sidebar.tsx
+// src/components/Sidebar.tsx
 'use client';
 
 import Link from 'next/link';
@@ -30,14 +30,14 @@ const TargetIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentC
 const IncentivesIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path></svg> );
 const SwiftIcon = () => ( <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> );
 
-// --- LOGO ICON FOR COLLAPSED SIDEBAR ---
+// --- LOGO ICON FOR COLLAPSED SIDEBAR (ENLARGED) ---
 const LogoIcon = () => (
-    <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-800">
-        <Image 
+    <div className="relative h-12 w-12 overflow-hidden rounded-full">
+        <Image
             src="/image.png" // Path to your Salon Capp logo
             alt="Salon Capp Icon"
             fill
-            className="object-contain p-1" // Use contain to fit inside the circle
+            className="object-contain"
         />
     </div>
 );
@@ -57,9 +57,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
   
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
 
-  // --- NAVIGATION DATA (no changes here) ---
+  // --- NAVIGATION DATA ---
   const navItems = useMemo((): NavItemConfig[] => {
-    // ... (Your navItems array is perfectly fine, no changes needed here)
+    // ... (Your navItems array definition remains unchanged)
     const reportSubItems: NavSubItem[] = [
       { href: '/sales-report', label: 'Sales Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) },
     ];
@@ -172,7 +172,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
   
   const renderNavItems = (items: NavItemConfig[]) => {
     return items.filter(item => item.show).map((item) => {
-      // ... (no changes in this function)
+      // ... (This function remains unchanged)
       const isActive = isItemOrSubitemActive(item, pathname);
       const isAccordionOpen = openItemKey === item.href;
 
@@ -252,10 +252,10 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
             "flex items-center border-b border-gray-200 flex-shrink-0 transition-all duration-300",
             (isExpanded || forMobile) ? "p-4 h-[65px] justify-between" : "py-3 h-[65px] justify-center"
         )}>
-          {/* --- THIS IS THE FIXED SECTION FOR THE LOGO --- */}
+          {/* --- EXPANDED LOGO SECTION --- */}
           <div className={clsx("flex items-center gap-3", !(isExpanded || forMobile) && "opacity-0 w-0 h-0 pointer-events-none")}>
-            {/* 1. Sized container for the logo */}
-            <div className="relative h-10 w-10 flex-shrink-0">
+            {/* 1. Sized container for the logo (ENLARGED) */}
+            <div className="relative h-12 w-12 flex-shrink-0">
                 <Image
                     src="/image.png" // Your Salon Capp Logo
                     alt="Salon Capp Logo"
@@ -292,7 +292,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
         </nav>
         
         <div className="p-2 border-t border-gray-200">
-          {/* ... (no changes to user profile section) */}
+          {/* ... (user profile section remains unchanged) */}
           {session && (
              <div className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors", "hover:bg-gray-100")}>
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 flex-shrink-0">
@@ -315,7 +315,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
 
   return (
     <>
-      {/* ... (no changes to the main return structure) */}
+      {/* ... (main return structure remains unchanged) */}
       <div className={clsx(
         'fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-300 ease-in-out md:hidden',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'

@@ -19,7 +19,8 @@ import autoTable from 'jspdf-autotable';
 
 // --- Type Definitions ---
 interface Role { _id: string; displayName: string; }
-interface Staff { _id: string; name: string; roleId: Role; }
+// --- FIX 1: Allow roleId to be null to match potential database state ---
+interface Staff { _id: string; name: string; roleId: Role | null; } 
 interface ChecklistItem { _id: string; questionText: string; responseType: 'yes_no' | 'yes_no_remarks'; mediaUpload: 'none' | 'optional' | 'required'; }
 interface Checklist { _id: string; title: string; roles: string[]; checklistItems: ChecklistItem[]; }
 interface SubmissionResponse { _id: string; checklistItem: string; answer: 'yes' | 'no' | ''; remarks?: string; mediaUrl?: string; }
@@ -68,7 +69,8 @@ export default function SopReportPage() {
     // --- Helper Functions for Exports ---
     const getStatusTextForCell = (staff: Staff, date: Date): string => {
         if (!data) return "Loading...";
-        const assignedChecklists = data.checklists.filter(c => c.roles.includes(staff.roleId._id));
+        if (!staff.roleId) return "No Role";
+        const assignedChecklists = data.checklists.filter(c => c.roles.includes(staff.roleId!._id));
         const dateStringToCheck = format(date, 'yyyy-MM-dd');
         const submissionsForDay = data.submissions.filter(s => s.staff === staff._id && format(new Date(s.submissionDate), 'yyyy-MM-dd') === dateStringToCheck);
 
@@ -84,7 +86,7 @@ export default function SopReportPage() {
         if (!data) return null;
         const headers = ['Staff Member', 'Role', ...dateRange.map(date => format(date, 'MMM d'))];
         const body = data.staff.map(staff => {
-            const rowData = [staff.name, staff.roleId.displayName];
+            const rowData = [staff.name, staff.roleId?.displayName ?? 'No Role'];
             dateRange.forEach(date => rowData.push(getStatusTextForCell(staff, date)));
             return rowData;
         });
@@ -110,7 +112,6 @@ export default function SopReportPage() {
                 if (response.remarks && response.remarks.trim() !== '') {
                     const question = checklist.checklistItems.find(item => item._id === response.checklistItem);
                     body.push([
-                        // --- FIX: Removed the time component (HH:mm) ---
                         format(new Date(submission.submissionDate), 'yyyy-MM-dd'),
                         staff.name,
                         checklist.title,
@@ -176,7 +177,6 @@ export default function SopReportPage() {
             const worksheet = XLSX.utils.aoa_to_sheet([exportData.headers, ...exportData.body]);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Detailed Remarks Report');
-            // --- FIX: Adjusted date column width ---
             const colWidths = [{ wch: 12 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 40 }, { wch: 8 }, { wch: 50 }];
             worksheet['!cols'] = colWidths;
             const f_start = format(startDate, 'yyyy-MM-dd');
@@ -323,10 +323,14 @@ export default function SopReportPage() {
                                     <tr key={staff._id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white hover:bg-gray-50 z-10 border-r">
                                             <div className="font-medium text-gray-900">{staff.name}</div>
-                                            <div className="text-sm text-gray-500">{staff.roleId.displayName}</div>
+                                            {/* --- FIX 2: Applied optional chaining and a fallback value --- */}
+                                            <div className="text-sm text-gray-500">{staff.roleId?.displayName ?? 'No Role Assigned'}</div>
                                         </td>
                                         {dateRange.map(date => {
-                                            const assignedChecklists = data.checklists.filter(c => c.roles.includes(staff.roleId._id));
+                                            if (!staff.roleId) { // If staff has no role, they can't have assignments
+                                                return <td key={date.toISOString()} className="px-6 py-4 whitespace-nowrap text-center"><div title="No Role Assigned" className="flex justify-center items-center"><MinusCircleIcon className="h-6 w-6 text-gray-300" /></div></td>;
+                                            }
+                                            const assignedChecklists = data.checklists.filter(c => c.roles.includes(staff.roleId!._id));
                                             const submissionsForDay = data.submissions.filter(s => s.staff === staff._id && format(new Date(s.submissionDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
                                             let tooltipText = "No checklists assigned", statusIcon = <MinusCircleIcon className="h-6 w-6 text-gray-400" />, isClickable = false;
                                             if (assignedChecklists.length > 0) {

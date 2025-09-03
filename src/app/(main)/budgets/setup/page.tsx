@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, ElementType } from 'react';
 import { useSession } from 'next-auth/react';
 import { IBudgetItem } from '@/types/budget';
-import { PlusCircle, Trash2, Search, PiggyBank, ShoppingCart, BarChart2 } from 'lucide-react';
+import { PlusCircle, Trash2, PiggyBank, ShoppingCart, BarChart2 } from 'lucide-react';
 
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
@@ -87,16 +87,21 @@ export default function BudgetSetupPage() {
     }
   }, [month, year, status]);
 
-  const handleItemChange = (type: 'fixed' | 'variable', index: number, field: 'category' | 'amount', value: string | number) => {
+  // --- MODIFIED: Added real-time validation logic ---
+  const handleItemChange = (type: 'fixed' | 'variable', index: number, field: 'category' | 'amount', value: string) => {
     const updater = type === 'fixed' ? setFixedExpenses : setVariableExpenses;
     updater(prev => {
       const newItems = [...prev];
       const itemToUpdate = { ...newItems[index] };
 
       if (field === 'amount') {
-        itemToUpdate.amount = Number(value) || 0;
-      } else {
-        itemToUpdate.category = String(value);
+        // Allow only numbers
+        const numericValue = value.replace(/[^0-9]/g, '');
+        itemToUpdate.amount = Number(numericValue);
+      } else if (field === 'category') {
+        // Allow only letters and spaces
+        const stringValue = value.replace(/[^a-zA-Z\s]/g, '');
+        itemToUpdate.category = stringValue;
       }
       
       newItems[index] = itemToUpdate;
@@ -151,7 +156,6 @@ export default function BudgetSetupPage() {
     }
   };
   
-  // --- MODIFIED: Added border-t-4 and border-violet-500 to the container div ---
   const renderExpenseSection = (title: string, items: IBudgetItem[], type: 'fixed' | 'variable', total: number) => (
     <div className="bg-white p-6 rounded-lg shadow-md border-t-4 border-violet-500">
       <div className="flex justify-between items-center mb-4">
@@ -161,7 +165,8 @@ export default function BudgetSetupPage() {
       {items.map((item, index) => (
         <div key={index} className="grid grid-cols-12 gap-3 mb-3 items-center">
           <input type="text" placeholder="Category Name" value={item.category} onChange={(e) => handleItemChange(type, index, 'category', e.target.value)} className="col-span-6 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" />
-          <input type="number" placeholder="Amount" value={item.amount || ''} onChange={(e) => handleItemChange(type, index, 'amount', e.target.value)} className="col-span-5 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" />
+          {/* --- MODIFIED: Changed type to "text" and added inputMode for better validation control --- */}
+          <input type="text" inputMode="numeric" placeholder="Amount" value={item.amount || ''} onChange={(e) => handleItemChange(type, index, 'amount', e.target.value)} className="col-span-5 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" />
           <button type="button" onClick={() => removeItem(type, index)} className="col-span-1 flex justify-center text-red-500 hover:text-red-700 transition-colors"><Trash2 size={20} /></button>
         </div>
       ))}

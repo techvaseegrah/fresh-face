@@ -337,7 +337,6 @@ export default function ExpensesPage() {
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [paymentMethodError, setPaymentMethodError] = useState<string | null>(null);
   
-  // --- NEW: State for searchable category dropdown ---
   const [isCategoryListVisible, setIsCategoryListVisible] = useState(false);
   
   const [filterType, setFilterType] = useState('all');
@@ -428,7 +427,6 @@ export default function ExpensesPage() {
       return;
     }
     
-    // --- NEW: Validate that the entered category exists in the list ---
     if (!budgetCategoryList.find(c => c.toLowerCase() === category.toLowerCase())) {
         toast.warn(`Category "${category}" does not exist. Please select a valid one from the list.`);
         return;
@@ -565,7 +563,6 @@ export default function ExpensesPage() {
     });
   }, [allExpenses, filterType, filterFrequency, filterStartDate, filterEndDate]);
 
-  // --- NEW: Memoized list for searchable category dropdown ---
   const filteredBudgetCategories = useMemo(() => {
       if (!category) return budgetCategoryList;
       return budgetCategoryList.filter(cat => 
@@ -687,19 +684,20 @@ export default function ExpensesPage() {
                   </div>
                   <div>
                       <label htmlFor="amount" className="block text-sm font-medium text-gray-600">Amount</label>
-                      <div className="relative mt-1 rounded-md shadow-sm"><div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><span className="text-gray-500 sm:text-sm">₹</span></div><input id="amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="block w-full rounded-md border-gray-300 py-2 pl-7 pr-2 shadow-sm focus:border-gray-500 focus:ring-gray-500" required placeholder="1250.50" step="0.01"/></div>
+                       {/* --- MODIFIED: Improved Amount input validation --- */}
+                      <div className="relative mt-1 rounded-md shadow-sm"><div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><span className="text-gray-500 sm:text-sm">₹</span></div><input id="amount" type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1'))} className="block w-full rounded-md border-gray-300 py-2 pl-7 pr-2 shadow-sm focus:border-gray-500 focus:ring-gray-500" required placeholder="1250.50"/></div>
                   </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* --- MODIFIED: Searchable Budget Category Input --- */}
                   <div className="relative">
                       <label htmlFor="category-search" className="block text-sm font-medium text-gray-600">Budget Category</label>
+                      {/* --- MODIFIED: Budget Category input validation --- */}
                       <input
                         id="category-search"
                         type="text"
                         value={category}
-                        onChange={(e) => setCategory(e.target.value)}
+                        onChange={(e) => setCategory(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
                         onFocus={() => setIsCategoryListVisible(true)}
                         onBlur={() => setTimeout(() => setIsCategoryListVisible(false), 200)}
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-500 focus:border-gray-500"
@@ -730,11 +728,10 @@ export default function ExpensesPage() {
                         </ul>
                       )}
                   </div>
-                  {/* --- END MODIFICATION --- */}
-
                    <div>
                       <label htmlFor="subCategory" className="block text-sm font-medium text-gray-600">Sub-Category / Item</label>
-                      <input id="subCategory" type="text" value={subCategory} onChange={(e) => setSubCategory(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-500 focus:border-gray-500" placeholder="e.g., Office Snacks" required />
+                      {/* --- MODIFIED: Sub-Category input validation --- */}
+                      <input id="subCategory" type="text" value={subCategory} onChange={(e) => setSubCategory(e.target.value.replace(/[^a-zA-Z\s]/g, ''))} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-500 focus:border-gray-500" placeholder="e.g., Office Snacks" required />
                   </div>
               </div>
 
@@ -753,7 +750,8 @@ export default function ExpensesPage() {
               {showAddPaymentMethod && (
                   <div className="p-3 bg-gray-50 rounded-md border border-gray-200">
                       <div className="flex items-center space-x-2">
-                          <input type="text" value={newPaymentMethod} onChange={(e) => setNewPaymentMethod(e.target.value)} placeholder="New method name" className="flex-grow block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-500 focus:border-gray-500 text-sm"/>
+                          {/* --- MODIFIED: New Payment Method input validation --- */}
+                          <input type="text" value={newPaymentMethod} onChange={(e) => setNewPaymentMethod(e.target.value.replace(/[^a-zA-Z\s]/g, ''))} placeholder="New method name" className="flex-grow block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-gray-500 focus:border-gray-500 text-sm"/>
                           <button type="button" onClick={handleAddPaymentMethod} className="flex-shrink-0 px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-900 text-sm font-medium">Add</button>
                       </div>
                       {paymentMethodError && <p className="mt-2 text-sm text-red-500">{paymentMethodError}</p>}

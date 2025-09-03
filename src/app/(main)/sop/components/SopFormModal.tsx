@@ -5,7 +5,8 @@ import useSWR, { useSWRConfig } from 'swr';
 import Select from 'react-select';
 import { X, Plus, Trash2, Loader2, AlertTriangle, HelpCircle, CalendarDays, Calendar, ListChecks } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import { useCallback } from 'react';
+// --- MODIFIED: Imported useState ---
+import { useCallback, useState } from 'react';
 import { motion } from 'framer-motion';
 
 // --- (customSelectStyles can be moved to a separate file if preferred) ---
@@ -84,6 +85,9 @@ export default function SopFormModal({ sop, onClose }: SopFormModalProps) {
   const { mutate } = useSWRConfig();
   const isEditing = !!sop;
 
+  // --- NEW: State to control the input value of the Select component ---
+  const [roleInputValue, setRoleInputValue] = useState('');
+
   const { register, handleSubmit, control, watch, formState: { errors, isSubmitting } } = useForm<SopFormData>({
     defaultValues: {
       title: sop?.title || '',
@@ -152,8 +156,27 @@ export default function SopFormModal({ sop, onClose }: SopFormModalProps) {
               </div>
               <div>
                 <label className="form-label mb-1.5">Assign to Roles</label>
+                {/* --- MODIFIED: Added controlled input for role search field --- */}
                 <Controller name="roles" control={control} rules={{ required: 'At least one role must be assigned.' }}
-                  render={({ field }) => <Select {...field} isMulti options={roleOptions} styles={customSelectStyles} isLoading={!rolesResponse} placeholder="Select roles..." />}
+                  render={({ field }) => (
+                    <Select
+                      {...field}
+                      isMulti
+                      options={roleOptions}
+                      styles={customSelectStyles}
+                      isLoading={!rolesResponse}
+                      placeholder="Select roles..."
+                      inputValue={roleInputValue}
+                      onInputChange={(newValue) => {
+                        // Allow only letters and spaces in the search input
+                        setRoleInputValue(newValue.replace(/[^a-zA-Z\s]/g, ''));
+                      }}
+                      onChange={(selectedOptions) => {
+                        field.onChange(selectedOptions); // Update form state
+                        setRoleInputValue(''); // Clear search input on selection
+                      }}
+                    />
+                  )}
                 />
                 <FormError message={errors.roles?.message} />
               </div>
@@ -201,7 +224,6 @@ export default function SopFormModal({ sop, onClose }: SopFormModalProps) {
                      </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:pl-10">
                       <div>
-                        {/* --- FIX: Wrap the icon in a span and move the title attribute --- */}
                         <label className="text-sm font-medium text-gray-600 flex items-center gap-1.5 mb-1">
                           Response Type 
                           <span title="Choose the inputs the employee will see.">
@@ -214,7 +236,6 @@ export default function SopFormModal({ sop, onClose }: SopFormModalProps) {
                         </select>
                       </div>
                       <div>
-                        {/* --- FIX: Wrap the icon in a span and move the title attribute --- */}
                         <label className="text-sm font-medium text-gray-600 flex items-center gap-1.5 mb-1">
                           Media Upload
                           <span title="Set media requirement for this question.">

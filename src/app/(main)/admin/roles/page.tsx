@@ -1,9 +1,9 @@
-// /app/admin/roles/page.tsx - FINAL SECURE VERSION
+// /app/admin/roles/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react'; // <<< 1. IMPORT useMemo
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession, getSession } from 'next-auth/react';
-import { hasPermission, PERMISSIONS, ALL_PERMISSIONS, PermissionInfo } from '@/lib/permissions'; // <<< 2. IMPORT PermissionInfo
+import { hasPermission, PERMISSIONS, ALL_PERMISSIONS, PermissionInfo } from '@/lib/permissions';
 import EditRoleModal from '@/components/EditRoleModal';
 import { PencilIcon, TrashIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -37,24 +37,17 @@ export default function RolesPage() {
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE);
 
-  // --- THIS IS THE CORE OF THE SECURITY FIX ---
-
-  // 3. Get the logged-in user's permissions from their session.
   const loggedInUserPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
 
-  // 4. Create a filtered list of permissions that the current user is allowed to GRANT.
   const grantablePermissions = useMemo((): PermissionInfo[] => {
-    // If the user is a super admin with '*', they can grant any permission.
     if (loggedInUserPermissions.includes('*')) {
       return ALL_PERMISSIONS;
     }
-    // Otherwise, they can only grant permissions that they themselves possess.
     return ALL_PERMISSIONS.filter(pInfo =>
       hasPermission(loggedInUserPermissions, pInfo.permission)
     );
   }, [loggedInUserPermissions]);
 
-  // 5. Group the new, secure list of grantable permissions by category for rendering.
   const grantableGroupedPermissions = useMemo(() => {
     return grantablePermissions.reduce((acc, perm) => {
       const category = perm.category || 'General';
@@ -66,21 +59,12 @@ export default function RolesPage() {
     }, {} as Record<string, PermissionInfo[]>);
   }, [grantablePermissions]);
 
-  // --- END OF SECURITY FIX ---
-
-
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const currentSession = await getSession();
-    if (!currentSession?.user?.tenantId) {
-      // This check is for tenant-specific actions. For a Platform Admin, you might need different logic.
-      // However, for fetching roles within a tenant, this is correct.
-      // toast.error("Your session is invalid or missing a store ID.");
-      // throw new Error("Missing tenant ID in session");
-    }
     const headers = {
       ...options.headers,
       'Content-Type': 'application/json',
-      'x-tenant-id': currentSession?.user?.tenantId || '', // Pass tenantId if it exists
+      'x-tenant-id': currentSession?.user?.tenantId || '',
     };
     return fetch(url, { ...options, headers });
   }, []);
@@ -108,9 +92,7 @@ export default function RolesPage() {
     fetchRoles();
   }, [fetchRoles]);
   
-  // (No changes needed for handleUpdateRole, handleCreateRole, handleDeleteRole, etc.)
   const handleUpdateRole = async (roleId: string, updateData: any) => {
-    // This function already correctly uses tenantFetch, so it's secure.
     try {
       const response = await tenantFetch(`/api/admin/roles/${roleId}`, {
         method: 'PATCH',
@@ -128,6 +110,7 @@ export default function RolesPage() {
       toast.error('An unexpected error occurred while updating the role.');
     }
   };
+
   const handleCreateRole = async (e: React.FormEvent) => {
      e.preventDefault();
     try {
@@ -148,6 +131,7 @@ export default function RolesPage() {
       toast.error('An unexpected error occurred while creating the role.');
     }
   };
+
   const handleDeleteRole = async (roleId: string) => {
     if (confirm('Are you sure you want to delete this role? This might affect associated users.')) {
       try {
@@ -166,10 +150,12 @@ export default function RolesPage() {
       }
     }
   };
+
   const handleEditRole = (role: Role) => {
     setEditingRole(role);
     setShowEditModal(true);
   };
+
   const togglePermission = (permission: string) => {
     setNewRole(prev => ({
       ...prev,
@@ -179,6 +165,31 @@ export default function RolesPage() {
     }));
   };
   
+  const handleMasterSelectAll = (isChecked: boolean) => {
+    if (isChecked) {
+      const allGrantableIds = grantablePermissions.map(p => p.permission);
+      setNewRole(prev => ({ ...prev, permissions: allGrantableIds }));
+    } else {
+      setNewRole(prev => ({ ...prev, permissions: [] }));
+    }
+  };
+
+  const handleCategorySelectAll = (categoryPermissions: PermissionInfo[], isChecked: boolean) => {
+    const categoryPermissionIds = categoryPermissions.map(p => p.permission);
+
+    if (isChecked) {
+      setNewRole(prev => ({
+        ...prev,
+        permissions: [...new Set([...prev.permissions, ...categoryPermissionIds])]
+      }));
+    } else {
+      setNewRole(prev => ({
+        ...prev,
+        permissions: prev.permissions.filter(p => !categoryPermissionIds.includes(p))
+      }));
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="sm:flex sm:items-center">
@@ -264,11 +275,13 @@ export default function RolesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Role Name</label>
-                    <input type="text" required value={newRole.name} onChange={(e) => setNewRole({ ...newRole, name: e.target.value.toUpperCase() })} placeholder="e.g., MANAGER" className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                    {/* --- MODIFIED: Added validation to only allow letters and convert to uppercase --- */}
+                    <input type="text" required value={newRole.name} onChange={(e) => setNewRole({ ...newRole, name: e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase() })} placeholder="e.g., MANAGER" className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
-                    <input type="text" required value={newRole.displayName} onChange={(e) => setNewRole({ ...newRole, displayName: e.target.value })} placeholder="e.g., Manager" className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                    {/* --- MODIFIED: Added validation to only allow letters and spaces --- */}
+                    <input type="text" required value={newRole.displayName} onChange={(e) => setNewRole({ ...newRole, displayName: e.target.value.replace(/[^a-zA-Z\s]/g, '') })} placeholder="e.g., Manager" className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                   </div>
                 </div>
                 <div>
@@ -277,21 +290,54 @@ export default function RolesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Permissions</label>
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {/* <<< 6. USE THE NEW, SECURE, FILTERED LIST TO RENDER CHECKBOXES */}
-                    {Object.entries(grantableGroupedPermissions).map(([category, permissions]) => (
-                      <div key={category} className="border rounded-lg p-4">
-                        <h4 className="font-medium text-gray-900 mb-2">{category}</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {permissions.map((perm) => (
-                            <label key={perm.permission} className="flex items-center">
-                              <input type="checkbox" checked={newRole.permissions.includes(perm.permission)} onChange={() => togglePermission(perm.permission)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
-                              <span className="ml-2 text-sm text-gray-700">{perm.description}</span>
+                  
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <label className="flex items-center font-semibold text-gray-800">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        onChange={(e) => handleMasterSelectAll(e.target.checked)}
+                        checked={grantablePermissions.length > 0 && newRole.permissions.length === grantablePermissions.length}
+                      />
+                      <span className="ml-2">Select All Permissions</span>
+                    </label>
+                  </div>
+                  
+                  <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
+                    {Object.entries(grantableGroupedPermissions).map(([category, permissions]) => {
+                      const categoryPermissionIds = permissions.map(p => p.permission);
+                      const selectedInCategoryCount = categoryPermissionIds.filter(p => newRole.permissions.includes(p)).length;
+                      const areAllInCategorySelected = selectedInCategoryCount === categoryPermissionIds.length;
+                      const areSomeInCategorySelected = selectedInCategoryCount > 0 && !areAllInCategorySelected;
+
+                      return (
+                        <div key={category} className="border rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-3 pb-2 border-b">
+                            <h4 className="font-medium text-gray-900">{category}</h4>
+                            
+                            <label className="flex items-center text-sm font-medium text-indigo-600">
+                               <input
+                                type="checkbox"
+                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                onChange={(e) => handleCategorySelectAll(permissions, e.target.checked)}
+                                checked={areAllInCategorySelected}
+                                ref={el => { if (el) el.indeterminate = areSomeInCategorySelected; }}
+                              />
+                              <span className="ml-2">Select All</span>
                             </label>
-                          ))}
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {permissions.map((perm) => (
+                              <label key={perm.permission} className="flex items-center">
+                                <input type="checkbox" checked={newRole.permissions.includes(perm.permission)} onChange={() => togglePermission(perm.permission)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
+                                <span className="ml-2 text-sm text-gray-700">{perm.description}</span>
+                              </label>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
@@ -304,16 +350,13 @@ export default function RolesPage() {
         </div>
       )}
 
-       {/* Edit Role Modal */}
        {showEditModal && editingRole && (
-        // Your EditRoleModal will also need to be passed the grantablePermissions
-        // to ensure a user cannot edit a role to have permissions they don't possess.
         <EditRoleModal 
             isOpen={showEditModal} 
             onClose={() => { setShowEditModal(false); setEditingRole(null); }} 
             role={editingRole} 
             onUpdate={handleUpdateRole} 
-            grantablePermissions={grantablePermissions} // Pass the filtered list to the modal
+            grantablePermissions={grantablePermissions}
         />
       )}
     </div>

@@ -20,7 +20,6 @@ interface ProductLineItem {
   isSearching: boolean;
 }
 
-// 1. UPDATE MODALPROPS TO ACCEPT tenantFetch
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -29,7 +28,6 @@ interface ModalProps {
   tenantFetch: (url: string, options?: RequestInit) => Promise<Response>;
 }
 
-// 2. UPDATE ProductSearchLineProps TO ACCEPT tenantFetch
 interface ProductSearchLineProps {
   line: ProductLineItem;
   onUpdate: (id: number, field: keyof ProductLineItem, value: any) => void;
@@ -81,7 +79,6 @@ const ProductSearchLine = ({ line, onUpdate, onRemove, isReadOnly, canRemove, te
       }
       onUpdate(line.id, 'isSearching', true);
       try {
-        // 3. USE tenantFetch instead of a direct fetch call
         const response = await tenantFetch(`/api/products/search?q=${debouncedSearch}`);
         if (response.ok) {
           const data: IProduct[] = await response.json();
@@ -108,11 +105,33 @@ const ProductSearchLine = ({ line, onUpdate, onRemove, isReadOnly, canRemove, te
     onUpdate(line.id, 'searchResults', []);
   };
 
+  // --- NEW: Central handler for input changes with validation ---
+  const handleInputChange = (field: 'search' | 'quantity' | 'price', value: string) => {
+    let processedValue = value;
+
+    if (field === 'search') {
+      // Allow only letters and spaces for product search
+      processedValue = value.replace(/[^a-zA-Z\s]/g, '');
+      setLocalSearch(processedValue);
+      onUpdate(line.id, 'search', processedValue);
+      onUpdate(line.id, 'product', null);
+    } else if (field === 'quantity') {
+      // Allow only whole numbers for quantity
+      processedValue = value.replace(/[^0-9]/g, '');
+      onUpdate(line.id, 'quantity', processedValue);
+    } else if (field === 'price') {
+      // Allow numbers and a single decimal point for price
+      processedValue = value.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
+      onUpdate(line.id, 'price', processedValue);
+    }
+  };
+
   return (
     <div className="grid grid-cols-12 gap-3 items-start p-2 rounded-md bg-gray-50 border">
       <div className="col-span-5 relative">
         <label className="text-xs text-gray-500">Product Name</label>
-        <input type="text" placeholder="Start typing to search..." value={localSearch} onChange={(e) => { setLocalSearch(e.target.value); onUpdate(line.id, 'search', e.target.value); onUpdate(line.id, 'product', null); }} className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-1 focus:ring-indigo-500" disabled={isReadOnly} autoComplete="off" />
+        {/* --- MODIFIED: Use the new handler --- */}
+        <input type="text" placeholder="Start typing to search..." value={localSearch} onChange={(e) => handleInputChange('search', e.target.value)} className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-1 focus:ring-indigo-500" disabled={isReadOnly} autoComplete="off" />
         {line.isSearching && <div className="absolute right-2 top-8 text-xs text-gray-500">Searching...</div>}
         {line.searchResults.length > 0 && (
           <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto">
@@ -120,15 +139,24 @@ const ProductSearchLine = ({ line, onUpdate, onRemove, isReadOnly, canRemove, te
           </ul>
         )}
       </div>
-      <div className="col-span-2"><label className="text-xs text-gray-500">Quantity</label><input type="number" value={line.quantity} onChange={(e) => onUpdate(line.id, 'quantity', e.target.value)} className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm" disabled={isReadOnly} /></div>
-      <div className="col-span-2"><label className="text-xs text-gray-500">Price</label><input type="number" value={line.price} onChange={(e) => onUpdate(line.id, 'price', e.target.value)} className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm" disabled={isReadOnly} /></div>
+      <div className="col-span-2">
+        <label className="text-xs text-gray-500">Quantity</label>
+        {/* --- MODIFIED: Use new handler and text type for better control --- */}
+        <input type="text" inputMode="numeric" value={line.quantity} onChange={(e) => handleInputChange('quantity', e.target.value)} className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm" disabled={isReadOnly} />
+      </div>
+      <div className="col-span-2">
+        <label className="text-xs text-gray-500">Price</label>
+        {/* --- MODIFIED: Use new handler and text type for better control --- */}
+        <input type="text" inputMode="decimal" value={line.price} onChange={(e) => handleInputChange('price', e.target.value)} className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm" disabled={isReadOnly} />
+      </div>
       <div className="col-span-2"><label className="text-xs text-gray-500">Total</label><p className="w-full px-3 py-2 rounded-md bg-gray-200 text-sm font-semibold h-10 flex items-center">₹{((parseFloat(line.quantity) || 0) * (parseFloat(line.price) || 0)).toFixed(2)}</p></div>
       <div className="col-span-1 flex items-center justify-center pt-6">{canRemove && <button onClick={() => onRemove(line.id)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="h-5 w-5" /></button>}</div>
     </div>
   );
 };
 
-// --- MAIN MODAL COMPONENT ---
+
+// --- MAIN MODAL COMPONENT (No changes below this line) ---
 
 export default function PurchaseOrderModal({ isOpen, onClose, po, onSuccess, tenantFetch }: ModalProps) {
   const { data: session } = useSession();
@@ -158,8 +186,6 @@ export default function PurchaseOrderModal({ isOpen, onClose, po, onSuccess, ten
         const isPastAdminReview = ![PurchaseOrderStatus.PENDING_ADMIN_REVIEW].includes(po.status);
         const poProducts = po.products.map((p, index) => ({
           ...initialLine,
-          // 4. FIX THE TYPESCRIPT ERROR
-          // Always generate a unique number for the client-side ID.
           id: Date.now() + index,
           product: p.product as IProduct,
           search: (p.product as IProduct).name,
@@ -224,7 +250,6 @@ export default function PurchaseOrderModal({ isOpen, onClose, po, onSuccess, ten
     }
 
     try {
-      // 5. USE tenantFetch for creation/updates
       const response = await tenantFetch(url, { method, body: JSON.stringify(body) });
       if (!response.ok) {
         const errorData = await response.json();
@@ -266,7 +291,6 @@ export default function PurchaseOrderModal({ isOpen, onClose, po, onSuccess, ten
           <div className="space-y-3">
             <h3 className="text-md font-semibold text-gray-700">Products</h3>
             {products.map((line) => (
-              // 6. PASS tenantFetch down to the child component
               <ProductSearchLine key={line.id} line={line} onUpdate={handleProductChange} onRemove={removeProductLine} isReadOnly={mode === 'view'} canRemove={mode !== 'view' && products.length > 1} tenantFetch={tenantFetch} />
             ))}
             {mode !== 'view' && (

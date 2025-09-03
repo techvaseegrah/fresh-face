@@ -1,8 +1,8 @@
 // /app/admin/users/page.tsx - TENANT-AWARE VERSION
 'use client';
 
-import { useState, useEffect, useCallback } from 'react'; // <-- 1. Import useCallback
-import { useSession, getSession } from 'next-auth/react'; // <-- 1. Import getSession
+import { useState, useEffect, useCallback } from 'react';
+import { useSession, getSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import EditUserModal from '@/components/EditUserModal';
 import { PencilIcon, TrashIcon } from 'lucide-react';
@@ -42,7 +42,6 @@ export default function UsersPage() {
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.USERS_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.USERS_DELETE);
 
-  // <-- 2. ADD THE TENANT-AWARE FETCH HELPER -->
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const currentSession = await getSession();
     if (!currentSession?.user?.tenantId) {
@@ -60,7 +59,6 @@ export default function UsersPage() {
   const fetchUsers = useCallback(async () => {
     if (!session) return;
     try {
-      // <-- 3. USE tenantFetch -->
       const response = await tenantFetch('/api/admin/users');
       const data = await response.json();
       if (data.success) {
@@ -74,12 +72,11 @@ export default function UsersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [session, tenantFetch]); // <-- 4. Add dependencies
+  }, [session, tenantFetch]);
 
   const fetchRoles = useCallback(async () => {
     if (!session) return;
     try {
-      // <-- 3. USE tenantFetch -->
       const response = await tenantFetch('/api/admin/roles');
       const data = await response.json();
       if (data.success) {
@@ -90,17 +87,15 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Error fetching roles:', error);
     }
-  }, [session, tenantFetch]); // <-- 4. Add dependencies
+  }, [session, tenantFetch]);
   
   useEffect(() => {
     setIsLoading(true);
-    // Fetch both in parallel
     Promise.all([fetchUsers(), fetchRoles()]);
   }, [fetchUsers, fetchRoles]);
 
   const handleUpdateUser = async (userId: string, updateData: any) => {
     try {
-      // <-- 3. USE tenantFetch -->
       const response = await tenantFetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify(updateData),
@@ -109,7 +104,7 @@ export default function UsersPage() {
       const data = await response.json();
       if (data.success) {
         toast.success('User updated successfully!');
-        fetchUsers(); // Refetch users to show updated data
+        fetchUsers();
         setShowEditModal(false);
       } else {
         toast.error(data.message || 'Error updating user');
@@ -122,7 +117,6 @@ export default function UsersPage() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // <-- 3. USE tenantFetch -->
       const response = await tenantFetch('/api/admin/users', {
         method: 'POST',
         body: JSON.stringify(newUser),
@@ -145,7 +139,6 @@ export default function UsersPage() {
   const handleDeleteUser = async (userId: string) => {
     if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       try {
-        // <-- 3. USE tenantFetch -->
         const response = await tenantFetch('/api/admin/users', {
           method: 'DELETE',
           body: JSON.stringify({ userId }),
@@ -169,7 +162,6 @@ export default function UsersPage() {
     setShowEditModal(true);
   };
 
-  // (The entire JSX return statement remains exactly the same)
   return (
     <div className="space-y-6">
       <div className="sm:flex sm:items-center">
@@ -255,7 +247,8 @@ export default function UsersPage() {
               <form onSubmit={handleCreateUser} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                  {/* --- MODIFIED LINE: Added validation to the onChange handler --- */}
+                  <input type="text" required value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value.replace(/[^a-zA-Z\s]/g, '') })} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Email</label>
