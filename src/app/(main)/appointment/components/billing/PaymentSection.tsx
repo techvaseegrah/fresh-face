@@ -1,5 +1,3 @@
-// appointment/components/billing/PaymentSection.tsx
-
 import React from 'react';
 import { BillingTotals } from './billing.types';
 
@@ -10,9 +8,22 @@ interface PaymentSectionProps {
   onPaymentChange: (method: keyof PaymentDetails, amount: string) => void;
   totals: BillingTotals;
   isCorrectionMode: boolean;
+  // --- START ADDITION: Add props for gift card functionality ---
+  onApplyGiftCardClick: () => void;
+  isGiftCardApplied: boolean;
+  // --- END ADDITION ---
 }
 
-const PaymentSection: React.FC<PaymentSectionProps> = ({ newPaymentDetails, onPaymentChange, totals, isCorrectionMode }) => {
+const PaymentSection: React.FC<PaymentSectionProps> = ({
+  newPaymentDetails,
+  onPaymentChange,
+  totals,
+  isCorrectionMode,
+  // --- START ADDITION: Destructure new props ---
+  onApplyGiftCardClick,
+  isGiftCardApplied,
+  // --- END ADDITION ---
+}) => {
   return (
     <div className="pt-4 border-t">
       <h4 className="text-sm font-medium text-gray-700 mb-3">Enter New Payment</h4>
@@ -33,6 +44,25 @@ const PaymentSection: React.FC<PaymentSectionProps> = ({ newPaymentDetails, onPa
             </div>
           ))}
         </div>
+
+        {/* --- START ADDITION: Action buttons section --- */}
+        <div className="flex flex-wrap gap-2 items-center sm:col-span-2 mt-2">
+           {/* You can add your "Apply Discount" button here in the future if needed */}
+           {/* <button className="px-3 py-2 border rounded-md text-xs font-medium hover:bg-gray-50">
+              Apply Discount
+           </button> */}
+           
+           <button
+              type="button"
+              onClick={onApplyGiftCardClick}
+              disabled={isGiftCardApplied}
+              className="px-3 py-2 border rounded-md text-xs font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+            >
+              {isGiftCardApplied ? 'Gift Card Applied' : 'Apply Gift Card'}
+            </button>
+        </div>
+        {/* --- END ADDITION --- */}
+
         <div className="mt-2 p-3 bg-gray-50 rounded-lg text-sm sm:col-span-2">
           <div className="flex justify-between">
             <span>Total New Payment:</span>

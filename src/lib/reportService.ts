@@ -1,57 +1,72 @@
-// services/reportService.ts
+// src/lib/reportService.ts
 
-interface ReportParams {
-  startDate: Date
-  endDate: Date
-  format: "pdf" | "excel"
+import  dbConnect  from '@/lib/dbConnect';
+import { safeDecrypt } from '@/lib/crypto'; 
+import { GiftCard } from '@/models/GiftCard';
+import { GiftCardLog } from '@/models/GiftCardLog';
+import '@/models/customermodel';
+import '@/models/staff';
+import '@/models/GiftCardTemplate';
+import '@/models/invoice';
+
+/**
+ * Fetches and prepares data for the Gift Card Sold report.
+ */
+export async function fetchSoldReportData(tenantId: string, fromDate: Date, toDate: Date) {
+    await dbConnect();
+
+    const soldCards = await GiftCard.find({ 
+        tenantId, 
+        issueDate: { $gte: fromDate, $lte: toDate }
+    })
+    .populate('customerId', 'name phoneNumber') 
+    .populate('issuedByStaffId', 'name')
+    .populate('giftCardTemplateId', 'name')
+    .populate('purchaseInvoiceId', 'invoiceNumber')
+    .sort({ issueDate: -1 })
+    .lean();
+
+    // Decrypt and format data for a clean report
+    return soldCards.map(card => ({
+        invoiceNumber: (card.purchaseInvoiceId as any)?.invoiceNumber || 'N/A',
+        purchaseDate: new Date(card.issueDate).toLocaleDateString('en-GB'),
+        expiryDate: new Date(card.expiryDate).toLocaleDateString('en-GB'),
+        giftCardName: (card.giftCardTemplateId as any)?.name || 'N/A',
+        giftCardNumber: card.uniqueCode,
+        guestName: safeDecrypt((card.customerId as any)?.name, 'customer name'),
+        guestNumber: safeDecrypt((card.customerId as any)?.phoneNumber, 'customer phone'),
+        staff: (card.issuedByStaffId as any)?.name || 'N/A',
+        amount: card.initialBalance,
+    }));
 }
 
-// This is the correct, generalized function that accepts the API URL.
-export const downloadReport = async (apiUrl: string, params: ReportParams): Promise<void> => {
-  console.log("3. SERVICE is sending this to the backend:", { apiUrl, params }); // Keep for one final test
-
-  try {
-    // It uses the provided apiUrl to make the request
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+/**
+ * Fetches and prepares data for the Gift Card Redemption report.
+ */
+export async function fetchRedemptionReportData(tenantId: string, fromDate: Date, toDate: Date) {
+    await dbConnect();
+    
+    const redemptionLogs = await GiftCardLog.find({
+        tenantId,
+        createdAt: { $gte: fromDate, $lte: toDate }
     })
+    .populate('customerId', 'name phoneNumber')
+    .populate({
+        path: 'giftCardId',
+        select: 'uniqueCode giftCardTemplateId',
+        populate: { path: 'giftCardTemplateId', select: 'name' }
+    })
+    .sort({ createdAt: -1 })
+    .lean();
 
-    if (!response.ok) {
-      const contentType = response.headers.get("content-type");
-      let errorMessage = "Failed to generate report due to a server error.";
-      if (contentType && contentType.indexOf("application/json") !== -1) {
-        const errorData = await response.json();
-        errorMessage = errorData.message || "An unknown error occurred.";
-      } else {
-        errorMessage = `Server returned a non-JSON error (Status: ${response.status}). Check server logs for details.`;
-      }
-      throw new Error(errorMessage);
-    }
-
-    // The rest of the download logic is the same
-    const contentDisposition = response.headers.get("Content-Disposition");
-    let filename = "report";
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-      if (filenameMatch && filenameMatch.length > 1) {
-        filename = filenameMatch[1];
-      }
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-
-  } catch (error) {
-    console.error("Download error:", error);
-    throw error;
-  }
+    // Decrypt and format data
+    return redemptionLogs.map(log => ({
+        date: new Date(log.createdAt).toLocaleDateString('en-GB'),
+        giftCardName: (log.giftCardId as any)?.giftCardTemplateId?.name || 'N/A',
+        giftCardNumber: (log.giftCardId as any)?.uniqueCode || 'N/A',
+        guestName: safeDecrypt((log.customerId as any)?.name, 'customer name'),
+        guestNumber: safeDecrypt((log.customerId as any)?.phoneNumber, 'customer phone'),
+        amountRedeemed: log.amountRedeemed,
+        remark: '' // Placeholder for remarks
+    }));
 }

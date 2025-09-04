@@ -7,7 +7,8 @@ import Link from 'next/link';
 import { 
     LayoutDashboard, LogOut, Loader2, PlusCircle, CalendarPlus, 
     CalendarCheck, BarChart2, IndianRupee, Wallet, Clock, 
-    Briefcase, Menu, X 
+    Briefcase, Menu, X, 
+    ClipboardCheck // --- ICON ADDED HERE ---
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -120,6 +121,11 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             <NavLink href="/staff-dashboard" icon={<LayoutDashboard size={20} />} onClick={closeMobileMenu}>Dashboard</NavLink>
             <NavLink href="/my-appointments" icon={<Briefcase size={20} />} onClick={closeMobileMenu}>My Appointments</NavLink>
+            
+            {/* ✅ NEW LINK ADDED HERE for "My Tasks" */}
+            <NavLink href="/my-tasks" icon={<ClipboardCheck size={20} />} onClick={closeMobileMenu}>My Tasks</NavLink>
+            
+            <NavLink href="/book-appointment" icon={<CalendarPlus size={20} />} onClick={closeMobileMenu}>Book Appointment</NavLink>
             <NavLink href="/attendance" icon={<CalendarCheck size={20} />} onClick={closeMobileMenu}>Attendance</NavLink>
             <NavLink href="/advance" icon={<PlusCircle size={20}/>} onClick={closeMobileMenu}>Request Advance</NavLink>
             <NavLink href="/performance" icon={<BarChart2 size={20} />} onClick={closeMobileMenu}>Performance</NavLink>

@@ -71,7 +71,6 @@ const CustomerHistoryModal: React.FC<{
 }> = ({ isOpen, onClose, customer }) => {
   if (!isOpen || !customer) return null;
 
-  // FIXED: Added types for reduce parameters
   const totalSpent = customer.appointmentHistory
     .filter(apt => apt.status === 'Paid')
     .reduce((sum: number, apt: AppointmentHistory) => sum + apt.totalAmount, 0);
@@ -129,7 +128,6 @@ const CustomerHistoryModal: React.FC<{
                   </tr>
                 </thead>
                 <tbody>
-                  {/* FIXED: Added type for map parameter */}
                   {customer.appointmentHistory.map((apt: AppointmentHistory) => (
                     <tr key={apt._id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-3">{new Date(apt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
@@ -149,7 +147,6 @@ const CustomerHistoryModal: React.FC<{
   );
 };
 
-// FIXED: Interface moved outside of component definition
 interface CustomerDetailPanelProps {
   customer: CustomerDetails | null;
   isLoading: boolean;
@@ -194,8 +191,18 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({ customer, isL
     } else { setShowBarcodeInput(true); }
   };
   const handleCancelBarcodeInput = () => { setShowBarcodeInput(false); setMembershipBarcode(''); setBarcodeError(''); setIsBarcodeValid(true); };
-  const getMembershipStatusClasses = (status?: string) => { /* ... (unchanged) ... */ };
-  const getStatusColor = (status: string) => { /* ... (unchanged) ... */ };
+  
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Appointment': return 'bg-blue-100 text-blue-800';
+      case 'Checked-In': return 'bg-yellow-100 text-yellow-800';
+      case 'Checked-Out': return 'bg-purple-100 text-purple-800';
+      case 'Paid': return 'bg-green-100 text-green-800';
+      case 'Cancelled': return 'bg-red-100 text-red-800';
+      case 'No-Show': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
   if (isLoading) { return ( <div className="animate-pulse space-y-4 h-full"><div className="h-8 bg-gray-200 rounded-md w-3/4" /><div className="h-5 bg-gray-200 rounded-md w-1/2" /><div className="h-24 bg-gray-100 rounded-lg mt-6" /><div className="h-32 bg-gray-100 rounded-lg" /><div className="space-y-3"><div className="h-20 bg-gray-100 rounded-lg" /><div className="h-20 bg-gray-100 rounded-lg" /><div className="h-20 bg-gray-100 rounded-lg" /></div></div> ); }
   if (!customer) { return ( <div className="text-center text-gray-500 h-full flex flex-col items-center justify-center p-6 bg-gray-50 rounded-lg"><UserCircleIcon className="w-16 h-16 text-gray-300 mb-4" /><h3 className="font-semibold text-gray-700 mb-2">Customer Details</h3><p className="text-sm text-center">Enter a phone number or scan a barcode to look up an existing customer.</p><div className="mt-4 flex items-center gap-2 text-xs text-gray-500"><QrCodeIcon className="w-4 h-4" /><span>Members can use barcode for quick lookup</span></div></div> ); }
   
@@ -226,7 +233,6 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({ customer, isL
       <div className="flex-1">
         <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-gray-800">Recent Visits</h4><button onClick={onViewFullHistory} className="text-xs text-blue-600 hover:text-blue-800 transition-colors">View All ({customer.appointmentHistory.length})</button></div>
         <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-2">
-          {/* FIXED: Added type for map parameter */}
           {customer.appointmentHistory.length > 0 ? (customer.appointmentHistory.slice(0, 5).map((apt: AppointmentHistory) => (<div key={apt._id} className="p-3 bg-gray-100/70 rounded-lg text-sm hover:bg-gray-100 transition-colors"><div className="flex justify-between items-start"><div className="flex-1"><p className="font-semibold text-gray-800">{formatDateIST(apt.date)}</p><p className="text-xs text-gray-600">with {apt.stylistName}</p></div><div className="text-right"><p className="font-bold text-gray-800">₹{apt.totalAmount.toFixed(2)}</p><span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${getStatusColor(apt.status)}`}>{apt.status}</span></div></div><div className="flex items-start gap-2 mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500"><TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span className="line-clamp-2">{apt.services.join(', ') || 'Details unavailable'}</span></div></div>))) : (<div className="text-center py-8"><ClockIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" /><p className="text-sm text-gray-500 italic">No past appointments found.</p><p className="text-xs text-gray-400 mt-1">This will be their first visit!</p></div>)}
         </div>
       </div>
@@ -234,7 +240,6 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({ customer, isL
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="grid grid-cols-2 gap-4 text-center">
             <div><div className="text-lg font-bold text-blue-600">{customer.appointmentHistory.length}</div><div className="text-xs text-gray-500">Total Visits</div></div>
-            {/* FIXED: Added types for reduce parameters */}
             <div><div className="text-lg font-bold text-green-600">₹{customer.appointmentHistory.filter(apt => apt.status === 'Paid').reduce((sum: number, apt: AppointmentHistory) => sum + apt.totalAmount, 0).toFixed(0)}</div><div className="text-xs text-gray-500">Total Spent</div></div>
           </div>
         </div>)}
@@ -619,7 +624,58 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
                     <div><label htmlFor="time" className="block text-sm font-medium mb-1.5">Time <span className="text-red-500">*</span></label><input id="time" type="time" name="time" value={formData.time} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                   </div>
                   <div className="mt-5"><label className="block text-sm font-medium mb-1.5">Add Services <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Search by name or price..." className={`${inputBaseClasses} pr-8`} />{serviceSearch && filteredServices.length > 0 && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{filteredServices.map((service) => (<li key={service._id} onClick={() => handleAddService(service)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer flex justify-between"><span>{service.name}</span><span className="font-semibold">₹{service.price}</span></li>))}</ul>)}</div></div>
-                  <div className="mt-4 space-y-4">{serviceAssignments.map((assignment, index) => (<div key={assignment._tempId} className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3"><div className="flex items-start justify-between"><div className="font-semibold text-gray-800">{index + 1}. {assignment.serviceDetails.name}<span className="ml-2 text-xs font-normal text-gray-500">({assignment.serviceDetails.duration} mins)</span></div><button type="button" onClick={() => handleRemoveService(assignment._tempId)} className="p-1 text-red-500 hover:bg-red-100 rounded-full" title="Remove Service"><XMarkIcon className="w-5 h-5" /></button></div><div className="grid md:grid-cols-2 gap-4 pt-3 border-t"><div><label htmlFor={`guestName-${assignment._tempId}`} className="block text-xs font-medium text-gray-600 mb-1">Service For</label><input type="text" id={`guestName-${assignment._tempId}`} placeholder={formData.customerName || "Main Customer"} value={assignment.guestName || ''} onChange={(e) => handleUpdateAssignment(assignment._tempId, { guestName: e.target.value })} className={`${inputBaseClasses} py-2 text-sm`} /><p className="text-xs text-gray-400 mt-1">Leave blank for primary.</p></div><div><label htmlFor={`stylist-${assignment._tempId}`} className="block text-xs font-medium text-gray-600 mb-1">Assigned Staff <span className="text-red-500">*</span></label><select id={`stylist-${assignment._tempId}`} value={assignment.stylistId} onChange={(e) => handleUpdateAssignment(assignment._tempId, { stylistId: e.target.value })} required disabled={!formData.date || !formData.time || assignment.isLoadingStylists} className={`${inputBaseClasses} py-2 text-sm disabled:bg-gray-100/80`}><option value="" disabled>{assignment.isLoadingStylists ? 'Finding staff...' : 'Select a staff member'}</option>{assignment.availableStylists.length > 0 ? ( assignment.availableStylists.map((s) => (<option key={s._id} value={s._id}>{s.name}</option>)) ) : ( !assignment.isLoadingStylists && <option disabled>No staff available</option> )}</select></div></div></div>))}</div>
+                  
+                  <div className="mt-4 space-y-4">
+                    {serviceAssignments.map((assignment, index) => (
+                      <div key={assignment._tempId} className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="font-semibold text-gray-800">{index + 1}. {assignment.serviceDetails.name}<span className="ml-2 text-xs font-normal text-gray-500">({assignment.serviceDetails.duration} mins)</span></div>
+                          <button type="button" onClick={() => handleRemoveService(assignment._tempId)} className="p-1 text-red-500 hover:bg-red-100 rounded-full" title="Remove Service"><XMarkIcon className="w-5 h-5" /></button>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-4 pt-3 border-t">
+                          <div>
+                            <label htmlFor={`guestName-${assignment._tempId}`} className="block text-xs font-medium text-gray-600 mb-1">Service For</label>
+                            
+                            {/* ▼▼▼ THIS IS THE CORRECTED CODE ▼▼▼ */}
+                            <input 
+                              type="text" 
+                              id={`guestName-${assignment._tempId}`} 
+                              placeholder={formData.customerName || "Main Customer"} 
+                              value={assignment.guestName || ''} 
+                              onChange={(e) => {
+                                // This regex replaces any character that is NOT a letter or a space.
+                                const sanitizedValue = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                handleUpdateAssignment(assignment._tempId, { guestName: sanitizedValue });
+                              }}
+                              className={`${inputBaseClasses} py-2 text-sm`}
+                            />
+                            {/* ▲▲▲ END OF CORRECTION ▲▲▲ */}
+
+                            <p className="text-xs text-gray-400 mt-1">Leave blank for primary.</p>
+                          </div>
+                          <div>
+                            <label htmlFor={`stylist-${assignment._tempId}`} className="block text-xs font-medium text-gray-600 mb-1">Assigned Staff <span className="text-red-500">*</span></label>
+                            <select 
+                              id={`stylist-${assignment._tempId}`} 
+                              value={assignment.stylistId} 
+                              onChange={(e) => handleUpdateAssignment(assignment._tempId, { stylistId: e.target.value })} 
+                              required 
+                              disabled={!formData.date || !formData.time || assignment.isLoadingStylists} 
+                              className={`${inputBaseClasses} py-2 text-sm disabled:bg-gray-100/80`}
+                            >
+                              <option value="" disabled>{assignment.isLoadingStylists ? 'Finding staff...' : 'Select a staff member'}</option>
+                              {assignment.availableStylists.length > 0 ? ( 
+                                assignment.availableStylists.map((s) => (<option key={s._id} value={s._id}>{s.name}</option>)) 
+                              ) : ( 
+                                !assignment.isLoadingStylists && <option disabled>No staff available</option> 
+                              )}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
                   {serviceAssignments.length > 0 && (<div className="mt-4 p-4 bg-gray-50 rounded-lg border"><div className="flex justify-between items-center"><span className="text-sm font-medium text-gray-700">Total Amount:</span><div className="text-right"><span className="text-lg font-bold text-green-600">₹{total.toFixed(2)}</span>{membershipSavings > 0 && (<div className="text-xs text-green-500 mt-1">Saved ₹{membershipSavings.toFixed(2)} with membership</div>)}</div></div></div>)}
                   <div className="mt-5"><label htmlFor="notes" className="block text-sm font-medium mb-1.5">Notes</label><textarea id="notes" name="notes" rows={3} value={formData.notes || ''} onChange={handleChange} className={`${inputBaseClasses} resize-none`} placeholder="Any special requirements or notes..."/></div>
                 </fieldset>
