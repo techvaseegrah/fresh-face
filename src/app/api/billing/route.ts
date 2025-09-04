@@ -1,5 +1,5 @@
 // ===================================================================================
-//  API ROUTE: /api/billing (Updated as per request)
+//  API ROUTE: /api/billing (Corrected Order of Operations)
 // ===================================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -65,10 +65,6 @@ export async function POST(req: NextRequest) {
     dbSession.startTransaction();
     await connectToDatabase();
 
-    // --- CHANGE 1: REMOVED BILLER VERIFICATION ---
-    // The check for an associated staff profile for the billing user has been removed.
-    // Any logged-in user can now process a bill.
-
     const lineItemsWithTenantId = items.map((item: any) => ({ ...item, tenantId: tenantId, }));
 
     const totalPaidByMethods = Object.values(paymentDetails).reduce((sum: number, amount: unknown) => sum + (Number(amount) || 0), 0);
@@ -87,6 +83,7 @@ export async function POST(req: NextRequest) {
         await giftCard.save({ session: dbSession });
     }
 
+    // STEP 1: Update the main package document to decrement uses. This happens BEFORE invoice creation.
     if (packageRedemptions && Array.isArray(packageRedemptions) && packageRedemptions.length > 0) {
       for (const redemption of packageRedemptions) {
         const { customerPackageId, redeemedItemId, redeemedItemType, quantityRedeemed } = redemption;
@@ -115,7 +112,6 @@ export async function POST(req: NextRequest) {
       expiryDate.setDate(expiryDate.getDate() + template.validityInDays);
       const remainingItems = template.items.map(item => ({ itemType: item.itemType, itemId: item.itemId, totalQuantity: item.quantity, remainingQuantity: item.quantity, }));
       
-      // --- CHANGE 2: ENFORCE AND USE ITEM-LEVEL STAFF ID FOR SALES ---
       const staffIdForSale = packageItem.staffId;
       if (!staffIdForSale) {
         throw new Error(`The package "${packageItem.name}" must be assigned to a staff member to be sold.`);
@@ -123,7 +119,7 @@ export async function POST(req: NextRequest) {
 
       const newCustomerPackage = new CustomerPackage({
         tenantId, customerId, packageTemplateId, purchaseDate, expiryDate, status: 'active', remainingItems, packageName: template.name, purchasePrice: purchasePrice, 
-        soldBy: staffIdForSale, // Correctly uses the staff from the dropdown
+        soldBy: staffIdForSale,
       });
       await newCustomerPackage.save({ session: dbSession });
       newlySoldPackages.push(newCustomerPackage.toObject());
@@ -154,25 +150,21 @@ export async function POST(req: NextRequest) {
         allInventoryUpdates.push(...retailProductUpdates);
         if (allInventoryUpdates.length > 0) { const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates, dbSession, tenantId); if (!inventoryUpdateResult.success) { const errorMessages = inventoryUpdateResult.errors.map(e => e.message).join(', '); throw new Error('One or more inventory updates failed: ' + errorMessages); } }
     }
-
+    
+    // STEP 2: Create and save the Invoice. This is where the invoiceId is generated.
     const invoice = new Invoice({ tenantId, appointmentId, customerId, stylistId, billingStaffId, lineItems: lineItemsWithTenantId, serviceTotal, productTotal, subtotal, membershipDiscount, grandTotal, paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling, paymentStatus: 'Paid', manualDiscount: { type: manualDiscountType || null, value: manualDiscountValue || 0, appliedAmount: finalManualDiscountApplied || 0 }, giftCardPayment: giftCardRedemption ? { cardId: giftCardRedemption.cardId, amount: giftCardRedemption.amount } : undefined });
     await invoice.save({ session: dbSession });
-    createdInvoiceId = invoice._id;
+    createdInvoiceId = invoice._id; // The variable is now populated.
 
-    if (giftCardRedemption && giftCardRedemption.cardId && giftCardRedemption.amount > 0) { const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession); if (giftCard) { await GiftCardLog.create([{ tenantId, giftCardId: giftCardRedemption.cardId, invoiceId: createdInvoiceId, customerId, amountRedeemed: giftCardRedemption.amount, balanceBefore: giftCard.currentBalance + giftCardRedemption.amount, balanceAfter: giftCard.currentBalance, }], { session: dbSession }); } }
+    // STEP 3: Now that createdInvoiceId has a value, create the log entries.
+    if (giftCardRedemption && giftCardRedemption.cardId && giftCardRedemption.amount > 0) { const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession); if (giftCard) { await GiftCardLog.create([{ tenantId, giftCardId: giftCardRedemption.cardId, invoiceId: createdInvoiceId, customerId, amountRedeemed: giftCardRedemption.amount, balanceBefore: giftCard.currentBalance + giftCardRedemption.amount, balanceAfter: giftCard.currentBalance, }], { session: dbSession, ordered: true }); } }
     
-    // --- CHANGE 3: ENFORCE AND USE ITEM-LEVEL STAFF ID FOR REDEMPTIONS ---
+    // ✅ FIX: This block is now in the correct position, AFTER the invoice has been saved.
     if (packageRedemptions && Array.isArray(packageRedemptions) && packageRedemptions.length > 0) {
-      const logEntries = packageRedemptions.map(redemption => {
-        const billItem = items.find((item: any) =>
-            item.itemId === redemption.redeemedItemId &&
-            item.itemType === redemption.redeemedItemType &&
-            (item.isRedemption || item.finalPrice === 0)
-        );
-        const staffIdForRedemption = billItem?.staffId;
+      const logEntries = packageRedemptions.map((redemption: any) => {
+        const staffIdForRedemption = redemption.redeemedBy;
         if (!staffIdForRedemption) {
-          // Construct a better item name for the error message
-          const redeemedItemName = items.find(i => i.itemId === redemption.redeemedItemId)?.name || `item ID ${redemption.redeemedItemId}`;
+          const redeemedItemName = items.find((i: any) => i.itemId === redemption.redeemedItemId)?.name || `item ID ${redemption.redeemedItemId}`;
           throw new Error(`A staff member must be assigned to the redeemed item: "${redeemedItemName}".`);
         }
         
@@ -183,17 +175,17 @@ export async function POST(req: NextRequest) {
           redeemedItemId: redemption.redeemedItemId,
           redeemedItemType: redemption.redeemedItemType,
           quantityRedeemed: redemption.quantityRedeemed,
-          invoiceId: createdInvoiceId,
-          redeemedBy: staffIdForRedemption, // Correctly uses the staff from the dropdown
+          invoiceId: createdInvoiceId, // This will now have a valid ID.
+          redeemedBy: staffIdForRedemption,
         };
       });
-      await CustomerPackageLog.create(logEntries, { session: dbSession });
+      await CustomerPackageLog.create(logEntries, { session: dbSession, ordered: true });
     }
 
     await Appointment.updateOne({ _id: appointmentId, tenantId }, { amount: subtotal, membershipDiscount, finalAmount: grandTotal, paymentDetails, billingStaffId, invoiceId: invoice._id, status: 'Paid', }, { session: dbSession });
     
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty', tenantId }).session(dbSession);
-    if (loyaltySettingDoc?.value && grandTotal > 0) { const { rupeesForPoints, pointsAwarded: awarded } = loyaltySettingDoc.value; if (rupeesForPoints > 0 && awarded > 0) { pointsEarned = Math.floor(grandTotal / rupeesForPoints) * awarded; if (pointsEarned > 0) { await LoyaltyTransaction.create([{ tenantId, customerId, points: pointsEarned, type: 'Credit', description: `Earned from an invoice`, reason: `Invoice`, transactionDate: new Date(), }], { session: dbSession }); } } }
+    if (loyaltySettingDoc?.value && grandTotal > 0) { const { rupeesForPoints, pointsAwarded: awarded } = loyaltySettingDoc.value; if (rupeesForPoints > 0 && awarded > 0) { pointsEarned = Math.floor(grandTotal / rupeesForPoints) * awarded; if (pointsEarned > 0) { await LoyaltyTransaction.create([{ tenantId, customerId, points: pointsEarned, type: 'Credit', description: `Earned from an invoice`, reason: `Invoice`, transactionDate: new Date(), }], { session: dbSession, ordered: true }); } } }
     
     if (stylistId) { await Stylist.updateOne({ _id: stylistId, tenantId }, { isAvailable: true, currentAppointmentId: null, lastAvailabilityChange: new Date(), }, { session: dbSession }); }
 
@@ -215,11 +207,13 @@ export async function POST(req: NextRequest) {
     await dbSession.abortTransaction();
     console.error("Billing transaction failed and was aborted:", error);
     dbSession.endSession();
+    // Return a 400 Bad Request for validation errors, 500 for others.
     if (error.name === 'ValidationError') { return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 }); }
     const errorMessage = error.message || String(error);
     return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   }
   
+  // Post-transaction logic (does not roll back on failure)
   const newlyIssuedCards = [];
   try {
     for (const item of items) {
@@ -260,6 +254,7 @@ export async function POST(req: NextRequest) {
     console.error("A non-critical, post-transaction error occurred:", postTransactionError.message);
   }
 
+  // Final response preparation
   try {
     if (!createdInvoiceId) { throw new Error("Invoice was created but its ID was not captured."); }
     const populatedInvoice = await Invoice.findById(createdInvoiceId).populate('customerId').populate('stylistId').populate('billingStaffId').lean() as IInvoice & PopulatedInvoiceForReceipt | null;

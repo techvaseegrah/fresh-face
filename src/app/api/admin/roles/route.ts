@@ -89,46 +89,43 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
     }
 
-    await connectToDatabase();
-    
-    const { name, displayName, description, permissions } = await req.json();
+    // <<< STEP 1: READ canHandleBilling FROM THE REQUEST BODY >>>
+    const { name, displayName, description, permissions, canHandleBilling } = await req.json();
 
-    if (!name || !displayName || !permissions) {
-      return NextResponse.json({ success: false, message: 'Name, display name, and permissions are required' }, { status: 400 });
+    if (!name || !displayName) { // Permissions are not strictly required for creation
+      return NextResponse.json({ success: false, message: 'Name and display name are required' }, { status: 400 });
     }
+    
+    await connectToDatabase();
     
     const upperCaseName = name.toUpperCase();
 
-    // This check handles 99% of cases
     const existingRole = await Role.findOne({ name: upperCaseName, tenantId: tenantId });
     if (existingRole) {
       return NextResponse.json({ success: false, message: `Role with name '${name}' already exists in this salon` }, { status: 409 });
     }
 
+    // <<< STEP 2: PASS canHandleBilling WHEN CREATING THE ROLE >>>
     const role = await Role.create({
       tenantId: tenantId,
       name: upperCaseName,
       displayName,
       description,
-      permissions,
+      permissions: permissions || [],
+      canHandleBilling: canHandleBilling || false, // Add this line
       createdBy: session.user.id
     });
 
     return NextResponse.json({ success: true, role }, { status: 201 });
 
-  } catch (error) {
-    // --- START OF IMPROVEMENT ---
-    // This handles the race condition where the findOne check passes but the create fails
-    // due to the unique index in the database.
-    if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
-      const body = await req.json();
-      return NextResponse.json({
-        success: false,
-        message: `Role with name '${body.name}' already exists in this salon (database conflict).`
-      }, { status: 409 }); // 409 Conflict is the correct status code
+  } catch (error: any) {
+    if (error.code === 11000) {
+        const body = await req.json().catch(() => ({ name: 'unknown' })); // Avoid error if body is already read
+        return NextResponse.json({
+            success: false,
+            message: `Role with name '${body.name}' already exists in this salon (database conflict).`
+        }, { status: 409 });
     }
-    // --- END OF IMPROVEMENT ---
-
     console.error('Error creating role:', error);
     return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });
   }

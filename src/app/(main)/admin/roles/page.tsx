@@ -1,19 +1,21 @@
-// /app/admin/roles/page.tsx - FINAL SECURE VERSION
+// /app/admin/roles/page.tsx - FINAL VERSION WITH "canHandleBilling" FEATURE
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react'; // <<< 1. IMPORT useMemo
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession, getSession } from 'next-auth/react';
-import { hasPermission, PERMISSIONS, ALL_PERMISSIONS, PermissionInfo } from '@/lib/permissions'; // <<< 2. IMPORT PermissionInfo
-import EditRoleModal from '@/components/EditRoleModal';
+import { hasPermission, PERMISSIONS, ALL_PERMISSIONS, PermissionInfo } from '@/lib/permissions';
+import EditRoleModal from '@/components/EditRoleModal'; // Assuming modal is moved to a components subfolder
 import { PencilIcon, TrashIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
 
+// <<< CHANGE 1: UPDATE THE ROLE INTERFACE >>>
 interface Role {
   _id: string;
   name: string;
   displayName: string;
   description: string;
   permissions: string[];
+  canHandleBilling: boolean; // Field for billing staff feature
   isActive: boolean;
   isSystemRole: boolean;
   createdAt: string;
@@ -26,35 +28,32 @@ export default function RolesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
+
+  // <<< CHANGE 2: UPDATE THE INITIAL STATE FOR A NEW ROLE >>>
   const [newRole, setNewRole] = useState({
     name: '',
     displayName: '',
     description: '',
-    permissions: [] as string[]
+    permissions: [] as string[],
+    canHandleBilling: false, // Add the new field to the state
   });
 
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_CREATE);
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE);
 
-  // --- THIS IS THE CORE OF THE SECURITY FIX ---
-
-  // 3. Get the logged-in user's permissions from their session.
+  // --- Security Logic (No changes needed here) ---
   const loggedInUserPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
 
-  // 4. Create a filtered list of permissions that the current user is allowed to GRANT.
   const grantablePermissions = useMemo((): PermissionInfo[] => {
-    // If the user is a super admin with '*', they can grant any permission.
     if (loggedInUserPermissions.includes('*')) {
       return ALL_PERMISSIONS;
     }
-    // Otherwise, they can only grant permissions that they themselves possess.
     return ALL_PERMISSIONS.filter(pInfo =>
       hasPermission(loggedInUserPermissions, pInfo.permission)
     );
   }, [loggedInUserPermissions]);
 
-  // 5. Group the new, secure list of grantable permissions by category for rendering.
   const grantableGroupedPermissions = useMemo(() => {
     return grantablePermissions.reduce((acc, perm) => {
       const category = perm.category || 'General';
@@ -65,22 +64,16 @@ export default function RolesPage() {
       return acc;
     }, {} as Record<string, PermissionInfo[]>);
   }, [grantablePermissions]);
+  // --- End of Security Logic ---
 
-  // --- END OF SECURITY FIX ---
 
-
+  // --- Data Fetching and Handlers (Only one small change needed) ---
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const currentSession = await getSession();
-    if (!currentSession?.user?.tenantId) {
-      // This check is for tenant-specific actions. For a Platform Admin, you might need different logic.
-      // However, for fetching roles within a tenant, this is correct.
-      // toast.error("Your session is invalid or missing a store ID.");
-      // throw new Error("Missing tenant ID in session");
-    }
     const headers = {
       ...options.headers,
       'Content-Type': 'application/json',
-      'x-tenant-id': currentSession?.user?.tenantId || '', // Pass tenantId if it exists
+      'x-tenant-id': currentSession?.user?.tenantId || '',
     };
     return fetch(url, { ...options, headers });
   }, []);
@@ -108,9 +101,7 @@ export default function RolesPage() {
     fetchRoles();
   }, [fetchRoles]);
   
-  // (No changes needed for handleUpdateRole, handleCreateRole, handleDeleteRole, etc.)
   const handleUpdateRole = async (roleId: string, updateData: any) => {
-    // This function already correctly uses tenantFetch, so it's secure.
     try {
       const response = await tenantFetch(`/api/admin/roles/${roleId}`, {
         method: 'PATCH',
@@ -128,6 +119,7 @@ export default function RolesPage() {
       toast.error('An unexpected error occurred while updating the role.');
     }
   };
+
   const handleCreateRole = async (e: React.FormEvent) => {
      e.preventDefault();
     try {
@@ -139,7 +131,8 @@ export default function RolesPage() {
       if (data.success) {
         toast.success('Role created successfully!');
         setShowCreateModal(false);
-        setNewRole({ name: '', displayName: '', description: '', permissions: [] });
+        // <<< CHANGE 3: RESET THE NEW FIELD IN THE STATE >>>
+        setNewRole({ name: '', displayName: '', description: '', permissions: [], canHandleBilling: false });
         fetchRoles();
       } else {
         toast.error(data.message || 'Error creating role');
@@ -148,6 +141,7 @@ export default function RolesPage() {
       toast.error('An unexpected error occurred while creating the role.');
     }
   };
+
   const handleDeleteRole = async (roleId: string) => {
     if (confirm('Are you sure you want to delete this role? This might affect associated users.')) {
       try {
@@ -166,10 +160,12 @@ export default function RolesPage() {
       }
     }
   };
+
   const handleEditRole = (role: Role) => {
     setEditingRole(role);
     setShowEditModal(true);
   };
+
   const togglePermission = (permission: string) => {
     setNewRole(prev => ({
       ...prev,
@@ -226,7 +222,16 @@ export default function RolesPage() {
                           <div>
                             <div className="text-sm font-medium text-gray-900">{role.displayName}</div>
                             <div className="text-sm text-gray-500">{role.description}</div>
-                            {role.isSystemRole && <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 mt-1">System Role</span>}
+                            {/* <<< CHANGE 4: ADD BADGES FOR ROLE PROPERTIES >>> */}
+                            <div className="mt-2 flex items-center gap-2">
+                                {role.isSystemRole && <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">System Role</span>}
+                                {role.canHandleBilling && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M8.433 7.418c.158-.103.346-.196.567-.267v1.698a2.5 2.5 0 00-1.134 0v-1.43zM11.567 7.151c.221.07.409.164.567.267v1.43a2.5 2.5 0 00-1.134 0V7.15z" /><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.5 4.5 0 00-1.879 3.515v1.2a1 1 0 001.121.983 13.95 13.95 0 00.758 0 1 1 0 001.121-.983v-1.2a4.5 4.5 0 00-1.879-3.515V5z" clipRule="evenodd" /></svg>
+                                        Billing Staff
+                                    </span>
+                                )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -261,6 +266,7 @@ export default function RolesPage() {
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Create New Role</h3>
               <form onSubmit={handleCreateRole} className="space-y-6">
+                {/* Inputs for name, displayName, description */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Role Name</label>
@@ -275,10 +281,38 @@ export default function RolesPage() {
                   <label className="block text-sm font-medium text-gray-700">Description</label>
                   <textarea value={newRole.description} onChange={(e) => setNewRole({ ...newRole, description: e.target.value })} rows={2} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
+
+                {/* <<< CHANGE 5: ADD THE CHECKBOX TO THE CREATE FORM >>> */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Settings</label>
+                    <div className="mt-2 space-y-2 border border-gray-200 rounded-md p-3">
+                        <div className="relative flex items-start">
+                            <div className="flex h-6 items-center">
+                                <input
+                                    id="canHandleBilling"
+                                    name="canHandleBilling"
+                                    type="checkbox"
+                                    checked={newRole.canHandleBilling}
+                                    onChange={(e) => setNewRole({ ...newRole, canHandleBilling: e.target.checked })}
+                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                                />
+                            </div>
+                            <div className="ml-3 text-sm leading-6">
+                                <label htmlFor="canHandleBilling" className="font-medium text-gray-900">
+                                    Can Handle Billing
+                                </label>
+                                <p id="canHandleBilling-description" className="text-gray-500">
+                                    Allows users with this role to appear in billing staff lists.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Permissions Section */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Permissions</label>
                   <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {/* <<< 6. USE THE NEW, SECURE, FILTERED LIST TO RENDER CHECKBOXES */}
                     {Object.entries(grantableGroupedPermissions).map(([category, permissions]) => (
                       <div key={category} className="border rounded-lg p-4">
                         <h4 className="font-medium text-gray-900 mb-2">{category}</h4>
@@ -294,6 +328,8 @@ export default function RolesPage() {
                     ))}
                   </div>
                 </div>
+
+                {/* Modal Buttons */}
                 <div className="flex justify-end space-x-3 pt-4">
                   <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200">Cancel</button>
                   <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700">Create Role</button>
@@ -306,8 +342,7 @@ export default function RolesPage() {
 
        {/* Edit Role Modal */}
        {showEditModal && editingRole && (
-        // Your EditRoleModal will also need to be passed the grantablePermissions
-        // to ensure a user cannot edit a role to have permissions they don't possess.
+        // <<< CHANGE 6: PASS THE SECURE PERMISSIONS LIST TO THE MODAL >>>
         <EditRoleModal 
             isOpen={showEditModal} 
             onClose={() => { setShowEditModal(false); setEditingRole(null); }} 

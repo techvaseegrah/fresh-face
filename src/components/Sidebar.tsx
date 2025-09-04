@@ -16,7 +16,7 @@ import {
   ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
-import { BeakerIcon, ClipboardList,PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon } from 'lucide-react';
+import { BeakerIcon, ClipboardList, PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon } from 'lucide-react';
 import { DocumentCheckIcon } from '@heroicons/react/24/solid';
 
 
@@ -83,66 +83,15 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
     
      const reconciliationSubItems: NavSubItem[] = [
-      { 
-        href: '/back-office/reconciliation', 
-        label: 'Daily Entry', 
-        icon: <PencilIcon className="h-5 w-5" />, 
-        show: hasAnyPermission(userPermissions, [PERMISSIONS.RECONCILIATION_READ]),
-      },
-      { 
-        href: '/back-office/reconciliation/history', 
-        label: 'History Report', 
-        icon: <BookOpenIcon className="h-5 w-5" />, 
-        show: hasAnyPermission(userPermissions, [PERMISSIONS.RECONCILIATION_READ])
-      },
-      { 
-        href: '/back-office/pnl-summary', 
-        label: 'Profit-loss', 
-        icon: <ChartBarIcon className="h-5 w-5" />, 
-        show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ])
-      },
-      { 
-        href: '/back-office/monthly-comparison', 
-        label: 'profit-loss comparison', 
-        icon: <ScaleIcon className="h-5 w-5" />, 
-        show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ])
-      },
+      { href: '/back-office/reconciliation', label: 'Daily Entry', icon: <PencilIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.RECONCILIATION_READ]), },
+      { href: '/back-office/reconciliation/history', label: 'History Report', icon: <BookOpenIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.RECONCILIATION_READ]) },
+      { href: '/back-office/pnl-summary', label: 'Profit-loss', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ]) },
+      { href: '/back-office/monthly-comparison', label: 'profit-loss comparison', icon: <ScaleIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ]) },
     ];
 
-    const reportSubItems: NavSubItem[] = [
-      { 
-          href: '/sales-report', 
-          label: 'Sales Report', 
-          icon: <DocumentTextIcon className="h-5 w-5" />, 
-          show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) 
-      },
-      { 
-          href: '/reports/gift-card-sold', 
-          label: 'Gift Card Sold', 
-          icon: <DocumentTextIcon className="h-5 w-5" />, 
-          show: hasAnyPermission(userPermissions, [PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ]) 
-      },
-      { 
-          href: '/reports/gift-card-redemption', 
-          label: 'Gift Card Redemption', 
-          icon: <DocumentTextIcon className="h-5 w-5" />, 
-          show: hasAnyPermission(userPermissions, [PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ]) 
-      },
-      // ▼▼▼ ADD THIS BLOCK ▼▼▼
-      { 
-          href: '/reports/package-sales', 
-          label: 'Package Sales', 
-          icon: <DocumentTextIcon className="h-5 w-5" />, 
-          show: hasAnyPermission(userPermissions, [PERMISSIONS.PACKAGES_REPORTS_READ]) 
-      },
-      { 
-          href: '/reports/package-redemptions', 
-          label: 'Package Redemptions', 
-          icon: <DocumentTextIcon className="h-5 w-5" />, 
-          show: hasAnyPermission(userPermissions, [PERMISSIONS.PACKAGES_REPORTS_READ]) 
-      },
-      // ▲▲▲ END OF ADDITION ▲▲▲
-    ];
+    // ▼▼▼ CHANGE 1: THE reportSubItems and canSeeReports ARE NO LONGER NEEDED HERE. DELETE THEM. ▼▼▼
+    // const reportSubItems: NavSubItem[] = [ ... ];
+    // const canSeeReports = reportSubItems.some(item => item.show);
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
@@ -151,20 +100,26 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const canSeeSopManagement = sopSubItems.some(item => item.show);
     const canSeeTaskManagement = taskSubItems.some(item => item.show);
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
-    const canSeeReports = reportSubItems.some(item => item.show);
     
     return [
       { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.DASHBOARD_READ, PERMISSIONS.DASHBOARD_MANAGE]) },
       { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.APPOINTMENTS_READ, PERMISSIONS.APPOINTMENTS_CREATE]) },
       { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_CREATE]) },
       { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PRODUCTS_READ, PERMISSIONS.SERVICES_READ]) },
+      
+      // ▼▼▼ CHANGE 2: REPLACE THE OLD DROPDOWN OBJECT WITH THIS SIMPLE LINK OBJECT ▼▼▼
       { 
         href: '/reports', 
         label: 'Reports', 
         icon: <ChartBarIcon className="h-5 w-5" />, 
-        show: canSeeReports, 
-        subItems: reportSubItems.filter(item => item.show) 
+        show: hasAnyPermission(userPermissions, [
+            PERMISSIONS.SALES_REPORT_READ,
+            PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ,
+            PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ,
+            PERMISSIONS.PACKAGES_REPORTS_READ
+        ]) 
       },
+
       { href: '/staffmanagement', label: 'Staff Management', icon: <UsersIcon className="h-5 w-5" />, show: canSeeStaffManagement, subItems: staffSubItems.filter(item => item.show) },
       { href: '/DayendClosing', label:'Day-end Closing', icon: <BanknotesIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]) },
       { href: '/alerts', label: 'Alerts', icon: <BellAlertIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ALERTS_READ]) },
@@ -174,7 +129,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/inventory-checker', label: 'Inventory Checker', icon: <BeakerIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) },
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
-      
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
       { href: '/task-management', label: 'Task Management', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: canSeeTaskManagement, subItems: taskSubItems.filter(item => item.show) },
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
@@ -190,13 +144,12 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
   }, [userPermissions]);
   
+  // No changes needed below this line, the existing logic handles this perfectly.
+  
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
       const activeCheckPath = subItem.basePathForActive || subItem.href;
-      if (item.href === '/reports') {
-        return pathname.startsWith('/reports/') || pathname.startsWith('/sales-report');
-      }
       return pathname.startsWith(activeCheckPath);
     }));
     setOpenItemKey(activeParent?.href || null);
@@ -214,9 +167,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   const handleSignOut = () => signOut({ callbackUrl: '/login' });
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
     if (item.subItems?.length) {
-      if (item.href === '/reports') {
-        return currentPath.startsWith('/reports/') || currentPath.startsWith('/sales-report');
-      }
       return item.subItems.some(subItem => currentPath.startsWith(subItem.basePathForActive || subItem.href));
     }
     if (item.href === '/dashboard') {

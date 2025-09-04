@@ -217,9 +217,9 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
                 membershipRate: undefined,
                 quantity: 1,
                 finalPrice: 0,
-                staffId: '', // Corrected: Set to empty to force user selection
+                staffId: '', 
                 isRemovable: true,
-                isRedemption: true, // Ensure this flag is present
+                isRedemption: true,
                 redemptionInfo: {
                   customerPackageId: itemToRedeem.customerPackageId,
                   redeemedItemId: itemToRedeem.redeemedItemId,
@@ -308,13 +308,13 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
       membershipRate: undefined,
       quantity: 1,
       finalPrice: 0,
-      staffId: '', // Corrected: Set to empty to force user selection
+      staffId: '',
       isRemovable: true,
       redemptionInfo: {
         customerPackageId: redemptionData.customerPackageId,
         redeemedItemId: redemptionData.redeemedItemId,
       },
-      isRedemption: true, // This flag is now correctly added
+      isRedemption: true,
     };
     setBillItems(prev => [...prev, newItem]);
     setPackageRedemptions(prev => [...prev, redemptionData]);
@@ -333,6 +333,17 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     try {
         const finalPaymentDetails = { cash: (originalPaymentDetails.cash || 0) + newPaymentDetails.cash, card: (originalPaymentDetails.card || 0) + newPaymentDetails.card, upi: (originalPaymentDetails.upi || 0) + newPaymentDetails.upi, other: (originalPaymentDetails.other || 0) + newPaymentDetails.other, };
         if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); }
+
+        // ✅ FIX: Construct the package redemptions payload from `billItems` to include the correct staffId.
+        const finalPackageRedemptions = billItems
+          .filter(item => item.isRedemption && item.redemptionInfo)
+          .map(item => ({
+            customerPackageId: item.redemptionInfo!.customerPackageId,
+            redeemedItemId: item.itemId,
+            redeemedItemType: item.itemType as 'service' | 'product',
+            quantityRedeemed: item.quantity,
+            redeemedBy: item.staffId, // This is the crucial addition.
+          }));
 
         const finalPayload: FinalizeBillingPayload = {
             appointmentId: appointment._id,
@@ -353,7 +364,8 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
             manualDiscountValue: discount,
             finalManualDiscountApplied: totals.calculatedDiscount,
             giftCardRedemption: appliedGiftCard ? { cardId: appliedGiftCard.cardId, amount: appliedGiftCard.amountToApply } : undefined,
-            packageRedemptions: packageRedemptions.length > 0 ? packageRedemptions.map(r => ({ customerPackageId: r.customerPackageId, redeemedItemId: r.redeemedItemId, redeemedItemType: r.redeemedItemType, quantityRedeemed: r.quantityRedeemed, })) : undefined,
+            // Use the newly constructed array
+            packageRedemptions: finalPackageRedemptions.length > 0 ? finalPackageRedemptions : undefined,
         };
 
         const invoiceData = await onFinalizeAndPay(finalPayload);
@@ -361,7 +373,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
         setFinalizedInvoiceData(invoiceData);
         setModalView('success');
     } catch (err: any) { setError(err.message || "An unknown error occurred during finalization."); } finally { setIsLoading(false); }
-  }, [ billItems, totals, selectedStaffId, originalPaymentDetails, newPaymentDetails, appointment, customer, stylist, notes, membershipGranted, discount, discountType, onFinalizeAndPay, appliedGiftCard, packageRedemptions ]);
+  }, [ billItems, totals, selectedStaffId, originalPaymentDetails, newPaymentDetails, appointment, customer, stylist, notes, membershipGranted, discount, discountType, onFinalizeAndPay, appliedGiftCard ]);
   
   // =================================================================================
   // VII. RETURNED VALUES

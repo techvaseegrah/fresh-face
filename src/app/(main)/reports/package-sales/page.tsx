@@ -1,20 +1,12 @@
-// src/app/admin/reports/package-sales/page.tsx (or your file path)
-
-"use client";
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { useSession } from 'next-auth/react';
-
-// REMOVE THE OLD MODAL IMPORT
-// import ReportDownloadModal from '@/components/ReportDownloadModal';
-
-// ADD THE NEW UTILS IMPORT
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { exportToExcel, exportToPdf } from '@/lib/reportUtils';
-
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import { PERMISSIONS } from '@/lib/permissions';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -32,20 +24,18 @@ interface PackageSale {
 const formatDateForInput = (date: Date): string => format(date, 'yyyy-MM-dd');
 
 export default function PackageSalesReportPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const userPermissions = session?.user?.role?.permissions || [];
-  const canManageReport = userPermissions.includes(PERMISSIONS.PACKAGES_REPORTS_MANAGE) || userPermissions.includes(PERMISSIONS.ALL);
 
   const [reportData, setReportData] = useState<PackageSale[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isDownloading, setIsDownloading] = useState<boolean>(false); // State for download buttons
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   
   const [startDate, setStartDate] = useState<string>(formatDateForInput(subDays(new Date(), 29)));
   const [endDate, setEndDate] = useState<string>(formatDateForInput(new Date()));
 
   const fetchPackageSales = useCallback(async () => {
-    // ... (fetchPackageSales function remains unchanged)
     if (!startDate || !endDate) {
       setReportData([]);
       return;
@@ -74,11 +64,28 @@ export default function PackageSalesReportPage() {
   }, [startDate, endDate]);
 
   useEffect(() => {
-    fetchPackageSales();
+    if (status === 'authenticated') {
+        fetchPackageSales();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status]);
 
-  // --- HANDLER FOR EXCEL DOWNLOAD ---
+
+  if (status === "loading") {
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (status === "unauthenticated" || !hasPermission(userPermissions, PERMISSIONS.PACKAGES_REPORTS_READ)) {
+    return (
+        <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+            <div className="text-center">
+                <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+            </div>
+        </div>
+    );
+  }
+
   const handleExcelDownload = () => {
     setIsDownloading(true);
     const headers = ["Date Sold", "Package Name", "Customer Name", "Customer Phone", "Price", "Sold By", "Status"];
@@ -95,7 +102,6 @@ export default function PackageSalesReportPage() {
     setIsDownloading(false);
   };
 
-  // --- HANDLER FOR PDF DOWNLOAD ---
   const handlePdfDownload = () => {
     setIsDownloading(true);
     const headers = ["Date", "Package", "Customer", "Phone", "Price", "Sold By", "Status"];
@@ -104,7 +110,7 @@ export default function PackageSalesReportPage() {
       sale.packageTemplateId?.name || 'N/A',
       sale.customerId?.name || 'N/A',
       sale.customerId?.phone || 'N/A',
-      `Rs ${sale.purchasePrice.toFixed(2)}`,
+      `₹${sale.purchasePrice.toFixed(2)}`,
       sale.soldBy?.name || 'N/A',
       sale.status,
     ];
@@ -117,7 +123,6 @@ export default function PackageSalesReportPage() {
       <h1 className="text-2xl font-bold mb-4">Package Sales Report</h1>
       <Card className="p-4 mb-4">
         <div className="flex flex-wrap items-center gap-4">
-          {/* ... (date inputs remain the same) ... */}
            <div className="flex items-center gap-2">
             <label htmlFor="startDate" className="text-sm font-medium">From:</label>
             <input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-300 rounded-md px-3 py-2 text-sm" />
@@ -130,8 +135,7 @@ export default function PackageSalesReportPage() {
             {isLoading ? 'Fetching...' : 'Fetch Report'}
           </Button>
           
-          {/* --- ADD NEW DOWNLOAD BUTTONS --- */}
-          {canManageReport && (
+          {hasPermission(userPermissions, PERMISSIONS.PACKAGES_REPORTS_MANAGE) && (
             <>
               <Button 
                 variant="outline" 
@@ -152,7 +156,6 @@ export default function PackageSalesReportPage() {
         </div>
       </Card>
       
-      {/* ... (Table rendering remains unchanged) ... */}
        <Card>
         <Table>
           <TableHeader>
@@ -182,16 +185,13 @@ export default function PackageSalesReportPage() {
             ) : (
               <TableRow>
                 <TableCell colSpan={7} className="text-center h-24">
-                  {!isLoading && !error ? 'No data available for the selected period.' : ''}
+                  {isLoading ? 'Loading...' : !error ? 'No data available for the selected period.' : error}
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
-
-      {/* --- REMOVE THE MODAL COMPONENT --- */}
-      {/* <ReportDownloadModal ... /> */}
     </div>
   );
 }
