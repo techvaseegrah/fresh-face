@@ -55,8 +55,8 @@ export async function GET(request: NextRequest) {
       {
         $group: {
             _id: '$_id',
-            invoiceServiceTotal: { $sum: '$serviceTotal' },
-            invoiceProductTotal: { $sum: '$productTotal' },
+            invoiceServiceTotal: { $first: '$serviceTotal' },
+            invoiceProductTotal: { $first: '$productTotal' },
             cashPaid: { $first: '$paymentDetails.cash' },
             cardPaid: { $first: '$paymentDetails.card' },
             upiPaid: { $first: '$paymentDetails.upi' },

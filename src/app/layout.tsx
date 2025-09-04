@@ -1,3 +1,5 @@
+// src/app/layout.tsx
+
 // This can now be a Server Component, which is better!
 import { Inter } from "next/font/google";
 import "./globals.css";
@@ -7,11 +9,14 @@ import 'react-toastify/dist/ReactToastify.css';
 
 const inter = Inter({ subsets: ["latin"] });
 
-// You can also add metadata here if you want
-// export const metadata = {
-//   title: 'Fresh Face Salon',
-//   description: 'Salon Management System',
-// };
+// ▼▼▼ THIS IS THE FIX ▼▼▼
+// Uncomment this and add the viewport property.
+export const metadata = {
+  title: 'Fresh Face Salon',
+  description: 'Salon Management System',
+  viewport: 'width=device-width, initial-scale=1', // <-- This line is essential for mobile responsiveness
+};
+// ▲▲▲ END OF FIX ▲▲▲
 
 export default function RootLayout({
   children,
@@ -20,11 +25,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-gray-50`}>
-        {/*
-          Now, the SessionProvider is correctly wrapped inside its own client component,
-          and it wraps everything else in your application.
-        */}
+      <body className={`${inter.className} bg-gray-50 dark:bg-gray-800`}>
         <Providers>
           {children}
           
@@ -43,5 +44,5 @@ export default function RootLayout({
         </Providers>
       </body>
     </html>
-  );
+  ); 
 }

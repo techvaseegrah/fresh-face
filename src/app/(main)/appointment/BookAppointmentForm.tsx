@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
 import { useDebounce } from '@/hooks/useDebounce'; 
 import { useSession } from 'next-auth/react';
+import { CustomerPackage } from '@/app/(main)/crm/types';
 
 // ===================================================================================
 //  INTERFACES & TYPE DEFINITIONS
@@ -15,6 +16,7 @@ export interface ServiceAssignment {
   serviceId: string;
   stylistId: string;
   guestName?: string;
+  isRedeemed?: boolean;
 }
 
 export interface ServiceAssignmentState extends ServiceAssignment {
@@ -37,6 +39,11 @@ export interface NewBookingData {
   notes?: string;
   status: 'Appointment' | 'Checked-In';
   appointmentType?: 'Online' | 'Offline';
+  redeemedItems?: {
+    customerPackageId: string;
+    redeemedItemId: string;
+    redeemedItemType: 'service' | 'product';
+  }[];
 }
 
 interface AppointmentFormData {
@@ -61,6 +68,23 @@ interface CustomerDetails { _id: string; name: string; email: string; phoneNumbe
 interface BookAppointmentFormProps { isOpen: boolean; onClose: () => void; onBookAppointment: (data: NewBookingData) => Promise<void>; }
 
 // ===================================================================================
+//  ✅ BUG FIX: UTILITY FUNCTION
+// ===================================================================================
+// Moved getStatusColor here so it's accessible by all components in this file.
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'Appointment': return 'bg-blue-100 text-blue-800';
+    case 'Checked-In': return 'bg-yellow-100 text-yellow-800';
+    case 'Checked-Out': return 'bg-purple-100 text-purple-800';
+    case 'Paid': return 'bg-green-100 text-green-800';
+    case 'Cancelled': return 'bg-red-100 text-red-800';
+    case 'No-Show': return 'bg-gray-100 text-gray-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+};
+
+
+// ===================================================================================
 //  SUB-COMPONENTS: CustomerHistoryModal & CustomerDetailPanel
 // ===================================================================================
 
@@ -70,22 +94,9 @@ const CustomerHistoryModal: React.FC<{
   customer: CustomerDetails | null;
 }> = ({ isOpen, onClose, customer }) => {
   if (!isOpen || !customer) return null;
+  const totalSpent = customer.appointmentHistory.filter(apt => apt.status === 'Paid').reduce((sum: number, apt: AppointmentHistory) => sum + apt.totalAmount, 0);
 
-  const totalSpent = customer.appointmentHistory
-    .filter(apt => apt.status === 'Paid')
-    .reduce((sum: number, apt: AppointmentHistory) => sum + apt.totalAmount, 0);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Appointment': return 'bg-blue-100 text-blue-800';
-      case 'Checked-In': return 'bg-yellow-100 text-yellow-800';
-      case 'Checked-Out': return 'bg-purple-100 text-purple-800';
-      case 'Paid': return 'bg-green-100 text-green-800';
-      case 'Cancelled': return 'bg-red-100 text-red-800';
-      case 'No-Show': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // ✅ BUG FIX: The getStatusColor function was removed from here.
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
@@ -191,18 +202,6 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({ customer, isL
     } else { setShowBarcodeInput(true); }
   };
   const handleCancelBarcodeInput = () => { setShowBarcodeInput(false); setMembershipBarcode(''); setBarcodeError(''); setIsBarcodeValid(true); };
-  
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Appointment': return 'bg-blue-100 text-blue-800';
-      case 'Checked-In': return 'bg-yellow-100 text-yellow-800';
-      case 'Checked-Out': return 'bg-purple-100 text-purple-800';
-      case 'Paid': return 'bg-green-100 text-green-800';
-      case 'Cancelled': return 'bg-red-100 text-red-800';
-      case 'No-Show': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
   if (isLoading) { return ( <div className="animate-pulse space-y-4 h-full"><div className="h-8 bg-gray-200 rounded-md w-3/4" /><div className="h-5 bg-gray-200 rounded-md w-1/2" /><div className="h-24 bg-gray-100 rounded-lg mt-6" /><div className="h-32 bg-gray-100 rounded-lg" /><div className="space-y-3"><div className="h-20 bg-gray-100 rounded-lg" /><div className="h-20 bg-gray-100 rounded-lg" /><div className="h-20 bg-gray-100 rounded-lg" /></div></div> ); }
   if (!customer) { return ( <div className="text-center text-gray-500 h-full flex flex-col items-center justify-center p-6 bg-gray-50 rounded-lg"><UserCircleIcon className="w-16 h-16 text-gray-300 mb-4" /><h3 className="font-semibold text-gray-700 mb-2">Customer Details</h3><p className="text-sm text-center">Enter a phone number or scan a barcode to look up an existing customer.</p><div className="mt-4 flex items-center gap-2 text-xs text-gray-500"><QrCodeIcon className="w-4 h-4" /><span>Members can use barcode for quick lookup</span></div></div> ); }
   
@@ -247,7 +246,6 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({ customer, isL
   );
 };
 
-
 // ===================================================================================
 //  MAIN BOOKING FORM COMPONENT
 // ===================================================================================
@@ -277,6 +275,10 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [customerPackages, setCustomerPackages] = useState<CustomerPackage[]>([]);
+  const [isLoadingPackages, setIsLoadingPackages] = useState(false);
+  const [packageError, setPackageError] = useState<string | null>(null);
+  const [redeemedItems, setRedeemedItems] = useState<NewBookingData['redeemedItems']>([]);
   const { data: session } = useSession();
 
   const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
@@ -330,6 +332,8 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
       setCustomerLookupStatus('idle');
       setAssignableStaff([]);
       setIsLoadingStaff(true);
+      setCustomerPackages([]);
+      setRedeemedItems([]);
     }
   }, [isOpen]);
 
@@ -369,7 +373,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
       const sorted = filtered.sort((a,b) => a.price - b.price);
       setFilteredServices(sorted);
   }, [debouncedServiceSearch, allServices]);
-
 
   useEffect(() => {
     if (formData.status === 'Checked-In') {
@@ -470,6 +473,32 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
       setCustomerLookupStatus('idle');
     }
   }, [formData.phoneNumber, isCustomerSelected, fetchAndSetCustomerDetails]);
+  
+  useEffect(() => {
+    if (!selectedCustomerDetails?._id || !session?.user?.tenantId) {
+      setCustomerPackages([]);
+      setRedeemedItems([]);
+      return;
+    }
+    const fetchPackagesForCustomer = async () => {
+      setIsLoadingPackages(true);
+      setPackageError(null);
+      try {
+        const res = await tenantAwareFetch(`/api/customer/${selectedCustomerDetails._id}/packages`);
+        if (!res.ok) throw new Error('Failed to fetch customer packages.');
+        const allPackages: CustomerPackage[] = await res.json();
+        const now = new Date();
+        const redeemablePackages = allPackages.filter(p => p.status === 'active' && new Date(p.expiryDate) > now && p.remainingItems.some(i => i.remainingQuantity > 0));
+        setCustomerPackages(redeemablePackages);
+      } catch (err: any) {
+        setPackageError(err.message);
+        setCustomerPackages([]);
+      } finally {
+        setIsLoadingPackages(false);
+      }
+    };
+    fetchPackagesForCustomer();
+  }, [selectedCustomerDetails, session, tenantAwareFetch]);
 
   const handleBarcodeSearch = async () => {
     if (!barcodeQuery.trim()) return;
@@ -533,8 +562,50 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     }
   };
 
+  const handleRedeemItem = (pkg: CustomerPackage, item: CustomerPackage['remainingItems'][0]) => {
+    const isAlreadyRedeemed = redeemedItems?.some(r => r.customerPackageId === pkg._id && r.redeemedItemId === item.itemId);
+    if (isAlreadyRedeemed) { toast.info(`${item.itemName} from this package is already added.`); return; }
+    
+    const serviceToAdd: ServiceFromAPI = {
+        _id: item.itemId,
+        name: `(Package) ${item.itemName}`,
+        price: 0,
+        duration: allServices.find(s => s._id === item.itemId)?.duration || 0,
+    };
+    
+    const newAssignment: ServiceAssignmentState = {
+      _tempId: `redeemed-${pkg._id}-${item.itemId}`,
+      serviceId: item.itemId,
+      stylistId: '',
+      serviceDetails: serviceToAdd,
+      availableStylists: assignableStaff,
+      isLoadingStylists: isLoadingStaff,
+      isRedeemed: true,
+    };
+    setServiceAssignments(prev => [...prev, newAssignment]);
+    
+    setRedeemedItems(prev => [...(prev || []), {
+      customerPackageId: pkg._id,
+      redeemedItemId: item.itemId,
+      redeemedItemType: item.itemType as 'service' | 'product',
+    }]);
+    
+    toast.success(`"${item.itemName}" added to appointment from package.`);
+  };
+
+  const handleUnredeemItem = (serviceId: string) => {
+    setServiceAssignments(prev => prev.filter(a => !(a.serviceId === serviceId && a.isRedeemed)));
+    setRedeemedItems(prev => prev?.filter(r => r.redeemedItemId !== serviceId));
+    toast.info("Redeemed service removed from appointment.");
+  };
+
   const handleRemoveService = (_tempId: string) => {
-    setServiceAssignments(prev => prev.filter(a => a._tempId !== _tempId));
+    const assignmentToRemove = serviceAssignments.find(a => a._tempId === _tempId);
+    if (assignmentToRemove?.isRedeemed) {
+        handleUnredeemItem(assignmentToRemove.serviceId);
+    } else {
+        setServiceAssignments(prev => prev.filter(a => a._tempId !== _tempId));
+    }
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -558,7 +629,12 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
               return;
           }
           const finalAssignments = serviceAssignments.map(a => ({ serviceId: a.serviceId, stylistId: a.stylistId, guestName: a.guestName || undefined }));
-          const appointmentData: NewBookingData = { ...formData, serviceAssignments: finalAssignments, appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online' };
+          const appointmentData: NewBookingData = { 
+            ...formData, 
+            serviceAssignments: finalAssignments, 
+            appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online',
+            redeemedItems: redeemedItems,
+          };
           await onBookAppointment(appointmentData);
       } catch (error: any) { setFormError(error.message || 'An unexpected error occurred.'); } 
       finally { setIsSubmitting(false); }
@@ -623,6 +699,39 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
                     <div><label htmlFor="date" className="block text-sm font-medium mb-1.5">Date <span className="text-red-500">*</span></label><input id="date" type="date" name="date" value={formData.date} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                     <div><label htmlFor="time" className="block text-sm font-medium mb-1.5">Time <span className="text-red-500">*</span></label><input id="time" type="time" name="time" value={formData.time} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'}/></div>
                   </div>
+                  
+                  {selectedCustomerDetails && (customerPackages.length > 0 || isLoadingPackages) && (
+                    <div className="mt-5">
+                      <label className="block text-sm font-medium mb-1.5">Redeem from Package</label>
+                      <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                        {isLoadingPackages && <p className="text-xs text-gray-500">Loading available packages...</p>}
+                        {packageError && <p className="text-xs text-red-600">{packageError}</p>}
+                        <div className="space-y-3">
+                          {customerPackages.map(pkg => (
+                            <div key={pkg._id}>
+                              <h5 className="font-semibold text-sm text-indigo-800">{pkg.packageName}</h5>
+                              <ul className="pl-2 mt-1 space-y-1">
+                                {pkg.remainingItems.filter(i => i.remainingQuantity > 0).map(item => (
+                                  <li key={item.itemId} className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-700">{item.itemName} ({item.remainingQuantity} left)</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRedeemItem(pkg, item)}
+                                      disabled={redeemedItems?.some(r => r.redeemedItemId === item.itemId)}
+                                      className="px-2 py-0.5 text-xs font-medium text-indigo-700 bg-indigo-200 rounded-md hover:bg-indigo-300 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                                    >
+                                      Add to Appointment
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-5"><label className="block text-sm font-medium mb-1.5">Add Services <span className="text-red-500">*</span></label><div className="relative"><input type="text" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} placeholder="Search by name or price..." className={`${inputBaseClasses} pr-8`} />{serviceSearch && filteredServices.length > 0 && (<ul className="absolute z-20 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">{filteredServices.map((service) => (<li key={service._id} onClick={() => handleAddService(service)} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer flex justify-between"><span>{service.name}</span><span className="font-semibold">₹{service.price}</span></li>))}</ul>)}</div></div>
                   
                   <div className="mt-4 space-y-4">

@@ -3,10 +3,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Product from '@/models/Product';
-import { getTenantIdOrBail } from '@/lib/tenant'; // Import tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import mongoose from 'mongoose'; // Import mongoose for ObjectId validation
 
 // Helper for permission checks
 async function checkPermission(permission: string) {
@@ -16,6 +17,45 @@ async function checkPermission(permission: string) {
   }
   return session;
 }
+
+// ▼▼▼ ADD THIS FUNCTION ▼▼▼
+// This function handles fetching a single product and was previously missing.
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  // 1. Get Tenant ID or bail if not present
+  const tenantId = getTenantIdOrBail(req);
+  if (tenantId instanceof NextResponse) {
+    return tenantId;
+  }
+
+  // 2. Check user permissions for reading products
+  const session = await checkPermission(PERMISSIONS.PRODUCTS_READ);
+  if (!session) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  // 3. Validate the product ID format
+  if (!mongoose.Types.ObjectId.isValid(params.id)) {
+      return NextResponse.json({ success: false, error: 'Invalid Product ID format' }, { status: 400 });
+  }
+
+  await dbConnect();
+  try {
+    // 4. Find the document scoped to the current tenant and ID
+    const product = await Product.findOne({ _id: params.id, tenantId });
+
+    if (!product) {
+      return NextResponse.json({ success: false, error: 'Product not found for this tenant' }, { status: 404 });
+    }
+
+    // 5. Return the product data in the consistent response format
+    return NextResponse.json({ success: true, data: product });
+
+  } catch (error: any) {
+    console.error("Error fetching product by ID:", error);
+    return NextResponse.json({ success: false, error: 'Server Error' }, { status: 500 });
+  }
+}
+// ▲▲▲ END OF ADDITION ▲▲▲
 
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {

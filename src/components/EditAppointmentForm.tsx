@@ -31,12 +31,15 @@ interface AppointmentForEdit {
     phoneNumber?: string;
     isMembership?: boolean;
   };
-  serviceIds?: ServiceFromAPI[]; 
+  serviceIds?: ServiceFromAPI[];
   stylistId?: StylistFromAPI;
   appointmentDateTime: string;
   notes?: string;
   status: 'Appointment' | 'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
   appointmentType: 'Online' | 'Offline';
+  redeemedItems?: {
+    redeemedItemId: string;
+  }[];
 }
 
 interface EditAppointmentFormProps {
@@ -46,6 +49,9 @@ interface EditAppointmentFormProps {
   onUpdateAppointment: (appointmentId: string, updateData: any) => Promise<void>;
 }
 
+interface ServiceInForm extends ServiceFromAPI {
+  isRedeemed: boolean;
+}
 
 // ===================================================================================
 //  MAIN EDIT FORM COMPONENT
@@ -67,7 +73,7 @@ export default function EditAppointmentForm({
 
   // Data state
   const [allServices, setAllServices] = useState<ServiceFromAPI[]>([]);
-  const [selectedServices, setSelectedServices] = useState<ServiceFromAPI[]>([]);
+  const [selectedServices, setSelectedServices] = useState<ServiceInForm[]>([]);
   const [availableStylists, setAvailableStylists] = useState<StylistFromAPI[]>([]);
   
   // UI state
@@ -101,15 +107,18 @@ export default function EditAppointmentForm({
     const isMember = appointment?.customerId?.isMembership || false;
 
     selectedServices.forEach(service => {
-      const hasDiscount = isMember && service.membershipRate;
-      const price = hasDiscount ? service.membershipRate! : service.price;
+      const originalService = allServices.find(s => s._id === service._id) || service;
+      const hasDiscount = isMember && !service.isRedeemed && typeof originalService.membershipRate === 'number';
+      const price = hasDiscount ? originalService.membershipRate! : service.price;
+      
       total += price;
+
       if (hasDiscount) {
-        membershipSavings += service.price - service.membershipRate!;
+        membershipSavings += originalService.price - originalService.membershipRate!;
       }
     });
     return { total, membershipSavings };
-  }, [selectedServices, appointment?.customerId?.isMembership]);
+  }, [selectedServices, appointment?.customerId?.isMembership, allServices]);
 
   // Effect to populate form when an appointment is selected
   useEffect(() => {
@@ -128,7 +137,20 @@ export default function EditAppointmentForm({
         stylistId: appointment.stylistId?._id || '',
       });
 
-      setSelectedServices(appointment.serviceIds || []);
+      const processedServices = (appointment.serviceIds || []).map(service => {
+        const isRedeemed = appointment.redeemedItems?.some(
+          // ✅ BUG FIX: Cast both IDs to strings for a reliable comparison
+          redeemed => String(redeemed.redeemedItemId) === String(service._id)
+        ) || false;
+
+        return {
+          ...service,
+          price: isRedeemed ? 0 : service.price,
+          name: isRedeemed ? `(Package) ${service.name}` : service.name,
+          isRedeemed: isRedeemed,
+        };
+      });
+      setSelectedServices(processedServices);
 
       const fetchServices = async () => {
         try {
@@ -189,7 +211,7 @@ export default function EditAppointmentForm({
     if (!serviceId) return;
     const serviceToAdd = allServices.find((s) => s._id === serviceId);
     if (serviceToAdd && !selectedServices.some((s) => s._id === serviceId)) {
-      setSelectedServices(prev => [...prev, serviceToAdd]);
+      setSelectedServices(prev => [...prev, { ...serviceToAdd, isRedeemed: false }]);
     }
     setServiceSearchQuery('');
   };
@@ -314,7 +336,7 @@ export default function EditAppointmentForm({
                 <Combobox.Input
                   className={inputClasses + ' pr-10'}
                   onChange={(event) => setServiceSearchQuery(event.target.value)}
-                  placeholder="Search by name or price (e.g., 500)..."
+                  placeholder="Search to add more services..."
                   autoComplete="off"
                 />
                 <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
@@ -357,21 +379,24 @@ export default function EditAppointmentForm({
             </Combobox>
             <div className="mt-2 space-y-2">
               {selectedServices.map((service) => (
-                <div key={service._id} className="flex items-center justify-between bg-gray-100 p-2 rounded">
+                <div key={service._id} className={`flex items-center justify-between p-2 rounded ${service.isRedeemed ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-100'}`}>
                   <div>
                     <span className="font-medium text-sm">{service.name}</span>
                     <span className="text-xs text-gray-600 ml-2">({service.duration} min)</span>
+                     {service.isRedeemed && (<span className="ml-2 text-xs font-semibold text-indigo-800 bg-indigo-200 px-2 py-0.5 rounded-full">Package</span>)}
                   </div>
                   <div className="flex items-center gap-3">
-                    {appointment.customerId.isMembership && service.membershipRate ? (
+                    {appointment.customerId.isMembership && !service.isRedeemed && typeof service.membershipRate === 'number' ? (
                       <div className="text-right">
-                        <div className="line-through text-gray-400 text-xs">₹{service.price}</div>
-                        <div className="text-green-600 font-semibold text-sm">₹{service.membershipRate}</div>
+                        <div className="line-through text-gray-400 text-xs">₹{service.price.toFixed(2)}</div>
+                        <div className="text-green-600 font-semibold text-sm">₹{service.membershipRate.toFixed(2)}</div>
                       </div>
                     ) : (
-                      <span className="font-semibold text-sm">₹{service.price}</span>
+                      <span className={`font-semibold text-sm ${service.isRedeemed ? 'text-indigo-600' : 'text-gray-800'}`}>
+                        {service.isRedeemed ? 'Redeemed' : `₹${service.price.toFixed(2)}`}
+                      </span>
                     )}
-                    <button type="button" onClick={() => handleRemoveService(service._id)} className="text-red-500 hover:text-red-700 text-xl font-bold leading-none">×</button>
+                    <button type="button" onClick={() => handleRemoveService(service._id)} className="text-red-500 hover:text-red-700 text-xl font-bold leading-none" disabled={service.isRedeemed}>&times;</button>
                   </div>
                 </div>
               ))}

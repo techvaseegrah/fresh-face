@@ -14,6 +14,7 @@ import BillingTotals from './components/billing/BillingTotals';
 import SuccessCard from './components/billing/SuccessCard';
 import Receipt from '@/components/Receipt';
 import ApplyGiftCardModal from './components/billing/ApplyGiftCardModal';
+import RedeemPackageModal from './components/billing/RedeemPackageModal'; // 1. IMPORT the new modal
 
 interface BillingModalProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
   const [isClient, setIsClient] = useState(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState(false);
   const [isGiftCardModalOpen, setIsGiftCardModalOpen] = useState(false);
+  const [isRedeemPackageModalOpen, setIsRedeemPackageModalOpen] = useState(false); // 2. ADD state for the new modal
 
   const state = useBillingState(props);
 
@@ -66,7 +68,7 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
     ? "bg-white p-4 sm:p-6 rounded-lg shadow-xl w-full max-w-6xl h-full max-h-[95vh] flex flex-col"
     : "w-full h-full flex items-center justify-center";
 
-  const isFinalizeButtonDisabled = state.isLoading || state.isLoadingBill || state.billItems.length === 0 || !state.selectedStaffId || (state.billItems.some(item => !item.staffId && item.itemType !== 'gift_card')) || state.totals.balance > 0.01;
+  const isFinalizeButtonDisabled = state.isLoading || state.isLoadingBill || state.billItems.length === 0 || !state.selectedStaffId || (state.billItems.some(item => !item.staffId && item.itemType !== 'gift_card' && item.itemType !== 'package')) || state.totals.balance > 0.01;
 
   return (
     <>
@@ -115,7 +117,16 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
                   
                   <div className="flex-grow overflow-y-auto pr-2 space-y-4">
                     <div>
-                      <h3 className="text-lg font-medium text-gray-700 mb-3">Bill Items ({state.billItems.length})</h3>
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-lg font-medium text-gray-700">Bill Items ({state.billItems.length})</h3>
+                        {/* 3. ADD the "Redeem from Package" button */}
+                        <button
+                          onClick={() => setIsRedeemPackageModalOpen(true)}
+                          className="px-3 py-1 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 transition-colors"
+                        >
+                          Redeem from Package
+                        </button>
+                      </div>
                       <BillItemsTable
                           items={state.billItems}
                           customerIsMember={state.customerIsMember}
@@ -212,6 +223,16 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
         <ApplyGiftCardModal
           onClose={() => setIsGiftCardModalOpen(false)}
           onApply={handleApplyGiftCardSuccess}
+        />
+      )}
+
+      {/* 4. RENDER the new modal conditionally */}
+      {isRedeemPackageModalOpen && (
+        <RedeemPackageModal
+          customerId={customer._id}
+          billItems={state.billItems}
+          onRedeem={state.handleRedeemPackageItem}
+          onClose={() => setIsRedeemPackageModalOpen(false)}
         />
       )}
     </>

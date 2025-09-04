@@ -60,8 +60,6 @@ export async function PATCH(
   }
 }
 
-
-// --- NEWLY ADDED AND CORRECTED DELETE FUNCTION ---
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { roleId: string } }

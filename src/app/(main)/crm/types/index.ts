@@ -1,5 +1,3 @@
-// FILE: /app/crm/types/index.ts
-
 export interface AppointmentHistoryItem {
   _id: string;
   id: string;
@@ -19,29 +17,21 @@ export interface MembershipUIDetails {
 }
 
 export interface CrmCustomer {
-  // 1. FIX: Changed 'isMember: any' to 'isMembership?: boolean'
-  // This makes it consistent and type-safe.
   isMembership?: boolean;
-
   id: string;
   _id: string;
   name: string;
-  
-  // 2. FIX: Make email optional to match reality
   email?: string;
-
   phoneNumber: string;
   createdAt?: string;
   status?: 'Active' | 'Inactive' | 'New';
   gender?: 'male' | 'female' | 'other';
-    dob?: string; // Add dob
-  survey?: string; // Add survey
+  dob?: string;
+  survey?: string;
   appointmentHistory?: AppointmentHistoryItem[];
   currentMembership?: MembershipUIDetails | null;
   loyaltyPoints?: number;
   membershipBarcode?: string;
-  
-  // This was missing from the customer list view
   isActive?: boolean;
 }
 
@@ -55,19 +45,46 @@ export interface MembershipPlanFE {
 
 export interface AddCustomerFormData {
   name: string;
-  email?: string; // Make email optional here too
+  email?: string;
   phoneNumber: string;
   gender?: 'male' | 'female' | 'other';
-  dob?: string; // Add dob
-  survey?: string; // Add survey
+  dob?: string;
+  survey?: string;
 }
 
-// Pagination details from the API
 export interface PaginationInfo {
   currentPage: number;
   totalPages: number;
   totalCustomers: number;
-  
-  // 3. FIX: Add the 'limit' property that the API sends
   limit: number;
 }
+
+// --- START: Added for Packages Module ---
+
+/**
+ * Represents a single remaining item within a customer's package.
+ * This matches the enriched data sent from the backend API.
+ */
+export interface CustomerPackageRemainingItem {
+  itemType: 'service' | 'product';
+  itemId: string; // ObjectId as a string on the frontend
+  totalQuantity: number;
+  remainingQuantity: number;
+  itemName: string; // The populated name of the service/product
+}
+
+/**
+ * Represents a package that has been sold to a customer.
+ * This is the primary type used by the CustomerPackageList component.
+ */
+export interface CustomerPackage {
+  _id: string;
+  customerId: string;
+  packageName: string;
+  purchaseDate: string; // ISO date string
+  expiryDate: string;   // ISO date string
+  status: 'active' | 'completed' | 'expired';
+  remainingItems: CustomerPackageRemainingItem[];
+}
+
+// --- END: Added for Packages Module ---

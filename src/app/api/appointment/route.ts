@@ -1,12 +1,10 @@
-// /app/api/appointment/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
 import Customer, { ICustomer } from '@/models/customermodel';
 import Staff from '@/models/staff';
 import ServiceItem from '@/models/ServiceItem';
-import Invoice from '@/models/invoice'; // --- CHANGE: Import Invoice model ---
+import Invoice from '@/models/invoice';
 import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -16,9 +14,10 @@ import { getTenantIdOrBail } from '@/lib/tenant';
 import { whatsAppService } from '@/lib/whatsapp';
 import { encrypt, decrypt} from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
+import CustomerPackage from '@/models/CustomerPackage';
 
 // ===================================================================================
-//  GET: Handler (MODIFIED FOR DATE RANGE & INVOICE SEARCH)
+//  GET: Handler
 // ===================================================================================
 export async function GET(req: NextRequest) {
   try {
@@ -37,7 +36,6 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10', 10);
     const statusFilter = searchParams.get('status');
     const searchQuery = searchParams.get('search');
-    // --- CHANGE: Get startDate and endDate instead of dateFilter ---
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const skip = (page - 1) * limit;
@@ -48,18 +46,14 @@ export async function GET(req: NextRequest) {
       matchStage.status = statusFilter;
     }
     
-    // --- CHANGE: Implement date range filtering logic ---
     if (startDate || endDate) {
         matchStage.appointmentDateTime = {};
         if (startDate) {
-            // Find appointments greater than or equal to the start of the startDate
             const startOfDay = new Date(startDate);
             startOfDay.setUTCHours(0, 0, 0, 0);
             matchStage.appointmentDateTime.$gte = startOfDay;
         }
         if (endDate) {
-            // Find appointments less than the start of the day *after* the endDate
-            // This correctly includes all times on the endDate itself.
             const endOfDay = new Date(endDate);
             endOfDay.setDate(endOfDay.getDate() + 1);
             endOfDay.setUTCHours(0, 0, 0, 0);
@@ -71,7 +65,6 @@ export async function GET(req: NextRequest) {
         const searchStr = searchQuery.trim();
         const finalSearchOrConditions = [];
 
-        // 1. Search by Customer Name/Phone
         let customerFindConditions: any = { tenantId };
         const isNumeric = /^\d+$/.test(searchStr);
         if (isNumeric) {
@@ -85,7 +78,6 @@ export async function GET(req: NextRequest) {
             finalSearchOrConditions.push({ customerId: { $in: customerIds } });
         }
         
-        // 2. Search by Stylist Name
         const stylistQuery = { name: { $regex: searchStr, $options: 'i' }, tenantId };
         const matchingStylists = await Staff.find(stylistQuery).select('_id').lean();
         const stylistIds = matchingStylists.map(s => s._id);
@@ -93,9 +85,8 @@ export async function GET(req: NextRequest) {
             finalSearchOrConditions.push({ stylistId: { $in: stylistIds } });
         }
 
-        // --- CHANGE: 3. Search by Invoice Number ---
         const matchingInvoices = await Invoice.find({
-            invoiceNumber: { $regex: `^${searchStr}`, $options: 'i' }, // "starts with" search
+            invoiceNumber: { $regex: `^${searchStr}`, $options: 'i' },
             tenantId
         }).select('_id').lean();
         const invoiceIds = matchingInvoices.map(inv => inv._id);
@@ -106,7 +97,6 @@ export async function GET(req: NextRequest) {
         if (finalSearchOrConditions.length > 0) {
             matchStage.$or = finalSearchOrConditions;
         } else {
-            // If search finds no customers, stylists, or invoices, return no appointments
             matchStage._id = new mongoose.Types.ObjectId(); 
         }
     }
@@ -118,7 +108,7 @@ export async function GET(req: NextRequest) {
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
         .populate({ path: 'billingStaffId', select: 'name' })
         .populate({  path: 'invoiceId', select: 'invoiceNumber'})
-        .sort({ appointmentDateTime: -1 }) // --- CHANGE: Consistent sort order
+        .sort({ appointmentDateTime: -1 })
         .skip(skip)
         .limit(limit)
         .lean(), 
@@ -160,6 +150,7 @@ export async function GET(req: NextRequest) {
               id: apt._id.toString(),
               appointmentDateTime: finalDateTime.toISOString(),
               createdAt: (apt.createdAt || finalDateTime).toISOString(),
+              redeemedItems: apt.redeemedItems, 
               customerId: {
                 _id: customerData?._id,
                 name: decryptedCustomerName,
@@ -182,7 +173,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ===================================================================================
-//  POST: Handler (No Changes Needed)
+//  POST: Handler
 // ===================================================================================
 export async function POST(req: NextRequest) {
   
@@ -199,7 +190,8 @@ export async function POST(req: NextRequest) {
     const { 
       customerName, phoneNumber, email, gender, dob, survey,
       date, time, notes, status, 
-      appointmentType = 'Online', serviceAssignments
+      appointmentType = 'Online', serviceAssignments,
+      redeemedItems,
     } = body;
 
     if (!phoneNumber || !customerName || !date || !time || !serviceAssignments || !Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
@@ -226,6 +218,29 @@ export async function POST(req: NextRequest) {
       };
       const newCustomers = await Customer.create([customerDataForCreation], { session });
       customerDoc = newCustomers[0];
+    }
+
+    if (redeemedItems && Array.isArray(redeemedItems) && redeemedItems.length > 0) {
+      for (const redemption of redeemedItems) {
+        const { customerPackageId, redeemedItemId, redeemedItemType } = redemption;
+        if (!customerPackageId || !redeemedItemId || !redeemedItemType) {
+          throw new Error('Invalid redemption data provided.');
+        }
+
+        const pkg = await CustomerPackage.findOne({
+          _id: customerPackageId,
+          customerId: customerDoc._id,
+          tenantId
+        }).session(session);
+
+        if (!pkg || pkg.status !== 'active') {
+          throw new Error(`Invalid or inactive package specified for redemption.`);
+        }
+        const itemInPkg = pkg.remainingItems.find(i => i.itemId.toString() === redeemedItemId);
+        if (!itemInPkg || itemInPkg.remainingQuantity < 1) {
+          throw new Error(`The item ${redeemedItemId} is not available for redemption in the specified package.`);
+        }
+      }
     }
 
     const allServiceIds = serviceAssignments.map((a: any) => a.serviceId);
@@ -273,6 +288,7 @@ export async function POST(req: NextRequest) {
       amount: grandTotal + membershipSavings,
       membershipDiscount: membershipSavings,
       checkInTime: status === 'Checked-In' ? new Date() : undefined,
+      redeemedItems: redeemedItems,
     };
 
     const [createdAppointment] = await Appointment.create([newAppointmentData], { session });

@@ -56,14 +56,19 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
   const [openItemKey, setOpenItemKey] = useState<string | null>(null);
   
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768); // Tailwind's 'md' breakpoint
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // --- NAVIGATION DATA ---
   const navItems = useMemo((): NavItemConfig[] => {
-    // ... (Your navItems array definition remains unchanged)
-    // const reportSubItems: NavSubItem[] = [
-    //   { href: '/sales-report', label: 'Sales Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SALES_REPORT_READ]) },
-    // ];
-
+    // ... (Your navItems array definition is fine, keeping it collapsed for brevity)
     const staffSubItems: NavSubItem[] = [
       { href: '/staffmanagement/attendance', label: 'Attendance', icon: <AttendanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ATTENDANCE_READ]) },
       { href: '/staffmanagement/advance', label: 'Advance', icon: <AdvanceIcon />, show: hasAnyPermission(userPermissions, [PERMISSIONS.STAFF_ADVANCE_READ]) },
@@ -86,20 +91,17 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
       { href: '/budgets/tracker', label: 'Budget Tracker', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.BUDGET_READ]) },
     ];
     
-    // Original SOP sub-items (unchanged)
     const sopSubItems: NavSubItem[] = [
       { href: '/sop', label: 'SOP Library', icon: <ClipboardList className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_READ]) },
       { href: '/sop/tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_SUBMIT_CHECKLIST]) },
       { href: '/sop/compliance', label: 'Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.SOP_REPORTS_READ]) }
     ];
 
-    // ▼▼▼ NEW: Task Management sub-items ▼▼▼
     const taskSubItems: NavSubItem[] = [
         { href: '/task', label: 'Task Library', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_READ]) },
         { href: '/task/my-tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_SUBMIT_CHECKLIST]) },
         { href: '/task/compliance', label: 'Task Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_REPORTS_READ]) }
     ];
-    // ▲▲▲ END OF ADDITION ▲▲▲
 
     const telecallingSubItems: NavSubItem[] = [
         { href: '/telecalling', label: 'Telecalling', icon: <PhoneForwarded className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TELECALLING_PERFORM]) },
@@ -130,6 +132,18 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
           icon: <DocumentTextIcon className="h-5 w-5" />, 
           show: hasAnyPermission(userPermissions, [PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ]) 
       },
+      { 
+          href: '/reports/package-sales', 
+          label: 'Package Sales', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.PACKAGES_REPORTS_READ]) 
+      },
+      { 
+          href: '/reports/package-redemptions', 
+          label: 'Package Redemptions', 
+          icon: <DocumentTextIcon className="h-5 w-5" />, 
+          show: hasAnyPermission(userPermissions, [PERMISSIONS.PACKAGES_REPORTS_READ]) 
+      },
     ];
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
@@ -137,7 +151,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
     const canSeeBudgetManagement = budgetSubItems.some(item => item.show);
     const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
-    const canSeeTaskManagement = taskSubItems.some(item => item.show); // New
+    const canSeeTaskManagement = taskSubItems.some(item => item.show);
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
     const canSeeReports = reportSubItems.some(item => item.show);
     
@@ -163,13 +177,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       
-      // Original SOP Management section (unchanged)
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
-
-      // ▼▼▼ NEW: Task Management main menu item ▼▼▼
       { href: '/task-management', label: 'Task Management', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: canSeeTaskManagement, subItems: taskSubItems.filter(item => item.show) },
-      // ▲▲▲ END OF ADDITION ▲▲▲
-
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
       { 
         href: '/back-office/reconciliation', 
@@ -183,7 +192,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
     ];
   }, [userPermissions]);
   
-  // ... (The rest of the file is unchanged)
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
@@ -202,7 +210,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
   const handleMouseLeave = () => !isMobile && setIsExpanded(false);
 
   const handleNavClick = () => {
-    if (isMobile) setSidebarOpen(false);
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
   };
   
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
@@ -220,7 +230,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
   
   const renderNavItems = (items: NavItemConfig[]) => {
     return items.filter(item => item.show).map((item) => {
-      // ... (This function remains unchanged)
       const isActive = isItemOrSubitemActive(item, pathname);
       const isAccordionOpen = openItemKey === item.href;
 
@@ -282,11 +291,10 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
             </Link>
           )}
 
-          {/* Tooltip for collapsed desktop view */}
           {!isExpanded && !isMobile && (
             <div className="absolute left-full ml-3 px-3 py-2 bg-gray-900 text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg">
               {item.label}
-              <div className="absolute top-1/2 left-0 transform -translate-y-1_2 -translate-x-1 w-2 h-2 bg-gray-900 rotate-45"></div>
+              <div className="absolute top-1/2 left-0 transform -translate-y-1/2 -translate-x-1 w-2 h-2 bg-gray-900 rotate-45"></div>
             </div>
           )}
         </div>
@@ -300,47 +308,32 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
             "flex items-center border-b border-gray-200 flex-shrink-0 transition-all duration-300",
             (isExpanded || forMobile) ? "p-4 h-[65px] justify-between" : "py-3 h-[65px] justify-center"
         )}>
-          {/* --- EXPANDED LOGO SECTION --- */}
           <div className={clsx("flex items-center gap-3", !(isExpanded || forMobile) && "opacity-0 w-0 h-0 pointer-events-none")}>
-            {/* 1. Sized container for the logo (ENLARGED) */}
             <div className="relative h-12 w-12 flex-shrink-0">
                 <Image
-                    src="/image.png" // Your Salon Capp Logo
+                    src="/image.png"
                     alt="Salon Capp Logo"
                     fill
-                    className="object-contain" // This makes the image fit without stretching
+                    className="object-contain"
                     priority
                 />
             </div>
-            {/* 2. Text next to the logo */}
             <div>
               <h1 className="text-base font-bold text-gray-800">Salon Capp</h1>
               <p className="text-xs text-gray-500">Salon Management</p>
             </div>
           </div>
-
-          {/* --- COLLAPSED LOGO --- */}
-          {!(isExpanded || forMobile) && (
-             <LogoIcon />
-          )}
-
-          {/* Mobile close button */}
+          {!(isExpanded || forMobile) && <LogoIcon />}
           {forMobile && (
             <button onClick={() => setSidebarOpen(false)} className="text-gray-500 hover:text-gray-800">
               <XMarkIcon className="h-6 w-6" />
             </button>
           )}
         </div>
-        
-        <nav 
-          ref={scrollRef}
-          className="flex-1 p-2 space-y-1 overflow-y-auto"
-        >
+        <nav ref={scrollRef} className="flex-1 p-2 space-y-1 overflow-y-auto">
           {renderNavItems(navItems)}
         </nav>
-        
         <div className="p-2 border-t border-gray-200">
-          {/* ... (user profile section remains unchanged) */}
           {session && (
              <div className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors", "hover:bg-gray-100")}>
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 flex-shrink-0">
@@ -363,7 +356,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
 
   return (
     <>
-      {/* ... (main return structure remains unchanged) */}
+      {/* Mobile Sidebar */}
       <div className={clsx(
         'fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-300 ease-in-out md:hidden',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -371,6 +364,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
         <SidebarContent forMobile={true} />
       </div>
 
+      {/* Desktop Sidebar */}
       <aside
         className={clsx(
           "hidden md:fixed md:inset-y-0 md:flex transition-all duration-300 ease-in-out z-30",
@@ -382,6 +376,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
         <SidebarContent forMobile={false} />
       </aside>
 
+      {/* Mobile Overlay */}
       {sidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/60 z-30 md:hidden"

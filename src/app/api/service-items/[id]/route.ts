@@ -4,9 +4,9 @@ import ServiceItem from '@/models/ServiceItem';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { getTenantIdOrBail } from '@/lib/tenant'; // Import the tenant helper
+import { getTenantIdOrBail } from '@/lib/tenant';
+import mongoose from 'mongoose'; // <-- Import mongoose for ObjectId validation
 
-// Re-introducing the permission check helper for security
 async function checkPermission(permission: string) {
   const session = await getServerSession(authOptions);
   if (!session || !hasPermission(session.user.role.permissions, permission)) {
@@ -17,23 +17,57 @@ async function checkPermission(permission: string) {
 
 interface IParams { params: { id: string } }
 
-// PUT (update) a service item
-export async function PUT(req: NextRequest, { params }: IParams) {
+// --- START: ADDED GET HANDLER ---
+export async function GET(req: NextRequest, { params }: IParams) {
   // 1. Get Tenant ID or bail if not present
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) {
     return tenantId;
   }
 
-  // 2. Check user permissions (re-added for security)
+  // 2. Check user permissions
+  const session = await checkPermission(PERMISSIONS.SERVICES_READ);
+  if (!session) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  await dbConnect();
+  try {
+    const { id } = params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ success: false, message: 'Invalid Service ID format' }, { status: 400 });
+    }
+
+    // 3. Scope the find query with both the item's ID and the tenantId
+    const query = { _id: id, tenantId };
+    const service = await ServiceItem.findOne(query).lean();
+
+    if (!service) {
+      return NextResponse.json({ success: false, error: 'Service not found for this tenant' }, { status: 404 });
+    }
+
+    // Match the response structure the frontend expects
+    return NextResponse.json({ success: true, service: service });
+  } catch (error: any) {
+    console.error(`Error fetching service item ${params.id}:`, error);
+    return NextResponse.json({ success: false, error: 'Server Error' }, { status: 500 });
+  }
+}
+// --- END: ADDED GET HANDLER ---
+
+// PUT (update) a service item
+export async function PUT(req: NextRequest, { params }: IParams) {
+  const tenantId = getTenantIdOrBail(req);
+  if (tenantId instanceof NextResponse) {
+    return tenantId;
+  }
+
   const session = await checkPermission(PERMISSIONS.SERVICES_UPDATE);
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   await dbConnect();
   try {
     const body = await req.json();
-
-    // 3. Scope the update query with both the item's ID and the tenantId
     const query = { _id: params.id, tenantId };
     const service = await ServiceItem.findOneAndUpdate(query, body, { new: true, runValidators: true });
     
@@ -47,19 +81,16 @@ export async function PUT(req: NextRequest, { params }: IParams) {
 
 // DELETE a service item
 export async function DELETE(req: NextRequest, { params }: IParams) {
-  // 1. Get Tenant ID or bail if not present
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) {
     return tenantId;
   }
 
-  // 2. Check user permissions (re-added for security)
   const session = await checkPermission(PERMISSIONS.SERVICES_DELETE);
   if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
   await dbConnect();
   try {
-    // 3. Scope the delete operation to the current tenant
     const query = { _id: params.id, tenantId };
     const deletedService = await ServiceItem.findOneAndDelete(query);
     

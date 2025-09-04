@@ -10,14 +10,12 @@ interface BusinessDetails {
   gstin?: string;
 }
 
-// --- START MODIFICATION: Update interface to include giftCardPayment ---
 interface FinalizedInvoiceForReceipt extends FinalizedInvoice {
     membershipDiscount: number;
     giftCardPayment?: {
       amount: number;
     };
 }
-// --- END MODIFICATION ---
 
 interface ReceiptProps {
   invoiceData: FinalizedInvoiceForReceipt | null;
@@ -40,7 +38,8 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
     });
   };
 
-  const subtotal = invoiceData.lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
+  // ✅ FIX #1: Calculate subtotal based on the final price of each item, not its original unit price.
+  const subtotal = invoiceData.lineItems.reduce((acc, item) => acc + item.finalPrice, 0);
   const membershipSavings = invoiceData.membershipDiscount || 0;
   const manualDiscount = invoiceData.finalManualDiscountApplied || 0;
 
@@ -71,7 +70,8 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
             <div key={`${item.itemId}-${index}`} className="flex">
               <div className="flex-grow pr-1">{item.name}</div>
               <div className="w-6 text-center">{item.quantity}</div>
-              <div className="w-16 text-right">₹{item.unitPrice.toFixed(2)}</div>
+              {/* ✅ FIX #2: Display the final price for the line item, which will be 0.00 for redeemed items. */}
+              <div className="w-16 text-right">₹{item.finalPrice.toFixed(2)}</div>
             </div>
           ))}
         </div>
@@ -84,19 +84,16 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
         <div className="flex justify-between font-bold text-sm border-t border-black mt-1 pt-1"><span>GRAND TOTAL:</span><span>₹{invoiceData.grandTotal.toFixed(2)}</span></div>
       </section>
 
-      {/* --- START MODIFICATION: Updated Payment Details Section --- */}
       <section className="border-t border-dashed border-black mt-2 pt-2 space-y-1">
         <h2 className="font-bold text-center mb-1">Payment Details</h2>
-
-        {/* Explicitly check for and display gift card payment first */}
+        
         {invoiceData.giftCardPayment && invoiceData.giftCardPayment.amount > 0 && (
           <div className="flex justify-between">
             <span>Gift Card:</span>
             <span>₹{invoiceData.giftCardPayment.amount.toFixed(2)}</span>
           </div>
         )}
-
-        {/* Then, map over the other standard payment methods */}
+        
         {Object.entries(invoiceData.paymentDetails).map(([method, amount]) =>
           Number(amount) > 0 ? (
             <div key={method} className="flex justify-between capitalize">
@@ -106,7 +103,6 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
           ) : null
         )}
       </section>
-      {/* --- END MODIFICATION --- */}
 
       <footer className="text-center mt-4 pt-2 border-t border-black">
         <p>Thank you for your visit!</p>
