@@ -1,8 +1,40 @@
 'use client';
 
 import React from 'react';
-import { FinalizedInvoice } from '@/app/(main)/appointment/components/billing/billing.types';
 
+// =================================================================
+// TYPE DEFINITIONS (This is the missing part)
+// =================================================================
+
+// Defines the structure for a single item in the invoice
+interface LineItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  finalPrice: number;
+  // Add other properties if needed by your logic
+}
+
+// Defines the main invoice data structure
+interface FinalizedInvoice {
+  invoiceNumber: string;
+  createdAt: string; // ISO string format
+  customer: { name: string };
+  billingStaff: { name: string };
+  lineItems: LineItem[];
+  membershipDiscount: number;
+  finalManualDiscountApplied?: number;
+  grandTotal: number;
+  paymentDetails: {
+    [key: string]: number | string; // Allows for methods like cash, card, etc.
+  };
+  giftCardPayment?: {
+    amount: number;
+  };
+}
+
+// Defines the business details
 interface BusinessDetails {
   name: string;
   address: string;
@@ -10,17 +42,15 @@ interface BusinessDetails {
   gstin?: string;
 }
 
-interface FinalizedInvoiceForReceipt extends FinalizedInvoice {
-    membershipDiscount: number;
-    giftCardPayment?: {
-      amount: number;
-    };
-}
-
+// Defines the props for the Receipt component itself
 interface ReceiptProps {
-  invoiceData: FinalizedInvoiceForReceipt | null;
+  invoiceData: FinalizedInvoice | null;
   businessDetails: BusinessDetails | null;
 }
+
+// =================================================================
+// COMPONENT
+// =================================================================
 
 const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, businessDetails }, ref) => {
   if (!invoiceData || !businessDetails) {
@@ -38,8 +68,8 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
     });
   };
 
-  // ✅ FIX #1: Calculate subtotal based on the final price of each item, not its original unit price.
-  const subtotal = invoiceData.lineItems.reduce((acc, item) => acc + item.finalPrice, 0);
+  // Calculate subtotal based on original unit price for clear accounting
+  const subtotal = invoiceData.lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
   const membershipSavings = invoiceData.membershipDiscount || 0;
   const manualDiscount = invoiceData.finalManualDiscountApplied || 0;
 
@@ -70,8 +100,8 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
             <div key={`${item.itemId}-${index}`} className="flex">
               <div className="flex-grow pr-1">{item.name}</div>
               <div className="w-6 text-center">{item.quantity}</div>
-              {/* ✅ FIX #2: Display the final price for the line item, which will be 0.00 for redeemed items. */}
-              <div className="w-16 text-right">₹{item.finalPrice.toFixed(2)}</div>
+              {/* Display original total price for transparency */}
+              <div className="w-16 text-right">₹{(item.unitPrice * item.quantity).toFixed(2)}</div>
             </div>
           ))}
         </div>
