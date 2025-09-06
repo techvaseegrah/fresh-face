@@ -1,4 +1,4 @@
-// /app/api/dashboard/sales-summary/route.ts - MULTI-TENANT REFACTORED AND CORRECTED VERSION
+// /app/api/dashboard/sales-summary/route.ts - FINAL CORRECTED VERSION
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -14,9 +14,6 @@ import { getTenantIdOrBail } from '@/lib/tenant';
 /**
  * ===================================================================================
  *  GET: Handler to fetch a detailed sales summary for a given date range.
- *  - This endpoint is protected and requires DASHBOARD_READ permission.
- *  - It is multi-tenant aware and scopes all data to the authenticated user's tenant.
- *  - It calculates key metrics like revenue, discounts, payment breakdowns, and customer demographics.
  * ===================================================================================
  */
 export async function GET(req: NextRequest) {
@@ -54,53 +51,24 @@ export async function GET(req: NextRequest) {
     const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
 
     // --- Database Queries (Parallel Execution) ---
-    // For optimal performance, ensure a compound index exists on the invoices collection:
-    // db.invoices.createIndex({ tenantId: 1, createdAt: 1 })
     const [invoiceReport, cancelledAppointments] = await Promise.all([
       Invoice.aggregate([
-        // STAGE 1: Filter documents to the specified tenant and date range.
         {
           $match: { 
             tenantId: tenantObjectId,
             createdAt: { $gte: start, $lte: end } 
           } 
         },
-        // STAGE 2: Pre-calculate values for each invoice before grouping.
         {
           $addFields: {
-            // BUG FIX: Correctly calculate Service Gross by multiplying unitPrice by quantity.
-            calculatedServiceGross: {
-              $sum: {
-                $map: {
-                  input: { $filter: { input: "$lineItems", as: "item", cond: { $eq: ["$$item.itemType", "service"] } } },
-                  as: "serviceItem",
-                  in: { 
-                    $multiply: [
-                      { $ifNull: ["$$serviceItem.unitPrice", 0] }, 
-                      { $ifNull: ["$$serviceItem.quantity", 1] }
-                    ] 
-                  }
-                }
-              }
-            },
-            calculatedMembershipRevenue: {
-              $sum: {
-                $map: {
-                  input: { $filter: { input: "$lineItems", as: "item", cond: { $eq: ["$$item.itemType", "fee"] } } },
-                  as: "feeItem",
-                  in: "$$feeItem.finalPrice"
-                }
-              }
-            },
-            calculatedTotalDiscount: {
-              $add: [
-                { $ifNull: ["$membershipDiscount", 0] },
-                { $ifNull: ["$manualDiscount.appliedAmount", 0] }
-              ]
-            }
+            calculatedServiceGross: { $sum: { $map: { input: { $filter: { input: "$lineItems", as: "item", cond: { $eq: ["$$item.itemType", "service"] } } }, as: "serviceItem", in: { $multiply: [ { $ifNull: ["$$serviceItem.unitPrice", 0] }, { $ifNull: ["$$serviceItem.quantity", 1] } ] } } } },
+            calculatedMembershipRevenue: { $sum: { $map: { input: { $filter: { input: "$lineItems", as: "item", cond: { $eq: ["$$item.itemType", "fee"] } } }, as: "feeItem", in: { $ifNull: ["$$feeItem.finalPrice", 0] } } } },
+            calculatedPackageRevenue: { $sum: { $map: { input: { $filter: { input: "$lineItems", as: "item", cond: { $eq: ["$$item.itemType", "package"] } } }, as: "packageItem", in: { $ifNull: ["$$packageItem.finalPrice", 0] } } } },
+            // Adjusted to handle both 'gift_card' and 'giftcard' for safety
+            calculatedGiftCardRevenue: { $sum: { $map: { input: { $filter: { input: "$lineItems", as: "item", cond: { $in: ["$$item.itemType", ["gift_card", "giftcard"]] } } }, as: "giftCardItem", in: { $ifNull: ["$$giftCardItem.finalPrice", 0] } } } },
+            calculatedTotalDiscount: { $add: [ { $ifNull: ["$membershipDiscount", 0] }, { $ifNull: ["$manualDiscount.appliedAmount", 0] } ] }
           }
         },
-        // STAGE 3: Group all matching invoices into a single summary document.
         {
           $group: {
             _id: null,
@@ -110,45 +78,50 @@ export async function GET(req: NextRequest) {
             serviceGross: { $sum: "$calculatedServiceGross" },
             totalDiscount: { $sum: "$calculatedTotalDiscount" },
             membershipRevenue: { $sum: "$calculatedMembershipRevenue" },
+            packageRevenue: { $sum: "$calculatedPackageRevenue" },
+            giftCardRevenue: { $sum: "$calculatedGiftCardRevenue" },
             productGross: { $sum: '$productTotal' },
             grandTotalSum: { $sum: '$grandTotal' },
             cashTotal: { $sum: { $ifNull: ['$paymentDetails.cash', 0] } },
             cardTotal: { $sum: { $ifNull: ['$paymentDetails.card', 0] } },
             upiTotal: { $sum: { $ifNull: ['$paymentDetails.upi', 0] } },
             otherTotal: { $sum: { $ifNull: ['$paymentDetails.other', 0] } },
+            // ================== THIS IS THE CRITICAL FIX ==================
+            giftCardPaymentTotal: { $sum: { $ifNull: ['$giftCardPayment.amount', 0] } },
+            // ==============================================================
             uniqueCustomerIds: { $addToSet: '$customerId' }
           }
         },
-        // STAGE 4: Project the final fields and calculate derived values.
         {
           $project: {
             _id: 0,
             serviceBills: 1,
             productBills: 1,
-            totalBills: 1,
+            noOfBills: "$totalBills",
             totalDiscount: 1,
-            cashTotal: 1,
-            cardTotal: 1,
-            upiTotal: 1,
-            otherTotal: 1,
             uniqueCustomerIds: 1,
             serviceGross: 1,
             productGross: 1,
             membershipRevenue: 1,
-            grandTotalSum: 1, // This is the sum of all final bills, i.e., Total Revenue
+            packageRevenue: 1,
+            giftCardRevenue: 1,
             serviceNet: { $subtract: ["$serviceGross", "$totalDiscount"] },
-            productNet: "$productGross", // Assuming no discounts on products for now
-            averageSale: { 
-              $cond: [
-                { $eq: ['$totalBills', 0] }, 
-                0, 
-                { $divide: ['$grandTotalSum', '$totalBills'] }
-              ] 
+            productNet: "$productGross",
+            averageSale: { $cond: [ { $eq: ['$totalBills', 0] }, 0, { $divide: ['$grandTotalSum', '$totalBills'] } ] },
+            // Structure the payments object correctly for the frontend
+            payments: {
+              Cash: "$cashTotal",
+              Card: "$cardTotal",
+              Ewallet: { $add: [{ $ifNull: ["$upiTotal", 0] }, { $ifNull: ["$otherTotal", 0] }] },
+              GiftCard: "$giftCardPaymentTotal" // Include the redeemed gift card amount
             },
+            ewalletBreakdown: {
+              UPI: { $ifNull: ["$upiTotal", 0] },
+              Other: { $ifNull: ["$otherTotal", 0] }
+            }
           }
         }
       ]),
-      // Count cancelled appointments within the same tenant and date range.
       Appointment.countDocuments({
         tenantId: tenantObjectId,
         appointmentDateTime: { $gte: start, $lte: end },
@@ -157,11 +130,18 @@ export async function GET(req: NextRequest) {
     ]);
 
     // --- Data Processing & Formatting ---
-    const stats = invoiceReport.length > 0 ? invoiceReport[0] : {};
+    const stats = invoiceReport.length > 0 ? invoiceReport[0] : {
+        // Provide a default empty structure if no invoices are found
+        serviceBills: 0, productBills: 0, noOfBills: 0, totalDiscount: 0, serviceGross: 0,
+        productGross: 0, membershipRevenue: 0, packageRevenue: 0, giftCardRevenue: 0,
+        serviceNet: 0, productNet: 0, averageSale: 0,
+        payments: { Cash: 0, Card: 0, Ewallet: 0, GiftCard: 0 },
+        ewalletBreakdown: { UPI: 0, Other: 0 },
+        uniqueCustomerIds: []
+    };
     
     let genderData = { men: 0, women: 0 };
     if (stats.uniqueCustomerIds && stats.uniqueCustomerIds.length > 0) {
-        // This query is tenant-safe because customer IDs are sourced from tenant-scoped invoices.
         const customers = await Customer.find({ _id: { $in: stats.uniqueCustomerIds } }).select('gender').lean();
         genderData = customers.reduce((acc, customer) => {
             if (customer.gender === 'male') acc.men++;
@@ -170,31 +150,12 @@ export async function GET(req: NextRequest) {
         }, { men: 0, women: 0 });
     }
 
-    // Construct the final JSON response payload.
+    // Combine all stats into the final report
     const finalReport = {
-      totalRevenue: stats.grandTotalSum || 0,
-      serviceBills: stats.serviceBills || 0,
-      productBills: stats.productBills || 0,
-      serviceNet: stats.serviceNet || 0,
-      serviceGross: stats.serviceGross || 0,
-      productNet: stats.productNet || 0,
-      productGross: stats.productGross || 0,
-      men: genderData.men,
-      women: genderData.women,
-      noOfBills: stats.totalBills || 0,
-      noOfCancelledBills: cancelledAppointments || 0,
-      totalDiscount: stats.totalDiscount || 0,
-      membershipRevenue: stats.membershipRevenue || 0,
-      averageSale: stats.averageSale || 0,
-      payments: {
-        Cash: stats.cashTotal || 0,
-        Card: stats.cardTotal || 0,
-        Ewallet: (stats.upiTotal || 0) + (stats.otherTotal || 0)
-      },
-      ewalletBreakdown: {
-        UPI: stats.upiTotal || 0,
-        Other: stats.otherTotal || 0
-      }
+        ...stats,
+        men: genderData.men,
+        women: genderData.women,
+        noOfCancelledBills: cancelledAppointments || 0,
     };
     
     return NextResponse.json({ success: true, data: finalReport });
