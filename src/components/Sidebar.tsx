@@ -72,9 +72,18 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
 
     const taskSubItems: NavSubItem[] = [
-        { href: '/task', label: 'Task Library', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_READ]) },
-        { href: '/task/my-tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_SUBMIT_CHECKLIST]) },
-        { href: '/task/compliance', label: 'Task Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_REPORTS_READ]) }
+      { href: '/task', label: 'Task Library', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_READ]) },
+      { href: '/task/my-tasks', label: 'My Daily Tasks', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_SUBMIT_CHECKLIST]) },
+      { href: '/task/compliance', label: 'Task Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.TASK_REPORTS_READ]) }
+    ];
+    
+    // ▼▼▼ NEW: Issue Management sub-items ▼▼▼
+    const issueSubItems: NavSubItem[] = [
+        { href: '/issues', label: 'Issue Library', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ISSUE_READ]) },
+         // ▼▼▼ FIX IS HERE ▼▼▼
+         { href: '/issues/my-issues', label: 'My Daily Issues', icon: <DocumentCheckIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ISSUE_SUBMIT_CHECKLIST]), basePathForActive: '/issues/my-issues' },
+         { href: '/issues/issue-compliance', label: 'Issue Compliance Report', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ISSUE_REPORTS_READ]), basePathForActive: '/issues/issue-compliance' }
+         // ▲▲▲ FIX IS HERE ▲▲▲
     ];
 
     const telecallingSubItems: NavSubItem[] = [
@@ -95,6 +104,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const canSeeTelecalling = telecallingSubItems.some(item => item.show);
     const canSeeSopManagement = sopSubItems.some(item => item.show);
     const canSeeTaskManagement = taskSubItems.some(item => item.show);
+    const canSeeIssueManagement = issueSubItems.some(item => item.show); // New
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
     
     return [
@@ -123,7 +133,12 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },
-      { href: '/task-management', label: 'Task Management', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: canSeeTaskManagement, subItems: taskSubItems.filter(item => item.show) },
+      { href: '/task', label: 'Task Management', icon: <ClipboardDocumentListIcon className="h-5 w-5" />, show: canSeeTaskManagement, subItems: taskSubItems.filter(item => item.show) },
+      
+      // ▼▼▼ NEW: Issue Management main menu item ▼▼▼
+      { href: '/issues', label: 'Issue Management', icon: <LightBulbIcon className="h-5 w-5" />, show: canSeeIssueManagement, subItems: issueSubItems.filter(item => item.show) },
+      // ▲▲▲ END OF ADDITION ▲▲▲
+      
       { href: '/telecalling',label: 'Telecalling',icon: <PhoneForwarded className="h-5 w-5" />,show: canSeeTelecalling,subItems: telecallingSubItems.filter(item => item.show)},
       { 
         href: '/back-office/reconciliation', 
