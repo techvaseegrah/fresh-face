@@ -89,10 +89,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/back-office/monthly-comparison', label: 'profit-loss comparison', icon: <ScaleIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ]) },
     ];
 
-    // ▼▼▼ CHANGE 1: THE reportSubItems and canSeeReports ARE NO LONGER NEEDED HERE. DELETE THEM. ▼▼▼
-    // const reportSubItems: NavSubItem[] = [ ... ];
-    // const canSeeReports = reportSubItems.some(item => item.show);
-
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
     const canSeeBudgetManagement = budgetSubItems.some(item => item.show);
@@ -106,8 +102,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/appointment', label: 'Appointments', icon: <CalendarDaysIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.APPOINTMENTS_READ, PERMISSIONS.APPOINTMENTS_CREATE]) },
       { href: '/crm', label: 'Customers', icon: <UserGroupIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.CUSTOMERS_READ, PERMISSIONS.CUSTOMERS_CREATE]) },
       { href: '/shop', label: 'Shop', icon: <BuildingStorefrontIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PRODUCTS_READ, PERMISSIONS.SERVICES_READ]) },
-      
-      // ▼▼▼ CHANGE 2: REPLACE THE OLD DROPDOWN OBJECT WITH THIS SIMPLE LINK OBJECT ▼▼▼
       { 
         href: '/reports', 
         label: 'Reports', 
@@ -119,7 +113,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             PERMISSIONS.PACKAGES_REPORTS_READ
         ]) 
       },
-
       { href: '/staffmanagement', label: 'Staff Management', icon: <UsersIcon className="h-5 w-5" />, show: canSeeStaffManagement, subItems: staffSubItems.filter(item => item.show) },
       { href: '/DayendClosing', label:'Day-end Closing', icon: <BanknotesIcon className="h-5 w-5"/>, show: hasAnyPermission(userPermissions, [PERMISSIONS.DAYEND_READ, PERMISSIONS.DAYEND_CREATE]) },
       { href: '/alerts', label: 'Alerts', icon: <BellAlertIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.ALERTS_READ]) },
@@ -144,8 +137,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
   }, [userPermissions]);
   
-  // No changes needed below this line, the existing logic handles this perfectly.
-  
   useEffect(() => {
     if (status !== 'authenticated') return;
     const activeParent = navItems.find(item => item.subItems?.some(subItem => {
@@ -164,7 +155,16 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
   }
 
   const handleItemClick = (itemKey: string) => setOpenItemKey(openItemKey === itemKey ? null : itemKey);
-  const handleSignOut = () => signOut({ callbackUrl: '/login' });
+
+  // ▼▼▼ THIS IS THE CORRECTED FUNCTION ▼▼▼
+  const handleSignOut = () => {
+    // Get the full origin of the current URL (e.g., "https://my-salon.freshface.app")
+    const callbackUrl = `${window.location.origin}/login`;
+    
+    // Pass the full URL to signOut to ensure the subdomain is preserved
+    signOut({ callbackUrl });
+  };
+  
   const isItemOrSubitemActive = (item: NavItemConfig, currentPath: string): boolean => {
     if (item.subItems?.length) {
       return item.subItems.some(subItem => currentPath.startsWith(subItem.basePathForActive || subItem.href));
