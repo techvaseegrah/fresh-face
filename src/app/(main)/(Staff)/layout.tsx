@@ -8,7 +8,8 @@ import {
     LayoutDashboard, LogOut, Loader2, PlusCircle, CalendarPlus, 
     CalendarCheck, BarChart2, IndianRupee, Wallet, Clock, 
     Briefcase, Menu, X, 
-    ClipboardCheck // --- ICON ADDED HERE ---
+    ClipboardCheck,
+    AlertTriangle // --- ICON ADDED HERE ---
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -122,12 +123,17 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
             <NavLink href="/staff-dashboard" icon={<LayoutDashboard size={20} />} onClick={closeMobileMenu}>Dashboard</NavLink>
             <NavLink href="/my-appointments" icon={<Briefcase size={20} />} onClick={closeMobileMenu}>My Appointments</NavLink>
             
-            {/* ✅ NEW LINK ADDED HERE for "My Tasks" */}
             <NavLink href="/my-tasks" icon={<ClipboardCheck size={20} />} onClick={closeMobileMenu}>My Tasks</NavLink>
             
             <NavLink href="/book-appointment" icon={<CalendarPlus size={20} />} onClick={closeMobileMenu}>Book Appointment</NavLink>
             <NavLink href="/attendance" icon={<CalendarCheck size={20} />} onClick={closeMobileMenu}>Attendance</NavLink>
             <NavLink href="/advance" icon={<PlusCircle size={20}/>} onClick={closeMobileMenu}>Request Advance</NavLink>
+            
+            {/* ✅ NEW LINK ADDED HERE for "Report an Issue" */}
+            <NavLink href="/create-issue" icon={<AlertTriangle size={20} />} onClick={closeMobileMenu}>
+                Report an Issue
+            </NavLink>
+
             <NavLink href="/performance" icon={<BarChart2 size={20} />} onClick={closeMobileMenu}>Performance</NavLink>
             <NavLink href="/overall-perfomance" icon={<BarChart2 size={20} />} onClick={closeMobileMenu}>Overall Performance</NavLink>
             <NavLink href="/incentives" icon={<IndianRupee size={20} />} onClick={closeMobileMenu}>Incentives</NavLink>

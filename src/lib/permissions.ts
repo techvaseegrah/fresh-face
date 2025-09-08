@@ -179,6 +179,14 @@ export const PERMISSIONS = {
   TASK_MANAGE: 'task:manage',
   TASK_SUBMIT_CHECKLIST: 'task:submit_checklist',
   TASK_REPORTS_READ: 'task:reports:read',
+  
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Issue Management (like Task)
+  ISSUE_READ: 'issue:read',
+  ISSUE_MANAGE: 'issue:manage',
+  ISSUE_SUBMIT_CHECKLIST: 'issue:submit_checklist',
+  ISSUE_REPORTS_READ: 'issue:reports:read',
+  // ▲▲▲ END OF ADDITION ▲▲▲
 
   ALL: '*'
 } as const;
@@ -211,6 +219,10 @@ export const PERMISSION_CATEGORIES = {
   TELECALLING_MANAGEMENT: 'Telecalling Management',
   BACK_OFFICE_MANAGEMENT:'Back Office Management',
   TASK_MANAGEMENT: 'Task Management',
+  
+  // ▼▼▼ ADD THIS LINE ▼▼▼
+  ISSUE_MANAGEMENT: 'Issue Management',
+  // ▲▲▲ END OF ADDITION ▲▲▲
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -386,12 +398,19 @@ export const ALL_PERMISSIONS = [
       category: PERMISSION_CATEGORIES.BACK_OFFICE_MANAGEMENT 
     },
     
-  
   // Task Management
   { permission: PERMISSIONS.TASK_READ, description: 'View assigned Tasks and checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_MANAGE, description: 'Create, update, and delete all Tasks', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_SUBMIT_CHECKLIST, description: 'Submit daily Task checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_REPORTS_READ, description: 'View Task compliance reports for all staff', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
+
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Issue Management
+  { permission: PERMISSIONS.ISSUE_READ, description: 'View assigned Issues and checklists', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
+  { permission: PERMISSIONS.ISSUE_MANAGE, description: 'Create, update, and delete all Issues', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
+  { permission: PERMISSIONS.ISSUE_SUBMIT_CHECKLIST, description: 'Submit daily Issue checklists', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
+  { permission: PERMISSIONS.ISSUE_REPORTS_READ, description: 'View Issue compliance reports for all staff', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
+  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
