@@ -1,4 +1,4 @@
-// src/app/api/issue/route.ts
+// /app/api/issue/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
@@ -12,11 +12,11 @@ import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 import { startOfDay } from 'date-fns';
 import { Types } from 'mongoose';
 
-// ✅ This is critical for Mongoose's dynamic population to work
+// Ensure both Staff and User models are imported
 import Staff from '@/models/staff';
 import User from '@/models/user';
 
-// --- Helper Types ---
+// --- Helper Types (No Changes) ---
 interface PopulatedStaff {
     _id: Types.ObjectId;
     name: string;
@@ -29,6 +29,7 @@ interface PopulatedIssueTemplate {
     _id: Types.ObjectId;
     title: string;
     priority: 'high' | 'medium' | 'low' | 'none';
+    createdAt: Date; // Add createdAt to the type
 }
 type PopulatedSubmission = Omit<IIssueSubmission, 'issue' | 'staff' | 'reviewedBy'> & {
     _id: Types.ObjectId;
@@ -37,7 +38,7 @@ type PopulatedSubmission = Omit<IIssueSubmission, 'issue' | 'staff' | 'reviewedB
     reviewedBy: { _id: Types.ObjectId; name: string } | null;
 };
 
-// --- Cloudinary Configuration ---
+// --- Cloudinary Configuration (No Changes) ---
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -55,7 +56,7 @@ async function uploadToCloudinary(file: File): Promise<string> {
     });
 }
 
-// --- POST Function (Admin Creates Template) ---
+// --- POST Function (This is correct and needs no changes) ---
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user || !hasPermission(session?.user?.role?.permissions, PERMISSIONS.ISSUE_MANAGE)) {
@@ -84,7 +85,11 @@ export async function POST(req: NextRequest) {
 
         const roleIdStrings: string[] = JSON.parse(rolesJson);
         const roleObjectIds = roleIdStrings.map(id => new Types.ObjectId(id));
-
+        
+        const loggedInUserId = new Types.ObjectId(session.user.id);
+        const staffCheck = await Staff.findById(loggedInUserId).lean();
+        const creatorType = staffCheck ? 'Staff' : 'User';
+        
         const newIssue = new Issue({
             title, description, priority,
             type: 'daily',
@@ -96,9 +101,8 @@ export async function POST(req: NextRequest) {
                 mediaUpload: 'optional',
             }],
             tenantId,
-            createdBy: session.user.id,
-            // ✅ FIX: Specify that the creator is a 'User' (admin).
-            createdByType: 'User',
+            createdBy: loggedInUserId,
+            createdByType: creatorType,
             isActive: true,
         });
         await newIssue.save();
@@ -130,73 +134,104 @@ export async function GET(req: NextRequest) {
     try {
         const todayStart = startOfDay(new Date());
 
-        const baseQuery = async (query: any): Promise<PopulatedSubmission[]> => {
-            return await query
-                .populate('issue', 'title priority')
+        const baseQuery = (query: any): Promise<PopulatedSubmission[]> => {
+            return query
+                .populate('issue', 'title priority createdAt') // ✅ ADD createdAt HERE
                 .populate({ path: 'staff', select: 'name roleId', populate: { path: 'roleId', select: 'displayName' } })
-                .populate('reviewedBy', 'name')
+                .populate({ path: 'reviewedBy', select: 'name roleId', populate: { path: 'roleId', select: 'displayName name' }})
                 .lean();
         };
 
-        const formatSubmission = (sub: PopulatedSubmission) => ({
-            _id: sub._id.toString(),
-            dataType: 'submission' as const,
-            title: sub.issue!.title,
-            status: sub.status,
-            priority: sub.issue!.priority,
-            submissionDate: sub.submissionDate.toISOString(),
-            assignee: { name: sub.staff!.name, roles: [sub.staff!.roleId?.displayName || 'Unknown Role'] },
-            issueId: sub.issue!._id.toString(),
-            reviewer: sub.reviewedBy ? { name: sub.reviewedBy.name } : null,
-        });
+        const formatSubmissionData = (sub: PopulatedSubmission, issueMap: Map<string, any>) => {
+            const originalIssue = issueMap.get(sub.issue!._id.toString());
+            if (!originalIssue || !sub.staff || !originalIssue.createdBy) {
+                return null;
+            }
+
+            const assignee = sub.staff;
+            const assigneeName = assignee.name;
+            const assigneeRole = assignee.roleId?.displayName || 'Staff';
+
+            const creator = originalIssue.createdBy as any;
+            const creatorName = creator.name || 'Platform Admin';
+            let creatorRole = 'Admin';
+            if (originalIssue.createdByType === 'Staff' && creator.position) {
+                creatorRole = creator.position;
+            } else if (originalIssue.createdByType === 'User' && creator.roleId) {
+                creatorRole = creator.roleId.displayName || creator.roleId.name || 'Admin';
+            }
+            
+            const reviewer = sub.reviewedBy ? { 
+                name: sub.reviewedBy.name, 
+                role: (sub.reviewedBy as any).roleId?.displayName || 'Admin' 
+            } : null;
+
+            return {
+                _id: sub._id.toString(),
+                dataType: 'submission' as const,
+                title: sub.issue!.title,
+                status: sub.status,
+                priority: sub.issue!.priority,
+                submissionDate: sub.submissionDate.toISOString(),
+                createdDate: sub.issue!.createdAt.toISOString(), // ✅ ADD createdDate TO RESPONSE
+                assignee: { name: assigneeName, roles: [assigneeRole] }, 
+                submittedBy: { name: creatorName, role: creatorRole }, 
+                issueId: sub.issue!._id.toString(),
+                reviewer: reviewer,
+            };
+        };
 
         if (filter === 'today') {
             const todaysSubmissions = await baseQuery(IssueSubmission.find({ tenantId, submissionDate: { $gte: todayStart } }));
+
+            const submittedIssueIds = todaysSubmissions.map(s => s.issue!._id);
+            const userCreatedSubmittedIssues = await Issue.find({ _id: { $in: submittedIssueIds }, createdByType: 'User' }).populate({ path: 'createdBy', populate: { path: 'roleId', select: 'displayName name' } }).lean();
+            const staffCreatedSubmittedIssues = await Issue.find({ _id: { $in: submittedIssueIds }, createdByType: 'Staff' }).populate('createdBy').lean();
+            const issueMap = new Map([...userCreatedSubmittedIssues, ...staffCreatedSubmittedIssues].map(issue => [issue._id.toString(), issue]));
             
-            const dailyTemplates = await Issue.find({ tenantId, isActive: true, type: 'daily' }).populate('roles', 'displayName').lean();
-
-            const reportedIssues = await Issue.find({ tenantId, isActive: true, type: 'one_time' })
-                .populate('roles', 'displayName')
-                // ✅ This now populates the creator's name from either 'User' or 'Staff' model
-                .populate('createdBy', 'name')
-                .lean();
-
-            const submittedIssueIds = new Set(todaysSubmissions.map((s) => s.issue?._id.toString()));
-            const pendingTemplates = dailyTemplates.filter((template) => !submittedIssueIds.has(template._id.toString()));
-            const formattedSubmissions = todaysSubmissions.filter((sub) => sub.issue && sub.staff).map(formatSubmission);
+            const formattedSubmissions = todaysSubmissions.map(sub => formatSubmissionData(sub, issueMap)).filter(Boolean);
             
-            const formatPendingIssue = (template: any) => ({
-                _id: template._id.toString(),
-                dataType: 'template' as const,
-                title: template.title,
-                status: 'pending_assignment' as const,
-                priority: template.priority,
-                submissionDate: null,
-                assignee: {
-                    // This will now show the correct creator's name (admin or staff)
-                    name: (template.createdBy as any)?.name || 'Deleted User',
-                    roles: template.roles.map((r: any) => r.displayName)
-                },
-                issueId: template._id.toString(),
-                reviewer: null,
-            });
+            const userCreatedIssues = await Issue.find({ tenantId, isActive: true, createdByType: 'User', type: { $in: ['one_time', 'daily'] } }).populate('roles', 'displayName').populate({ path: 'createdBy', populate: { path: 'roleId', select: 'displayName name' } }).lean();
+            const staffCreatedIssues = await Issue.find({ tenantId, isActive: true, createdByType: 'Staff', type: { $in: ['one_time', 'daily'] } }).populate('roles', 'displayName').populate('createdBy').lean();
+            const reportedIssues = [...userCreatedIssues, ...staffCreatedIssues];
 
-            const formattedPendingTemplates = pendingTemplates.map(formatPendingIssue);
-            const formattedReportedIssues = reportedIssues.map(formatPendingIssue);
+            const allSubmittedIdsSet = new Set(todaysSubmissions.map(s => s.issue!._id.toString()));
+            const pendingReportedIssues = reportedIssues.filter(template => !allSubmittedIdsSet.has(template._id.toString()));
+            
+            const formatPendingIssue = (template: any) => {
+                const creator = template.createdBy as any;
+                if (!creator) return null;
+                const creatorName = creator.name || 'Platform Admin';
+                let creatorRole = 'Admin';
+                if (template.createdByType === 'Staff' && creator.position) { creatorRole = creator.position; } 
+                else if (template.createdByType === 'User' && creator.roleId) { creatorRole = creator.roleId.displayName || creator.roleId.name || 'Admin'; }
+                return {
+                    _id: template._id.toString(), dataType: 'template' as const, title: template.title, status: 'pending_assignment' as const, priority: template.priority,
+                    submissionDate: null,
+                    createdDate: template.createdAt.toISOString(), // ✅ ADD createdDate TO RESPONSE
+                    assignee: { name: null, roles: template.roles.map((r: any) => r.displayName) },
+                    submittedBy: { name: creatorName, role: creatorRole }, issueId: template._id.toString(), reviewer: null,
+                };
+            };
+            const formattedReportedIssues = pendingReportedIssues.map(formatPendingIssue).filter(issue => issue !== null);
 
-            return NextResponse.json([...formattedSubmissions, ...formattedPendingTemplates, ...formattedReportedIssues]);
+            return NextResponse.json([...formattedSubmissions, ...formattedReportedIssues]);
         }
 
         let queryOptions: any = { tenantId };
-        switch(filter) {
-            case 'ongoing': queryOptions.status = { $in: ['pending_review'] }; break;
-            case 'completed': queryOptions.status = 'approved'; break;
-            case 'rejected': queryOptions.status = 'rejected'; break;
-            default: return NextResponse.json([]);
-        }
-        
+        if (filter === 'ongoing') queryOptions.status = { $in: ['pending_review'] };
+        if (filter === 'completed') queryOptions.status = 'approved';
+        if (filter === 'rejected') queryOptions.status = 'rejected';
+
         const submissions = await baseQuery(IssueSubmission.find(queryOptions).sort({ submissionDate: -1 }));
-        const formattedResults = submissions.filter((sub) => sub.issue && sub.staff).map(formatSubmission);
+        
+        const submittedIssueIds = submissions.map(s => s.issue!._id);
+        const userCreatedSubmittedIssues = await Issue.find({ _id: { $in: submittedIssueIds }, createdByType: 'User' }).populate({ path: 'createdBy', populate: { path: 'roleId', select: 'displayName name' } }).lean();
+        const staffCreatedSubmittedIssues = await Issue.find({ _id: { $in: submittedIssueIds }, createdByType: 'Staff' }).populate('createdBy').lean();
+        const issueMap = new Map([...userCreatedSubmittedIssues, ...staffCreatedSubmittedIssues].map(issue => [issue._id.toString(), issue]));
+
+        const formattedResults = submissions.map(sub => formatSubmissionData(sub, issueMap)).filter(Boolean);
+        
         return NextResponse.json(formattedResults);
 
     } catch (error: any) {

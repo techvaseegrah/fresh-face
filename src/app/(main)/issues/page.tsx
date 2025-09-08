@@ -21,11 +21,11 @@ interface DisplayIssue {
     title: string;
     status: 'pending_review' | 'approved' | 'rejected' | 'pending_assignment';
     submissionDate: string | null;
+    createdDate: string; 
     assignee: {
         name: string | null;
         roles: string[];
     };
-    // ✅ UPDATED: The reviewer object now includes their role
     reviewer: {
         name: string;
         role: string;
@@ -36,6 +36,38 @@ interface DisplayIssue {
         role: string;
     } | null;
 }
+
+
+const ImageViewerModal = ({ src, onClose }: { src: string; onClose: () => void }) => {
+    return (
+        <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[60] p-4"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="relative max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-2xl p-2"
+                onClick={(e) => e.stopPropagation()} 
+            >
+                <Image 
+                    src={src} 
+                    alt="Attachment Preview" 
+                    width={1200} 
+                    height={800} 
+                    className="object-contain max-w-full max-h-[85vh] rounded" 
+                />
+                <button 
+                    onClick={onClose} 
+                    className="absolute -top-3 -right-3 bg-white text-gray-700 rounded-full p-1.5 shadow-lg hover:bg-gray-200 transition-colors"
+                >
+                    <X size={20} />
+                </button>
+            </motion.div>
+        </div>
+    );
+};
 
 
 // --- RE-STYLED & ENHANCED COMPONENTS ---
@@ -64,75 +96,90 @@ const PriorityDisplay = ({ priority }: { priority: 'high' | 'medium' | 'low' | '
 };
 
 const ViewIssueModal = ({ issue, onClose }: { issue: IssueProp, onClose: () => void }) => {
+    const [viewerSrc, setViewerSrc] = useState<string | null>(null);
+
     if (!issue) return null;
 
+    const isImage = issue.fileUrl?.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+
+    const handleViewAttachment = (e: React.MouseEvent) => {
+        if (isImage) {
+            e.preventDefault();
+            setViewerSrc(issue.fileUrl!);
+        }
+    };
+
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-start md:items-center z-50 p-2 sm:p-4">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-white rounded-xl shadow-2xl w-full max-w-lg md:max-w-xl flex flex-col max-h-[95vh]"
-            >
-                <div className="flex justify-between items-center p-4 sm:p-6 border-b">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-blue-100 p-2 rounded-full"><ListChecks className="text-blue-600 h-6 w-6" /></div>
-                        <h2 className="text-lg md:text-xl font-bold text-gray-900">Issue Details</h2>
-                    </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100 transition-colors"><X size={20} /></button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    <div>
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Title</h3>
-                        <p className="text-2xl font-bold text-gray-800">{issue.title}</p>
-                    </div>
-                    {issue.description && (
-                        <div>
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Description</h3>
-                            <p className="text-gray-600 whitespace-pre-wrap prose prose-sm max-w-none">{issue.description}</p>
+        <>
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-start md:items-center z-50 p-2 sm:p-4">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    className="bg-white rounded-xl shadow-2xl w-full max-w-lg md:max-w-xl flex flex-col max-h-[95vh]"
+                >
+                    <div className="flex justify-between items-center p-4 sm:p-6 border-b">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-blue-100 p-2 rounded-full"><ListChecks className="text-blue-600 h-6 w-6" /></div>
+                            <h2 className="text-lg md:text-xl font-bold text-gray-900">Issue Details</h2>
                         </div>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100 transition-colors"><X size={20} /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
                         <div>
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Priority</h3>
-                            <PriorityDisplay priority={issue.priority} />
+                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Title</h3>
+                            <p className="text-2xl font-bold text-gray-800">{issue.title}</p>
                         </div>
-                        <div>
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Assigned Roles</h3>
-                            <div className="flex flex-wrap gap-2">
-                                {issue.roles.map((role) => (
-                                    <span key={role._id} className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded-full">{role.displayName}</span>
-                                ))}
+                        {issue.description && (
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1">Description</h3>
+                                <p className="text-gray-600 whitespace-pre-wrap prose prose-sm max-w-none">{issue.description}</p>
+                            </div>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Priority</h3>
+                                <PriorityDisplay priority={issue.priority} />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Assigned Roles</h3>
+                                <div className="flex flex-wrap gap-2">
+                                    {issue.roles.map((role) => (
+                                        <span key={role._id} className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded-full">{role.displayName}</span>
+                                    ))}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    {issue.fileUrl && (
-                        <div>
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Attachment</h3>
-                            <div className="mt-2 p-3 border rounded-lg bg-gray-50">
-                                <a href={issue.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 group">
-                                    {issue.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
-                                        <Image src={issue.fileUrl} alt="Attachment Preview" width={80} height={80} className="object-cover rounded-md h-20 w-20 flex-shrink-0" />
-                                    ) : (
-                                        <div className="h-20 w-20 flex items-center justify-center bg-gray-200 rounded-md flex-shrink-0">
-                                            <FileText className="text-gray-500 h-8 w-8" />
-                                        </div>
-                                    )}
-                                    <div><p className="font-semibold text-blue-600 group-hover:underline">View Attachment</p></div>
-                                </a>
+                        {issue.fileUrl && (
+                            <div>
+                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Attachment</h3>
+                                <div className="mt-2 p-3 border rounded-lg bg-gray-50">
+                                    <a href={issue.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 group" onClick={handleViewAttachment}>
+                                        {isImage ? (
+                                            <Image src={issue.fileUrl} alt="Attachment Preview" width={80} height={80} className="object-cover rounded-md h-20 w-20 flex-shrink-0" />
+                                        ) : (
+                                            <div className="h-20 w-20 flex items-center justify-center bg-gray-200 rounded-md flex-shrink-0">
+                                                <FileText className="text-gray-500 h-8 w-8" />
+                                            </div>
+                                        )}
+                                        <div><p className="font-semibold text-blue-600 group-hover:underline">View Attachment</p></div>
+                                    </a>
+                                </div>
                             </div>
-                        </div>
-                    )}
-                </div>
-                <div className="p-4 bg-gray-50/50 border-t flex justify-end">
-                    <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition-colors">Close</button>
-                </div>
-            </motion.div>
-        </div>
+                        )}
+                    </div>
+                    <div className="p-4 bg-gray-50/50 border-t flex justify-end">
+                        <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg hover:bg-gray-300 transition-colors">Close</button>
+                    </div>
+                </motion.div>
+            </div>
+            <AnimatePresence>
+                {viewerSrc && <ImageViewerModal src={viewerSrc} onClose={() => setViewerSrc(null)} />}
+            </AnimatePresence>
+        </>
     );
 };
 
-// ✅ UPDATED: The component now accepts the full reviewer object
 const StatusBadge = ({ status, reviewer }: { status: DisplayIssue['status'], reviewer?: DisplayIssue['reviewer'] | null }): React.JSX.Element => {
     const baseClasses = "px-2.5 py-1 text-xs font-semibold rounded-full inline-block";
     const styles = {
@@ -148,7 +195,6 @@ const StatusBadge = ({ status, reviewer }: { status: DisplayIssue['status'], rev
         pending_assignment: "Not Assigned",
     }
     
-    // ✅ FIX: Display the reviewer's name and role
     if ((status === 'approved' || status === 'rejected') && reviewer) {
         return (
             <div className="text-center">
@@ -162,7 +208,7 @@ const StatusBadge = ({ status, reviewer }: { status: DisplayIssue['status'], rev
 };
 
 const UserAvatar = ({ name }: { name?: string | null }) => {
-    if (!name || name === 'platform administrator') { // Handle the new fallback case
+    if (!name || name === 'platform administrator') {
         return (
              <div className="w-8 h-8 rounded-full bg-gray-300 text-gray-700 flex items-center justify-center font-bold text-sm flex-shrink-0" title="Platform Administrator">
                 P
@@ -248,12 +294,14 @@ export default function IssueManagementPage() {
     const handleCloseViewModal = () => setViewingIssue(null);
     const handleSuccess = (response: any) => { mutate(); handleCloseModal(); if (response?.warning) { toast.warn(response.warning, { autoClose: 8000 }); } else { toast.success(response?.message || "Operation successful!"); } };
 
+    // ✅ START OF CHANGE 1: Update tab label
     const tabs = [
-        { key: 'today', label: "Today's Issues" },
+        { key: 'today', label: "Overall Issues" },
         { key: 'ongoing', label: "Ongoing" },
         { key: 'completed', label: "Completed" },
         { key: 'rejected', label: "Rejected" },
     ];
+    // ✅ END OF CHANGE 1
 
     const priorityBorderColor = (priority: DisplayIssue['priority']) => {
         switch (priority) {
@@ -284,7 +332,9 @@ export default function IssueManagementPage() {
                             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow-sm hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                         >
                             <PlusCircle size={20} />
-                            Create Template
+                            {/* ✅ START OF CHANGE 2: Update button text */}
+                            Inform Issue
+                            {/* ✅ END OF CHANGE 2 */}
                         </motion.button>
                     )}
                 </div>
@@ -321,13 +371,16 @@ export default function IssueManagementPage() {
                 )}
                 
                 {issues && issues.length > 0 && (
-                     <div className="hidden md:grid grid-cols-12 gap-4 items-center px-4 mb-2">
-                        <div className="col-span-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Issue</div>
-                        <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assigned To</div>
-                        <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted By</div>
-                        <div className="col-span-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</div>
-                        <div className="col-span-1 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</div>
-                        <div className="col-span-1 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</div>
+                     <div className="hidden md:grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)] gap-4 items-center px-4 mb-2">
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Issue</div>
+                        {/* ✅ START OF CHANGE 3: Update column header */}
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Solved By</div>
+                        {/* ✅ END OF CHANGE 3 */}
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted By</div>
+                        <div className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</div>
+                        <div className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</div>
+                        <div className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Solved Date</div>
+                        <div className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</div>
                     </div>
                 )}
 
@@ -343,16 +396,23 @@ export default function IssueManagementPage() {
                                 transition={{ duration: 0.2 }}
                                 className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow border-l-4 ${priorityBorderColor(issue.priority)} overflow-hidden`}
                             >
-                                <div className="p-4 grid grid-cols-12 gap-y-4 md:gap-4 items-center">
-                                    <div className="col-span-12 md:col-span-4">
+                                <div className="p-4 grid grid-cols-1 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)] gap-y-4 md:gap-4 items-center">
+                                    <div className="col-span-12 md:col-auto">
                                         <p className="font-semibold text-gray-800 truncate">{issue.title}</p>
                                         <p className="text-sm text-gray-500">{issue.assignee?.roles?.join(', ') || 'No roles assigned'}</p>
                                     </div>
-                                    <div className="col-span-6 md:col-span-2 flex items-center gap-2">
+                                    <div className="col-span-6 md:col-auto flex items-center gap-2">
                                         <UserAvatar name={issue.assignee?.name} />
-                                        <span className="text-sm text-gray-600 truncate">{issue.assignee?.name || 'N/A'}</span>
+                                        {issue.assignee?.name ? (
+                                            <div>
+                                                <p className="font-medium text-sm text-gray-800 truncate">{issue.assignee.name}</p>
+                                                <p className="text-xs text-gray-500 truncate">{issue.assignee.roles.join(', ')}</p>
+                                            </div>
+                                        ) : (
+                                            <span className="text-sm text-gray-600 truncate">N/A</span>
+                                        )}
                                     </div>
-                                    <div className="col-span-6 md:col-span-2">
+                                    <div className="col-span-6 md:col-auto">
                                         {issue.submittedBy ? (
                                             <div>
                                                 <p className="font-medium text-sm text-gray-800 truncate">{issue.submittedBy.name}</p>
@@ -362,14 +422,18 @@ export default function IssueManagementPage() {
                                             <span className="text-sm text-gray-500">—</span>
                                         )}
                                     </div>
-                                    <div className="col-span-6 md:col-span-2 flex justify-start md:justify-center">
-                                        {/* ✅ UPDATED: Pass the full reviewer object to the badge */}
+                                    <div className="col-span-6 md:col-auto flex justify-start md:justify-center">
                                         <StatusBadge status={issue.status} reviewer={issue.reviewer} />
                                     </div>
-                                    <div className="col-span-6 md:col-span-1 text-sm text-gray-600 text-left md:text-center">
+                                    
+                                    <div className="col-span-6 md:col-auto text-sm text-gray-600 text-left md:text-center">
+                                        {issue.createdDate ? format(new Date(issue.createdDate), 'MMM d, yyyy') : '—'}
+                                    </div>
+                                    <div className="col-span-6 md:col-auto text-sm text-gray-600 text-left md:text-center">
                                         {issue.submissionDate ? format(new Date(issue.submissionDate), 'MMM d, yyyy') : '—'}
                                     </div>
-                                    <div className="col-span-12 md:col-span-1 flex justify-end items-center gap-1 text-gray-400">
+
+                                    <div className="col-span-12 md:col-auto flex justify-end items-center gap-1 text-gray-400">
                                         <button onClick={() => handleView(issue)} disabled={!issue.issueId} className="p-2 rounded-md hover:bg-blue-100 hover:text-blue-600 disabled:opacity-30 transition-colors" title="View"><Eye size={18}/></button>
                                         {canManage && <>
                                             <button onClick={() => handleEdit(issue)} disabled={!issue.issueId} className="p-2 rounded-md hover:bg-green-100 hover:text-green-600 disabled:opacity-30 transition-colors" title="Edit"><Edit size={18}/></button>

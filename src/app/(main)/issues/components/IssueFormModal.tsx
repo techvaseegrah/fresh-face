@@ -1,31 +1,34 @@
-// src/app/(main)/issues/components/IssueFormModal.tsx
+// /app/(main)/issues/components/IssueFormModal.tsx
 
 'use client';
 
 import { useForm, Controller, FieldError } from 'react-hook-form';
 import useSWR from 'swr';
 import Select from 'react-select';
-import { X, Loader2, AlertTriangle, ArrowUp, ArrowRight, ArrowDown, UploadCloud, File as FileIcon, Trash2, CheckCircle, Image as ImageIcon } from 'lucide-react';
+import { X, Loader2, AlertTriangle, ArrowUp, ArrowRight, ArrowDown, UploadCloud, File as FileIcon, Trash2, CheckCircle, Image as ImageIcon, Eye } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import Image from 'next/image';
 import React from 'react';
 
+const ImageViewerModal = ({ src, onClose }: { src: string; onClose: () => void }) => (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[60] p-4" onClick={onClose} >
+        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="relative max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-2xl p-2" onClick={(e) => e.stopPropagation()} >
+            <Image src={src} alt="Attachment Preview" width={1200} height={800} className="object-contain max-w-full max-h-[85vh] rounded" />
+            <button onClick={onClose} className="absolute -top-3 -right-3 bg-white text-gray-700 rounded-full p-1.5 shadow-lg hover:bg-gray-200 transition-colors" >
+                <X size={20} />
+            </button>
+        </motion.div>
+    </div>
+);
+
 // --- (CHILD COMPONENT) FILE PREVIEW CARD ---
 const FilePreview = ({ 
-    fileName, 
-    fileSize, 
-    previewUrl, 
-    isImage, 
-    onRemove 
+    fileName, fileSize, previewUrl, isImage, onRemove, onView 
 }: { 
-    fileName: string; 
-    fileSize?: string; 
-    previewUrl: string; 
-    isImage: boolean; 
-    onRemove: () => void; 
+    fileName: string; fileSize?: string; previewUrl: string; isImage: boolean; onRemove: () => void; onView?: () => void;
 }) => (
     <div className="bg-white p-3 border-2 border-slate-300 rounded-lg flex items-center gap-4 transition-all shadow-sm">
         <div className="flex-shrink-0 h-16 w-16 flex items-center justify-center bg-slate-100 rounded-md">
@@ -39,19 +42,26 @@ const FilePreview = ({
             <p className="font-semibold text-slate-800 truncate" title={fileName}>{fileName}</p>
             {fileSize && <p className="text-sm text-slate-500">{fileSize}</p>}
         </div>
-        <button 
-            type="button" 
-            onClick={onRemove} 
-            title="Remove file" 
-            className="flex-shrink-0 text-slate-500 hover:text-red-600 hover:bg-red-100 p-2 rounded-full transition-colors"
-        >
+        {onView && isImage && (
+            <button type="button" onClick={onView} title="View file" className="flex-shrink-0 text-slate-500 hover:text-blue-600 hover:bg-blue-100 p-2 rounded-full transition-colors">
+                <Eye size={20} />
+            </button>
+        )}
+        <button type="button" onClick={onRemove} title="Remove file" className="flex-shrink-0 text-slate-500 hover:text-red-600 hover:bg-red-100 p-2 rounded-full transition-colors" >
             <Trash2 size={20} />
         </button>
     </div>
 );
 
 // --- (CHILD COMPONENT) DYNAMIC FILE UPLOADER ---
-const FileUploader = ({ field }: { field: { onChange: (file: File | null) => void; value: File | null; } }): React.JSX.Element => {
+// ✅ START OF FIX: The FileUploader now accepts the setViewerSrc function
+const FileUploader = ({ 
+    field, 
+    setViewerSrc 
+}: { 
+    field: { onChange: (file: File | null) => void; value: File | null; };
+    setViewerSrc: (src: string) => void;
+}): React.JSX.Element => {
   const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,9 +81,11 @@ const FileUploader = ({ field }: { field: { onChange: (file: File | null) => voi
         previewUrl={preview}
         isImage={field.value.type.startsWith('image/')}
         onRemove={() => field.onChange(null)}
+        onView={() => setViewerSrc(preview)} // ✅ This line adds the view functionality
       />
     );
   }
+  // ✅ END OF FIX
 
   return (
     <label className="w-full flex flex-col items-center px-4 py-8 bg-slate-50 text-slate-600 rounded-lg shadow-inner tracking-wide border-2 border-dashed border-slate-300 cursor-pointer hover:bg-slate-100 hover:border-blue-500 transition-colors">
@@ -107,6 +119,7 @@ export default function IssueFormModal({ issue, onClose, onSuccess }: IssueFormM
   const { data: session } = useSession();
   const isEditing = !!issue;
   const [isExistingFileRemoved, setIsExistingFileRemoved] = useState(false);
+  const [viewerSrc, setViewerSrc] = useState<string | null>(null);
 
   const fetcherWithAuth = useCallback(async (url: string): Promise<RolesResponse> => {
     if (!session?.user?.tenantId) throw new Error("Session not ready");
@@ -176,7 +189,6 @@ export default function IssueFormModal({ issue, onClose, onSuccess }: IssueFormM
     </div>
   );
 
-  // ✅ PRIORITY STYLING CHANGES
   const priorityOptions = {
     high: { label: 'High', icon: ArrowUp, theme: { base: 'border-slate-300 bg-white', selected: 'bg-red-50 border-red-500 text-red-700', icon: 'text-red-600' } },
     medium: { label: 'Medium', icon: ArrowRight, theme: { base: 'border-slate-300 bg-white', selected: 'bg-yellow-50 border-yellow-500 text-yellow-700', icon: 'text-yellow-600' } },
@@ -249,9 +261,12 @@ export default function IssueFormModal({ issue, onClose, onSuccess }: IssueFormM
                         previewUrl={issue.fileUrl}
                         isImage={!!issue.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)}
                         onRemove={() => setIsExistingFileRemoved(true)}
+                        onView={() => issue.fileUrl && setViewerSrc(issue.fileUrl)}
                     />
                 ) : (
-                    <Controller name="file" control={control} render={({ field }) => <FileUploader field={field} />} />
+                    // ✅ START OF FIX: Pass the setViewerSrc function to the FileUploader
+                    <Controller name="file" control={control} render={({ field }) => <FileUploader field={field} setViewerSrc={setViewerSrc} />} />
+                    // ✅ END OF FIX
                 )}
             </Section>
           </div>
@@ -264,6 +279,9 @@ export default function IssueFormModal({ issue, onClose, onSuccess }: IssueFormM
           </footer>
         </form>
       </motion.div>
+      <AnimatePresence>
+        {viewerSrc && <ImageViewerModal src={viewerSrc} onClose={() => setViewerSrc(null)} />}
+      </AnimatePresence>
     </div>
   );
 }

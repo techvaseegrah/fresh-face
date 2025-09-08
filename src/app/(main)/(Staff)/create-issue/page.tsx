@@ -1,15 +1,32 @@
-// src/app/(main)/(Staff)/create-issue/page.tsx
+// /src/app/(main)/(Staff)/create-issue/page.tsx
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { toast } from 'react-toastify'; // <-- FIX: This was missing
-import { useForm, Controller } from 'react-hook-form'; // <-- FIX: This was missing
+import { toast } from 'react-toastify';
+import { useForm, Controller } from 'react-hook-form';
 import useSWR from 'swr';
 import Select from 'react-select';
-import { Loader2, Send, Paperclip, X, ArrowUp, ArrowRight, ArrowDown, UploadCloud } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Loader2, Send, Paperclip, X, ArrowUp, ArrowRight, ArrowDown, UploadCloud, Eye } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
+import React from 'react';
+
+
+// ✅ START OF CHANGE 1: Add the ImageViewerModal component
+const ImageViewerModal = ({ src, onClose }: { src: string; onClose: () => void }) => (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[60] p-4" onClick={onClose} >
+        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }} className="relative max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-2xl p-2" onClick={(e) => e.stopPropagation()} >
+            <Image src={src} alt="Attachment Preview" width={1200} height={800} className="object-contain max-w-full max-h-[85vh] rounded" />
+            <button onClick={onClose} className="absolute -top-3 -right-3 bg-white text-gray-700 rounded-full p-1.5 shadow-lg hover:bg-gray-200 transition-colors" >
+                <X size={20} />
+            </button>
+        </motion.div>
+    </div>
+);
+// ✅ END OF CHANGE 1
+
 
 // --- Type Definitions ---
 type IssueFormData = {
@@ -38,7 +55,10 @@ const Section = ({ title, description, children }: { title: string, description?
 
 export default function CreateIssuePage() {
     const { data: session } = useSession();
-    const { register, handleSubmit, control, watch, formState: { errors, isSubmitting }, reset } = useForm<IssueFormData>({
+    const [viewerSrc, setViewerSrc] = useState<string | null>(null); // ✅ ADD STATE FOR VIEWER
+    const [preview, setPreview] = useState<string | null>(null); // State for file preview URL
+
+    const { register, handleSubmit, control, watch, formState: { errors, isSubmitting }, reset, setValue } = useForm<IssueFormData>({
         defaultValues: {
             title: '',
             description: '',
@@ -47,6 +67,17 @@ export default function CreateIssuePage() {
             file: null,
         },
     });
+    
+    const currentFile = watch('file');
+
+    useEffect(() => {
+        if (currentFile) {
+            const url = URL.createObjectURL(currentFile);
+            setPreview(url);
+            return () => URL.revokeObjectURL(url);
+        }
+        setPreview(null);
+    }, [currentFile]);
 
     // --- Data Fetching for Roles ---
     const fetcherWithAuth = useCallback(async (url: string): Promise<RolesResponse> => {
@@ -173,13 +204,17 @@ export default function CreateIssuePage() {
                         </Section>
 
                         <Section title="Attach File" description="Optionally, add a photo or document of the issue.">
+                           {/* ✅ START OF CHANGE 2: Update the file preview logic */}
                            <Controller name="file" control={control} render={({ field: { onChange, value } }) => (
                                 <>
-                                    {value ? (
+                                    {value && preview ? (
                                         <div className="p-3 border rounded-md bg-gray-50 flex items-center gap-3 text-sm">
                                             <Paperclip className="h-5 w-5 text-gray-500 flex-shrink-0" />
                                             <p className="text-gray-800 font-semibold truncate">{value.name}</p>
-                                            <button type="button" onClick={() => onChange(null)} className="ml-auto text-red-500 hover:text-red-700" title="Remove file"><X size={18}/></button>
+                                            {value.type.startsWith('image/') && (
+                                                <button type="button" onClick={() => setViewerSrc(preview)} className="ml-auto text-blue-500 hover:text-blue-700" title="View file"><Eye size={18}/></button>
+                                            )}
+                                            <button type="button" onClick={() => onChange(null)} className="ml-2 text-red-500 hover:text-red-700" title="Remove file"><X size={18}/></button>
                                         </div>
                                     ) : (
                                         <label className="w-full flex flex-col items-center px-4 py-8 bg-slate-50 text-slate-600 rounded-lg shadow-inner tracking-wide border-2 border-dashed border-slate-300 cursor-pointer hover:bg-slate-100 hover:border-blue-500 transition-colors">
@@ -195,6 +230,7 @@ export default function CreateIssuePage() {
                                     )}
                                 </>
                            )}/>
+                           {/* ✅ END OF CHANGE 2 */}
                         </Section>
                     </div>
                     
@@ -208,6 +244,11 @@ export default function CreateIssuePage() {
                     </div>
                 </form>
             </motion.div>
+            
+            {/* This will render the popup when viewerSrc is set */}
+            <AnimatePresence>
+                {viewerSrc && <ImageViewerModal src={viewerSrc} onClose={() => setViewerSrc(null)} />}
+            </AnimatePresence>
         </div>
     );
 }

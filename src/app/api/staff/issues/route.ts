@@ -1,9 +1,7 @@
-// src/app/api/staff/issues/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { v2 as cloudinary } from 'cloudinary';
-import { authOptions } from '@/lib/auth';
+import { authOptions } from '@/lib/auth'; // Ensure you have auth options that can handle staff sessions
 import { getTenantIdOrBail } from '@/lib/tenant';
 import dbConnect from '@/lib/dbConnect';
 import Issue from '@/models/Issue';
@@ -33,6 +31,7 @@ async function uploadToCloudinary(file: File): Promise<string> {
 
 // --- POST Function to Create a Staff-Reported Issue ---
 export async function POST(req: NextRequest) {
+    // Assuming staff are also authenticated via NextAuth and their session contains their staff ID
     const session = await getServerSession(authOptions);
     if (!session?.user) {
         return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
@@ -47,16 +46,17 @@ export async function POST(req: NextRequest) {
         const title = formData.get('title') as string;
         const description = formData.get('description') as string;
         const priority = formData.get('priority') as 'high' | 'medium' | 'low';
-        const rolesJson = formData.get('roles') as string;
+        // Staff-reported issues are typically assigned to admin/manager roles for review
+        const rolesJson = formData.get('roles') as string; 
         const file = formData.get('file') as File | null;
 
         if (!title || !rolesJson) {
-             return NextResponse.json({ message: 'Title and Roles are required fields' }, { status: 400 });
+             return NextResponse.json({ message: 'Title and assigning at least one Role are required' }, { status: 400 });
         }
         
         const roleIdStrings: string[] = JSON.parse(rolesJson);
         if (roleIdStrings.length === 0) {
-            return NextResponse.json({ message: 'At least one role must be assigned' }, { status: 400 });
+            return NextResponse.json({ message: 'At least one role must be assigned for review' }, { status: 400 });
         }
         const roleObjectIds = roleIdStrings.map(id => new Types.ObjectId(id));
 
@@ -69,18 +69,20 @@ export async function POST(req: NextRequest) {
             title,
             description,
             priority: priority || 'medium',
-            roles: roleObjectIds,
-            type: 'one_time',
-            // ✅ ADDED: This default checklist allows the issue to be submitted.
+            roles: roleObjectIds, // Roles who can see/manage this issue
+            type: 'one_time', // Staff issues are always one-time reports
             checklistItems: [{
-                questionText: 'Is the issue resolved?',
+                questionText: 'Acknowledge and address the reported issue.',
                 responseType: 'yes_no_remarks',
                 mediaUpload: 'optional',
             }],
             fileUrl: fileUrl,
             tenantId,
+
+            // ✅ THE FIX: Explicitly set the creator's ID and their type ('Staff')
             createdBy: new Types.ObjectId(session.user.id),
-            createdByType: 'Staff',
+            createdByType: 'Staff', 
+
             isActive: true,
         });
 
