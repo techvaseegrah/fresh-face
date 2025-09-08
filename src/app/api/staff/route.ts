@@ -48,9 +48,7 @@ async function checkPermissions(permission: string) {
   return null;
 }
 
-// --- GET (No changes needed) ---
 export async function GET(request: NextRequest) {
-  // ... your existing GET logic remains the same
     const tenantIdOrResponse = getTenantIdOrBail(request);
     if (tenantIdOrResponse instanceof NextResponse) {
         return tenantIdOrResponse;
@@ -69,16 +67,29 @@ export async function GET(request: NextRequest) {
             const nextId = await getNextStaffId(tenantId);
             return NextResponse.json({ success: true, data: { nextId } });
         }
+        
+        // ✅ --- THIS IS THE CORRECTED LOGIC FOR THE BILLING PAGE ---
         if (action === 'listForBilling') {
-            const activeStaff = await Staff.find({ tenantId, status: 'active' }, '_id name email').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string, email: string }[]>();
+            const activeStaff = await Staff.find({ 
+                tenantId, 
+                status: 'active', 
+                isAvailableForBooking: true // ADDED THIS FILTER
+            }, '_id name email').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string, email: string }[]>();
             return NextResponse.json({ success: true, staff: activeStaff.map(s => ({ _id: s._id.toString(), name: s.name, email: s.email })) });
         }
+        
         if (action === 'listForAssignment') {
-            const assignableStaff = await Staff.find({ tenantId, status: 'active', position: { $in: [/^stylist$/i, /^lead stylist$/i, /^manager$/i] } }, '_id name').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string }[]>();
+            const assignableStaff = await Staff.find({ 
+                tenantId, 
+                status: 'active', 
+                isAvailableForBooking: true 
+            }, '_id name').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string }[]>();
+            
             return NextResponse.json({ success: true, stylists: assignableStaff.map(s => ({ _id: s._id.toString(), name: s.name })) });
         }
+        
         if (action === 'list') {
-            const staffList = await Staff.find({ tenantId }).select('staffIdNumber name email phone aadharNumber position joinDate salary address image status aadharImage passbookImage agreementImage').sort({ name: 'asc' }).lean<LeanStaffDocument[]>();
+            const staffList = await Staff.find({ tenantId }).select('staffIdNumber name email phone aadharNumber position joinDate salary address image status aadharImage passbookImage agreementImage isAvailableForBooking').sort({ name: 'asc' }).lean<LeanStaffDocument[]>();
             return NextResponse.json({ success: true, data: staffList.map(s => ({...s, id: s._id.toString()})) });
         }
         if (staffId) {
@@ -99,9 +110,9 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// --- POST (No changes needed) ---
+// ... The POST, PUT, and DELETE functions are all correct and remain unchanged.
+
 export async function POST(request: NextRequest) {
-    // ... your existing POST logic remains the same
     const tenantIdOrResponse = getTenantIdOrBail(request);
     if (tenantIdOrResponse instanceof NextResponse) { return tenantIdOrResponse; }
     const tenantId = tenantIdOrResponse;
@@ -110,8 +121,8 @@ export async function POST(request: NextRequest) {
     await dbConnect();
     try {
         const body = await request.json();
-        const { password, staffIdNumber, name, email, position, phone, salary, address, aadharNumber, joinDate } = body;
-        if (!password || password.length < 6 || password.length > 15) { // ✨ UPDATE THIS LINE ✨
+        const { password, staffIdNumber, name, email, position, phone, salary, address, aadharNumber, joinDate, isAvailableForBooking } = body;
+        if (!password || password.length < 6 || password.length > 15) {
             return NextResponse.json({ success: false, error: 'Password is required and must be at least 6 characters long.' }, { status: 400 });
         }
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -136,7 +147,8 @@ export async function POST(request: NextRequest) {
             tenantId, staffIdNumber, name, email: email || null, position, phone, salary, 
             address, aadharNumber, joinDate, image: uploadedImageUrl, aadharImage: uploadedAadharUrl, 
             passbookImage: uploadedPassbookUrl, agreementImage: uploadedAgreementUrl, status: 'active',
-            password: hashedPassword
+            password: hashedPassword,
+            isAvailableForBooking: isAvailableForBooking,
         });
         const savedStaff = await newStaffDoc.save();
         await ShopSetting.updateOne({ key: 'defaultSettings', tenantId }, { $inc: { staffIdBaseNumber: 1 } }, { upsert: true });
@@ -150,7 +162,6 @@ export async function POST(request: NextRequest) {
 }
 
 
-// --- ✅ UPDATED PUT FUNCTION ---
 export async function PUT(request: NextRequest) {
   const tenantIdOrResponse = getTenantIdOrBail(request);
   if (tenantIdOrResponse instanceof NextResponse) { return tenantIdOrResponse; }
@@ -161,17 +172,15 @@ export async function PUT(request: NextRequest) {
   const staffId = searchParams.get('id');
   const action = searchParams.get('action');
 
-  // --- ✅ NEW ACTION: Staff member changing their own password ---
   if (action === 'change-password') {
       const session = await getServerSession(authOptions);
-      // Security Check: Ensure the logged-in user is the one making the request
       if (!session?.user?.id || session.user.id !== staffId) {
           return NextResponse.json({ success: false, error: 'Unauthorized: You can only change your own password.' }, { status: 403 });
       }
       
       try {
           const { oldPassword, newPassword } = await request.json();
-          if (!oldPassword || !newPassword || newPassword.length < 6 || newPassword.length > 15) { // ✨ UPDATE THIS LINE ✨
+          if (!oldPassword || !newPassword || newPassword.length < 6 || newPassword.length > 15) {
               return NextResponse.json({ success: false, error: 'Old password and a new password (min. 6 characters) are required.' }, { status: 400 });
           }
           
@@ -195,7 +204,6 @@ export async function PUT(request: NextRequest) {
       }
   }
 
-  // --- Existing Logic: Admin updating staff profile ---
   const permissionCheck = await checkPermissions(PERMISSIONS.STAFF_LIST_UPDATE);
   if (permissionCheck) { return NextResponse.json({ success: false, error: permissionCheck.error }, { status: permissionCheck.status }); }
   
@@ -207,9 +215,8 @@ export async function PUT(request: NextRequest) {
     const updateData = await request.json();
     if (Object.keys(updateData).length === 0) { return NextResponse.json({ success: false, error: 'No update data provided' }, { status: 400 }); }
     
-    // If an admin is changing a password, hash it.
     if (updateData.password) {
-      if (updateData.password.length < 6|| updateData.password.length > 15) { // ✨ UPDATE THIS LINE ✨
+      if (updateData.password.length < 6|| updateData.password.length > 15) {
 
         return NextResponse.json({ success: false, error: 'New password must be at least 6 characters.'}, { status: 400 });
       }
@@ -231,7 +238,7 @@ export async function PUT(request: NextRequest) {
     if (orConditions.length > 0) {
         const existingStaff = await Staff.findOne({ _id: { $ne: staffId }, tenantId, $or: orConditions }).lean();
         if (existingStaff) {
-            let errorMessage = 'Data is already in use by another staff member.';
+            let errorMessage = 'Data is a already in use by another staff member.';
             if (updateData.staffIdNumber && existingStaff.staffIdNumber === updateData.staffIdNumber) errorMessage = 'This Staff ID is already in use.';
             else if (updateData.email && existingStaff.email === updateData.email) errorMessage = 'This Email is already in use.';
             else if (updateData.aadharNumber && existingStaff.aadharNumber === updateData.aadharNumber) errorMessage = 'This Aadhar number is already in use.';
@@ -250,9 +257,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// --- DELETE (No changes needed) ---
 export async function DELETE(request: NextRequest) {
-    // ... your existing DELETE logic remains the same
     const tenantIdOrResponse = getTenantIdOrBail(request);
     if (tenantIdOrResponse instanceof NextResponse) {
         return tenantIdOrResponse;

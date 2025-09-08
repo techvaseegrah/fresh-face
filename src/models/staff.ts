@@ -1,7 +1,7 @@
 // /models/staff.ts
 
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
-import bcrypt from 'bcryptjs'; // Import bcrypt
+import bcrypt from 'bcryptjs';
 
 export interface IStaff extends Document {
   _id: Types.ObjectId;
@@ -20,7 +20,8 @@ export interface IStaff extends Document {
   aadharImage?: string;
   passbookImage?: string;
   agreementImage?: string;
-  password?: string; // <-- ADD THIS FIELD
+  password?: string;
+  isAvailableForBooking?: boolean; // ✅ ADD THIS FIELD
 }
 
 const staffSchema = new Schema<IStaff>({
@@ -58,21 +59,22 @@ const staffSchema = new Schema<IStaff>({
   aadharImage: { type: String },
   passbookImage: { type: String },
   agreementImage: { type: String },
-  // --- ✅ ADDED PASSWORD FIELD ---
   password: {
     type: String,
     required: [true, 'Password is required for staff members.'],
     minlength: 6,
-   maxlength: 60, // ✨ CHANGE THIS LINE FROM 15 TO 60 ✨
-    select: false, // Important: Hides password from default queries
+    maxlength: 60,
+    select: false,
+  },
+  // --- ✅ ADDED BOOKING AVAILABILITY FIELD ---
+  isAvailableForBooking: {
+    type: Boolean,
+    default: true, // Staff will be available by default
   },
 }, { timestamps: true });
 
-// --- Compound indexes for tenant-scoped uniqueness ---
 staffSchema.index({ tenantId: 1, staffIdNumber: 1 }, { unique: true });
 staffSchema.index({ tenantId: 1, aadharNumber: 1 }, { unique: true });
-
-// Index for better query performance on common filters
 staffSchema.index({ status: 1, name: 1 });
 
 

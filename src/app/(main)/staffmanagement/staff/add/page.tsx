@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
   Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
-  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, // ✅ IMPORT EyeOff
+  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, BookCheck, // Added BookCheck for clarity, can be any icon
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -29,6 +29,7 @@ interface StaffFormData {
   passbookImage: string | null;
   agreementImage: string | null;
   password: string;
+  isAvailableForBooking: boolean; // ✅ ADD THIS STATE
 }
 
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
@@ -137,6 +138,7 @@ const AddStaffPage: React.FC = () => {
     salary: "", address: "", image: DEFAULT_STAFF_IMAGE, aadharNumber: "",
     aadharImage: null, passbookImage: null, agreementImage: null,
     password: "",
+    isAvailableForBooking: true, // ✅ INITIALIZE NEW STATE
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -145,7 +147,7 @@ const AddStaffPage: React.FC = () => {
   const [newPositionName, setNewPositionName] = useState("");
   const [newPositionError, setNewPositionError] = useState<string | null>(null);
   const [viewingDocument, setViewingDocument] = useState<{ src: string | null; title: string; }>({ src: null, title: "" });
-  const [showPassword, setShowPassword] = useState(false); // ✅ STATE FOR PASSWORD VISIBILITY
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const fetchNextId = async (tenantId: string) => {
@@ -192,7 +194,14 @@ const AddStaffPage: React.FC = () => {
   }, [contextPositionOptions, formData.position]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData((prevData) => ({ ...prevData, [e.target.name]: e.target.value }));
+    // ✅ HANDLE CHECKBOX INPUT
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+        const { checked } = e.target as HTMLInputElement;
+        setFormData((prevData) => ({ ...prevData, [name]: checked }));
+    } else {
+        setFormData((prevData) => ({ ...prevData, [name]: value }));
+    }
   };
 
   const handleFileChange = (fieldName: keyof StaffFormData, fileData: string | null) => {
@@ -243,6 +252,7 @@ const AddStaffPage: React.FC = () => {
       image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image, aadharNumber: formData.aadharNumber,
       aadharImage: formData.aadharImage, passbookImage: formData.passbookImage, agreementImage: formData.agreementImage,
       password: formData.password,
+      isAvailableForBooking: formData.isAvailableForBooking, // ✅ SEND NEW DATA TO API
     };
 
     try {
@@ -306,20 +316,19 @@ const AddStaffPage: React.FC = () => {
             <input id="aadharNumber" name="aadharNumber" type="text" required pattern="\d{12}" title="Aadhar number must be 12 digits" maxLength={12} value={formData.aadharNumber} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
 
-          {/* ✅ MODIFIED PASSWORD FIELD WITH VISIBILITY TOGGLE */}
           <div>
             <IconLabel htmlFor="password" icon={<ShieldCheck size={14} className="text-gray-500" />} text="Password*"/>
             <div className="relative">
               <input 
                 id="password" 
                 name="password" 
-                type={showPassword ? "text" : "password"} // ✅ DYNAMIC TYPE
+                type={showPassword ? "text" : "password"}
                 required 
                 minLength={6}
-                maxLength={15} // ✨ ADDED MAX LENGTH ✨
+                maxLength={15}
                 value={formData.password} 
                 onChange={handleInputChange} 
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100 pr-10" // ✅ ADD PADDING RIGHT FOR ICON
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100 pr-10"
                 disabled={isSubmitting}
                 placeholder="Min. 6 characters,Max. 15 characters"
               />
@@ -366,6 +375,33 @@ const AddStaffPage: React.FC = () => {
             <IconLabel htmlFor="address" icon={<MapPin size={14} className="text-gray-500" />} text="Address"/>
             <textarea id="address" name="address" rows={3} value={formData.address} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}></textarea>
           </div>
+          
+           {/* --- ✅ ADDED THE NEW CHECKBOX FIELD HERE --- */}
+           <div className="md:col-span-2 border-t pt-5">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Settings</h3>
+            <div className="relative flex items-start">
+                <div className="flex h-6 items-center">
+                    <input
+                        id="isAvailableForBooking"
+                        name="isAvailableForBooking"
+                        type="checkbox"
+                        checked={formData.isAvailableForBooking}
+                        onChange={handleInputChange}
+                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black disabled:opacity-50"
+                        disabled={isSubmitting}
+                    />
+                </div>
+                <div className="ml-3 text-sm leading-6">
+                    <label htmlFor="isAvailableForBooking" className="font-medium text-gray-900">
+                       Available for Booking
+                    </label>
+                    <p className="text-gray-500">
+                        If checked, this staff member will appear as an option for new appointments.
+                    </p>
+                </div>
+            </div>
+          </div>
+          
           <div className="md:col-span-2 border-t pt-5 mt-3 space-y-4">
             <h3 className="text-lg font-medium text-gray-900">Documents</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
