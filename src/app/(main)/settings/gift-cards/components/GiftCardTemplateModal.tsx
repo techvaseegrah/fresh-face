@@ -1,14 +1,14 @@
-'use client';
+  'use client';
 
 import React, { useState, useEffect } from 'react';
-import  Button from '@/components/ui/Button';
+import Button from '@/components/ui/Button';
 import { IGiftCardTemplate } from '@/models/GiftCardTemplate';
+import { X, CreditCard, DollarSign, Calendar, FileText, CheckCircle } from 'lucide-react';
 
-// A simple Modal wrapper component. You might have a more advanced one in your UI library.
+// Enhanced Mobile Responsive Modal wrapper component
 const Modal = ({ children, onClose }: { children: React.ReactNode; onClose: () => void; }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-        <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md relative">
-            <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-800">&times;</button>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
             {children}
         </div>
     </div>
@@ -93,72 +93,155 @@ export default function GiftCardTemplateModal({ template, onClose, onSaveSuccess
 
     return (
         <Modal onClose={onClose}>
-            <form onSubmit={handleSubmit}>
-                <h2 className="text-xl font-bold mb-6">{isEditMode ? 'Update Gift Card' : 'Create New Gift Card'}</h2>
+            <form onSubmit={handleSubmit} className="flex flex-col h-full">
+                {/* Header */}
+                <div className="p-4 md:p-6 border-b border-gray-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-green-100 p-2 rounded-full">
+                            <CreditCard className="h-5 w-5 text-green-600" />
+                        </div>
+                        <h2 className="text-lg md:text-xl font-bold text-gray-900">
+                            {isEditMode ? 'Update Gift Card' : 'Create New Gift Card'}
+                        </h2>
+                    </div>
+                    <button 
+                        type="button" 
+                        onClick={onClose} 
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    >
+                        <X className="h-5 w-5" />
+                    </button>
+                </div>
                 
-                {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4">{error}</div>}
+                {/* Content */}
+                <div className="p-4 md:p-6 flex-1 overflow-y-auto">
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-4 flex items-center gap-2">
+                            <div className="h-5 w-5 text-red-500 flex-shrink-0">⚠️</div>
+                            <span className="text-sm">{error}</span>
+                        </div>
+                    )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Name</label>
-                        <input
-                            type="text"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                            required
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Description</label>
-                        <input
-                            type="text"
-                            name="description"
-                            value={formData.description}
-                            onChange={handleChange}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Amount (₹)</label>
-                        <input
-                            type="number"
-                            name="amount"
-                            value={formData.amount}
-                            onChange={handleChange}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                            required
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Validity (in days)</label>
-                        <input
-                            type="number"
-                            name="validityInDays"
-                            value={formData.validityInDays}
-                            onChange={handleChange}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                            required
-                        />
+                    <div className="space-y-4 md:space-y-6">
+                        {/* Name Field */}
+                        <div>
+                            <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">
+                                Gift Card Name
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    id="name"
+                                    name="name"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-3 md:py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                    placeholder="Enter gift card name"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        {/* Description Field */}
+                        <div>
+                            <label htmlFor="description" className="block text-sm font-semibold text-gray-700 mb-2">
+                                Description (Optional)
+                            </label>
+                            <div className="relative">
+                                <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    id="description"
+                                    name="description"
+                                    value={formData.description}
+                                    onChange={handleChange}
+                                    className="w-full pl-10 pr-3 py-3 md:py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                    placeholder="Enter description"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Amount and Validity - Mobile: Stacked, Desktop: Side by side */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                            <div>
+                                <label htmlFor="amount" className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Amount (₹)
+                                </label>
+                                <div className="relative">
+                                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                    <input
+                                        type="number"
+                                        id="amount"
+                                        name="amount"
+                                        value={formData.amount}
+                                        onChange={handleChange}
+                                        className="w-full pl-10 pr-3 py-3 md:py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                        placeholder="0"
+                                        min="1"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="validityInDays" className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Validity (Days)
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                    <input
+                                        type="number"
+                                        id="validityInDays"
+                                        name="validityInDays"
+                                        value={formData.validityInDays}
+                                        onChange={handleChange}
+                                        className="w-full pl-10 pr-3 py-3 md:py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                        placeholder="30"
+                                        min="1"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Active Status */}
+                        <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="relative flex items-center">
+                                <input
+                                    type="checkbox"
+                                    id="isActive"
+                                    name="isActive"
+                                    checked={formData.isActive}
+                                    onChange={handleChange}
+                                    className="h-5 w-5 text-green-600 border-2 border-gray-300 rounded focus:ring-green-500 focus:ring-2"
+                                />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <label htmlFor="isActive" className="text-sm font-semibold text-gray-900">
+                                    Active Status
+                                </label>
+                            </div>
+                            <span className="text-xs text-gray-500">Enable this gift card template</span>
+                        </div>
                     </div>
                 </div>
-
-                <div className="flex items-center mb-6">
-                    <input
-                        type="checkbox"
-                        name="isActive"
-                        checked={formData.isActive}
-                        onChange={handleChange}
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    />
-                    <label className="ml-2 block text-sm text-gray-900">Active</label>
-                </div>
-
-                <div className="flex justify-end gap-3">
-                    <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button type="submit" disabled={isSaving}>
-                        {isSaving ? 'Saving...' : 'Save'}
+                
+                {/* Footer */}
+                <div className="bg-gray-50 px-4 md:px-6 py-4 flex flex-col gap-3 md:flex-row md:gap-0 md:justify-end md:space-x-3 border-t">
+                    <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={onClose}
+                        className="w-full md:w-auto order-2 md:order-1 py-3 md:py-2 rounded-lg border-gray-300 text-gray-700 hover:bg-gray-50"
+                    >
+                        Cancel
+                    </Button>
+                    <Button 
+                        type="submit" 
+                        disabled={isSaving}
+                        className="w-full md:w-auto bg-green-600 hover:bg-green-700 focus:ring-green-500 order-1 md:order-2 py-3 md:py-2 font-semibold rounded-lg"
+                    >
+                        {isSaving ? 'Saving...' : (isEditMode ? 'Update Gift Card' : 'Create Gift Card')}
                     </Button>
                 </div>
             </form>

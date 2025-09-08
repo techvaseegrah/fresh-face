@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import clsx from 'clsx';
-import Sidebar from '@/components/Sidebar'; // Adjust path if needed
+import Image from 'next/image';
+import Sidebar from '@/components/Sidebar';
+import { Bars3Icon } from '@heroicons/react/24/outline';
 
 export default function MainLayout({
   children,
@@ -28,8 +30,39 @@ export default function MainLayout({
       {/* --- MAIN CONTENT WRAPPER --- */}
       {/* This is the key part: it adjusts its margin based on the sidebar's state */}
       <div className="relative flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        {/* You can add a Header/Navbar here if you have one */}
-        {/* <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} /> */}
+        
+        {/* Mobile Header with Hamburger Menu Button */}
+        <header className="sticky top-0 z-20 flex h-[65px] flex-shrink-0 items-center border-b border-gray-200 bg-white px-3 sm:px-4 lg:px-6 shadow-sm md:hidden">
+          <div className="flex items-center">
+            {/* Hamburger Button */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="text-gray-500 hover:text-gray-800 focus:outline-none transition-colors p-1 sm:p-2"
+              aria-label="Open sidebar"
+            >
+              <Bars3Icon className="h-5 w-5 sm:h-6 sm:w-6" />
+            </button>
+            
+            <div className="flex items-center ml-1 sm:ml-2">
+              {/* Salon Capp Logo */}
+              <div className="relative h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
+                <Image
+                  src="/image.png"
+                  alt="Salon Capp Logo"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
+              <div className="ml-1 sm:ml-2">
+                <h1 className="text-base sm:text-lg font-semibold text-gray-800 leading-tight">
+                  Salon Capp
+                </h1>
+                <p className="text-xs text-gray-500 leading-none">Salon Management</p>
+              </div>
+            </div>
+          </div>
+        </header>
 
         <main
           className={clsx(

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, FC, ChangeEvent } from 'react';
-import { useSession, Session } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { Session } from 'next-auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { 
     DocumentTextIcon, 
@@ -26,17 +27,6 @@ import ReadingsSummaryModal from '@/components/ReadingsSummaryModal';
 import ImageZoomModal from '@/components/ImageZoomModal';
 
 // --- TYPE DEFINITIONS & INTERFACES ---
-
-interface CustomSession extends Session {
-    user: { 
-        id: string; 
-        name?: string | null; 
-        email?: string | null; 
-        image?: string | null; 
-        role: { permissions: string[] };
-        tenantId: string;
-    };
-}
 
 interface IHistoryEntry {
   timestamp: string;
@@ -77,7 +67,7 @@ interface EBReadingCardProps {
 // --- INTERNAL COMPONENTS ---
 
 const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, onUpdate, onImageZoom, onHistoryOpen }) => {
-    const { data: session } = useSession() as { data: CustomSession | null };
+    const { data: session } = useSession();
     const [isEditing, setIsEditing] = useState<boolean>(false);
     const [editMorningUnits, setEditMorningUnits] = useState<number | undefined>();
 
@@ -90,15 +80,31 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
     
     return (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl border-t-4 border-indigo-500">
-            <div className="px-6 py-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">{new Date(reading.date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
+            {/* Header */}
+            <div className="px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
+                <div>
+                    <h3 className="text-base sm:text-lg font-semibold text-slate-800">
+                        {new Date(reading.date).toLocaleDateString('en-GB', { 
+                            weekday: 'long', 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                        })}
+                    </h3>
+                </div>
                 {session && hasPermission(session.user.role.permissions, PERMISSIONS.EB_VIEW_CALCULATE) && (
-                    <button onClick={isEditing ? handleCancelEdit : handleEnterEditMode} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-1 rounded-md hover:bg-indigo-50 transition-colors">
+                    <button 
+                        onClick={isEditing ? handleCancelEdit : handleEnterEditMode} 
+                        className="w-full sm:w-auto text-sm text-indigo-600 hover:text-indigo-800 font-medium px-3 py-2 rounded-md hover:bg-indigo-50 transition-colors border border-indigo-200 sm:border-transparent"
+                    >
                         {isEditing ? 'Cancel' : 'Update Units'}
                     </button>
                 )}
             </div>
-            <div className="px-6 pb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Content */}
+            <div className="px-4 sm:px-6 pb-4 sm:pb-6 grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                {/* Left Column - Readings */}
                 <div className="bg-slate-50/80 rounded-lg p-4 space-y-4">
                     <div>
                         <div className="flex items-center text-slate-600 mb-2">
@@ -106,13 +112,32 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
                             <p className="text-sm font-medium">Morning Reading (Today)</p>
                         </div>
                         {isEditing ? (
-                            <input type="number" value={editMorningUnits ?? ''} onChange={(e: ChangeEvent<HTMLInputElement>) => { const val = e.target.value; setEditMorningUnits(val === '' ? undefined : parseFloat(val)); }} className="w-full p-2 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" step="0.01" placeholder="Enter reading" />
+                            <input 
+                                type="number" 
+                                value={editMorningUnits ?? ''} 
+                                onChange={(e: ChangeEvent<HTMLInputElement>) => { 
+                                    const val = e.target.value; 
+                                    setEditMorningUnits(val === '' ? undefined : parseFloat(val)); 
+                                }} 
+                                className="w-full p-3 border border-slate-300 rounded-md text-lg font-semibold text-slate-900" 
+                                step="0.01" 
+                                placeholder="Enter reading" 
+                            />
                         ) : (
-                            <p className="text-2xl font-semibold text-slate-900">{(reading.morningUnits !== undefined) ? reading.morningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>
+                            <p className="text-xl sm:text-2xl font-semibold text-slate-900">
+                                {(reading.morningUnits !== undefined) ? reading.morningUnits.toFixed(2) : 'N/A'} 
+                                <span className="text-base font-normal text-slate-500">units</span>
+                            </p>
                         )}
                         {reading.morningImageUrl && (
                             <div onClick={() => onImageZoom(reading.morningImageUrl as string)} className="mt-3 cursor-pointer group">
-                                <Image src={reading.morningImageUrl} alt="Morning Meter Reading" width={200} height={120} className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" />
+                                <Image 
+                                    src={reading.morningImageUrl} 
+                                    alt="Morning Meter Reading" 
+                                    width={200} 
+                                    height={120} 
+                                    className="rounded-md object-cover w-full h-auto group-hover:opacity-80 transition-opacity" 
+                                />
                             </div>
                         )}
                     </div>
@@ -122,32 +147,55 @@ const EBReadingCard: FC<EBReadingCardProps> = ({ reading, nextDayMorningUnits, o
                             <CalendarDaysIcon className="h-5 w-5 mr-2 text-sky-600" />
                             <p className="text-sm font-medium">Morning Reading (Next Day)</p>
                         </div>
-                        <p className="text-2xl font-semibold text-slate-900">{nextDayMorningUnits !== undefined ? nextDayMorningUnits.toFixed(2) : 'N/A'} <span className="text-base font-normal text-slate-500">units</span></p>
+                        <p className="text-xl sm:text-2xl font-semibold text-slate-900">
+                            {nextDayMorningUnits !== undefined ? nextDayMorningUnits.toFixed(2) : 'N/A'} 
+                            <span className="text-base font-normal text-slate-500">units</span>
+                        </p>
                     </div>
                 </div>
+                
+                {/* Right Column - Stats */}
                 <div className="space-y-4">
-                    <div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full">
-                        <div className="flex-shrink-0 bg-teal-100 text-teal-700 rounded-lg p-3"><ArrowUpRightIcon className="h-6 w-6" /></div>
-                        <div className="ml-4">
+                    <div className="bg-slate-50/80 rounded-lg p-4 flex items-center">
+                        <div className="flex-shrink-0 bg-teal-100 text-teal-700 rounded-lg p-3">
+                            <ArrowUpRightIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                        </div>
+                        <div className="ml-4 min-w-0 flex-1">
                             <p className="text-sm text-slate-600">Units Consumed (for this day)</p>
-                            <p className="text-lg font-bold text-slate-800">{reading.unitsConsumed !== undefined ? `${reading.unitsConsumed.toFixed(2)} units` : 'N/A'}</p>
+                            <p className="text-base sm:text-lg font-bold text-slate-800 truncate">
+                                {reading.unitsConsumed !== undefined ? `${reading.unitsConsumed.toFixed(2)} units` : 'N/A'}
+                            </p>
                         </div>
                     </div>
-                    <div className="bg-slate-50/80 rounded-lg p-4 flex items-center h-full">
-                        <div className="flex-shrink-0 bg-amber-100 text-amber-700 rounded-lg p-3"><CurrencyRupeeIcon className="h-6 w-6" /></div>
-                        <div className="ml-4">
+                    <div className="bg-slate-50/80 rounded-lg p-4 flex items-center">
+                        <div className="flex-shrink-0 bg-amber-100 text-amber-700 rounded-lg p-3">
+                            <CurrencyRupeeIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                        </div>
+                        <div className="ml-4 min-w-0 flex-1">
                             <p className="text-sm text-slate-600">Total Cost</p>
-                            <p className="text-lg font-bold text-slate-800">{reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}</p>
+                            <p className="text-base sm:text-lg font-bold text-slate-800 truncate">
+                                {reading.totalCost !== undefined ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(reading.totalCost) : 'N/A'}
+                            </p>
                         </div>
                     </div>
                 </div>
             </div>
-            <div className="px-6 py-4 flex items-center justify-between bg-slate-50 border-t border-slate-200">
+            
+            {/* Footer */}
+            <div className="px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-0 bg-slate-50 border-t border-slate-200">
                 {isEditing ? (
-                    <button onClick={handleUpdate} className="px-5 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 w-full sm:w-auto font-semibold shadow-sm">Save Changes</button>
+                    <button 
+                        onClick={handleUpdate} 
+                        className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-semibold shadow-sm"
+                    >
+                        Save Changes
+                    </button>
                 ) : <div />}
                 {reading.history && reading.history.length > 0 && (
-                    <button onClick={() => onHistoryOpen(reading.history)} className="flex items-center text-sm text-slate-500 hover:text-slate-800 font-medium p-2 rounded-md hover:bg-slate-100 transition-colors">
+                    <button 
+                        onClick={() => onHistoryOpen(reading.history)} 
+                        className="flex items-center justify-center sm:justify-start text-sm text-slate-500 hover:text-slate-800 font-medium p-2 rounded-md hover:bg-slate-100 transition-colors"
+                    >
                         <ClockIcon className="h-4 w-4 mr-1.5"/>View History
                     </button>
                 )}
@@ -202,7 +250,7 @@ const EditMeterModal: FC<{
 
 // --- MAIN PAGE COMPONENT ---
 export default function EBViewPage(): JSX.Element {
-    const { data: session } = useSession() as { data: CustomSession | null };
+    const { data: session } = useSession();
     const [readings, setReadings] = useState<IEBReadingWithAppointments[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [meters, setMeters] = useState<EBMeter[]>([]);
@@ -394,22 +442,39 @@ export default function EBViewPage(): JSX.Element {
 
             <main className="bg-slate-100 min-h-screen">
                 <div className="max-w-7xl mx-auto space-y-8 p-4 sm:p-6 lg:p-8">
-                    <div className="flex flex-wrap justify-between items-center gap-4">
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap justify-between items-start sm:items-center gap-4">
                         <div>
-                            <h1 className="text-3xl font-bold tracking-tight text-slate-900">EB Readings</h1>
+                            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">EB Readings</h1>
                             <p className="text-slate-500 mt-1">View, update, and manage electricity consumption.</p>
                         </div>
-                        <div className="flex items-center space-x-3">
-                            <button onClick={() => setIsCostModalOpen(true)} className="text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium flex items-center px-4 py-2 rounded-lg shadow-sm"><CurrencyRupeeIcon className="h-5 w-5 mr-2" />Set Cost</button>
-                            <button onClick={() => setIsReportModalOpen(true)} className="text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium flex items-center px-4 py-2 rounded-lg shadow-sm"><ArrowDownTrayIcon className="h-5 w-5 mr-2" />Download</button>
-                            <button onClick={() => setIsSummaryModalOpen(true)} className="text-sm bg-indigo-600 text-white hover:bg-indigo-700 font-medium flex items-center px-4 py-2 rounded-lg shadow-sm"><DocumentTextIcon className="h-5 w-5 mr-2" />Summary</button>
+                        <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                            <button onClick={() => setIsCostModalOpen(true)} className="text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm"><CurrencyRupeeIcon className="h-5 w-5 mr-2" />Set Cost</button>
+                            <button onClick={() => setIsReportModalOpen(true)} className="text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm"><ArrowDownTrayIcon className="h-5 w-5 mr-2" />Download</button>
+                            <button onClick={() => setIsSummaryModalOpen(true)} className="text-sm bg-indigo-600 text-white hover:bg-indigo-700 font-medium flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm"><DocumentTextIcon className="h-5 w-5 mr-2" />Summary</button>
                         </div>
                     </div>
                     
                     <div className="border-b border-slate-200">
-                        <nav className="-mb-px flex space-x-6 items-center" aria-label="Tabs">
+                        {/* Mobile Meter Selection */}
+                        <div className="block sm:hidden px-4 py-3">
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Select Meter</label>
+                            <select 
+                                value={activeMeter} 
+                                onChange={(e) => setActiveMeter(e.target.value)}
+                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                            >
+                                {meters.map((meter) => (
+                                    <option key={meter.identifier} value={meter.identifier}>
+                                        {meter.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        {/* Desktop Tab Navigation */}
+                        <nav className="hidden sm:flex -mb-px space-x-6 items-center overflow-x-auto" aria-label="Tabs">
                             {meters.map((meter) => (
-                                <div key={meter.identifier} className="relative group flex items-center">
+                                <div key={meter.identifier} className="relative group flex items-center flex-shrink-0">
                                     <button onClick={() => setActiveMeter(meter.identifier)} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeMeter === meter.identifier ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>
                                         {meter.name}
                                     </button>
@@ -425,16 +490,16 @@ export default function EBViewPage(): JSX.Element {
                         </nav>
                     </div>
 
-                    <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+                    <div className="bg-white rounded-xl shadow-md border border-slate-200 p-4 sm:p-6">
                         {displayedReadings.length === 0 && meters.length > 0 ? (
-                            <div className="text-center py-16">
-                                <DocumentTextIcon className="h-16 w-16 text-slate-300 mx-auto mb-4" />
-                                <h3 className="text-xl font-semibold text-slate-700">No Readings Found for {activeMeterName}</h3>
+                            <div className="text-center py-12 sm:py-16">
+                                <DocumentTextIcon className="h-12 w-12 sm:h-16 sm:w-16 text-slate-300 mx-auto mb-4" />
+                                <h3 className="text-lg sm:text-xl font-semibold text-slate-700">No Readings Found for {activeMeterName}</h3>
                                 <p className="text-slate-500 mt-2">Upload a reading for this meter to get started.</p>
-                                <Link href="/eb-upload" className="mt-6 inline-block bg-indigo-600 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm hover:bg-indigo-700">Upload Reading</Link>
+                                <Link href="/eb-upload" className="mt-6 inline-block bg-indigo-600 text-white font-medium px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg shadow-sm hover:bg-indigo-700">Upload Reading</Link>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
                                 {displayedReadings.map((reading, index) => {
                                     const nextDayReading = index > 0 ? displayedReadings[index - 1] : null;
                                     return <EBReadingCard key={reading._id} reading={reading} nextDayMorningUnits={nextDayReading?.morningUnits} onUpdate={handleUnitUpdate} onImageZoom={setZoomedImageUrl} onHistoryOpen={handleHistoryOpen} />;

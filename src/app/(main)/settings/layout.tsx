@@ -22,14 +22,22 @@ export default function SettingsLayout({
   }
 
   return (
-    <div className="flex h-full">
-      {/* Renders the vertical sub-navigation menu on the left */}
-      <SettingsNav />
+    <div className="bg-gray-50 min-h-screen">
+      {/* Mobile and Desktop Layout */}
+      <div className="md:flex md:h-full">
+        {/* Renders the vertical sub-navigation menu on the left for desktop, mobile header for mobile */}
+        <SettingsNav />
 
-      {/* Renders the page content (e.g., the loyalty form) on the right */}
-      <main className="flex-1 p-6">
-        {children}
-      </main>
+        {/* Renders the page content on the right for desktop, full width for mobile */}
+        <main className="flex-1 md:p-6 md:overflow-y-auto">
+          <div className="md:hidden p-4">
+            {children}
+          </div>
+          <div className="hidden md:block">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

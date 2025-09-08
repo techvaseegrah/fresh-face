@@ -126,21 +126,21 @@ export default function ProcurementPage() {
   return (
     <>
       <div className="bg-gray-50 min-h-screen p-4 md:p-6 space-y-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Procurement Workflow</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Procurement Workflow</h1>
             <p className="text-sm text-gray-500">Create, review, and manage purchase orders.</p>
           </div>
           {canCreate && (
-            <button onClick={() => handleOpenPoModal(null)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+            <button onClick={() => handleOpenPoModal(null)} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
               <PlusIcon className="h-5 w-5" /> New Purchase Order
             </button>
           )}
         </div>
 
-        <div className="bg-white rounded-lg shadow-md">
+        {/* Desktop Table View */}
+        <div className="hidden md:block bg-white rounded-lg shadow-md">
           <div className="overflow-x-auto">
-            {/* The table structure remains identical to your previous version */}
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-100">
                  <tr>
@@ -180,6 +180,78 @@ export default function ProcurementPage() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden space-y-4">
+          {isLoading ? (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="text-center text-gray-500 font-medium">Loading purchase orders...</div>
+            </div>
+          ) : purchaseOrders.length > 0 ? (
+            purchaseOrders.map((po) => (
+              <div key={po._id.toString()} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 space-y-4">
+                {/* Header with PO ID and Status */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-indigo-700">{po.poId}</h3>
+                    <p className="text-xs text-gray-500">Created: {new Date(po.createdAt).toLocaleDateString('en-GB')}</p>
+                  </div>
+                  <span className={`py-1 px-3 rounded-full text-xs font-semibold ${po.status === 'Approved' ? 'bg-green-200 text-green-700' : ''} ${po.status === 'Pending Owner Approval' ? 'bg-yellow-200 text-yellow-700' : ''} ${po.status === 'Pending Admin Review' ? 'bg-orange-200 text-orange-700' : ''} ${po.status === 'Received' || po.status === 'Partially Received' ? 'bg-blue-200 text-blue-700' : ''} ${po.status === 'Cancelled' ? 'bg-red-200 text-red-700' : ''} ${po.status === 'Ordered' ? 'bg-purple-200 text-purple-700' : ''}`}>
+                    {po.status}
+                  </span>
+                </div>
+
+                {/* Details Section */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">Created By:</span>
+                    <span className="text-sm text-gray-800">{po.createdBy.name || 'N/A'}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">Delivery Date:</span>
+                    <span className="text-sm text-gray-600">{new Date(po.expectedDeliveryDate).toLocaleDateString('en-GB')}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">Total Items:</span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                      {po.products.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions Section */}
+                <div className="pt-3 border-t border-gray-200">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button 
+                      onClick={() => handleOpenPoModal(po)} 
+                      className="flex-1 bg-indigo-600 text-white text-sm font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    >
+                      View Details
+                    </button>
+                    {canReceive && ['Approved', 'Ordered', 'Partially Received'].includes(po.status) && (
+                      <button 
+                        onClick={() => handleOpenReceiveModal(po)} 
+                        className="flex-1 bg-green-600 text-white text-sm font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                      >
+                        Receive Stock
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
+              <div className="text-center">
+                <DocumentTextIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-sm font-medium">No purchase orders found.</p>
+                <p className="text-gray-400 text-xs mt-1">Click 'New Purchase Order' to get started.</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -33,7 +33,7 @@ const InputField = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     />
 );
 
-// --- MODAL for Adding/Editing Position Rates (Unchanged) ---
+// --- MODAL for Adding/Editing Position Rates (Mobile Responsive) ---
 const PositionRateModal = ({
     isOpen,
     onClose,
@@ -86,32 +86,54 @@ const PositionRateModal = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-                <form onSubmit={handleSave}>
-                    <div className="p-6">
-                        <h3 className="text-lg font-semibold text-gray-900">{editingRate ? 'Edit' : 'Add'} Position Rate</h3>
-                        <div className="mt-4 space-y-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
+                <form onSubmit={handleSave} className="flex flex-col h-full">
+                    <div className="p-4 md:p-6 flex-1 overflow-y-auto">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">{editingRate ? 'Edit' : 'Add'} Position Rate</h3>
+                        <div className="space-y-4">
                             <div>
-                                <label htmlFor="positionName" className="block text-sm font-medium text-gray-700">Position</label>
-                                <select id="positionName" value={rateData.positionName} onChange={(e) => setRateData({ ...rateData, positionName: e.target.value })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-black focus:border-black text-gray-900" disabled={!!editingRate}>
+                                <label htmlFor="positionName" className="block text-sm font-semibold text-gray-700 mb-2">Position</label>
+                                <select 
+                                    id="positionName" 
+                                    value={rateData.positionName} 
+                                    onChange={(e) => setRateData({ ...rateData, positionName: e.target.value })} 
+                                    className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base" 
+                                    disabled={!!editingRate}
+                                >
                                     <option value="">Select a position</option>
                                     {availablePositions.map(p => <option key={p} value={p}>{p}</option>)}
                                     {editingRate && !availablePositions.includes(editingRate.positionName) && <option value={editingRate.positionName}>{editingRate.positionName}</option>}
                                 </select>
                             </div>
                             <div>
-                                <label htmlFor="modalOtRate" className="block text-sm font-medium text-gray-700">OT Rate per Hour (₹)</label>
-                                <InputField type="number" id="modalOtRate" value={rateData.otRate} onChange={(e) => setRateData({ ...rateData, otRate: e.target.value })} min="0" />
+                                <label htmlFor="modalOtRate" className="block text-sm font-semibold text-gray-700 mb-2">OT Rate per Hour (₹)</label>
+                                <input 
+                                    type="number" 
+                                    id="modalOtRate" 
+                                    value={rateData.otRate} 
+                                    onChange={(e) => setRateData({ ...rateData, otRate: e.target.value })} 
+                                    min="0" 
+                                    className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                    placeholder="Enter rate"
+                                />
                             </div>
                             <div>
-                                <label htmlFor="modalExtraDayRate" className="block text-sm font-medium text-gray-700">Extra Day Rate (₹)</label>
-                                <InputField type="number" id="modalExtraDayRate" value={rateData.extraDayRate} onChange={(e) => setRateData({ ...rateData, extraDayRate: e.target.value })} min="0" />
+                                <label htmlFor="modalExtraDayRate" className="block text-sm font-semibold text-gray-700 mb-2">Extra Day Rate (₹)</label>
+                                <input 
+                                    type="number" 
+                                    id="modalExtraDayRate" 
+                                    value={rateData.extraDayRate} 
+                                    onChange={(e) => setRateData({ ...rateData, extraDayRate: e.target.value })} 
+                                    min="0" 
+                                    className="w-full px-3 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                    placeholder="Enter rate"
+                                />
                             </div>
                         </div>
                     </div>
-                    <div className="bg-gray-50 px-6 py-3 flex justify-end space-x-3">
-                        <Button type="button" className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50" onClick={onClose}>Cancel</Button>
-                        <Button type="submit" className="bg-black hover:bg-gray-800 focus:ring-gray-500" disabled={!rateData.positionName}>Save</Button>
+                    <div className="bg-gray-50 px-4 md:px-6 py-4 flex flex-col gap-3 md:flex-row md:gap-0 md:justify-end md:space-x-3 border-t">
+                        <Button type="button" className="w-full md:w-auto bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 order-2 md:order-1 py-3 md:py-2 rounded-lg" onClick={onClose}>Cancel</Button>
+                        <Button type="submit" className="w-full md:w-auto bg-green-600 hover:bg-green-700 focus:ring-green-500 order-1 md:order-2 py-3 md:py-2 font-semibold rounded-lg" disabled={!rateData.positionName}>Save</Button>
                     </div>
                 </form>
             </div>
@@ -233,7 +255,7 @@ const AttendanceSettingsForm: React.FC = () => {
     }
 
     return (
-        <div>
+        <div className="space-y-4 md:space-y-8">
             <PositionRateModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
@@ -242,55 +264,142 @@ const AttendanceSettingsForm: React.FC = () => {
                 existingRates={settings.positionRates}
                 editingRate={editingRate}
             />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Attendance Requirements</h2>
-            <p className="text-sm text-gray-600 mb-8">Set defaults and position-specific rates for salary calculations.</p>
-            <form onSubmit={handleSubmit} className="space-y-12">
-                <div>
-                    <h3 className="text-lg font-medium text-gray-900">Default Settings</h3>
-                    <p className="text-xs text-gray-500 mt-1 mb-4">This value is used as the standard working hours for all positions.</p>
-                    <div className="max-w-md space-y-6">
+            
+            {/* Header Section */}
+            <div className="space-y-1 md:space-y-2">
+                <h2 className="text-lg md:text-xl lg:text-2xl font-semibold text-gray-900">Attendance Requirements</h2>
+                <p className="text-sm text-gray-600">Set defaults and position-specific rates for salary calculations.</p>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8 lg:space-y-12">
+                {/* Default Settings Card */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6">
+                    <div className="space-y-3 md:space-y-4">
                         <div>
-                            <label htmlFor="defaultDailyHours" className="block text-sm font-medium text-gray-700">Default Daily Working Hours</label>
-                            <InputField type="number" id="defaultDailyHours" name="defaultDailyHours" value={settings.defaultDailyHours === 0 ? '' : settings.defaultDailyHours} onChange={handleChange} min="0" />
+                            <h3 className="text-base md:text-lg font-medium text-gray-900">Default Settings</h3>
+                            <p className="text-xs text-gray-500 mt-1">This value is used as the standard working hours for all positions.</p>
+                        </div>
+                        <div className="w-full">
+                            <label htmlFor="defaultDailyHours" className="block text-sm font-semibold text-gray-700 mb-2">Default Daily Working Hours</label>
+                            <input 
+                                type="number" 
+                                id="defaultDailyHours" 
+                                name="defaultDailyHours" 
+                                value={settings.defaultDailyHours === 0 ? '' : settings.defaultDailyHours} 
+                                onChange={handleChange} 
+                                min="0" 
+                                className="w-full px-3 py-3 md:py-2.5 border-2 border-gray-300 rounded-lg shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 focus:outline-none text-gray-900 text-base disabled:bg-gray-100"
+                                placeholder="Enter hours"
+                            />
                         </div>
                     </div>
                 </div>
-                <div>
-                    <div className="flex justify-between items-center">
-                        <div>
-                           <h3 className="text-lg font-medium text-gray-900">Position-Specific Rates</h3>
-                           <p className="text-xs text-gray-500 mt-1">Set specific OT and Extra Day rates for different job roles.</p>
-                        </div>
-                        <Button type="button" className="bg-gray-700 hover:bg-gray-800 focus:ring-gray-600 text-xs" onClick={() => { setEditingRate(null); setIsModalOpen(true); }}>
-                            <PlusCircle size={16} className="mr-2" /> Add Position Rate
-                        </Button>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                        {settings.positionRates.length === 0 ? (
-                            <div className="text-center py-6 border-2 border-dashed border-gray-300 rounded-md">
-                                <p className="text-sm text-gray-500">No position-specific rates have been set.</p>
+                
+                {/* Position-Specific Rates Card */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6">
+                    <div className="space-y-4 md:space-y-6">
+                        {/* Header with Add Button */}
+                        <div className="space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
+                            <div className="space-y-1">
+                               <h3 className="text-base md:text-lg font-medium text-gray-900">Position-Specific Rates</h3>
+                               <p className="text-xs text-gray-500">Set specific OT and Extra Day rates for different job roles.</p>
                             </div>
-                        ) : (
-                            settings.positionRates.map((rate) => (
-                                <div key={rate.positionName} className="p-4 bg-gray-50 rounded-md border border-gray-200 flex items-center justify-between">
-                                    <div className="flex-1">
-                                        <p className="font-semibold text-gray-800">{rate.positionName}</p>
-                                        <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
-                                            <span>OT: ₹{rate.otRate}/hr</span>
-                                            <span>Extra Day: ₹{rate.extraDayRate}/day</span>
+                            <Button 
+                                type="button" 
+                                className="w-full md:w-auto bg-green-600 hover:bg-green-700 focus:ring-green-500 text-sm flex items-center justify-center py-3 md:py-2 rounded-lg font-semibold" 
+                                onClick={() => { setEditingRate(null); setIsModalOpen(true); }}
+                            >
+                                <PlusCircle size={16} className="mr-2" /> Add Position Rate
+                            </Button>
+                        </div>
+                        
+                        {/* Position Rates List */}
+                        <div className="space-y-3">
+                            {settings.positionRates.length === 0 ? (
+                                <div className="text-center py-8 md:py-12 border-2 border-dashed border-gray-300 rounded-md">
+                                    <p className="text-sm text-gray-500">No position-specific rates have been set.</p>
+                                    <p className="text-xs text-gray-400 mt-1">Click 'Add Position Rate' to get started.</p>
+                                </div>
+                            ) : (
+                                settings.positionRates.map((rate) => (
+                                    <div key={rate.positionName} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                                        {/* Mobile Layout */}
+                                        <div className="md:hidden space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <p className="font-semibold text-gray-800 text-base">{rate.positionName}</p>
+                                                <div className="flex items-center space-x-2">
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => { setEditingRate(rate); setIsModalOpen(true); }} 
+                                                        className="p-3 text-gray-500 hover:text-blue-600 transition-colors rounded-lg hover:bg-gray-50 min-h-[44px] min-w-[44px] flex items-center justify-center" 
+                                                        title="Edit Rate"
+                                                    >
+                                                        <Edit size={18} />
+                                                    </button>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => handleDeletePositionRate(rate.positionName)} 
+                                                        className="p-3 text-gray-500 hover:text-red-600 transition-colors rounded-lg hover:bg-gray-50 min-h-[44px] min-w-[44px] flex items-center justify-center" 
+                                                        title="Delete Rate"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-200">
+                                                <div>
+                                                    <span className="text-xs font-semibold text-gray-500 block mb-1">OT Rate</span>
+                                                    <span className="text-sm font-medium text-gray-800">₹{rate.otRate}/hr</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-xs font-semibold text-gray-500 block mb-1">Extra Day Rate</span>
+                                                    <span className="text-sm font-medium text-gray-800">₹{rate.extraDayRate}/day</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Desktop Layout */}
+                                        <div className="hidden md:flex md:items-center md:justify-between">
+                                            <div className="flex-1">
+                                                <p className="font-semibold text-gray-800">{rate.positionName}</p>
+                                                <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                                    <span>OT: ₹{rate.otRate}/hr</span>
+                                                    <span>Extra Day: ₹{rate.extraDayRate}/day</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center space-x-2">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => { setEditingRate(rate); setIsModalOpen(true); }} 
+                                                    className="p-2 text-gray-500 hover:text-blue-600 transition-colors" 
+                                                    title="Edit Rate"
+                                                >
+                                                    <Edit size={16} />
+                                                </button>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => handleDeletePositionRate(rate.positionName)} 
+                                                    className="p-2 text-gray-500 hover:text-red-600 transition-colors" 
+                                                    title="Delete Rate"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center space-x-2">
-                                        <button type="button" onClick={() => { setEditingRate(rate); setIsModalOpen(true); }} className="p-2 text-gray-500 hover:text-blue-600 transition-colors" title="Edit Rate"><Edit size={16} /></button>
-                                        <button type="button" onClick={() => handleDeletePositionRate(rate.positionName)} className="p-2 text-gray-500 hover:text-red-600 transition-colors" title="Delete Rate"><Trash2 size={16} /></button>
-                                    </div>
-                                </div>
-                            ))
-                        )}
+                                ))
+                            )}
+                        </div>
                     </div>
                 </div>
-                <div className="mt-8 pt-5 border-t border-gray-200 flex justify-end">
-                    <Button type="submit" disabled={isSaving || isLoading} className="bg-black hover:bg-gray-800 focus:ring-gray-500">
+                
+                {/* Save Button */}
+                <div className="flex justify-center md:justify-end pt-4 md:pt-6 border-t border-gray-200">
+                    <Button 
+                        type="submit" 
+                        disabled={isSaving || isLoading} 
+                        className="w-full md:w-auto bg-green-600 hover:bg-green-700 focus:ring-green-500 py-3 md:py-2.5 px-6 text-base font-semibold rounded-lg"
+                    >
                         {isSaving ? 'Saving...' : 'Save All Settings'}
                     </Button>
                 </div>
@@ -299,50 +408,9 @@ const AttendanceSettingsForm: React.FC = () => {
     );
 };
 
-// --- Main Page Component (Unchanged) ---
+// --- Main Page Component (Mobile Responsive) ---
 const SettingsPage = () => {
-    const [activeTab, setActiveTab] = useState('attendance');
-    const settingsTabs = [
-        { id: 'attendance', label: 'Attendance & Salary' },
-        { id: 'billing', label: 'Billing', disabled: true },
-        { id: 'integrations', label: 'Integrations', disabled: true },
-    ];
-
-    const renderContent = () => {
-        switch (activeTab) {
-            case 'attendance': return <AttendanceSettingsForm />;
-            default: return <div>Coming Soon</div>;
-        }
-    };
-
-    return (
-        <div className="bg-white">
-          <div className="flex flex-col md:flex-row min-h-screen">
-            <aside className="w-full md:w-[240px] border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0">
-              <div className="p-4">
-                <ul className="space-y-1">
-                  {settingsTabs.map(tab => (
-                    <li key={tab.id}>
-                      <button
-                        onClick={() => !tab.disabled && setActiveTab(tab.id)}
-                        disabled={tab.disabled}
-                        className={`w-full text-left px-4 py-2.5 rounded-md text-sm font-medium transition-colors duration-200 ${activeTab === tab.id ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'} ${tab.disabled ? 'text-gray-400 cursor-not-allowed hover:bg-transparent' : ''}`}
-                      >
-                        {tab.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </aside>
-            <main className="w-full">
-              <div className="p-6 md:p-8 h-full">
-                {renderContent()}
-              </div>
-            </main>
-          </div>
-        </div>
-    );
+    return <AttendanceSettingsForm />;
 };
 
 export default SettingsPage;

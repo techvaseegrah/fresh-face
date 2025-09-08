@@ -118,78 +118,252 @@ export default function PackageRedemptionsReportPage() {
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Package Redemptions Report</h1>
-      <Card className="p-4 mb-4">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* ... (date inputs remain the same) ... */}
-           <div className="flex items-center gap-2">
-            <label htmlFor="startDate" className="text-sm font-medium">From:</label>
-            <input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-300 rounded-md px-3 py-2 text-sm" />
+      {/* Filters Section - Enhanced Mobile Frame */}
+      <Card className="p-4 mb-4 shadow-sm border border-gray-200 bg-white">
+        <div className="space-y-4">
+          {/* Date Inputs - Properly Contained */}
+          <div className="space-y-3">
+            <div className="w-full">
+              <label htmlFor="startDate" className="block text-sm font-semibold text-gray-700 mb-2">From:</label>
+              <input 
+                id="startDate" 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                className="w-full border-2 border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-colors" 
+              />
+            </div>
+            <div className="w-full">
+              <label htmlFor="endDate" className="block text-sm font-semibold text-gray-700 mb-2">To:</label>
+              <input 
+                id="endDate" 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)} 
+                className="w-full border-2 border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-colors" 
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="endDate" className="text-sm font-medium">To:</label>
-            <input id="endDate" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          
+          {/* Desktop Layout */}
+          <div className="hidden md:flex md:flex-wrap md:items-center md:gap-4">
+            <div className="flex items-center gap-3">
+              <label htmlFor="startDate-desktop" className="text-sm font-semibold text-gray-700 whitespace-nowrap">From:</label>
+              <input 
+                id="startDate-desktop" 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)} 
+                className="border-2 border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-colors" 
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <label htmlFor="endDate-desktop" className="text-sm font-semibold text-gray-700 whitespace-nowrap">To:</label>
+              <input 
+                id="endDate-desktop" 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)} 
+                className="border-2 border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-colors" 
+              />
+            </div>
+            <Button 
+              onClick={fetchPackageRedemptions} 
+              disabled={isLoading || isDownloading} 
+              className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors"
+            >
+              {isLoading ? '⏳ Fetching...' : '🔍 Fetch Report'}
+            </Button>
+            {canManageReport && (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={handleExcelDownload}
+                  disabled={isLoading || isDownloading || reportData.length === 0}
+                  className="border-2 border-green-600 text-green-600 hover:bg-green-50 font-medium py-2.5 px-4 rounded-lg transition-colors"
+                >
+                  {isDownloading ? '⏳ Downloading...' : '📊 Excel'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handlePdfDownload}
+                  disabled={isLoading || isDownloading || reportData.length === 0}
+                  className="border-2 border-green-600 text-green-600 hover:bg-green-50 font-medium py-2.5 px-4 rounded-lg transition-colors"
+                >
+                  {isDownloading ? '⏳ Downloading...' : '📄 PDF'}
+                </Button>
+              </>
+            )}
           </div>
-          <Button onClick={fetchPackageRedemptions} disabled={isLoading || isDownloading}>
-            {isLoading ? 'Fetching...' : 'Fetch Report'}
-          </Button>
-
-          {/* --- ADD NEW DOWNLOAD BUTTONS --- */}
-          {canManageReport && (
-            <>
-              <Button 
-                variant="outline" 
-                onClick={handleExcelDownload}
-                disabled={isLoading || isDownloading || reportData.length === 0}
-              >
-                {isDownloading ? 'Downloading...' : 'Download Excel'}
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={handlePdfDownload}
-                disabled={isLoading || isDownloading || reportData.length === 0}
-              >
-                {isDownloading ? 'Downloading...' : 'Download PDF'}
-              </Button>
-            </>
-          )}
+          
+          {/* Mobile Buttons - Separate Section */}
+          <div className="md:hidden space-y-3">
+            <Button 
+              onClick={fetchPackageRedemptions} 
+              disabled={isLoading || isDownloading} 
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+            >
+              {isLoading ? '⏳ Fetching...' : '🔍 Fetch Report'}
+            </Button>
+            
+            {/* Download Buttons - Mobile */}
+            {canManageReport && (
+              <div className="grid grid-cols-2 gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={handleExcelDownload}
+                  disabled={isLoading || isDownloading || reportData.length === 0}
+                  className="border-2 border-green-600 text-green-600 hover:bg-green-50 font-medium py-3 px-4 rounded-lg transition-colors"
+                >
+                  {isDownloading ? '⏳' : '📊 Excel'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handlePdfDownload}
+                  disabled={isLoading || isDownloading || reportData.length === 0}
+                  className="border-2 border-green-600 text-green-600 hover:bg-green-50 font-medium py-3 px-4 rounded-lg transition-colors"
+                >
+                  {isDownloading ? '⏳' : '📄 PDF'}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </Card>
       
-      {/* ... (Table rendering remains unchanged) ... */}
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date Redeemed</TableHead>
-              <TableHead>Package Name</TableHead>
-              <TableHead>Customer Name</TableHead>
-              <TableHead>Item Redeemed</TableHead>
-              <TableHead>Qty</TableHead>
-              <TableHead>Redeemed By</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {!isLoading && !error && reportData.length > 0 ? (
-              reportData.map((item) => (
-                <TableRow key={item._id}>
-                  <TableCell>{format(new Date(item.createdAt), 'dd MMM yyyy, hh:mm a')}</TableCell>
-                  <TableCell>{item.customerPackageId?.packageTemplateId?.name || 'N/A'}</TableCell>
-                  <TableCell>{item.customerPackageId?.customerId?.name || 'N/A'}</TableCell>
-                  <TableCell>{getItemName(item)}</TableCell>
-                  <TableCell>{item.quantityRedeemed}</TableCell>
-                  <TableCell>{item.redeemedBy?.name || 'N/A'}</TableCell>
-                </TableRow>
-              ))
-            ) : (
+      {/* Loading and Error States */}
+      {isLoading && (
+        <Card className="p-8">
+          <div className="text-center text-gray-600">Loading package redemptions data...</div>
+        </Card>
+      )}
+      
+      {error && (
+        <Card className="p-6">
+          <div className="text-center text-red-600">Error: {error}</div>
+        </Card>
+      )}
+      
+      {/* Desktop Table - Hidden on Mobile */}
+      {!isLoading && !error && (
+        <Card className="hidden md:block overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={6} className="text-center h-24">
-                  {!isLoading && !error ? 'No data available for the selected period.' : ''}
-                </TableCell>
+                <TableHead>Date Redeemed</TableHead>
+                <TableHead>Package Name</TableHead>
+                <TableHead>Customer Name</TableHead>
+                <TableHead>Item Redeemed</TableHead>
+                <TableHead>Qty</TableHead>
+                <TableHead>Redeemed By</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHeader>
+            <TableBody>
+              {reportData.length > 0 ? (
+                reportData.map((item) => (
+                  <TableRow key={item._id}>
+                    <TableCell>{format(new Date(item.createdAt), 'dd MMM yyyy, hh:mm a')}</TableCell>
+                    <TableCell>{item.customerPackageId?.packageTemplateId?.name || 'N/A'}</TableCell>
+                    <TableCell>{item.customerPackageId?.customerId?.name || 'N/A'}</TableCell>
+                    <TableCell>{getItemName(item)}</TableCell>
+                    <TableCell>
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm font-medium">
+                        {item.quantityRedeemed}
+                      </span>
+                    </TableCell>
+                    <TableCell>{item.redeemedBy?.name || 'N/A'}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center h-24 text-gray-500">
+                    No package redemptions data available for the selected period
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+      
+      {/* Mobile Card Layout - Hidden on Desktop */}
+      {!isLoading && !error && (
+        <div className="md:hidden space-y-3">
+          {reportData.length > 0 ? (
+            reportData.map((item) => (
+              <Card key={item._id} className="p-4 border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
+                <div className="space-y-3">
+                  {/* Header Row */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🎁</span>
+                      <div>
+                        <div className="font-semibold text-gray-900">
+                          {item.customerPackageId?.packageTemplateId?.name || 'N/A'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {format(new Date(item.createdAt), 'dd MMM yyyy, hh:mm a')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full">
+                      <span className="text-xs font-medium">Qty: </span>
+                      <span className="font-bold">{item.quantityRedeemed}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Customer Info */}
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">👤</span>
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {item.customerPackageId?.customerId?.name || 'N/A'}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          📞 {item.customerPackageId?.customerId?.phone || 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Item Redeemed */}
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">📾</span>
+                      <div>
+                        <div className="text-xs text-gray-600 mb-1">Item Redeemed</div>
+                        <div className="font-medium text-blue-900">
+                          {getItemName(item)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Redeemed By */}
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-1 text-gray-600">
+                      <span>👨‍💼</span>
+                      <span>Redeemed by:</span>
+                    </div>
+                    <span className="font-medium text-gray-900">
+                      {item.redeemedBy?.name || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+            ))
+          ) : (
+            <Card className="p-8">
+              <div className="text-center text-gray-500">
+                <div className="text-4xl mb-4">🎁</div>
+                <div className="font-medium mb-2">No Package Redemptions Found</div>
+                <div className="text-sm">No package redemptions data available for the selected period</div>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* --- REMOVE THE MODAL COMPONENT --- */}
       {/* <ReportDownloadModal ... /> */}

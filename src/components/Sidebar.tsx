@@ -45,9 +45,15 @@ const LogoIcon = () => (
 // --- INTERFACES ---
 interface NavSubItem { href: string; label: string; icon: JSX.Element; show: boolean; basePathForActive?: string; }
 interface NavItemConfig { href: string; label: string; icon: JSX.Element; show: boolean; subItems?: NavSubItem[]; }
+interface SidebarProps {
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+  isExpanded: boolean;
+  setIsExpanded: (expanded: boolean) => void;
+}
 
 // --- MAIN COMPONENT ---
-const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => {
+const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }: SidebarProps) => {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   
@@ -65,6 +71,18 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (isMobile && sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMobile, sidebarOpen]);
 
   // --- NAVIGATION DATA ---
   const navItems = useMemo((): NavItemConfig[] => {
@@ -379,8 +397,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen, isExpanded, setIsExpanded }) => 
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 z-30 md:hidden"
+          className="fixed inset-0 bg-black/60 z-30 md:hidden transition-opacity duration-300"
           onClick={() => setSidebarOpen(false)}
+          onTouchStart={() => setSidebarOpen(false)}
         ></div>
       )}
     </>
