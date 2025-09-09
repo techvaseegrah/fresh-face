@@ -1,4 +1,4 @@
-// /app/api/admin/roles/[roleId]/route.ts - FULLY CORRECTED
+// /app/api/admin/roles/[roleId]/route.ts - CORRECTED PATCH FUNCTION
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
@@ -41,16 +41,23 @@ export async function PATCH(
       }, { status: 403 });
     }
 
+    // --- THIS BLOCK IS NOW CORRECT ---
     const updates: any = {};
     if (updateData.displayName) updates.displayName = updateData.displayName;
     if (updateData.description !== undefined) updates.description = updateData.description;
     if (updateData.permissions) updates.permissions = updateData.permissions;
     if (updateData.isActive !== undefined) updates.isActive = updateData.isActive;
+    
+    // <<< THIS IS THE FIX: Handle the new canHandleBilling field >>>
+    if (updateData.canHandleBilling !== undefined) {
+      updates.canHandleBilling = updateData.canHandleBilling;
+    }
+    // --- END OF FIX ---
 
     const updatedRole = await Role.findOneAndUpdate(
       { _id: roleId, tenantId: tenantId },
       { $set: { ...updates, updatedBy: session.user.id } },
-      { new: true }
+      { new: true, runValidators: true } // Added runValidators as a best practice
     );
 
     return NextResponse.json({ success: true, role: updatedRole });
@@ -60,18 +67,18 @@ export async function PATCH(
   }
 }
 
+// Your DELETE function is correct and does not need any changes for this feature.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { roleId: string } }
 ) {
+  // ... (Your existing DELETE code is fine) ...
   try {
     const session = await getServerSession(authOptions);
-    // 1. Check for session and DELETE permission
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Get the tenantId from the request
     const tenantId = getTenantId(req);
     if (!tenantId) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
@@ -81,29 +88,25 @@ export async function DELETE(
 
     await connectToDatabase();
 
-    // 3. CRITICAL: First, find the role to ensure it exists in the tenant AND to check if it's a system role
     const roleToDelete = await Role.findOne({ _id: roleId, tenantId: tenantId });
 
     if (!roleToDelete) {
       return NextResponse.json({ success: false, message: 'Role not found in this salon' }, { status: 404 });
     }
-
-    // 4. PREVENT DELETION: Add the same protection for system roles
+   
     if (roleToDelete.isSystemRole) {
       return NextResponse.json({
         success: false,
         message: 'System roles cannot be deleted. You can only make them inactive.'
-      }, { status: 403 }); // 403 Forbidden is a more appropriate status code here
+      }, { status: 403 });
     }
 
-    // 5. SECURE DELETION: Delete the role only if the ID and tenantId match
     await Role.findOneAndDelete({ _id: roleId, tenantId: tenantId });
 
     return NextResponse.json({ success: true, message: 'Role deleted successfully.' });
 
   } catch (error) {
     console.error('Error deleting role:', error);
-    // This is likely the response your UI is currently receiving, causing the "unexpected error" message
     return NextResponse.json({ success: false, message: 'An unexpected error occurred while deleting the role.' }, { status: 500 });
   }
 }

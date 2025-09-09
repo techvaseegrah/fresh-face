@@ -6,13 +6,6 @@ import { getServerSession } from 'next-auth/next'; // ✅ IMPORT getServerSessio
 import { authOptions } from '@/lib/auth';     // ✅ IMPORT authOptions
 
 // Increase the body size limit to allow larger file uploads
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
-};
 
 export async function POST(request: NextRequest) {
   try {

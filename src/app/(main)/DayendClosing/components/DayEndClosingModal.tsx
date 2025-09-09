@@ -35,11 +35,13 @@ interface DayEndClosingModalProps {
   tenantFetch: (url: string, options?: RequestInit) => Promise<Response>;
 }
 
+// Corrected denominations array with ₹5 added
 const denominations = [
   { value: 500, label: '₹500' }, { value: 200, label: '₹200' },
   { value: 100, label: '₹100' }, { value: 50, label: '₹50' },
   { value: 20, label: '₹20' }, { value: 10, label: '₹10' },
-  { value: 2, label: '₹2' }, { value: 1, label: '₹1' },
+  { value: 5, label: '₹5' },   { value: 2, label: '₹2' }, 
+  { value: 1, label: '₹1' },
 ];
 
 const DayEndClosingModal: React.FC<DayEndClosingModalProps> = ({ isOpen, onClose, onSuccess, closingDate, tenantFetch }) => {

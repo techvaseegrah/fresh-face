@@ -1,33 +1,31 @@
-// app/api/users/billing-staff/route.ts - TENANT-AWARE VERSION
+// app/api/users/billing-staff/route.ts - UPDATED VERSION
 
-import { NextRequest, NextResponse } from 'next/server'; // <-- 1. Import NextRequest
+import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/user';
-import role from '@/models/role';
-import { getTenantIdOrBail } from '@/lib/tenant'; // <-- 2. Import the tenant helper
+import Role from '@/models/role'; // Corrected import name to match model
+import { getTenantIdOrBail } from '@/lib/tenant';
 
-// This export remains correct. It ensures the data is always fresh.
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) { // <-- 3. Add `req` parameter
+export async function GET(req: NextRequest) {
   try {
-    // 4. Get the tenant ID from the request or bail out with an error
     const tenantId = getTenantIdOrBail(req);
     if (tenantId instanceof NextResponse) {
-      return tenantId; // Return the error response if tenant ID is missing
+      return tenantId;
     }
 
     await connectToDatabase();
     
-    // 5. Scope the 'role' query by tenantId
-    // This ensures we only find roles belonging to the current salon.
-    const roles = await role.find({ 
-      name: { $in: ['MANAGER', 'RECEPTIONIST'] },
-      tenantId: tenantId, // <-- ADDED: Filter roles by the current tenant
+    // --- THIS IS THE KEY CHANGE ---
+    // Find roles that are explicitly allowed to handle billing for this tenant.
+    const roles = await Role.find({ 
+      canHandleBilling: true,   // <-- QUERY BY THE NEW BOOLEAN FLAG
+      tenantId: tenantId,       // <-- Still scoped by tenant
     }).select('_id');
     
     if (roles.length === 0) {
-      // This is a valid state if no such roles exist for this tenant.
+      // This is a valid state if no roles are configured for billing yet.
       return NextResponse.json({
         success: true,
         staff: []
@@ -38,32 +36,28 @@ export async function GET(req: NextRequest) { // <-- 3. Add `req` parameter
     
     const roleIds = roles.map(role => role._id);
     
-    // 6. Scope the 'User' query by tenantId
-    // This is the most critical step. It ensures we only fetch users from the current salon.
+    // The rest of the logic remains the same. It now correctly finds users
+    // based on the roles we found above.
     const staff = await User.find({
       roleId: { $in: roleIds },
       isActive: true,
-      tenantId: tenantId, // <-- ADDED: Filter users by the current tenant
+      tenantId: tenantId,
     })
     .select('name email roleId')
-    .populate({ path: 'roleId', model: role, select: 'name' }) // Be explicit with the model for populate
+    .populate({ path: 'roleId', model: Role, select: 'name' })
     .sort({ name: 1 });
     
-    // The successful response. The logic here remains the same.
     return NextResponse.json({
       success: true,
       staff: staff.map(user => ({
         _id: user._id.toString(),
         name: user.name,
         email: user.email,
-        // Using optional chaining `?.` is safer in case roleId is somehow null
         role: (user.roleId as any)?.name 
       }))
     }, 
     {
-      headers: {
-        'Cache-Control': 'no-store',
-      },
+      headers: { 'Cache-Control': 'no-store' },
     });
     
   } catch (error) {

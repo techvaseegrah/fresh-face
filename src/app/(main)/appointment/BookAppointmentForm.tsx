@@ -68,9 +68,8 @@ interface CustomerDetails { _id: string; name: string; email: string; phoneNumbe
 interface BookAppointmentFormProps { isOpen: boolean; onClose: () => void; onBookAppointment: (data: NewBookingData) => Promise<void>; }
 
 // ===================================================================================
-//  ✅ BUG FIX: UTILITY FUNCTION
+//  UTILITY FUNCTION
 // ===================================================================================
-// Moved getStatusColor here so it's accessible by all components in this file.
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'Appointment': return 'bg-blue-100 text-blue-800';
@@ -95,8 +94,6 @@ const CustomerHistoryModal: React.FC<{
 }> = ({ isOpen, onClose, customer }) => {
   if (!isOpen || !customer) return null;
   const totalSpent = customer.appointmentHistory.filter(apt => apt.status === 'Paid').reduce((sum: number, apt: AppointmentHistory) => sum + apt.totalAmount, 0);
-
-  // ✅ BUG FIX: The getStatusColor function was removed from here.
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
@@ -555,17 +552,21 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
   };
   
   const handleAddService = (service: ServiceFromAPI) => {
-    if (service && !serviceAssignments.some((a) => a.serviceId === service._id)) {
+    if (service) {
         const newAssignment: ServiceAssignmentState = { _tempId: Date.now().toString(), serviceId: service._id, stylistId: '', serviceDetails: service, availableStylists: assignableStaff, isLoadingStylists: isLoadingStaff };
         setServiceAssignments(prev => [...prev, newAssignment]);
         setServiceSearch('');
     }
   };
 
+  // ✅ FIX: Updated to handle quantity and generate unique IDs.
   const handleRedeemItem = (pkg: CustomerPackage, item: CustomerPackage['remainingItems'][0]) => {
-    const isAlreadyRedeemed = redeemedItems?.some(r => r.customerPackageId === pkg._id && r.redeemedItemId === item.itemId);
-    if (isAlreadyRedeemed) { toast.info(`${item.itemName} from this package is already added.`); return; }
-    
+    const redeemedCount = serviceAssignments.filter(a => a.serviceId === item.itemId && a.isRedeemed).length;
+    if (redeemedCount >= item.remainingQuantity) {
+      toast.info(`No more "${item.itemName}" left to redeem from this package.`);
+      return;
+    }
+
     const serviceToAdd: ServiceFromAPI = {
         _id: item.itemId,
         name: `(Package) ${item.itemName}`,
@@ -574,7 +575,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     };
     
     const newAssignment: ServiceAssignmentState = {
-      _tempId: `redeemed-${pkg._id}-${item.itemId}`,
+      _tempId: `redeemed-${item.itemId}-${Date.now()}`,
       serviceId: item.itemId,
       stylistId: '',
       serviceDetails: serviceToAdd,
@@ -592,20 +593,26 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     
     toast.success(`"${item.itemName}" added to appointment from package.`);
   };
-
-  const handleUnredeemItem = (serviceId: string) => {
-    setServiceAssignments(prev => prev.filter(a => !(a.serviceId === serviceId && a.isRedeemed)));
-    setRedeemedItems(prev => prev?.filter(r => r.redeemedItemId !== serviceId));
-    toast.info("Redeemed service removed from appointment.");
-  };
-
+  
+  // ✅ FIX: Updated to correctly remove a single instance of a redeemed service.
   const handleRemoveService = (_tempId: string) => {
     const assignmentToRemove = serviceAssignments.find(a => a._tempId === _tempId);
-    if (assignmentToRemove?.isRedeemed) {
-        handleUnredeemItem(assignmentToRemove.serviceId);
-    } else {
-        setServiceAssignments(prev => prev.filter(a => a._tempId !== _tempId));
+    if (!assignmentToRemove) return;
+
+    if (assignmentToRemove.isRedeemed) {
+      setRedeemedItems(prev => {
+        if (!prev) return [];
+        const redeemed = [...prev];
+        const indexToRemove = redeemed.findIndex(r => r.redeemedItemId === assignmentToRemove.serviceId);
+        if (indexToRemove > -1) {
+          redeemed.splice(indexToRemove, 1);
+        }
+        return redeemed;
+      });
+      toast.info("Redeemed service removed from appointment.");
     }
+    
+    setServiceAssignments(prev => prev.filter(a => a._tempId !== _tempId));
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -714,10 +721,11 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
                                 {pkg.remainingItems.filter(i => i.remainingQuantity > 0).map(item => (
                                   <li key={item.itemId} className="flex justify-between items-center text-sm">
                                     <span className="text-gray-700">{item.itemName} ({item.remainingQuantity} left)</span>
+                                    {/* ✅ FIX: Updated disabled logic to check count against remaining quantity. */}
                                     <button
                                       type="button"
                                       onClick={() => handleRedeemItem(pkg, item)}
-                                      disabled={redeemedItems?.some(r => r.redeemedItemId === item.itemId)}
+                                      disabled={serviceAssignments.filter(a => a.serviceId === item.itemId && a.isRedeemed).length >= item.remainingQuantity}
                                       className="px-2 py-0.5 text-xs font-medium text-indigo-700 bg-indigo-200 rounded-md hover:bg-indigo-300 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
                                     >
                                       Add to Appointment

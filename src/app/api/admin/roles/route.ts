@@ -1,30 +1,38 @@
 // /app/api/admin/roles/route.ts - TENANT-AWARE VERSION
 
-import { NextRequest, NextResponse } from 'next/server'; // <-- 1. Import NextRequest
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectToDatabase from '@/lib/mongodb';
 import Role from '@/models/role';
-import User from '@/models/user'; // Corrected import name
+import User from '@/models/user';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { getTenantId } from '@/lib/tenant'; // <-- 2. Import a tenant helper
+import { getTenantId } from '@/lib/tenant';
 
 // GET all roles for the current tenant
-export async function GET(req: NextRequest) { // <-- 3. Add 'req'
+export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_READ)) {
+
+    // ✅ START OF PERMISSION FIX
+    // This check now allows access if the user can either read roles directly
+    // OR if they have permission to manage issues, which requires loading this list.
+    const userPermissions = session?.user?.role?.permissions || [];
+    const canReadRoles = hasPermission(userPermissions, PERMISSIONS.ROLES_READ);
+    const canManageIssues = hasPermission(userPermissions, PERMISSIONS.ISSUE_MANAGE);
+
+    if (!session || (!canReadRoles && !canManageIssues)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
+    // ✅ END OF PERMISSION FIX
 
-    const tenantId = getTenantId(req); // <-- 4. Get the tenantId from the request
+    const tenantId = getTenantId(req);
     if (!tenantId) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
     }
 
     await connectToDatabase();
     
-    // <-- 5. Scope the find query by tenantId
     const roles = await Role.find({ tenantId: tenantId })
       .sort({ createdAt: -1 });
 
@@ -36,14 +44,14 @@ export async function GET(req: NextRequest) { // <-- 3. Add 'req'
 }
 
 // DELETE a role and its associated users within the current tenant
-export async function DELETE(req: NextRequest) { // <-- 3. Change 'Request' to 'NextRequest'
+export async function DELETE(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE)) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
     
-    const tenantId = getTenantId(req); // <-- 4. Get the tenantId
+    const tenantId = getTenantId(req);
     if (!tenantId) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
     }
@@ -56,17 +64,13 @@ export async function DELETE(req: NextRequest) { // <-- 3. Change 'Request' to '
 
     await connectToDatabase();
     
-    // <-- 5. Scope the find query by tenantId AND roleId
     const role = await Role.findOne({ _id: roleId, tenantId: tenantId });
     if (!role) {
       return NextResponse.json({ success: false, message: 'Role not found in this salon' }, { status: 404 });
     }
 
-    // <-- 5. Scope the user deletion by tenantId AND roleId
     await User.deleteMany({ roleId: roleId, tenantId: tenantId });
 
-    // The 'role' object is a Mongoose document, so we can call .deleteOne() on it directly.
-    // This is implicitly secure because we already verified it belongs to the tenant.
     await role.deleteOne();
 
     return NextResponse.json({ success: true, message: 'Role and associated users deleted successfully' });
@@ -89,45 +93,43 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: 'Tenant ID is missing.' }, { status: 400 });
     }
 
-    await connectToDatabase();
-    
-    const { name, displayName, description, permissions } = await req.json();
+    // <<< STEP 1: READ canHandleBilling FROM THE REQUEST BODY >>>
+    const { name, displayName, description, permissions, canHandleBilling } = await req.json();
 
-    if (!name || !displayName || !permissions) {
-      return NextResponse.json({ success: false, message: 'Name, display name, and permissions are required' }, { status: 400 });
+    if (!name || !displayName) { // Permissions are not strictly required for creation
+      return NextResponse.json({ success: false, message: 'Name and display name are required' }, { status: 400 });
     }
+    
+    await connectToDatabase();
     
     const upperCaseName = name.toUpperCase();
 
-    // This check handles 99% of cases
     const existingRole = await Role.findOne({ name: upperCaseName, tenantId: tenantId });
     if (existingRole) {
       return NextResponse.json({ success: false, message: `Role with name '${name}' already exists in this salon` }, { status: 409 });
     }
 
+    // <<< STEP 2: PASS canHandleBilling WHEN CREATING THE ROLE >>>
     const role = await Role.create({
       tenantId: tenantId,
       name: upperCaseName,
       displayName,
       description,
-      permissions,
+      permissions: permissions || [],
+      canHandleBilling: canHandleBilling || false, // Add this line
       createdBy: session.user.id
     });
 
     return NextResponse.json({ success: true, role }, { status: 201 });
 
   } catch (error) {
-    // --- START OF IMPROVEMENT ---
-    // This handles the race condition where the findOne check passes but the create fails
-    // due to the unique index in the database.
     if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
       const body = await req.json();
       return NextResponse.json({
         success: false,
         message: `Role with name '${body.name}' already exists in this salon (database conflict).`
-      }, { status: 409 }); // 409 Conflict is the correct status code
+      }, { status: 409 });
     }
-    // --- END OF IMPROVEMENT ---
 
     console.error('Error creating role:', error);
     return NextResponse.json({ success: false, message: 'Internal server error' }, { status: 500 });

@@ -1,4 +1,3 @@
-// models/role.ts
 import mongoose from 'mongoose';
 
 const roleSchema = new mongoose.Schema({
@@ -26,6 +25,15 @@ const roleSchema = new mongoose.Schema({
     type: String,
     required: true
   }],
+  
+  // <-- ADD THIS SECTION -->
+  canHandleBilling: {
+    type: Boolean,
+    required: true, // `required` with a `default` ensures the field always exists
+    default: false, // Default to false for safety. New roles won't get billing access by accident.
+  },
+  // <-- END OF NEW SECTION -->
+
   isActive: {
     type: Boolean,
     default: true,
@@ -46,7 +54,12 @@ const roleSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 roleSchema.index({ tenantId: 1, name: 1 }, { unique: true });
+
 // Index for faster permission checks
 roleSchema.index({ name: 1, isActive: 1 });
+
+// <-- ADD THIS NEW INDEX -->
+// This will make our API query for billing staff very efficient.
+roleSchema.index({ tenantId: 1, canHandleBilling: 1 });
 
 export default mongoose.models.Role || mongoose.model('Role', roleSchema);

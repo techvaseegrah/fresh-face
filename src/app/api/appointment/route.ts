@@ -1,3 +1,5 @@
+// src/app/api/appointment/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
@@ -173,7 +175,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ===================================================================================
-//  POST: Handler
+//  POST: Handler (✅ UPDATED TO SUPPORT DUPLICATE SERVICES)
 // ===================================================================================
 export async function POST(req: NextRequest) {
   
@@ -243,16 +245,50 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const allServiceIds = serviceAssignments.map((a: any) => a.serviceId);
-    const primaryStylistId = serviceAssignments[0].stylistId; 
-    const serviceDetails = await ServiceItem.find({ _id: { $in: allServiceIds } }).lean();
-    if (serviceDetails.length !== allServiceIds.length) {
-      throw new Error("One or more selected services could not be found.");
+    // =========================================================================
+    // === START: MODIFIED SERVICE VALIDATION AND HANDLING =====================
+    // =========================================================================
+
+    const allServiceIdsWithDuplicates = serviceAssignments.map((a: any) => a.serviceId);
+    
+    // 1. Get the set of UNIQUE service IDs for efficient database validation.
+    const uniqueServiceIds = [...new Set(allServiceIdsWithDuplicates)];
+    const primaryStylistId = serviceAssignments[0].stylistId;
+
+    // 2. Find all unique services from the database.
+    const foundServicesFromDB = await ServiceItem.find({ 
+        _id: { $in: uniqueServiceIds },
+        tenantId: tenantId
+    }).lean();
+
+    // 3. Validate that every unique service ID submitted was found in the database.
+    if (foundServicesFromDB.length !== uniqueServiceIds.length) {
+        const foundIdsSet = new Set(foundServicesFromDB.map(s => s._id.toString()));
+        const missingIds = uniqueServiceIds.filter(id => !foundIdsSet.has(id));
+        console.error("API Error: The following service IDs could not be found:", missingIds);
+        throw new Error("One or more selected services could not be found. They may have been recently deleted.");
     }
+
+    // 4. Create a map for quick lookups (ID -> Service Details).
+    const serviceDetailsMap = new Map(foundServicesFromDB.map(service => [service._id.toString(), service]));
+
+    // 5. Reconstruct the full list of services, including duplicates, in the correct order.
+    // This `fullServiceDetailsList` will now be the source of truth for calculations.
+    const fullServiceDetailsList = allServiceIdsWithDuplicates.map(id => {
+        const service = serviceDetailsMap.get(id);
+        if (!service) {
+            throw new Error(`Internal error: Service with ID ${id} was not found after validation.`);
+        }
+        return service;
+    });
+
+    // =========================================================================
+    // === END: MODIFIED SERVICE VALIDATION AND HANDLING =======================
+    // =========================================================================
 
     if (InventoryManager.calculateMultipleServicesInventoryImpact && InventoryManager.applyInventoryUpdates) {
         const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
-          allServiceIds,
+          allServiceIdsWithDuplicates, // Use the list with duplicates
           gender,
           tenantId
         );
@@ -261,10 +297,10 @@ export async function POST(req: NextRequest) {
         }
     }
 
-    const totalEstimatedDuration = serviceDetails.reduce((sum, service) => sum + service.duration, 0);
+    const totalEstimatedDuration = fullServiceDetailsList.reduce((sum, service) => sum + service.duration, 0);
     const tempAppointmentForCalc = new Appointment({
       customerId: customerDoc!._id,
-      serviceIds: allServiceIds,
+      serviceIds: allServiceIdsWithDuplicates, // Use the list with duplicates
       tenantId: tenantId,
     });
     const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
@@ -278,7 +314,7 @@ export async function POST(req: NextRequest) {
       tenantId: tenantId,
       customerId: customerDoc!._id,
       stylistId: primaryStylistId,
-      serviceIds: allServiceIds,
+      serviceIds: allServiceIdsWithDuplicates, // Save the list WITH duplicates
       notes,
       status,
       appointmentType,
@@ -303,7 +339,7 @@ export async function POST(req: NextRequest) {
     
     try {
       const stylist = await Staff.findById(primaryStylistId).select('name').lean();
-      const servicesText = serviceDetails.map(s => s.name).join(', ');
+      const servicesText = fullServiceDetailsList.map(s => s.name).join(', ');
       
       const appointmentDateFormatted = new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
       const appointmentTimeFormatted = new Date(`${date}T${time}:00`).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });

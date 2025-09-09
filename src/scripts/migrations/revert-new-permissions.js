@@ -6,21 +6,16 @@ require('dotenv').config({ path: '../../.env' });
 
 // WARNING: This connection string is hardcoded. 
 // Ensure this is the correct database you intend to modify.
-const MONGODB_URI ="mongodb+srv://dhanush:Dhanush@cluster0.7ymwvxu.mongodb.net/test2?retryWrites=true&w=majority&appName=Cluster0";
+const MONGODB_URI ="mongodb+srv://techvaseegrah:kAsdW78pc8G8Rd29@ffprod.vrpjiy0.mongodb.net/?retryWrites=true&w=majority&appName=FFProd";
 
 // --- PERMISSIONS TO REMOVE ---
 // This is the exact same list from the original script.
 // The script will remove these specific permissions from the array.
 const PERMISSIONS_TO_REMOVE = [
-  'BUDGET_READ',
-  'BUDGET_MANAGE',
-  'SOP_MANAGE',
-  'SOP_READ',
-  'SOP_REPORTS_READ',
-  'SOP_SUBMIT_CHECKLIST',
-  'TELECALLING_PERFORM',
-  'TELECALLING_VIEW_DASHBOARD',
-  'TELECALLING_VIEW_REPORTS',
+     'read:packages-settings',
+     'manage:packages-settings',
+     'packages:reports:read',
+     'packages:reports:manage',
 ];
 
 async function runRevertMigration() {

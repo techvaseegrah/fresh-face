@@ -32,6 +32,15 @@ export async function GET(req: NextRequest) {
 
         await dbConnect();
 
+        // --- FIX START ---
+        // Ensure all models used in population are registered with Mongoose.
+        // Accessing them here forces their respective files to be evaluated.
+        CustomerPackage.init();
+        Customer.init();
+        PackageTemplate.init();
+        Staff.init();
+        // --- FIX END ---
+
         let query: any = { tenantId };
         if (startDateStr && endDateStr) {
             const fromDate = new Date(startDateStr);
@@ -45,11 +54,14 @@ export async function GET(req: NextRequest) {
             .populate({
                 path: 'customerPackageId',
                 populate: [
-                    { path: 'customerId', select: 'name phoneNumber' },
-                    { path: 'packageTemplateId', select: 'name' }
+                    // The 'Customer' model is now guaranteed to be registered
+                    { path: 'customerId', model: Customer, select: 'name phoneNumber' },
+                    // The 'PackageTemplate' model is now guaranteed to be registered
+                    { path: 'packageTemplateId', model: PackageTemplate, select: 'name' }
                 ]
             })
-            .populate('redeemedBy', 'name')
+            // The 'Staff' model is now guaranteed to be registered
+            .populate({ path: 'redeemedBy', model: Staff, select: 'name'})
             .sort({ createdAt: -1 })
             .lean();
 
@@ -62,6 +74,7 @@ export async function GET(req: NextRequest) {
             .map(log => log.redeemedItemId);
 
         const [services, products] = await Promise.all([
+            // ServiceItem and Product are used directly, so they don't need pre-registration.
             ServiceItem.find({ _id: { $in: serviceIds } }, 'name').lean(),
             Product.find({ _id: { $in: productIds } }, 'name').lean()
         ]);
@@ -70,34 +83,31 @@ export async function GET(req: NextRequest) {
         const productMap = new Map(products.map(p => [p._id.toString(), p.name]));
 
         // Step 3: Decrypt customer data and assemble the final response
-        const finalReportData = logs.map(log => {
+        const finalReportData = logs.map((log: any) => { // Added 'any' type to log for easier manipulation
             let customerName = 'N/A';
             let customerPhone = 'N/A';
 
-            if (log.customerPackageId && typeof log.customerPackageId === 'object' && log.customerPackageId.customerId && typeof log.customerPackageId.customerId === 'object') {
-                const cust = log.customerPackageId.customerId as { name: string; phoneNumber: string };
+            if (log.customerPackageId && log.customerPackageId.customerId) {
+                const cust = log.customerPackageId.customerId;
                 customerName = safeDecrypt(cust.name, 'customer name');
                 customerPhone = safeDecrypt(cust.phoneNumber, 'customer phone');
             }
             
-            // Look up the item name from our maps
             const itemName = log.redeemedItemType === 'service'
                 ? serviceMap.get(log.redeemedItemId.toString())
                 : productMap.get(log.redeemedItemId.toString());
 
+            // Reconstruct the object to match frontend expectations and ensure clean data
             return {
-                ...log,
-                // Attach the item name in the structure the frontend expects
-                serviceId: log.redeemedItemType === 'service' ? { name: itemName || 'Unknown Service' } : undefined,
-                productId: log.redeemedItemType === 'product' ? { name: itemName || 'Unknown Product' } : undefined,
-                // Re-assemble the customer object with decrypted data
-                customerPackageId: {
-                    ...log.customerPackageId,
-                    customerId: {
-                        name: customerName,
-                        phone: customerPhone,
-                    }
-                }
+                _id: log._id,
+                redeemedAt: log.createdAt, // Using createdAt as the redemption time
+                redeemedQuantity: log.redeemedQuantity,
+                redeemedItemType: log.redeemedItemType,
+                packageName: log.customerPackageId?.packageTemplateId?.name || 'N/A',
+                customerName: customerName,
+                customerPhone: customerPhone,
+                itemName: itemName || (log.redeemedItemType === 'service' ? 'Unknown Service' : 'Unknown Product'),
+                redeemedBy: log.redeemedBy?.name || 'N/A',
             };
         });
 

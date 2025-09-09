@@ -42,6 +42,6 @@ declare module 'next-auth/jwt' {
     id: string;
     tenantId: string;
     subdomain: string;
-    role: IUserRole; // Use the interface
+    roleId: string; // Use the interface
   }
 }

@@ -1,19 +1,21 @@
-// /app/admin/roles/page.tsx
+// /app/admin/roles/page.tsx - FINAL VERSION WITH "canHandleBilling" FEATURE
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession, getSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS, ALL_PERMISSIONS, PermissionInfo } from '@/lib/permissions';
-import EditRoleModal from '@/components/EditRoleModal';
+import EditRoleModal from '@/components/EditRoleModal'; // Assuming modal is moved to a components subfolder
 import { PencilIcon, TrashIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
 
+// <<< CHANGE 1: UPDATE THE ROLE INTERFACE >>>
 interface Role {
   _id: string;
   name: string;
   displayName: string;
   description: string;
   permissions: string[];
+  canHandleBilling: boolean; // Field for billing staff feature
   isActive: boolean;
   isSystemRole: boolean;
   createdAt: string;
@@ -26,17 +28,21 @@ export default function RolesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
+
+  // <<< CHANGE 2: UPDATE THE INITIAL STATE FOR A NEW ROLE >>>
   const [newRole, setNewRole] = useState({
     name: '',
     displayName: '',
     description: '',
-    permissions: [] as string[]
+    permissions: [] as string[],
+    canHandleBilling: false, // Add the new field to the state
   });
 
   const canCreate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_CREATE);
   const canUpdate = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_UPDATE);
   const canDelete = session && hasPermission(session.user.role.permissions, PERMISSIONS.ROLES_DELETE);
 
+  // --- Security Logic (No changes needed here) ---
   const loggedInUserPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
 
   const grantablePermissions = useMemo((): PermissionInfo[] => {
@@ -58,7 +64,10 @@ export default function RolesPage() {
       return acc;
     }, {} as Record<string, PermissionInfo[]>);
   }, [grantablePermissions]);
+  // --- End of Security Logic ---
 
+
+  // --- Data Fetching and Handlers (Only one small change needed) ---
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const currentSession = await getSession();
     const headers = {
@@ -122,7 +131,8 @@ export default function RolesPage() {
       if (data.success) {
         toast.success('Role created successfully!');
         setShowCreateModal(false);
-        setNewRole({ name: '', displayName: '', description: '', permissions: [] });
+        // <<< CHANGE 3: RESET THE NEW FIELD IN THE STATE >>>
+        setNewRole({ name: '', displayName: '', description: '', permissions: [], canHandleBilling: false });
         fetchRoles();
       } else {
         toast.error(data.message || 'Error creating role');
@@ -237,7 +247,16 @@ export default function RolesPage() {
                           <div>
                             <div className="text-sm font-medium text-gray-900">{role.displayName}</div>
                             <div className="text-sm text-gray-500">{role.description}</div>
-                            {role.isSystemRole && <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 mt-1">System Role</span>}
+                            {/* <<< CHANGE 4: ADD BADGES FOR ROLE PROPERTIES >>> */}
+                            <div className="mt-2 flex items-center gap-2">
+                                {role.isSystemRole && <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">System Role</span>}
+                                {role.canHandleBilling && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M8.433 7.418c.158-.103.346-.196.567-.267v1.698a2.5 2.5 0 00-1.134 0v-1.43zM11.567 7.151c.221.07.409.164.567.267v1.43a2.5 2.5 0 00-1.134 0V7.15z" /><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.5 4.5 0 00-1.879 3.515v1.2a1 1 0 001.121.983 13.95 13.95 0 00.758 0 1 1 0 001.121-.983v-1.2a4.5 4.5 0 00-1.879-3.515V5z" clipRule="evenodd" /></svg>
+                                        Billing Staff
+                                    </span>
+                                )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -272,6 +291,7 @@ export default function RolesPage() {
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Create New Role</h3>
               <form onSubmit={handleCreateRole} className="space-y-6">
+                {/* Inputs for name, displayName, description */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Role Name</label>
@@ -288,58 +308,55 @@ export default function RolesPage() {
                   <label className="block text-sm font-medium text-gray-700">Description</label>
                   <textarea value={newRole.description} onChange={(e) => setNewRole({ ...newRole, description: e.target.value })} rows={2} className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
+
+                {/* <<< CHANGE 5: ADD THE CHECKBOX TO THE CREATE FORM >>> */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Settings</label>
+                    <div className="mt-2 space-y-2 border border-gray-200 rounded-md p-3">
+                        <div className="relative flex items-start">
+                            <div className="flex h-6 items-center">
+                                <input
+                                    id="canHandleBilling"
+                                    name="canHandleBilling"
+                                    type="checkbox"
+                                    checked={newRole.canHandleBilling}
+                                    onChange={(e) => setNewRole({ ...newRole, canHandleBilling: e.target.checked })}
+                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                                />
+                            </div>
+                            <div className="ml-3 text-sm leading-6">
+                                <label htmlFor="canHandleBilling" className="font-medium text-gray-900">
+                                    Can Handle Billing
+                                </label>
+                                <p id="canHandleBilling-description" className="text-gray-500">
+                                    Allows users with this role to appear in billing staff lists.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Permissions Section */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Permissions</label>
-                  
-                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                    <label className="flex items-center font-semibold text-gray-800">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        onChange={(e) => handleMasterSelectAll(e.target.checked)}
-                        checked={grantablePermissions.length > 0 && newRole.permissions.length === grantablePermissions.length}
-                      />
-                      <span className="ml-2">Select All Permissions</span>
-                    </label>
-                  </div>
-                  
-                  <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
-                    {Object.entries(grantableGroupedPermissions).map(([category, permissions]) => {
-                      const categoryPermissionIds = permissions.map(p => p.permission);
-                      const selectedInCategoryCount = categoryPermissionIds.filter(p => newRole.permissions.includes(p)).length;
-                      const areAllInCategorySelected = selectedInCategoryCount === categoryPermissionIds.length;
-                      const areSomeInCategorySelected = selectedInCategoryCount > 0 && !areAllInCategorySelected;
-
-                      return (
-                        <div key={category} className="border rounded-lg p-4">
-                          <div className="flex justify-between items-center mb-3 pb-2 border-b">
-                            <h4 className="font-medium text-gray-900">{category}</h4>
-                            
-                            <label className="flex items-center text-sm font-medium text-indigo-600">
-                               <input
-                                type="checkbox"
-                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                                onChange={(e) => handleCategorySelectAll(permissions, e.target.checked)}
-                                checked={areAllInCategorySelected}
-                                ref={el => { if (el) el.indeterminate = areSomeInCategorySelected; }}
-                              />
-                              <span className="ml-2">Select All</span>
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {Object.entries(grantableGroupedPermissions).map(([category, permissions]) => (
+                      <div key={category} className="border rounded-lg p-4">
+                        <h4 className="font-medium text-gray-900 mb-2">{category}</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {permissions.map((perm) => (
+                            <label key={perm.permission} className="flex items-center">
+                              <input type="checkbox" checked={newRole.permissions.includes(perm.permission)} onChange={() => togglePermission(perm.permission)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
+                              <span className="ml-2 text-sm text-gray-700">{perm.description}</span>
                             </label>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {permissions.map((perm) => (
-                              <label key={perm.permission} className="flex items-center">
-                                <input type="checkbox" checked={newRole.permissions.includes(perm.permission)} onChange={() => togglePermission(perm.permission)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
-                                <span className="ml-2 text-sm text-gray-700">{perm.description}</span>
-                              </label>
-                            ))}
-                          </div>
+                          ))}
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
+
+                {/* Modal Buttons */}
                 <div className="flex justify-end space-x-3 pt-4">
                   <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200">Cancel</button>
                   <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700">Create Role</button>
@@ -351,6 +368,7 @@ export default function RolesPage() {
       )}
 
        {showEditModal && editingRole && (
+        // <<< CHANGE 6: PASS THE SECURE PERMISSIONS LIST TO THE MODAL >>>
         <EditRoleModal 
             isOpen={showEditModal} 
             onClose={() => { setShowEditModal(false); setEditingRole(null); }} 

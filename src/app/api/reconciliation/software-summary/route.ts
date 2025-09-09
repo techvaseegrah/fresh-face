@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/dbConnect';
 import Invoice from '@/models/invoice';
-import DailyReconciliation from '@/models/DailyReconciliation'; // STEP 1: Import the Reconciliation model
+import DailyReconciliation from '@/models/DailyReconciliation';
 import { getTenantIdOrBail } from '@/lib/tenant';
 
 export async function GET(request: NextRequest) {
@@ -25,17 +25,15 @@ export async function GET(request: NextRequest) {
     endOfDay.setUTCHours(23, 59, 59, 999);
 
     // --- STEP 2: FIND THE PREVIOUS DAY'S REPORT TO GET THE OPENING BALANCE ---
-    // This is the crucial logic that was missing from your original file.
+    // This logic remains unchanged.
     const lastClosingReport = await DailyReconciliation.findOne({
       tenantId: new mongoose.Types.ObjectId(tenantId),
-      date: { $lt: startOfDay }, // Find the most recent report with a date *before* the start of today
-    }).sort({ date: -1 }); // Sort descending to ensure we get the latest one
+      date: { $lt: startOfDay },
+    }).sort({ date: -1 });
 
-    // Safely get the closing cash from that report. If no report is found, default to 0.
     const openingBalance = lastClosingReport?.cash?.closingCash || 0;
     
-    // --- STEP 3: EXECUTE YOUR EXISTING PIPELINE FOR TODAY'S SALES ---
-    // This part of your code is perfect for its job and remains unchanged.
+    // --- STEP 3: EXECUTE THE PIPELINE WITH PROPORTIONAL DISCOUNT LOGIC ADDED ---
     const pipeline = [
       {
         $match: {
@@ -60,14 +58,48 @@ export async function GET(request: NextRequest) {
             cashPaid: { $first: '$paymentDetails.cash' },
             cardPaid: { $first: '$paymentDetails.card' },
             upiPaid: { $first: '$paymentDetails.upi' },
-            grandTotal: { $first: '$grandTotal' }
+            grandTotal: { $first: '$grandTotal' },
+            // MODIFICATION 1: Carry the discount amount for each invoice
+            discountAmount: { $first: { $ifNull: ['$manualDiscount.appliedAmount', 0] } }
         }
       },
+
+      // MODIFICATION 2: ADD A NEW STAGE to calculate the final totals AFTER discount
+      {
+        $addFields: {
+          // Calculate the final service total for this invoice after applying its share of the discount
+          finalServiceTotal: {
+            $subtract: [
+              '$invoiceServiceTotal',
+              { // This block calculates the service portion of the discount
+                $multiply: [
+                  '$discountAmount',
+                  { $divide: ['$invoiceServiceTotal', { $add: ['$invoiceServiceTotal', '$invoiceProductTotal', 0.0001] }] } // (Service Total / Subtotal)
+                ]
+              }
+            ]
+          },
+          // Calculate the final product total for this invoice after applying its share of the discount
+          finalProductTotal: {
+            $subtract: [
+              '$invoiceProductTotal',
+              { // This block calculates the product portion of the discount
+                $multiply: [
+                  '$discountAmount',
+                  { $divide: ['$invoiceProductTotal', { $add: ['$invoiceServiceTotal', '$invoiceProductTotal', 0.0001] }] } // (Product Total / Subtotal)
+                ]
+              }
+            ]
+          }
+        }
+      },
+      
       {
         $group: {
           _id: null,
-          serviceTotal: { $sum: '$invoiceServiceTotal' },
-          productTotal: { $sum: '$invoiceProductTotal' },
+          // MODIFICATION 3: Sum the NEW final totals instead of the old pre-discount ones
+          serviceTotal: { $sum: '$finalServiceTotal' },
+          productTotal: { $sum: '$finalProductTotal' },
           cash: { $sum: '$cashPaid' },
           gpay: { $sum: '$upiPaid' },
           card: { $sum: '$cardPaid' },
@@ -82,7 +114,6 @@ export async function GET(request: NextRequest) {
     
     const result = await Invoice.aggregate(pipeline);
     
-    // Get the summary of today's sales, defaulting to all zeros if no sales occurred.
     const summaryOfTodaySales = result[0] || { serviceTotal: 0, productTotal: 0, cash: 0, gpay: 0, card: 0, sumup: 0, total: 0 };
     
     // --- STEP 4: COMBINE TODAY'S SALES WITH THE OPENING BALANCE INTO A SINGLE RESPONSE ---

@@ -27,6 +27,10 @@ const nextConfig = {
   // The custom webpack function has been removed.
   // Next.js will now automatically handle the '@' alias
   // based on your tsconfig.json file.
+
+  server:{
+    maxRequestBodySize: '10mb',
+  }
 };
 
 module.exports = nextConfig;

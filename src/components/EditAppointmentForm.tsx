@@ -49,7 +49,9 @@ interface EditAppointmentFormProps {
   onUpdateAppointment: (appointmentId: string, updateData: any) => Promise<void>;
 }
 
+// ✅ UPDATED INTERFACE
 interface ServiceInForm extends ServiceFromAPI {
+  _tempId: string; // To uniquely identify each instance in the list
   isRedeemed: boolean;
 }
 
@@ -137,14 +139,15 @@ export default function EditAppointmentForm({
         stylistId: appointment.stylistId?._id || '',
       });
 
-      const processedServices = (appointment.serviceIds || []).map(service => {
+      // ✅ MODIFIED to add a unique _tempId to each initial service
+      const processedServices = (appointment.serviceIds || []).map((service, index) => {
         const isRedeemed = appointment.redeemedItems?.some(
-          // ✅ BUG FIX: Cast both IDs to strings for a reliable comparison
           redeemed => String(redeemed.redeemedItemId) === String(service._id)
         ) || false;
 
         return {
           ...service,
+          _tempId: `initial-${service._id}-${index}`, // Unique ID for each instance
           price: isRedeemed ? 0 : service.price,
           name: isRedeemed ? `(Package) ${service.name}` : service.name,
           isRedeemed: isRedeemed,
@@ -206,18 +209,22 @@ export default function EditAppointmentForm({
     findStylists();
   }, [isOpen, formData.date, formData.time, appointment?.stylistId, tenantAwareFetch]);
 
-  // Handlers for adding/removing services
+  // ✅ MODIFIED Handlers for adding/removing services
   const handleAddService = (serviceId: string) => {
     if (!serviceId) return;
     const serviceToAdd = allServices.find((s) => s._id === serviceId);
-    if (serviceToAdd && !selectedServices.some((s) => s._id === serviceId)) {
-      setSelectedServices(prev => [...prev, { ...serviceToAdd, isRedeemed: false }]);
+    if (serviceToAdd) {
+      setSelectedServices(prev => [...prev, { 
+        ...serviceToAdd, 
+        isRedeemed: false, 
+        _tempId: Date.now().toString() // Assign a new unique ID
+      }]);
     }
     setServiceSearchQuery('');
   };
 
-  const handleRemoveService = (serviceId: string) => {
-    setSelectedServices(prev => prev.filter((s) => s._id !== serviceId));
+  const handleRemoveService = (_tempId: string) => {
+    setSelectedServices(prev => prev.filter((s) => s._tempId !== _tempId));
   };
 
   // Form submission handler
@@ -353,14 +360,14 @@ export default function EditAppointmentForm({
                     <Combobox.Option
                       key={service._id}
                       value={service._id}
-                      disabled={selectedServices.some((s) => s._id === service._id)}
+                      // ✅ REMOVED the disabled prop to allow re-selection
                       className={({ active }) =>
                         `relative cursor-pointer select-none py-2 pl-10 pr-4 ${
                           active ? 'bg-black text-white' : 'text-gray-900'
-                        } ${selectedServices.some((s) => s._id === service._id) ? 'opacity-50 cursor-not-allowed' : ''}`
+                        }`
                       }
                     >
-                      {({ active, selected }) => (
+                      {({ active }) => (
                         <>
                           <span className="block truncate font-normal">
                             {service.name} - ₹{service.price}
@@ -379,7 +386,7 @@ export default function EditAppointmentForm({
             </Combobox>
             <div className="mt-2 space-y-2">
               {selectedServices.map((service) => (
-                <div key={service._id} className={`flex items-center justify-between p-2 rounded ${service.isRedeemed ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-100'}`}>
+                <div key={service._tempId} /* ✅ Use _tempId for the key */ className={`flex items-center justify-between p-2 rounded ${service.isRedeemed ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-100'}`}>
                   <div>
                     <span className="font-medium text-sm">{service.name}</span>
                     <span className="text-xs text-gray-600 ml-2">({service.duration} min)</span>
@@ -396,7 +403,14 @@ export default function EditAppointmentForm({
                         {service.isRedeemed ? 'Redeemed' : `₹${service.price.toFixed(2)}`}
                       </span>
                     )}
-                    <button type="button" onClick={() => handleRemoveService(service._id)} className="text-red-500 hover:text-red-700 text-xl font-bold leading-none" disabled={service.isRedeemed}>&times;</button>
+                    <button 
+                      type="button" 
+                      onClick={() => handleRemoveService(service._tempId)} // ✅ Pass the unique _tempId
+                      className="text-red-500 hover:text-red-700 text-xl font-bold leading-none" 
+                      disabled={service.isRedeemed}
+                    >
+                        &times;
+                    </button>
                   </div>
                 </div>
               ))}
