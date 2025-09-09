@@ -165,11 +165,8 @@ export const PERMISSIONS = {
   // Package Permissions
   PACKAGES_SETTINGS_READ: 'read:packages-settings',
   PACKAGES_SETTINGS_MANAGE: 'manage:packages-settings',
-  
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   PACKAGES_REPORTS_READ: 'packages:reports:read',
   PACKAGES_REPORTS_MANAGE: 'packages:reports:manage',
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
@@ -180,12 +177,18 @@ export const PERMISSIONS = {
   TASK_SUBMIT_CHECKLIST: 'task:submit_checklist',
   TASK_REPORTS_READ: 'task:reports:read',
   
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Issue Management (like Task)
   ISSUE_READ: 'issue:read',
   ISSUE_MANAGE: 'issue:manage',
   ISSUE_SUBMIT_CHECKLIST: 'issue:submit_checklist',
   ISSUE_REPORTS_READ: 'issue:reports:read',
+
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Tool Stock Management
+  TOOL_STOCK_READ: 'tool_stock:read',
+  TOOL_STOCK_MANAGE: 'tool_stock:manage',
+  TOOL_STOCK_AUDIT: 'tool_stock:audit',
+  TOOL_STOCK_REPORTS: 'tool_stock:reports',
   // ▲▲▲ END OF ADDITION ▲▲▲
 
   ALL: '*'
@@ -219,13 +222,16 @@ export const PERMISSION_CATEGORIES = {
   TELECALLING_MANAGEMENT: 'Telecalling Management',
   BACK_OFFICE_MANAGEMENT:'Back Office Management',
   TASK_MANAGEMENT: 'Task Management',
+  ISSUE_MANAGEMENT: 'Issue Management',
   
   // ▼▼▼ ADD THIS LINE ▼▼▼
-  ISSUE_MANAGEMENT: 'Issue Management',
+  TOOL_STOCK_MANAGEMENT: 'Tool Stock Management',
   // ▲▲▲ END OF ADDITION ▲▲▲
 } as const;
 
 export const ALL_PERMISSIONS = [
+  // ... (all your existing permissions from User Management to Issue Management)
+  
   // User Management
   { permission: PERMISSIONS.USERS_CREATE, description: 'Create new users', category: PERMISSION_CATEGORIES.USER_MANAGEMENT },
   { permission: PERMISSIONS.USERS_READ, description: 'View user information', category: PERMISSION_CATEGORIES.USER_MANAGEMENT },
@@ -323,11 +329,8 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ, description: 'View the Gift Card Redemption report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE, description: 'Download the Gift Card Sold report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_MANAGE, description: 'Download the Gift Card Redemption report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
-  
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   { permission: PERMISSIONS.PACKAGES_REPORTS_READ, description: 'View Package Sales and Redemption reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.PACKAGES_REPORTS_MANAGE, description: 'Download Package reports (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
@@ -404,17 +407,26 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.TASK_SUBMIT_CHECKLIST, description: 'Submit daily Task checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_REPORTS_READ, description: 'View Task compliance reports for all staff', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
 
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Issue Management
   { permission: PERMISSIONS.ISSUE_READ, description: 'View assigned Issues and checklists', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
   { permission: PERMISSIONS.ISSUE_MANAGE, description: 'Create, update, and delete all Issues', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
   { permission: PERMISSIONS.ISSUE_SUBMIT_CHECKLIST, description: 'Submit daily Issue checklists', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
   { permission: PERMISSIONS.ISSUE_REPORTS_READ, description: 'View Issue compliance reports for all staff', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Tool Stock Management
+  { permission: PERMISSIONS.TOOL_STOCK_READ, description: 'View tool stock, history, and details', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
+  { permission: PERMISSIONS.TOOL_STOCK_MANAGE, description: 'Create/edit tools and perform stock adjustments (damage, loss)', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
+  { permission: PERMISSIONS.TOOL_STOCK_AUDIT, description: 'Perform and manage full stock audits', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
+  { permission: PERMISSIONS.TOOL_STOCK_REPORTS, description: 'Import tool data and export stock reports', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
+  // ▲▲▲ END OF ADDITION ▲▲▲
+  
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
 ];
+
+// ... (rest of your file: hasPermission, hasAnyPermission, ROLE_TEMPLATES, etc. remains the same)
+// hasPermission, hasAnyPermission, hasAllPermissions, etc. will work with the new permissions without any changes.
 
 export const hasPermission = (userPermissions: string[], requiredPermission: string): boolean => {
   if (userPermissions.includes('*')) return true;

@@ -16,7 +16,7 @@ import {
   ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 
-import { BeakerIcon, ClipboardList, PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon } from 'lucide-react';
+import { BeakerIcon, ClipboardList, PhoneForwarded, BarChartBig, PencilIcon, BookOpenIcon, ScaleIcon,Wrench } from 'lucide-react';
 import { DocumentCheckIcon } from '@heroicons/react/24/solid';
 
 
@@ -97,6 +97,22 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/back-office/pnl-summary', label: 'Profit-loss', icon: <ChartBarIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ]) },
       { href: '/back-office/monthly-comparison', label: 'profit-loss comparison', icon: <ScaleIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROFIT_LOSS_READ]) },
     ];
+    const inventorySubItems: NavSubItem[] = [
+      { 
+        href: '/inventory-checker', 
+        label: 'Product Inventory', // Renamed for clarity
+        icon: <BeakerIcon className="h-5 w-5" />, 
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) 
+      },
+      { 
+        href: '/tool-stock', 
+        label: 'Tool Stock Management', // Our new module
+        icon: <Wrench className="h-5 w-5" />, 
+        // IMPORTANT: You will need to add this permission to your permissions file!
+        show: hasAnyPermission(userPermissions, [PERMISSIONS.TOOL_STOCK_READ]),
+        basePathForActive: '/tool-stock' // Ensures it stays active on sub-pages like /audits
+      },
+    ];
 
     const canSeeStaffManagement = staffSubItems.some(item => item.show);
     const canSeeAdministration = adminSubItems.some(item => item.show);
@@ -106,6 +122,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const canSeeTaskManagement = taskSubItems.some(item => item.show);
     const canSeeIssueManagement = issueSubItems.some(item => item.show); // New
     const canSeeReconciliation = reconciliationSubItems.some(item => item.show);
+    const canSeeInventory = inventorySubItems.some(item => item.show);
     
     return [
       { href: '/dashboard', label: 'Dashboard', icon: <HomeIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.DASHBOARD_READ, PERMISSIONS.DASHBOARD_MANAGE]) },
@@ -129,7 +146,13 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       { href: '/procurement', label: 'Procurements', icon: <ShoppingCartIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_CREATE]) },
       { href: '/eb-upload', label: 'EB Upload', icon: <LightBulbIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EB_UPLOAD]) },
       { href: '/eb-view', label: 'EB View & Calculate', icon: <DocumentTextIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EB_VIEW_CALCULATE]) },
-      { href: '/inventory-checker', label: 'Inventory Checker', icon: <BeakerIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.INVENTORY_CHECKER_READ]) },
+       { 
+        href: '/inventory', 
+        label: 'Inventory', 
+        icon: <BeakerIcon className="h-5 w-5" />, 
+        show: canSeeInventory, 
+        subItems: inventorySubItems.filter(item => item.show) 
+      },
       { href: '/expenses', label: 'Expenses', icon: <ReceiptPercentIcon className="h-5 w-5" />, show: hasAnyPermission(userPermissions, [PERMISSIONS.EXPENSES_READ]) },
       { href: '/budgets', label: 'Budget Management', icon: <BanknotesIcon className="h-5 w-5" />, show: canSeeBudgetManagement, subItems: budgetSubItems.filter(item => item.show) },
       { href: '/sop', label: 'SOP Management', icon: <ClipboardList className="h-5 w-5" />, show: canSeeSopManagement, subItems: sopSubItems.filter(item => item.show) },

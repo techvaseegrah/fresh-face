@@ -11,6 +11,8 @@ const reportLinks = [
   { href: '/reports/gift-card-redemption', label: 'Gift Card Redemption' },
   { href: '/reports/package-sales', label: 'Package Sales' },
   { href: '/reports/package-redemptions', label: 'Package Redemptions' },
+  { href: '/reports/tool-stock-report', label: 'Tool Stock Report' },
+   { href: '/reports/audit-reports', label: 'Tool Audit Reports' },
 ];
 
 export function ReportsNav() {
