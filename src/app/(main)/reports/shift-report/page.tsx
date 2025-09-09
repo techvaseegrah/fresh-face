@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, ArrowRight, Loader2, AlertCircle, User, CalendarDays, Search, Moon } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useSession } from 'next-auth/react';
-import Card from '../../../../components/ui/Card'; // Assuming path is correct
+import Card from '../../../../components/ui/Card';
 
 // --- TYPE DEFINITIONS ---
 interface StaffMember { _id: string; staffIdNumber: string; name: string; status: 'active' | 'inactive'; }
@@ -106,18 +106,25 @@ export default function ShiftReportPage() {
     setError(null);
     try {
       const { startDate: weekStart, endDate: weekEnd } = getWeekDateRange(currentDate);
-      const shiftApiUrl = `/api/shifts?startDate=${weekStart.toISOString()}&endDate=${weekEnd.toISOString()}`;
-      const [staffResponse, shiftResponse] = await Promise.all([
-        tenantAwareFetch('/api/staff?action=list'),
-        tenantAwareFetch(shiftApiUrl)
-      ]);
-      if (!staffResponse.ok) throw new Error('Failed to fetch staff');
-      if (!shiftResponse.ok) throw new Error('Failed to fetch shifts');
+      
+      // --- THIS IS THE FIX: Fetch staff list first and handle specific permission errors ---
+      const staffResponse = await tenantAwareFetch('/api/staff?action=list');
+      if (!staffResponse.ok) {
+          if (staffResponse.status === 403 || staffResponse.status === 401) {
+              throw new Error("Could not load schedule. You may be missing the 'STAFF_LIST_READ' permission to view the staff list.");
+          }
+          throw new Error('Failed to fetch staff list. The report cannot be displayed.');
+      }
       const staffData = await staffResponse.json();
-      const shiftData = await shiftResponse.json();
       const activeStaff: StaffMember[] = staffData.data.filter((s: StaffMember) => s.status === 'active');
       setStaffList(activeStaff);
-
+      
+      // Proceed to fetch shifts only if staff list was successful
+      const shiftApiUrl = `/api/shifts?startDate=${weekStart.toISOString()}&endDate=${weekEnd.toISOString()}`;
+      const shiftResponse = await tenantAwareFetch(shiftApiUrl);
+      if (!shiftResponse.ok) throw new Error('Failed to fetch shift data.');
+      
+      const shiftData = await shiftResponse.json();
       const schedule: ShiftScheduleState = {};
       const shiftsByEmployeeAndDate = new Map<string, Map<string, Shift>>();
       if (shiftData.data) {
@@ -135,7 +142,9 @@ export default function ShiftReportPage() {
         });
       });
       setShifts(schedule);
-    } catch (err: any) { setError(err.message); } 
+    } catch (err: any) { 
+        setError(err.message); 
+    } 
     finally { setIsLoading(false); }
   }, [currentDate, tenantAwareFetch]);
 
@@ -185,13 +194,23 @@ export default function ShiftReportPage() {
         </div>
 
         <div className="p-4">
-          {error && <div className="bg-red-100 text-red-700 p-4 rounded-md mb-6"><AlertCircle size={20} className="inline mr-2"/><strong>Error:</strong> {error}</div>}
+          {error && (
+            <div className="p-6 bg-red-50 text-red-800 rounded-md mb-6 border border-red-200">
+                <div className="flex items-center gap-3">
+                    <AlertCircle size={24}/>
+                    <div>
+                        <h3 className="font-bold">Error Loading Report</h3>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                </div>
+            </div>
+          )}
           {isLoading ? (
             <div className="text-center p-16"><div className="flex justify-center items-center gap-3 text-gray-500 text-lg"><Loader2 className="animate-spin" size={24} /> Loading Schedule...</div></div>
-          ) : filteredStaffList.length === 0 ? (
+          ) : !error && filteredStaffList.length === 0 ? (
             <div className="text-center p-16"><h3 className="text-xl font-semibold">No Staff Found</h3><p className="text-gray-500 mt-2">{searchQuery ? `No staff member matches "${searchQuery}".` : 'There are no active staff to display.'}</p></div>
           ) : (
-            <div className="space-y-6">
+            !error && <div className="space-y-6">
               {filteredStaffList.map(staff => (
                 <StaffShiftCardReport
                   key={staff._id}

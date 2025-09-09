@@ -55,20 +55,26 @@ export default function IncentiveReportPage() {
     const endDate = toLocalDateString(weekDays[6]);
     try {
       const headers = new Headers({ 'X-Tenant-ID': currentTenantId });
-      const [staffRes, incentiveRes] = await Promise.all([
-        fetch('/api/staff?action=list', { headers }),
-        fetch(`/api/incentives/summary?startDate=${startDate}&endDate=${endDate}`, { headers })
-      ]);
-      if (!staffRes.ok) throw new Error("Failed to fetch staff list.");
+      
+      // --- THIS IS THE FIX: Fetch staff list first and handle specific permission errors ---
+      const staffRes = await fetch('/api/staff?action=list', { headers });
+      if (!staffRes.ok) {
+        if (staffRes.status === 403 || staffRes.status === 401) {
+            throw new Error("Could not load report. You may be missing the 'STAFF_LIST_READ' permission to view the staff list.");
+        }
+        throw new Error("Failed to fetch staff list. The report cannot be displayed.");
+      }
       const staffResult = await staffRes.json();
       setStaffList(staffResult.data.map((s: any) => ({ id: s.id, name: s.name })));
 
+      // Proceed to fetch incentive data only if staff list was successful
+      const incentiveRes = await fetch(`/api/incentives/summary?startDate=${startDate}&endDate=${endDate}`, { headers });
       if (!incentiveRes.ok) throw new Error("Failed to load incentive data.");
       const incentiveResult = await incentiveRes.json();
       setIncentiveData(incentiveResult.data);
     } catch (err: any) {
       setError(err.message);
-      toast.error(err.message);
+      // We don't toast here anymore since the error is displayed prominently.
     } finally {
       setIsLoading(false);
     }
@@ -84,7 +90,6 @@ export default function IncentiveReportPage() {
     });
   };
 
-  // --- THIS IS THE FIX: Restored full download logic ---
   const handleDownloadPDF = () => {
     if (filteredStaff.length === 0) return toast.info("No data to export.");
     const doc = new jsPDF();
@@ -111,7 +116,6 @@ export default function IncentiveReportPage() {
     doc.save(`incentive_report_${toLocalDateString(weekDays[0])}_${toLocalDateString(weekDays[6])}.pdf`);
   };
 
-  // --- THIS IS THE FIX: Restored full download logic ---
   const handleDownloadExcel = () => {
     if (filteredStaff.length === 0) return toast.info("No data to export.");
     const worksheetData: (string | number)[][] = [["Staff Name", ...weekDays.map(day => day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })), "Weekly Total"]];
@@ -161,12 +165,22 @@ export default function IncentiveReportPage() {
             <input type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 w-full pr-4 py-2 border border-gray-300 rounded-lg"/>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={isLoading}><Download size={16} className="mr-2 text-red-600"/>PDF</Button>
-            <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={isLoading}><Download size={16} className="mr-2 text-green-600"/>Excel</Button>
+            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={isLoading || !!error}><Download size={16} className="mr-2 text-red-600"/>PDF</Button>
+            <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={isLoading || !!error}><Download size={16} className="mr-2 text-green-600"/>Excel</Button>
           </div>
         </div>
 
-        {error && <div className="p-4 bg-red-100 text-red-700"><AlertCircle size={20} className="inline mr-2"/><strong>Error:</strong> {error}</div>}
+        {error && (
+            <div className="p-6 bg-red-50 text-red-800 rounded-md m-4 border border-red-200">
+                <div className="flex items-center gap-3">
+                    <AlertCircle size={24}/>
+                    <div>
+                        <h3 className="font-bold">Error Loading Report</h3>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                </div>
+            </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="min-w-full border-separate border-spacing-0">
@@ -184,10 +198,10 @@ export default function IncentiveReportPage() {
             <tbody className="bg-white">
               {isLoading ? (
                 <tr><td colSpan={9} className="text-center p-10 border-b border-gray-300"><Loader2 className="animate-spin inline-block mr-2"/>Loading Data...</td></tr>
-              ) : filteredStaff.length === 0 ? (
+              ) : !error && filteredStaff.length === 0 ? (
                 <tr><td colSpan={9} className="text-center p-10 border-b border-gray-300">No staff found matching your search.</td></tr>
               ) : (
-                filteredStaff.map(staff => {
+                !error && filteredStaff.map(staff => {
                   let weeklyTotal = 0;
                   return (
                     <tr key={staff.id} className="hover:bg-gray-50">

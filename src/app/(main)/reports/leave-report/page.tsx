@@ -12,10 +12,10 @@ import {
     CalendarOff,
     FileSpreadsheet,
     FileDown,
+    AlertCircle, // Import AlertCircle for error display
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-// --- THIS IS THE FIX 1: Correctly import autoTable ---
 import autoTable from 'jspdf-autotable';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
@@ -62,25 +62,39 @@ const LeaveReport = () => {
     useEffect(() => {
         if (sessionStatus === 'authenticated' && session?.user?.tenantId) {
             const tenantId = session.user.tenantId;
-            setLoading(true);
-            setError(null);
             const headers = { 'x-tenant-id': tenantId };
-            Promise.all([
-                fetch('/api/leave', { headers }),
-                fetch('/api/staff?action=list', { headers }),
-            ]).then(async ([leaveRes, staffRes]) => {
-                if (!leaveRes.ok) throw new Error(`Failed to fetch leave requests`);
-                if (!staffRes.ok) throw new Error(`Failed to fetch staff list`);
-                const leaveData = await leaveRes.json();
-                const staffData = await staffRes.json();
-                setLeaveRequests(leaveData.data || []);
-                setStaffList(staffData.data || []);
-            }).catch((err: any) => {
-                setError(err.message);
-                toast.error(`Error fetching data: ${err.message}`);
-            }).finally(() => {
-                setLoading(false);
-            });
+
+            const fetchData = async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    // --- THIS IS THE FIX: Fetch data sequentially instead of all at once ---
+                    // 1. Fetch the primary data (leave requests). If this fails, show an error.
+                    const leaveRes = await fetch('/api/leave', { headers });
+                    if (!leaveRes.ok) {
+                        throw new Error(`Failed to fetch leave requests. The report cannot be displayed.`);
+                    }
+                    const leaveData = await leaveRes.json();
+                    setLeaveRequests(leaveData.data || []);
+
+                    // 2. Attempt to fetch the secondary data (staff list). This is not critical.
+                    const staffRes = await fetch('/api/staff?action=list', { headers });
+                    if (staffRes.ok) {
+                        const staffData = await staffRes.json();
+                        setStaffList(staffData.data || []);
+                    } else {
+                        // If it fails, log a warning and continue. The main report will still work.
+                        console.warn("Could not fetch the staff list, possibly due to missing 'STAFF_LIST_READ' permission. 'Total Staff' card may be inaccurate.");
+                        setStaffList([]); // Ensure staff list is empty on failure
+                    }
+                } catch (err: any) {
+                    setError(err.message);
+                    toast.error(`Error: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchData();
         }
     }, [sessionStatus, session]);
 
@@ -131,7 +145,6 @@ const LeaveReport = () => {
             tableRows.push(reqData);
         });
         
-        // --- THIS IS THE FIX 2: Correctly call autoTable ---
         autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
         doc.text("Leave Request History", 14, 15);
         doc.save(`Leave_History_Report.pdf`);
@@ -139,7 +152,14 @@ const LeaveReport = () => {
     };
 
     if (loading || sessionStatus === 'loading') return <div className="flex items-center justify-center h-screen bg-slate-50 text-xl text-gray-600">Loading Leave Report...</div>;
-    if (error) return <div className="p-8 text-center text-red-600 bg-red-50 rounded-lg">{error}</div>;
+    
+    // Display a prominent error if the primary data failed to load
+    if (error) return (
+        <div className="p-8 text-center text-red-700 bg-red-50 rounded-lg flex items-center justify-center gap-3">
+            <AlertCircle size={24} />
+            <p className='font-semibold'>{error}</p>
+        </div>
+    );
 
     return (
         <div className="font-sans">
@@ -172,18 +192,15 @@ const LeaveReport = () => {
                             <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={filteredHistoryRequests.length === 0}><FileDown size={16} className="mr-2"/>PDF</Button>
                         </div>
                     </div>
-                    {/* --- THIS IS THE FIX 3: Removed onRowClick --- */}
                     <LeaveHistoryTable requests={filteredHistoryRequests} />
                 </div>
             </Card>
-
-            {/* The EmployeeHistoryDrawer component has been completely removed */}
         </div>
     );
 };
 
 
-// --- Sub-components ---
+// --- Sub-components (No changes here) ---
 const LeaveHistoryTable = ({ requests }: { requests: LeaveRequest[]; }) => {
     if (requests.length === 0) {
         return (
@@ -207,7 +224,6 @@ const LeaveHistoryTable = ({ requests }: { requests: LeaveRequest[]; }) => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {requests.map((req) => (
-                            // --- THIS IS THE FIX 3: Removed onClick from table row ---
                             <tr key={req._id} className="hover:bg-slate-50 transition-colors duration-200">
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="flex items-center">
