@@ -6,10 +6,29 @@ import { toast } from 'react-toastify';
 // TENANT-AWARE: Import useSession to get the tenant ID
 import { useSession } from 'next-auth/react';
 
-// --- Type Definitions (unchanged) ---
+// --- Type Definitions ---
 export interface PositionOption { value: string; label: string; }
-export interface StaffMember { id: string; staffIdNumber: string; name: string; email: string; phone: string; position: string; joinDate: string; salary: number; address?: string; image: string | null; status: 'active' | 'inactive'; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; createdAt?: string; updatedAt?: string; }
-export interface NewStaffPayload { staffIdNumber: string; name: string; email:string; phone: string; position: string; joinDate: string; salary: number; address?: string; image?: string | null; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; }
+export interface StaffMember { 
+    id: string; 
+    staffIdNumber: string; 
+    name: string; 
+    email: string; 
+    phone: string; 
+    position: string; 
+    joinDate: string; 
+    salary: number; 
+    address?: string; 
+    image: string | null; 
+    status: 'active' | 'inactive'; 
+    aadharNumber?: string; 
+    aadharImage?: string | null; 
+    passbookImage?: string | null; 
+    agreementImage?: string | null; 
+    createdAt?: string; 
+    updatedAt?: string;
+    isAvailableForBooking?: boolean; // ✅ ADD THIS LINE
+}
+export interface NewStaffPayload { staffIdNumber: string; name: string; email:string; phone: string; position: string; joinDate: string; salary: number; address?: string; image?: string | null; aadharNumber?: string; aadharImage?: string | null; passbookImage?: string | null; agreementImage?: string | null; password?: string; isAvailableForBooking?: boolean; }
 export type UpdateStaffPayload = Partial<Omit<StaffMember, 'id' | 'createdAt' | 'updatedAt'>>;
 export interface AdvancePaymentType { id: string; staffId: string | { id: string; name: string; image?: string; position?: string; }; requestDate: string; amount: number; reason: string; repaymentPlan: string; status: 'pending' | 'approved' | 'rejected'; approvedDate: string | null; createdAt?: string; updatedAt?: string; }
 export interface NewAdvancePaymentPayload { staffId: string; amount: number; reason: string; repaymentPlan: string; }
@@ -44,7 +63,6 @@ export interface StaffContextType {
   salaryRecords: SalaryRecordType[]; loadingSalary: boolean; errorSalary: string | null; fetchSalaryRecords: (filter?: { staffId?: string; year?: number; month?: string; populateStaff?: 'true' | 'false' | boolean; }) => Promise<void>;
   processSalary: (payload: ProcessSalaryPayload) => Promise<SalaryRecordType>;
   markSalaryAsPaid: (record: SalaryRecordType, staffDetails: StaffMember, paidDate: string) => Promise<SalaryRecordType>;
-  // ✅ --- ADDED: Type definition for the new password function ---
   updateStaffPassword: (staffId: string, password: string) => Promise<void>;
 }
 
@@ -197,13 +215,12 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     }
   }, [tenantAwareFetch, positionOptions, addPositionOption]);
   
-  // ✅ --- ADDED: Function for updating the password ---
   const updateStaffPassword = useCallback(async (staffId: string, password: string): Promise<void> => {
-    setErrorStaff(null); // Use staff error state for feedback
+    setErrorStaff(null);
     try {
       const response = await tenantAwareFetch(`/api/staff?id=${staffId}`, {
         method: 'PUT',
-        body: JSON.stringify({ password }), // Only send the password
+        body: JSON.stringify({ password }),
       });
 
       if (!response.ok) {
@@ -214,18 +231,16 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
       if (!result.success) {
         throw new Error(result.error || 'API call succeeded but failed to update password');
       }
-      // No local state update is needed, success is handled by the component.
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error updating password';
-      setErrorStaff(msg); // Set error state for context consumers
+      setErrorStaff(msg);
       console.error('Error updating staff password:', error);
-      throw new Error(msg); // Re-throw for the component to catch and show a toast
+      throw new Error(msg);
     }
   }, [tenantAwareFetch]);
 
   const getStaffById = useCallback((staffId: string) => staffMembers.find(m => m.id === staffId), [staffMembers]);
   
-  // ... (All other functions like fetchAdvancePayments, requestAdvance, etc., remain completely unchanged)
   const fetchAdvancePayments = useCallback(async () => {
     setLoadingAdvancePayments(true);
     setErrorAdvancePayments(null);
@@ -578,7 +593,6 @@ export const StaffProvider: React.FC<StaffProviderProps> = ({ children }) => {
     removeWeekOff,
     performanceRecords, loadingPerformance, errorPerformance, fetchPerformanceRecords, recordPerformance,
     salaryRecords, loadingSalary, errorSalary, fetchSalaryRecords, processSalary, markSalaryAsPaid,
-    // ✅ --- ADDED: The new password function is now available to the context ---
     updateStaffPassword,
   };
 

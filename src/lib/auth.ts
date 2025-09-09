@@ -7,13 +7,13 @@ import connectToDatabase from '@/lib/mongodb';
 import User from '@/models/user';
 import Tenant from '@/models/Tenant';
 import Staff from '@/models/staff';
-import Role from '@/models/role'; // <-- IMPORT THE ROLE MODEL
+import Role from '@/models/role';
 import bcrypt from 'bcryptjs';
 import { getToken } from 'next-auth/jwt';
 
 export const authOptions: NextAuthOptions = {
   providers: [
-    // --- PROVIDER 1: Admin/Manager Login (No changes needed here) ---
+    // --- PROVIDER 1: Admin/Manager Login ---
     CredentialsProvider({
       id: 'credentials',
       name: 'credentials',
@@ -50,8 +50,6 @@ export const authOptions: NextAuthOptions = {
         if (!isPasswordValid) { throw new Error('Invalid credentials.'); }
 
         User.findByIdAndUpdate(user._id, { lastLogin: new Date() }).exec();
-        // This authorize function returns a rich user object, which is correct.
-        // The problem was what we did with it in the callbacks.
         return {
           id: user._id.toString(), email: user.email, name: user.name,
           tenantId: tenant._id.toString(), subdomain: tenant.subdomain,
@@ -62,7 +60,7 @@ export const authOptions: NextAuthOptions = {
         };
       }
     }),
-    // --- PROVIDER 2: Staff Login (No changes needed here for now) ---
+    // --- PROVIDER 2: Staff Login ---
     CredentialsProvider({
         id: 'staff-credentials',
         name: 'Staff Credentials',
@@ -104,52 +102,54 @@ export const authOptions: NextAuthOptions = {
         }
     })
   ],
-  // --- ▼▼▼ THIS IS THE FIX ▼▼▼ ---
   callbacks: {
-    /**
-     * The JWT callback is triggered first.
-     * Its job is to create a small, secure token with only ESSENTIAL IDENTIFIERS.
-     * NEVER put large objects (like a permissions array) in the JWT.
-     */
     async jwt({ token, user }) {
-      if (user) { // This block only runs on initial sign-in
+      if (user) {
         token.id = user.id;
         token.tenantId = user.tenantId;
         token.subdomain = user.subdomain;
-        
-        // CRITICAL FIX: Store ONLY the ID of the role, not the entire role object.
         token.roleId = user.role.id; 
       }
       return token;
     },
-    /**
-     * The session callback is triggered next.
-     * Its job is to take the lean token and build the full session object that the frontend will use.
-     * This is the correct place to fetch rich data from the database.
-     */
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
         session.user.tenantId = token.tenantId as string;
         session.user.subdomain = token.subdomain as string;
         
-        // CRITICAL FIX: Use the roleId from the token to fetch the complete, fresh role
-        // from the database. This ensures permissions are always up-to-date and avoids
-        // token size limits.
         await connectToDatabase();
-        const userRole = await Role.findById(token.roleId).lean();
-        session.user.role = userRole; // Assign the full role object to the session
+        const userRole = token.roleId === 'staff-role' 
+            ? { _id: 'staff-role', name: 'staff', displayName: 'Staff', permissions: [] }
+            : await Role.findById(token.roleId).lean();
+        session.user.role = userRole;
       }
       return session;
+    },
+
+    // --- ▼▼▼ THIS IS THE DEFINITIVE FIX ▼▼▼ ---
+    /**
+     * This callback controls the final redirect destination for sign-in, sign-out, etc.
+     * We are overriding the default behavior to explicitly trust the callbackUrl
+     * provided by our client-side signOut function, which correctly includes the subdomain.
+     */
+    async redirect({ url, baseUrl }) {
+      // The `url` parameter is the URL that NextAuth wants to redirect to.
+      // For our signOut call, `url` will be "http://admin.localhost:3000/login".
+      // The `baseUrl` is what NextAuth thinks the app's root is, likely "http://localhost:3000".
+      
+      // By returning `url` directly, we force NextAuth to use our intended subdomain URL,
+      // bypassing its default security check that was causing the problem.
+      return url;
     }
+    // --- ▲▲▲ END OF THE FIX ▲▲▲ ---
   },
-  // --- ▲▲▲ END OF THE FIX ▲▲▲ ---
   pages: { signIn: '/login' },
   session: { strategy: 'jwt' },
   secret: process.env.NEXTAUTH_SECRET,
 };
 
-// --- Helper Functions (No changes needed, but ensure they are exported) ---
+// --- Helper Functions ---
 export function extractTokenFromRequest(req: NextRequest): string | null {
   const authHeader = req.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {

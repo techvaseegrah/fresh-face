@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
   Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
-  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff,
+  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, BookCheck, // Added BookCheck for clarity, can be any icon
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -29,6 +29,7 @@ interface StaffFormData {
   passbookImage: string | null;
   agreementImage: string | null;
   password: string;
+  isAvailableForBooking: boolean; // ✅ ADD THIS STATE
 }
 
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
@@ -41,10 +42,10 @@ const DocumentViewerModal: React.FC<{
   if (!src) return null;
   return (
     <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] overflow-auto w-full mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b">
           <h3 className="text-lg font-semibold">{title}</h3>
-          <Button variant="ghost" onClick={onClose}><XCircle /></Button>
+          <Button variant="ghost" onClick={onClose} className="min-h-[44px] min-w-[44px]"><XCircle /></Button>
         </div>
         <div className="p-4">
           <img src={src} alt={title} className="w-full h-auto object-contain" />
@@ -104,20 +105,26 @@ const FileUploadInput: React.FC<{
   };
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1"><div className="flex items-center gap-2">{icon}<span>{label}</span></div></label>
-      <div className="mt-1 flex items-center gap-3 p-3 border border-gray-300 rounded-md">
+      <label className="block text-sm font-medium text-gray-700 mb-2"><div className="flex items-center gap-2">{icon}<span>{label}</span></div></label>
+      <div className="mt-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-3 border-2 border-gray-300 rounded-lg bg-white">
         <input type="file" id={id} accept="image/*,application/pdf" onChange={handleFileSelect} className="hidden" disabled={isSubmitting}/>
         {fileData ? (
           <>
-            <FileText className="h-8 w-8 text-indigo-500 flex-shrink-0" />
-            <div className="flex-grow text-sm text-gray-700">File uploaded.</div>
-            <Button type="button" variant="outline" size="sm" icon={<Eye size={14} />} onClick={onView} disabled={isSubmitting}>View</Button>
-            <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => onFileChange(null)} className="text-red-500" title="Remove File" disabled={isSubmitting}/>
+            <div className="flex items-center gap-3 flex-grow">
+              <FileText className="h-8 w-8 text-indigo-500 flex-shrink-0" />
+              <div className="flex-grow text-sm text-gray-700">File uploaded.</div>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" icon={<Eye size={14} />} onClick={onView} disabled={isSubmitting} className="min-h-[44px]">View</Button>
+              <Button type="button" variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => onFileChange(null)} className="text-red-500 min-h-[44px] min-w-[44px]" title="Remove File" disabled={isSubmitting}/>
+            </div>
           </>
         ) : (
           <>
-            <Button type="button" variant="outline" icon={<Upload size={16} />} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting}>Upload File</Button>
-            <p className="text-xs text-gray-500">Max 5MB</p>
+            <div className="flex-grow">
+              <Button type="button" variant="outline" icon={<Upload size={16} />} onClick={() => document.getElementById(id)?.click()} disabled={isSubmitting} className="w-full min-h-[44px]">Upload File</Button>
+            </div>
+            <p className="text-xs text-gray-500 text-center sm:text-right">Max 5MB</p>
           </>
         )}
       </div>
@@ -137,6 +144,7 @@ const AddStaffPage: React.FC = () => {
     salary: "", address: "", image: DEFAULT_STAFF_IMAGE, aadharNumber: "",
     aadharImage: null, passbookImage: null, agreementImage: null,
     password: "",
+    isAvailableForBooking: true, // ✅ INITIALIZE NEW STATE
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -193,18 +201,14 @@ const AddStaffPage: React.FC = () => {
 
   // --- MODIFIED: Added real-time input validation ---
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    let processedValue = value;
-
-    if (name === "name") {
-      // Allow only letters and spaces
-      processedValue = value.replace(/[^a-zA-Z\s]/g, "");
-    } else if (name === "phone" || name === "aadharNumber" || name === "salary") {
-      // Allow only numbers
-      processedValue = value.replace(/[^0-9]/g, "");
+    // ✅ HANDLE CHECKBOX INPUT
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+        const { checked } = e.target as HTMLInputElement;
+        setFormData((prevData) => ({ ...prevData, [name]: checked }));
+    } else {
+        setFormData((prevData) => ({ ...prevData, [name]: value }));
     }
-
-    setFormData((prevData) => ({ ...prevData, [name]: processedValue }));
   };
 
   const handleFileChange = (fieldName: keyof StaffFormData, fileData: string | null) => {
@@ -249,12 +253,13 @@ const AddStaffPage: React.FC = () => {
     if (formData.salary !== "" && Number(formData.salary) < 0) { toast.error("Salary cannot be negative."); setIsSubmitting(false); return; }
 
     const apiData: NewStaffPayload = {
-      staffIdNumber: formData.staffIdNumber, name: formData.name, email: formData.email || undefined,
+      staffIdNumber: formData.staffIdNumber, name: formData.name, email: formData.email || "",
       phone: formData.phone, position: formData.position, joinDate: formData.joinDate,
-      salary: Number(formData.salary) || 0, address: formData.address || undefined,
+      salary: Number(formData.salary) || 0, address: formData.address || "",
       image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image, aadharNumber: formData.aadharNumber,
       aadharImage: formData.aadharImage, passbookImage: formData.passbookImage, agreementImage: formData.agreementImage,
       password: formData.password,
+      isAvailableForBooking: formData.isAvailableForBooking, // ✅ SEND NEW DATA TO API
     };
 
     try {
@@ -267,7 +272,7 @@ const AddStaffPage: React.FC = () => {
   };
 
   const IconLabel: React.FC<{ htmlFor: string; icon: React.ReactNode; text: string; }> = ({ htmlFor, icon, text }) => (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 mb-1"><div className="flex items-center gap-2">{icon}<span>{text}</span></div></label>
+    <label htmlFor={htmlFor} className="block text-sm font-medium text-gray-700 mb-2"><div className="flex items-center gap-2">{icon}<span>{text}</span></div></label>
   );
 
   return (
@@ -379,8 +384,35 @@ const AddStaffPage: React.FC = () => {
             <IconLabel htmlFor="address" icon={<MapPin size={14} className="text-gray-500" />} text="Address"/>
             <textarea id="address" name="address" rows={3} value={formData.address} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}></textarea>
           </div>
-          <div className="md:col-span-2 border-t pt-5 mt-3 space-y-4">
-            <h3 className="text-lg font-medium text-gray-900">Documents</h3>
+          
+           {/* --- ✅ ADDED THE NEW CHECKBOX FIELD HERE --- */}
+           <div className="md:col-span-2 border-t pt-5">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Settings</h3>
+            <div className="relative flex items-start">
+                <div className="flex h-6 items-center">
+                    <input
+                        id="isAvailableForBooking"
+                        name="isAvailableForBooking"
+                        type="checkbox"
+                        checked={formData.isAvailableForBooking}
+                        onChange={handleInputChange}
+                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black disabled:opacity-50"
+                        disabled={isSubmitting}
+                    />
+                </div>
+                <div className="ml-3 text-sm leading-6">
+                    <label htmlFor="isAvailableForBooking" className="font-medium text-gray-900">
+                       Available for Booking
+                    </label>
+                    <p className="text-gray-500">
+                        If checked, this staff member will appear as an option for new appointments.
+                    </p>
+                </div>
+            </div>
+          </div>
+          
+          <div className="md:col-span-2 border-t pt-4 sm:pt-5 mt-3 space-y-4">
+            <h3 className="text-base sm:text-lg font-medium text-gray-900">Documents</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FileUploadInput id="aadhar-upload" label="Aadhar Card" icon={<ShieldCheck size={16} className="text-gray-500" />} fileData={formData.aadharImage} onFileChange={(data) => handleFileChange("aadharImage", data)} onView={() => setViewingDocument({ src: formData.aadharImage, title: "Aadhar Card" })} isSubmitting={isSubmitting}/>
               <FileUploadInput id="passbook-upload" label="Bank Passbook" icon={<Banknote size={16} className="text-gray-500" />} fileData={formData.passbookImage} onFileChange={(data) => handleFileChange("passbookImage", data)} onView={() => setViewingDocument({ src: formData.passbookImage, title: "Bank Passbook" })} isSubmitting={isSubmitting}/>
@@ -388,9 +420,30 @@ const AddStaffPage: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="mt-8 flex justify-end space-x-3">
-          <Button type="button" variant="outline" onClick={() => router.back()} disabled={isSubmitting}>Cancel</Button>
-          <Button type="submit" variant="black" icon={<Save size={16} />} disabled={isSubmitting} isLoading={isSubmitting}>{isSubmitting ? "Saving..." : "Save Staff Member"}</Button>
+        
+        {/* Fixed bottom save bar for mobile */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-10 md:relative md:bg-transparent md:border-t-0 md:p-0 md:mt-8">
+          <div className="flex flex-col md:flex-row justify-end gap-3 md:gap-3">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => router.back()} 
+              disabled={isSubmitting}
+              className="w-full md:w-auto min-h-[48px] order-2 md:order-1"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              variant="black" 
+              icon={<Save size={16} />} 
+              disabled={isSubmitting} 
+              isLoading={isSubmitting}
+              className="w-full md:w-auto min-h-[48px] bg-green-600 hover:bg-green-700 focus:ring-green-500 order-1 md:order-2"
+            >
+              {isSubmitting ? "Saving..." : "Save Staff Member"}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

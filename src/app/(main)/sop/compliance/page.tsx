@@ -260,29 +260,71 @@ export default function SopReportPage() {
 
     return (
         <>
-            <div className="p-6 bg-gray-50 min-h-screen">
-                <h1 className="text-3xl font-bold text-gray-900 mb-4">SOP Compliance Report</h1>
+            <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">SOP Compliance Report</h1>
                 
-                <div className="flex flex-wrap justify-between items-center gap-4 mb-6 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                    <div className="flex flex-wrap gap-4 items-center">
+                {/* Mobile Responsive Filters */}
+                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
+                    {/* Date Filters */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div>
-                            <label htmlFor="startDate" className="text-sm font-medium text-gray-700">Start Date</label>
-                            <input id="startDate" type="date" value={format(startDate, 'yyyy-MM-dd')} onChange={e => setStartDate(new Date(e.target.value))} className="form-input ml-2" />
+                            <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                            <input 
+                                id="startDate" 
+                                type="date" 
+                                value={format(startDate, 'yyyy-MM-dd')} 
+                                onChange={e => setStartDate(new Date(e.target.value))} 
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                            />
                         </div>
                         <div>
-                            <label htmlFor="endDate" className="text-sm font-medium text-gray-700">End Date</label>
-                            <input id="endDate" type="date" value={format(endDate, 'yyyy-MM-dd')} onChange={e => setEndDate(new Date(e.target.value))} className="form-input ml-2" />
+                            <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                            <input 
+                                id="endDate" 
+                                type="date" 
+                                value={format(endDate, 'yyyy-MM-dd')} 
+                                onChange={e => setEndDate(new Date(e.target.value))} 
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                            />
                         </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setFilter('unreviewed')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${filter === 'unreviewed' ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Awaiting Review</button>
-                            <button onClick={() => setFilter('all')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${filter === 'all' ? 'bg-blue-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Show All</button>
+                    
+                    {/* Filter Buttons */}
+                    <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center gap-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full md:w-auto">
+                            <span className="text-sm font-medium text-gray-700 mb-2 sm:mb-0">Filter:</span>
+                            <div className="flex gap-2 w-full sm:w-auto">
+                                <button 
+                                    onClick={() => setFilter('unreviewed')} 
+                                    className={`flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-md transition-colors min-h-[44px] ${
+                                        filter === 'unreviewed' 
+                                            ? 'bg-blue-600 text-white shadow' 
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                    }`}
+                                >
+                                    Awaiting Review
+                                </button>
+                                <button 
+                                    onClick={() => setFilter('all')} 
+                                    className={`flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-md transition-colors min-h-[44px] ${
+                                        filter === 'all' 
+                                            ? 'bg-blue-600 text-white shadow' 
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                    }`}
+                                >
+                                    Show All
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2 border-l pl-4">
-                             <Menu as="div" className="relative inline-block text-left">
+                        
+                        {/* Export Menu */}
+                        <div className="w-full md:w-auto">
+                            <Menu as="div" className="relative inline-block text-left w-full md:w-auto">
                                 <div>
-                                    <Menu.Button disabled={!data || isExporting} className="inline-flex w-full justify-center items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/75 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                    <Menu.Button 
+                                        disabled={!data || isExporting} 
+                                        className="inline-flex w-full md:w-auto justify-center items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/75 disabled:bg-gray-400 disabled:cursor-not-allowed min-h-[44px]"
+                                    >
                                         {isExporting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
                                         Export Report
                                         <ChevronDownIcon className="ml-2 -mr-1 h-5 w-5 text-blue-200 hover:text-blue-100" aria-hidden="true" />
@@ -290,15 +332,47 @@ export default function SopReportPage() {
                                 </div>
                                 <Transition as={Fragment} enter="transition ease-out duration-100" enterFrom="transform opacity-0 scale-95" enterTo="transform opacity-100 scale-100" leave="transition ease-in duration-75" leaveFrom="transform opacity-100 scale-100" leaveTo="transform opacity-0 scale-95">
                                     <Menu.Items className="absolute right-0 mt-2 w-64 origin-top-right divide-y divide-gray-100 rounded-md bg-white shadow-lg ring-1 ring-black/5 focus:outline-none z-20">
-                                        <div className="px-1 py-1 ">
+                                        <div className="px-1 py-1">
                                             <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Summary Report</div>
-                                            <Menu.Item>{({ active }) => (<button onClick={handleExportSummaryExcel} className={`${active ? 'bg-green-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}><FileSpreadsheet className="mr-2 h-5 w-5 text-green-700" aria-hidden="true" />Export as Excel (.xlsx)</button>)}</Menu.Item>
-                                            <Menu.Item>{({ active }) => (<button onClick={handleExportSummaryPDF} className={`${active ? 'bg-red-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}><FileText className="mr-2 h-5 w-5 text-red-700" aria-hidden="true" />Export as PDF</button>)}</Menu.Item>
+                                            <Menu.Item>{({ active }) => (
+                                                <button 
+                                                    onClick={handleExportSummaryExcel} 
+                                                    className={`${active ? 'bg-green-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm min-h-[44px]`}
+                                                >
+                                                    <FileSpreadsheet className="mr-2 h-5 w-5 text-green-700" aria-hidden="true" />
+                                                    Export as Excel (.xlsx)
+                                                </button>
+                                            )}</Menu.Item>
+                                            <Menu.Item>{({ active }) => (
+                                                <button 
+                                                    onClick={handleExportSummaryPDF} 
+                                                    className={`${active ? 'bg-red-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm min-h-[44px]`}
+                                                >
+                                                    <FileText className="mr-2 h-5 w-5 text-red-700" aria-hidden="true" />
+                                                    Export as PDF
+                                                </button>
+                                            )}</Menu.Item>
                                         </div>
                                         <div className="px-1 py-1">
                                             <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Detailed Report (with Remarks)</div>
-                                            <Menu.Item>{({ active }) => (<button onClick={handleExportDetailedExcel} className={`${active ? 'bg-green-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}><FileSpreadsheet className="mr-2 h-5 w-5 text-green-700" aria-hidden="true" />Export as Excel (.xlsx)</button>)}</Menu.Item>
-                                            <Menu.Item>{({ active }) => (<button onClick={handleExportDetailedPDF} className={`${active ? 'bg-red-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}><FileText className="mr-2 h-5 w-5 text-red-700" aria-hidden="true" />Export as PDF</button>)}</Menu.Item>
+                                            <Menu.Item>{({ active }) => (
+                                                <button 
+                                                    onClick={handleExportDetailedExcel} 
+                                                    className={`${active ? 'bg-green-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm min-h-[44px]`}
+                                                >
+                                                    <FileSpreadsheet className="mr-2 h-5 w-5 text-green-700" aria-hidden="true" />
+                                                    Export as Excel (.xlsx)
+                                                </button>
+                                            )}</Menu.Item>
+                                            <Menu.Item>{({ active }) => (
+                                                <button 
+                                                    onClick={handleExportDetailedPDF} 
+                                                    className={`${active ? 'bg-red-500 text-white' : 'text-gray-900'} group flex w-full items-center rounded-md px-2 py-2 text-sm min-h-[44px]`}
+                                                >
+                                                    <FileText className="mr-2 h-5 w-5 text-red-700" aria-hidden="true" />
+                                                    Export as PDF
+                                                </button>
+                                            )}</Menu.Item>
                                         </div>
                                     </Menu.Items>
                                 </Transition>
@@ -307,7 +381,8 @@ export default function SopReportPage() {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto bg-white rounded-lg shadow border border-gray-200">
+                {/* Desktop Table View - Hidden on Mobile */}
+                <div className="hidden md:block overflow-x-auto bg-white rounded-lg shadow border border-gray-200">
                     {error && <div className="p-4 text-red-500 font-medium">{error.message}</div>}
                     {(!data && !error) && <div className="p-10 flex justify-center items-center"><Loader2 className="animate-spin text-gray-400" size={32} /></div>}
                     {data && Array.isArray(data.staff) && (
@@ -351,6 +426,170 @@ export default function SopReportPage() {
                                 ))}
                             </tbody>
                         </table>
+                    )}
+                </div>
+
+                {/* Mobile Card View - Visible only on Mobile */}
+                <div className="md:hidden bg-white rounded-lg shadow border border-gray-200">
+                    {error && <div className="p-4 text-red-500 font-medium">{error.message}</div>}
+                    {(!data && !error) && <div className="p-10 flex justify-center items-center"><Loader2 className="animate-spin text-gray-400" size={32} /></div>}
+                    {data && Array.isArray(data.staff) && (
+                        <div className="divide-y divide-gray-200">
+                            {data.staff.map((staff: Staff) => {
+                                // Calculate staff summary for mobile
+                                const totalDays = dateRange.length;
+                                let approvedDays = 0, pendingDays = 0, rejectedDays = 0, missedDays = 0, notAssignedDays = 0;
+                                
+                                dateRange.forEach(date => {
+                                    if (!staff.roleId) {
+                                        notAssignedDays++;
+                                        return;
+                                    }
+                                    const assignedChecklists = data.checklists.filter(c => c.roles.includes(staff.roleId!._id));
+                                    const submissionsForDay = data.submissions.filter(s => s.staff === staff._id && format(new Date(s.submissionDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
+                                    
+                                    if (assignedChecklists.length === 0) {
+                                        notAssignedDays++;
+                                    } else if (submissionsForDay.length === 0) {
+                                        missedDays++;
+                                    } else if (submissionsForDay.some(s => s.status === 'rejected')) {
+                                        rejectedDays++;
+                                    } else if (submissionsForDay.some(s => s.status === 'pending_review')) {
+                                        pendingDays++;
+                                    } else {
+                                        approvedDays++;
+                                    }
+                                });
+                                
+                                const hasActionableItems = pendingDays > 0 || rejectedDays > 0;
+                                const shouldShowInFilter = filter === 'all' || (filter === 'unreviewed' && hasActionableItems);
+                                
+                                if (!shouldShowInFilter) return null;
+                                
+                                return (
+                                    <div key={staff._id} className="p-4">
+                                        {/* Staff Header */}
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div>
+                                                <h3 className="font-semibold text-gray-900 text-lg">{staff.name}</h3>
+                                                <p className="text-sm text-gray-500">{staff.roleId?.displayName ?? 'No Role Assigned'}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs text-gray-500">Period</p>
+                                                <p className="text-sm font-medium text-gray-700">
+                                                    {format(startDate, 'MMM d')} - {format(endDate, 'MMM d')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Status Summary */}
+                                        <div className="grid grid-cols-2 gap-3 mb-4">
+                                            {approvedDays > 0 && (
+                                                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
+                                                        <div>
+                                                            <p className="text-sm font-medium text-green-800">Approved</p>
+                                                            <p className="text-lg font-bold text-green-900">{approvedDays}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {pendingDays > 0 && (
+                                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <ClockIcon className="h-5 w-5 text-blue-500 mr-2" />
+                                                        <div>
+                                                            <p className="text-sm font-medium text-blue-800">Pending</p>
+                                                            <p className="text-lg font-bold text-blue-900">{pendingDays}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {rejectedDays > 0 && (
+                                                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mr-2" />
+                                                        <div>
+                                                            <p className="text-sm font-medium text-red-800">Rejected</p>
+                                                            <p className="text-lg font-bold text-red-900">{rejectedDays}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {missedDays > 0 && (
+                                                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                                    <div className="flex items-center">
+                                                        <XCircleIcon className="h-5 w-5 text-red-500 mr-2" />
+                                                        <div>
+                                                            <p className="text-sm font-medium text-red-800">Missed</p>
+                                                            <p className="text-lg font-bold text-red-900">{missedDays}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Daily Status Grid */}
+                                        <div className="border-t pt-4">
+                                            <h4 className="text-sm font-medium text-gray-700 mb-3">Daily Status</h4>
+                                            <div className="grid grid-cols-7 gap-1">
+                                                {dateRange.map(date => {
+                                                    if (!staff.roleId) {
+                                                        return (
+                                                            <div key={date.toISOString()} className="aspect-square flex flex-col items-center justify-center bg-gray-100 rounded border p-1">
+                                                                <MinusCircleIcon className="h-4 w-4 text-gray-400" />
+                                                                <span className="text-xs text-gray-500 mt-1">{format(date, 'd')}</span>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    
+                                                    const assignedChecklists = data.checklists.filter(c => c.roles.includes(staff.roleId!._id));
+                                                    const submissionsForDay = data.submissions.filter(s => s.staff === staff._id && format(new Date(s.submissionDate), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
+                                                    
+                                                    let statusColor = 'bg-gray-100', statusIcon = <MinusCircleIcon className="h-4 w-4 text-gray-400" />, isClickable = false;
+                                                    
+                                                    if (assignedChecklists.length > 0) {
+                                                        if (submissionsForDay.length === 0) {
+                                                            statusColor = 'bg-red-50 border-red-200';
+                                                            statusIcon = <XCircleIcon className="h-4 w-4 text-red-500" />;
+                                                        } else {
+                                                            isClickable = true;
+                                                            if (submissionsForDay.some(s => s.status === 'rejected')) {
+                                                                statusColor = 'bg-red-50 border-red-200';
+                                                                statusIcon = <ExclamationTriangleIcon className="h-4 w-4 text-red-600" />;
+                                                            } else if (submissionsForDay.some(s => s.status === 'pending_review')) {
+                                                                statusColor = 'bg-blue-50 border-blue-200';
+                                                                statusIcon = <ClockIcon className="h-4 w-4 text-blue-500" />;
+                                                            } else {
+                                                                statusColor = 'bg-green-50 border-green-200';
+                                                                statusIcon = <CheckCircleIcon className="h-4 w-4 text-green-500" />;
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={date.toISOString()} 
+                                                            className={`aspect-square flex flex-col items-center justify-center rounded border p-1 ${
+                                                                statusColor
+                                                            } ${isClickable ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+                                                            onClick={isClickable ? () => handleViewDetails(staff, date) : undefined}
+                                                        >
+                                                            {statusIcon}
+                                                            <span className="text-xs text-gray-600 mt-1">{format(date, 'd')}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="mt-3 text-xs text-gray-500">
+                                                <p>Tap on any day to view submission details</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             </div>

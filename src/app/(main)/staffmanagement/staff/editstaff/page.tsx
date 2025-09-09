@@ -76,6 +76,7 @@ interface EditStaffFormData {
   aadharImage: string | null;
   passbookImage: string | null;
   agreementImage: string | null;
+  isAvailableForBooking: boolean; 
 }
 
 // A default placeholder image for staff members without a profile picture
@@ -130,7 +131,7 @@ const compressImage = (
   maxHeight: number, 
   quality: number
 ): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = (event) => {
@@ -160,10 +161,11 @@ const compressImage = (
   
           resolve(canvas.toDataURL("image/jpeg", quality));
         };
+        img.onerror = (error) => reject(error);
       };
-      reader.onerror = () => {
+      reader.onerror = (error) => {
         toast.error("Failed to read file.");
-        resolve(file.type.startsWith('image/') ? '' : event?.target?.result as string);
+        reject(error);
       };
     });
 };
@@ -311,6 +313,7 @@ const EditStaffContent: React.FC = () => {
     aadharImage: null,
     passbookImage: null,
     agreementImage: null,
+    isAvailableForBooking: true,
   });
 
   // State for managing UI during form submission and data loading
@@ -344,7 +347,7 @@ const EditStaffContent: React.FC = () => {
       try {
         const response = await fetch(`/api/staff?id=${staffId}`, {
           headers: {
-            'X-Tenant-ID': tenantId // Correctly sending tenant ID
+            'X-Tenant-ID': tenantId
           }
         });
 
@@ -356,7 +359,7 @@ const EditStaffContent: React.FC = () => {
         const result = await response.json();
 
         if (result.success && result.data) {
-          const fetchedStaffData = result.data as StaffMember;
+          const fetchedStaffData = result.data as StaffMember & { isAvailableForBooking?: boolean };
           setFormData({
             staffIdNumber: fetchedStaffData.staffIdNumber || '',
             name: fetchedStaffData.name,
@@ -372,6 +375,7 @@ const EditStaffContent: React.FC = () => {
             aadharImage: fetchedStaffData.aadharImage || null,
             passbookImage: fetchedStaffData.passbookImage || null,
             agreementImage: fetchedStaffData.agreementImage || null,
+            isAvailableForBooking: fetchedStaffData.isAvailableForBooking ?? true,
           });
 
           if (fetchedStaffData.position && !contextPositionOptions.some(p => p.value.toLowerCase() === fetchedStaffData.position.toLowerCase())) {
@@ -406,8 +410,13 @@ const EditStaffContent: React.FC = () => {
 
   // Handles changes for all standard form inputs
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      const { name, value } = e.target;
-      setFormData(prevFormData => ({ ...prevFormData, [name]: value, }));
+      const { name, value, type } = e.target;
+      if (type === 'checkbox') {
+        const { checked } = e.target as HTMLInputElement;
+        setFormData(prevFormData => ({ ...prevFormData, [name]: checked }));
+      } else {
+        setFormData(prevFormData => ({ ...prevFormData, [name]: value, }));
+      }
   };
 
   // Handles profile image uploads
@@ -468,6 +477,7 @@ const EditStaffContent: React.FC = () => {
         return;
     }
     
+    // This `apiData` object is what's causing the error if your StaffContext is not updated.
     const apiData: UpdateStaffPayload = {
         staffIdNumber: formData.staffIdNumber,
         name: formData.name,
@@ -483,6 +493,7 @@ const EditStaffContent: React.FC = () => {
         aadharImage: formData.aadharImage,
         passbookImage: formData.passbookImage,
         agreementImage: formData.agreementImage,
+        isAvailableForBooking: formData.isAvailableForBooking,
     };
 
     try {
@@ -728,6 +739,32 @@ const EditStaffContent: React.FC = () => {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+            </div>
+          </div>
+          
+           {/* Settings Section */}
+           <div className="md:col-span-2 border-t pt-5 mt-3">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Settings</h3>
+            <div className="relative flex items-start">
+                <div className="flex h-6 items-center">
+                    <input
+                        id="isAvailableForBooking"
+                        name="isAvailableForBooking"
+                        type="checkbox"
+                        checked={formData.isAvailableForBooking}
+                        onChange={handleInputChange}
+                        className="h-4 w-4 rounded border-gray-300 text-black focus:ring-black disabled:opacity-50"
+                        disabled={isSubmitting || isLoadingData}
+                    />
+                </div>
+                <div className="ml-3 text-sm leading-6">
+                    <label htmlFor="isAvailableForBooking" className="font-medium text-gray-900">
+                        Available for Booking
+                    </label>
+                    <p className="text-gray-500">
+                        If checked, this staff member will appear as an option for new appointments.
+                    </p>
+                </div>
             </div>
           </div>
           
