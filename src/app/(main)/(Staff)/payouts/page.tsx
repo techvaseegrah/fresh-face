@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-// ✅ ADDED: Framer Motion for animations
 import { motion, Variants } from 'framer-motion'; 
 import { 
     Loader2, 
@@ -12,32 +11,27 @@ import {
     Clock, 
     CheckCircle, 
     XCircle, 
-    TrendingUp, // Icon for "Earned"
-    TrendingDown // Icon for "Paid"
+    TrendingUp,
+    TrendingDown
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 
 // ===================================================================
-// ✅ NEW: The stylish, reusable StatCard component is now here
+// StatCard Component (No changes needed here)
 // ===================================================================
 interface StatCardProps {
   title: string;
   value: string | number;
   icon: React.ReactNode;
-  gradient: string; // e.g., 'from-pink-500 to-red-500'
+  gradient: string;
 }
 
-// Animation variants for the hover effect
 const cardVariants: Variants = {
   hover: {
     scale: 1.05,
-    y: -5, // Lifts the card up slightly
-    transition: {
-      type: "spring",
-      stiffness: 300,
-      damping: 15,
-    },
+    y: -5,
+    transition: { type: "spring", stiffness: 300, damping: 15 },
   },
 };
 
@@ -48,15 +42,10 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, gradient }) => 
       whileHover="hover"
       className={`relative p-6 rounded-2xl text-white shadow-lg overflow-hidden bg-gradient-to-br ${gradient}`}
     >
-      {/* Large, decorative circle in the background */}
       <div className="absolute top-0 right-0 -m-4 w-24 h-24 bg-white/10 rounded-full" />
-      
-      {/* Icon in a semi-transparent circle */}
       <div className="absolute top-4 right-4 w-12 h-12 flex items-center justify-center bg-white/20 rounded-full">
         {icon}
       </div>
-      
-      {/* Main Content */}
       <div className="relative z-10">
         <p className="text-sm font-medium uppercase opacity-90">{title}</p>
         <p className="text-4xl font-bold mt-2">{value}</p>
@@ -64,17 +53,11 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, gradient }) => 
     </motion.div>
   );
 };
-// ===================================================================
-// End of StatCard Component
-// ===================================================================
-
 
 // Helper function to format currency
 const formatCurrency = (value: number | null | undefined) => {
-    if (typeof value !== 'number') {
-        return '₹0.00';
-    }
-    return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    if (typeof value !== 'number') return '₹0.00';
+    return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 // Interface for payout history items
@@ -105,34 +88,26 @@ export default function StaffPayoutsPage() {
     const [formError, setFormError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
 
-    // The data fetching logic remains the same
+    // ✅ MODIFIED: Simplified and corrected data fetching logic
     const fetchData = async () => {
-        if (status !== 'authenticated' || !session?.user?.tenantId) return;
+        if (status !== 'authenticated') return;
         setIsLoading(true);
         setError(null);
         
-        const headers = { 'x-tenant-id': session.user.tenantId };
-
         try {
-            const [historyRes, statsDashboardRes] = await Promise.all([
-                fetch('/api/staff/payouts', { headers }),
-                fetch('/api/stafflogin-dashboard', { headers })
-            ]);
-            
-            const historyData = await historyRes.json();
-            const statsDashboardData = await statsDashboardRes.json();
+            // A single API call now gets all the data we need
+            const res = await fetch('/api/staff/payouts');
+            const result = await res.json();
 
-            if (!historyRes.ok || !historyData.success) throw new Error(historyData.error || 'Failed to load history.');
-            if (!statsDashboardRes.ok || !statsDashboardData.success) throw new Error(statsDashboardData.error || 'Failed to load stats.');
+            if (!res.ok || !result.success) {
+                throw new Error(result.error || 'Failed to load payout data.');
+            }
             
-            setHistory(historyData.data);
-
-            const earned = statsDashboardData.data.incentives.totalEarned || 0;
-            const paid = statsDashboardData.data.payouts.totalClaimed || 0;
-            
-            setTotalEarned(earned);
-            setTotalPaid(paid);
-            setBalance(earned - paid);
+            // Set all state from the single response object
+            setHistory(result.data.history);
+            setTotalEarned(result.data.summary.totalEarned);
+            setTotalPaid(result.data.summary.totalPaid);
+            setBalance(result.data.summary.balance);
 
         } catch (err: any) {
             setError(err.message);
@@ -145,24 +120,16 @@ export default function StaffPayoutsPage() {
         if (status === 'authenticated') {
             fetchData();
         }
-    }, [status, session]);
+    }, [status]);
     
-    // The rest of the component logic remains unchanged
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!session?.user?.tenantId) {
-            setFormError('Could not identify tenant. Please re-login.');
-            return;
-        }
         setIsSubmitting(true);
         setFormError(null);
         try {
             const res = await fetch('/api/staff/payouts', {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'x-tenant-id': session.user.tenantId,
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount: Number(amount), reason })
             });
             const data = await res.json();
@@ -172,7 +139,7 @@ export default function StaffPayoutsPage() {
             setAmount('');
             setReason('');
             setShowForm(false);
-            fetchData();
+            fetchData(); // Refresh all data after successful submission
         } catch (err: any) {
             setFormError(err.message);
         } finally {
@@ -188,6 +155,10 @@ export default function StaffPayoutsPage() {
         }
     };
 
+    if (status === 'loading') {
+        return <div className="text-center py-20"><Loader2 className="h-8 w-8 animate-spin mx-auto text-gray-500" /></div>;
+    }
+
     return (
         <div className="space-y-8 p-4 md:p-8 bg-gray-50 min-h-screen">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center">
@@ -202,7 +173,6 @@ export default function StaffPayoutsPage() {
 
             {isLoading ? <div className="text-center py-20"><Loader2 className="h-8 w-8 animate-spin mx-auto text-gray-500" /></div> : error ? <div className="text-red-600 bg-red-50 p-4 rounded-md flex items-center gap-2"><AlertCircle/> {error}</div> : (
                 <>
-                    {/* ✅ UPDATED: The new dashboard layout using StatCard */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <StatCard
                             title="Total Earned"
@@ -224,9 +194,8 @@ export default function StaffPayoutsPage() {
                         />
                     </div>
 
-                    {/* The form and history sections remain unchanged */}
                     {showForm && (
-                        <div className="bg-white p-6 rounded-xl shadow-sm border">
+                        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="bg-white p-6 rounded-xl shadow-sm border">
                              <h2 className="text-xl font-semibold mb-4">New Request Form</h2>
                              <form onSubmit={handleSubmit} className="space-y-4">
                                 {formError && <div className="text-red-600 text-sm p-3 bg-red-50 rounded-md">{formError}</div>}
@@ -244,7 +213,7 @@ export default function StaffPayoutsPage() {
                                     </button>
                                 </div>
                              </form>
-                        </div>
+                        </motion.div>
                     )}
 
                     <div className="bg-white rounded-xl shadow-sm border">

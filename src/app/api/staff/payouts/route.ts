@@ -7,36 +7,40 @@ import DailySale from '@/models/DailySale';
 import Staff from '@/models/staff';
 import IncentiveRule from '@/models/IncentiveRule';
 import { format } from 'date-fns';
-import { getTenantIdOrBail } from '@/lib/tenant'; // ✅ THE FIX: Import the tenant function
 
-// ... (interface IRule and calculateTotalEarned function remain unchanged) ...
+// Define the interface for a rule for type safety
 interface IRule {
   target: { multiplier: number };
   sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number };
   incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly' };
 }
 
-// --- Re-usable Incentive Calculation Logic ---
+// --- Re-usable Incentive Calculation Logic (same as your admin-side logic) ---
 const calculateTotalEarned = async (staffId: string, tenantId: string): Promise<number> => {
     const staff = await Staff.findById(staffId).lean();
-    if (!staff || !staff.salary) return 0;
+    // If staff has no salary set, they cannot earn incentives
+    if (!staff || !staff.salary || staff.salary <= 0) return 0;
 
     let totalEarned = 0;
-    const allSalesRecords = await DailySale.find({ staff: staffId, tenantId }).lean();
+    const allSalesRecords = await DailySale.find({ staff: staffId, tenantId }).sort({ date: 1 }).lean();
     if (allSalesRecords.length === 0) return 0;
 
-    // Daily incentives
+    // --- Daily Incentives Calculation ---
     for (const record of allSalesRecords) {
         if (record.appliedRule) {
             const rule = record.appliedRule as IRule;
-            const daysInMonth = new Date(record.date.getUTCFullYear(), record.date.getUTCMonth() + 1, 0).getDate();
+            const recordDate = new Date(record.date);
+            // Get days in the specific month of the sale
+            const daysInMonth = new Date(recordDate.getUTCFullYear(), recordDate.getUTCMonth() + 1, 0).getDate();
             const dailyTarget = (staff.salary * rule.target.multiplier) / daysInMonth;
+
             const achieved = (rule.sales.includeServiceSale ? record.serviceSale || 0 : 0) +
                            (rule.sales.includeProductSale ? record.productSale || 0 : 0) +
                            ((record.reviewsWithName || 0) * rule.sales.reviewNameValue) +
                            ((record.reviewsWithPhoto || 0) * rule.sales.reviewPhotoValue);
+
             const base = rule.incentive.applyOn === 'serviceSaleOnly' ? (record.serviceSale || 0) : achieved;
-            
+
             if (achieved >= dailyTarget) {
                 const rate = achieved >= (dailyTarget * 2) ? rule.incentive.doubleRate : rule.incentive.rate;
                 totalEarned += base * rate;
@@ -44,7 +48,7 @@ const calculateTotalEarned = async (staffId: string, tenantId: string): Promise<
         }
     }
 
-    // Monthly incentives
+    // --- Monthly Incentives Calculation ---
     const salesByMonth: { [key: string]: { serviceSale: number, productSale: number } } = {};
     allSalesRecords.forEach(record => {
         const monthKey = format(new Date(record.date), 'yyyy-MM');
@@ -57,9 +61,11 @@ const calculateTotalEarned = async (staffId: string, tenantId: string): Promise<
     if (monthlyRule) {
         for (const monthKey in salesByMonth) {
             const monthlyTarget = staff.salary * monthlyRule.target.multiplier;
+            // Note: Monthly rule might have different logic, adjust as needed.
+            // Here, it's assumed to be based on service sales.
             const monthlyAchieved = (monthlyRule.sales.includeServiceSale ? salesByMonth[monthKey].serviceSale : 0);
             const monthlyBase = monthlyRule.incentive.applyOn === 'serviceSaleOnly' ? salesByMonth[monthKey].serviceSale : monthlyAchieved;
-            
+
             if (monthlyAchieved >= monthlyTarget) {
                  const rate = monthlyAchieved >= (monthlyTarget * 2) ? monthlyRule.incentive.doubleRate : monthlyRule.incentive.rate;
                  totalEarned += monthlyBase * rate;
@@ -67,54 +73,55 @@ const calculateTotalEarned = async (staffId: string, tenantId: string): Promise<
         }
     }
 
-    return totalEarned;
+    return parseFloat(totalEarned.toFixed(2));
 };
+
 
 export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !session?.user?.tenantId) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // ✅ THE FIX: Get tenant ID or stop execution
-    const tenantId = getTenantIdOrBail(request);
-    if (tenantId instanceof NextResponse) {
-        return tenantId;
-    }
+    const { id: staffId, tenantId } = session.user;
 
     try {
         await dbConnect();
-        const { searchParams } = new URL(request.url);
-        const action = searchParams.get('action');
         
-        if (action === 'balance') {
-            const totalEarned = await calculateTotalEarned(session.user.id, tenantId);
-            // ✅ THE FIX: Ensure tenantId is used in the query
-            const approvedPayouts = await Payout.find({ staff: session.user.id, tenantId, status: 'approved' }).lean();
-            const totalPaid = approvedPayouts.reduce((sum, p) => sum + p.amount, 0);
-            return NextResponse.json({ success: true, data: { balance: totalEarned - totalPaid } });
-        }
-        
-        // ✅ THE FIX: Ensure tenantId is used in the query
-        const history = await Payout.find({ staff: session.user.id, tenantId }).sort({ createdAt: -1 }).lean();
-        return NextResponse.json({ success: true, data: history });
+        // --- Calculate all financial data in parallel for efficiency ---
+        const [totalEarned, approvedPayouts, history] = await Promise.all([
+            calculateTotalEarned(staffId, tenantId),
+            Payout.find({ staff: staffId, tenantId, status: 'approved' }).lean(),
+            Payout.find({ staff: staffId, tenantId }).sort({ createdAt: -1 }).lean()
+        ]);
 
-    } catch (error) {
-        return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
+        const totalPaid = approvedPayouts.reduce((sum, p) => sum + p.amount, 0);
+        const balance = totalEarned - totalPaid;
+
+        return NextResponse.json({
+            success: true,
+            data: {
+                summary: {
+                    totalEarned: parseFloat(totalEarned.toFixed(2)),
+                    totalPaid: parseFloat(totalPaid.toFixed(2)),
+                    balance: parseFloat(balance.toFixed(2)),
+                },
+                history,
+            }
+        });
+
+    } catch (error: any) {
+        console.error("API Error in GET /staff/payouts:", error);
+        return NextResponse.json({ success: false, error: 'Internal Server Error', details: error.message }, { status: 500 });
     }
 }
 
+
 export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    if (!session?.user?.id || !session?.user?.tenantId) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // ✅ THE FIX: Get tenant ID or stop execution
-    const tenantId = getTenantIdOrBail(request);
-    if (tenantId instanceof NextResponse) {
-        return tenantId;
-    }
+     const { id: staffId, tenantId } = session.user;
 
     try {
         await dbConnect();
@@ -124,20 +131,20 @@ export async function POST(request: NextRequest) {
         if (!amount || !reason || amount <= 0) {
             return NextResponse.json({ success: false, error: 'A valid amount and reason are required.' }, { status: 400 });
         }
-        
-        const totalEarned = await calculateTotalEarned(session.user.id, tenantId);
-        // ✅ THE FIX: Ensure tenantId is used in the query
-        const committedPayouts = await Payout.find({ staff: session.user.id, tenantId, status: { $in: ['approved', 'pending']} }).lean();
-        const totalUnavailable = committedPayouts.reduce((sum, p) => sum + p.amount, 0);
-        const balance = totalEarned - totalUnavailable;
 
-        if (amount > balance) {
-             return NextResponse.json({ success: false, error: `Requested amount exceeds available balance of ₹${balance.toFixed(2)}.` }, { status: 400 });
+        // --- Validate against available balance before creating request ---
+        const totalEarned = await calculateTotalEarned(staffId, tenantId);
+        const committedPayouts = await Payout.find({ staff: staffId, tenantId, status: { $in: ['approved', 'pending']} }).lean();
+        const totalUnavailable = committedPayouts.reduce((sum, p) => sum + p.amount, 0);
+        const availableBalance = totalEarned - totalUnavailable;
+
+        if (amount > availableBalance) {
+             return NextResponse.json({ success: false, error: `Requested amount exceeds available balance of ₹${availableBalance.toFixed(2)}.` }, { status: 400 });
         }
 
         const newPayout = new Payout({
-            staff: session.user.id,
-            tenantId, // ✅ THE FIX: Add tenantId to the new payout document
+            staff: staffId,
+            tenantId, // Ensure tenantId is saved with the request
             amount,
             reason,
             status: 'pending'
@@ -145,7 +152,8 @@ export async function POST(request: NextRequest) {
         await newPayout.save();
 
         return NextResponse.json({ success: true, data: newPayout });
-    } catch (error) {
-        return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
+    } catch (error: any) {
+        console.error("API Error in POST /staff/payouts:", error);
+        return NextResponse.json({ success: false, error: 'Internal Server Error', details: error.message }, { status: 500 });
     }
 }

@@ -1,3 +1,4 @@
+// /app/api/incentive-payout/[payoutId]/route.ts
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import IncentivePayout from '@/models/IncentivePayout';
@@ -6,7 +7,6 @@ import { authOptions } from '@/lib/auth';
 
 export async function PATCH(request: Request, { params }: { params: { payoutId: string } }) {
   try {
-    // ✅ THE FIX: Get tenantId from the server session
     const session = await getServerSession(authOptions);
     if (!session?.user?.tenantId) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
@@ -22,10 +22,10 @@ export async function PATCH(request: Request, { params }: { params: { payoutId: 
     }
 
     const updatedPayout = await IncentivePayout.findOneAndUpdate(
-      { _id: payoutId, tenantId }, // Ensures you can only update payouts for your own tenant
+      { _id: payoutId, tenantId }, 
       { $set: { status, processedDate: new Date() } },
       { new: true }
-    ).populate('staff', 'name');
+    ).populate('staff', 'name staffIdNumber'); // MODIFIED: Added staffIdNumber to populate
 
     if (!updatedPayout) {
       return NextResponse.json({ message: 'Payout request not found.' }, { status: 404 });
@@ -40,7 +40,6 @@ export async function PATCH(request: Request, { params }: { params: { payoutId: 
 
 export async function DELETE(request: Request, { params }: { params: { payoutId: string } }) {
   try {
-    // ✅ THE FIX: Get tenantId from the server session
     const session = await getServerSession(authOptions);
     if (!session?.user?.tenantId) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });

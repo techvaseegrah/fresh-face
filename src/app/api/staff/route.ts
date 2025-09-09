@@ -30,12 +30,29 @@ async function uploadImageToCloudinary(imageData: string | undefined | null, fol
     return imageData || null;
 }
 
+// ✅ --- THIS IS THE FINAL CORRECTED AND ROBUST VERSION ---
 async function getNextStaffId(tenantId: string): Promise<string> {
     await dbConnect();
-    const settings = await ShopSetting.findOne({ key: 'defaultSettings', tenantId }).lean();
-    const nextNumber = settings?.staffIdBaseNumber || 1;
+    
+    // Use findOneAndUpdate with upsert to atomically find or create the settings document.
+    // This prevents the race condition that causes the E11000 duplicate key error.
+    const settings = await ShopSetting.findOneAndUpdate(
+      { key: 'defaultSettings', tenantId: tenantId }, // The query to find the document
+      // The data to set ONLY if a new document is created (upserted)
+      { $setOnInsert: { key: 'defaultSettings', tenantId: tenantId } }, 
+      { 
+        new: true,           // Return the new (or found) document
+        upsert: true,        // Create the document if it doesn't exist
+        runValidators: true, // Run schema validators on upsert
+      }
+    );
+    
+    // 'settings' is now guaranteed to be a valid document.
+    // The default value for staffIdBaseNumber (1) will be applied by the Mongoose schema on creation.
+    const nextNumber = settings.staffIdBaseNumber;
     return nextNumber.toString();
 }
+// ✅ --- END OF THE CORRECTED PART ---
 
 async function checkPermissions(permission: string) {
   const session = await getServerSession(authOptions);
@@ -68,12 +85,11 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ success: true, data: { nextId } });
         }
         
-        // ✅ --- THIS IS THE CORRECTED LOGIC FOR THE BILLING PAGE ---
         if (action === 'listForBilling') {
             const activeStaff = await Staff.find({ 
                 tenantId, 
                 status: 'active', 
-                isAvailableForBooking: true // ADDED THIS FILTER
+                isAvailableForBooking: true 
             }, '_id name email').sort({ name: 'asc' }).lean<{ _id: Types.ObjectId, name: string, email: string }[]>();
             return NextResponse.json({ success: true, staff: activeStaff.map(s => ({ _id: s._id.toString(), name: s.name, email: s.email })) });
         }
@@ -109,8 +125,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ success: false, error: `Failed to fetch staff: ${message}` }, { status: 500 });
     }
 }
-
-// ... The POST, PUT, and DELETE functions are all correct and remain unchanged.
 
 export async function POST(request: NextRequest) {
     const tenantIdOrResponse = getTenantIdOrBail(request);

@@ -168,6 +168,26 @@ export const PERMISSIONS = {
   PACKAGES_REPORTS_READ: 'packages:reports:read',
   PACKAGES_REPORTS_MANAGE: 'packages:reports:manage',
 
+  // New Report Permissions
+  REPORT_ADVANCE_READ: 'reports:advance:read',
+  REPORT_ADVANCE_MANAGE: 'reports:advance:manage',
+  REPORT_INCENTIVE_PAYOUT_READ: 'reports:incentive-payout:read',
+  REPORT_INCENTIVE_PAYOUT_MANAGE: 'reports:incentive-payout:manage',
+  REPORT_LEAVE_READ: 'reports:leave:read',
+  REPORT_LEAVE_MANAGE: 'reports:leave:manage',
+  REPORT_TARGET_READ: 'reports:target:read',
+  REPORT_TARGET_MANAGE: 'reports:target:manage',
+  REPORT_PERFORMANCE_READ: 'reports:performance:read',
+  REPORT_PERFORMANCE_MANAGE: 'reports:performance:manage',
+  REPORT_SALARY_READ: 'reports:salary:read',
+  REPORT_SALARY_MANAGE: 'reports:salary:manage',
+  REPORT_SHIFT_READ: 'reports:shift:read',
+  REPORT_SHIFT_MANAGE: 'reports:shift:manage',
+  REPORT_INCENTIVE_READ: 'reports:incentive:read',
+  REPORT_INCENTIVE_MANAGE: 'reports:incentive:manage',
+  REPORT_STAFF_SALES_READ: 'reports:staff-sales:read',
+  REPORT_STAFF_SALES_MANAGE: 'reports:staff-sales:manage',
+
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 
@@ -334,6 +354,26 @@ export const ALL_PERMISSIONS = [
   // { permission: PERMISSIONS.TOOL_STOCK_READ, description: 'View tool stock, history, and details', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
   { permission: PERMISSIONS.TOOL_STOCK_REPORTS, description: 'Download Tool stock reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   
+  
+  // New Report Permissions
+  { permission: PERMISSIONS.REPORT_ADVANCE_READ, description: 'View Advance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_ADVANCE_MANAGE, description: 'Download Advance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_PAYOUT_READ, description: 'View Incentive Payout Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_PAYOUT_MANAGE, description: 'Download Incentive Payout Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_LEAVE_READ, description: 'View Leave Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_LEAVE_MANAGE, description: 'Download Leave Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TARGET_READ, description: 'View Target Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TARGET_MANAGE, description: 'Download Target Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_PERFORMANCE_READ, description: 'View Performance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_PERFORMANCE_MANAGE, description: 'Download Performance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SALARY_READ, description: 'View Salary Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SALARY_MANAGE, description: 'Download Salary Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SHIFT_READ, description: 'View Shift Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SHIFT_MANAGE, description: 'Download Shift Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_READ, description: 'View Incentive Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_MANAGE, description: 'Download Incentive Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_STAFF_SALES_READ, description: 'View Staff Sales Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_STAFF_SALES_MANAGE, description: 'Download Staff Sales Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },

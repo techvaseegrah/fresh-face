@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react'; // Added useRef
 import { useSession } from 'next-auth/react';
-import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
+import { format, isWithinInterval, startOfDay, endOfDay, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { toast } from 'react-toastify';
 import {
     Plus,
@@ -14,10 +14,18 @@ import {
     CheckCircle2,
     XCircle,
     FileText,
-    CalendarOff
+    CalendarOff,
+    FileSpreadsheet,
+    FileDown,
+    Search // Added Search Icon
 } from 'lucide-react';
 
-// --- Interfaces ---
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+
+
+// --- Interfaces (No changes) ---
 interface StaffMember {
     _id: string;
     name: string;
@@ -42,7 +50,7 @@ interface LeaveType {
     name: string;
 }
 
-// --- Reusable UI Components ---
+// --- Reusable UI Components (No changes) ---
 
 const StatCard = ({ title, value, icon }: { title: string, value: string | number, icon: React.ReactNode }) => (
   <div className="bg-white p-5 rounded-xl shadow-md border border-gray-200/80 transition-all hover:shadow-lg hover:-translate-y-1">
@@ -66,7 +74,7 @@ const getStatusChip = (status: LeaveRequest['status']) => {
 };
 
 
-// --- Main Component ---
+// --- Main Component (No changes)---
 const LeaveManagementPage = () => {
     const { data: session, status: sessionStatus } = useSession();
 
@@ -76,6 +84,7 @@ const LeaveManagementPage = () => {
     const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [historyFilter, setHistoryFilter] = useState('thisMonth'); 
 
     // UI State
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -92,7 +101,7 @@ const LeaveManagementPage = () => {
         try {
             const [leaveRes, staffRes, leaveTypeRes] = await Promise.all([
                 fetch('/api/leave', { headers }),
-                fetch('/api/staff?action=listForBilling', { headers }),
+                fetch('/api/staff?action=list', { headers }),
                 fetch('/api/leavetypes', { headers })
             ]);
 
@@ -105,7 +114,7 @@ const LeaveManagementPage = () => {
             const leaveTypeData = await leaveTypeRes.json();
 
             setLeaveRequests(leaveData.data || []);
-            setStaffList(staffData.staff || []);
+            setStaffList(staffData.data || []);
             setLeaveTypes(leaveTypeData.data || []);
 
         } catch (err: any) {
@@ -148,10 +157,8 @@ const LeaveManagementPage = () => {
             const response = await actionPromise;
             const result = await response.json();
             if (!result.success) throw new Error(result.error);
-            // Re-fetch data for consistency
-             if (session?.user?.tenantId) fetchData(session.user.tenantId);
+            if (session?.user?.tenantId) fetchData(session.user.tenantId);
         } catch (err) {
-            // Revert on error
             setLeaveRequests(originalRequests);
         }
     };
@@ -178,7 +185,7 @@ const LeaveManagementPage = () => {
             setLeaveRequests(prev => [result.data, ...prev]);
             setIsFormOpen(false);
         } catch (err) {
-           // Error toast is already shown by toast.promise
+           // Error handled
         }
     };
     
@@ -214,13 +221,12 @@ const LeaveManagementPage = () => {
             setLeaveTypes(prev => [...prev, result.data]);
             setIsLeaveTypeFormOpen(false);
         } catch (err) {
-            // Error handled by toast
+            // Error handled
         }
     };
 
     const handleDeleteLeaveType = async (id: string) => {
         if (!session?.user?.tenantId) return toast.error("Session invalid.");
-        
         if (!confirm('Are you sure you want to delete this leave type?')) return;
 
         const deletePromise = fetch(`/api/leavetypes?id=${id}`, {
@@ -240,13 +246,80 @@ const LeaveManagementPage = () => {
              if (!result.success) throw new Error(result.error);
              setLeaveTypes(prev => prev.filter(lt => lt._id !== id));
         } catch (err) {
-             // Error handled by toast
+             // Error handled
         }
+    };
+
+    const handleExportExcel = () => {
+        const dataToExport = filteredHistoryRequests.map(req => ({
+            'Staff ID': req.staff.staffIdNumber || 'N/A',
+            'Staff Name': req.staff.name,
+            'Leave Type': req.leaveType,
+            'Start Date': format(new Date(req.startDate), 'dd MMM, yyyy'),
+            'End Date': format(new Date(req.endDate), 'dd MMM, yyyy'),
+            'Status': req.status,
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Leave History");
+        XLSX.writeFile(workbook, `Leave_History_${historyFilter}.xlsx`);
+        toast.success("Downloaded as Excel.");
+    };
+
+    const handleExportPdf = () => {
+        const doc = new jsPDF();
+        const tableColumn = ["Staff ID", "Staff Name", "Leave Type", "Dates", "Status"];
+        const tableRows: any[] = [];
+
+        filteredHistoryRequests.forEach(req => {
+            const reqData = [
+                req.staff.staffIdNumber || 'N/A',
+                req.staff.name,
+                req.leaveType,
+                `${format(new Date(req.startDate), 'dd MMM')} - ${format(new Date(req.endDate), 'dd MMM yyyy')}`,
+                req.status
+            ];
+            tableRows.push(reqData);
+        });
+
+        (doc as any).autoTable({
+            head: [tableColumn],
+            body: tableRows,
+            startY: 20,
+        });
+        doc.text("Leave Request History", 14, 15);
+        doc.save(`Leave_History_${historyFilter}.pdf`);
+        toast.success("Downloaded as PDF.");
     };
 
     // --- Memos ---
     const pendingRequests = useMemo(() => leaveRequests.filter(req => req.status === 'Pending'), [leaveRequests]);
-    const historyRequests = useMemo(() => leaveRequests.filter(req => req.status !== 'Pending').sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [leaveRequests]);
+    
+    const filteredHistoryRequests = useMemo(() => {
+        const baseHistory = leaveRequests
+            .filter(req => req.status !== 'Pending')
+            .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+
+        if (historyFilter === 'allTime') {
+            return baseHistory;
+        }
+
+        const now = new Date();
+        let interval;
+
+        if (historyFilter === 'thisMonth') {
+            interval = { start: startOfMonth(now), end: endOfMonth(now) };
+        } else { // 'lastMonth'
+            const lastMonthDate = subMonths(now, 1);
+            interval = { start: startOfMonth(lastMonthDate), end: endOfMonth(lastMonthDate) };
+        }
+
+        return baseHistory.filter(req => 
+            isWithinInterval(new Date(req.startDate), interval)
+        );
+    }, [leaveRequests, historyFilter]);
+
     const onLeaveToday = useMemo(() => {
         const today = new Date();
         return leaveRequests.filter(req =>
@@ -265,7 +338,7 @@ const LeaveManagementPage = () => {
 
     return (
         <div className="p-4 sm:p-6 lg:p-8 bg-slate-50 min-h-screen font-sans">
-            {/* --- Header --- */}
+            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-8">
                 <div>
                     <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 flex items-center gap-3">
@@ -282,7 +355,7 @@ const LeaveManagementPage = () => {
                 </button>
             </div>
             
-            {/* --- New Request Form --- */}
+            {/* New Request Form */}
             <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isFormOpen ? 'max-h-[600px] opacity-100 mb-8' : 'max-h-0 opacity-0'}`}>
                 <NewLeaveRequestForm
                     onClose={() => setIsFormOpen(false)}
@@ -292,7 +365,7 @@ const LeaveManagementPage = () => {
                 />
             </div>
 
-            {/* --- Stat Cards --- */}
+            {/* Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <StatCard icon={<Hourglass size={24} />} title="Pending Requests" value={pendingRequests.length} />
                 <StatCard icon={<CalendarOff size={24} className="text-green-500"/>} title="Staff on Leave Today" value={onLeaveToday} />
@@ -300,9 +373,9 @@ const LeaveManagementPage = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* --- Main Content (Pending & History) --- */}
+                {/* Main Content */}
                 <div className="lg:col-span-2 space-y-10">
-                    {/* --- Pending Requests Section --- */}
+                    {/* Pending Requests */}
                     <div>
                         <h3 className="text-2xl font-bold text-gray-700 mb-5">Pending Requests</h3>
                         {pendingRequests.length > 0 ? (
@@ -320,14 +393,33 @@ const LeaveManagementPage = () => {
                         )}
                     </div>
                     
-                    {/* --- History Section --- */}
+                    {/* History Section */}
                      <div>
-                        <h3 className="text-2xl font-bold text-gray-700 mb-5">Request History</h3>
-                        <LeaveHistoryTable requests={historyRequests} onRowClick={handleOpenHistory} />
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-5">
+                            <h3 className="text-2xl font-bold text-gray-700">Request History</h3>
+                            <div className="flex items-center gap-2">
+                                <select
+                                    value={historyFilter}
+                                    onChange={(e) => setHistoryFilter(e.target.value)}
+                                    className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-black focus:border-black block w-full sm:w-auto p-2.5"
+                                >
+                                    <option value="thisMonth">This Month</option>
+                                    <option value="lastMonth">Last Month</option>
+                                    <option value="allTime">All Time</option>
+                                </select>
+                                <button onClick={handleExportExcel} className="flex items-center gap-2 p-2.5 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors text-sm border border-gray-300">
+                                    <FileSpreadsheet size={16} /> Excel
+                                </button>
+                                <button onClick={handleExportPdf} className="flex items-center gap-2 p-2.5 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors text-sm border border-gray-300">
+                                    <FileDown size={16} /> PDF
+                                </button>
+                            </div>
+                        </div>
+                        <LeaveHistoryTable requests={filteredHistoryRequests} onRowClick={handleOpenHistory} />
                     </div>
                 </div>
 
-                {/* --- Sidebar (Leave Type Manager) --- */}
+                {/* Sidebar */}
                 <div className="lg:col-span-1">
                      <LeaveTypeManager
                         leaveTypes={leaveTypes}
@@ -337,7 +429,7 @@ const LeaveManagementPage = () => {
                 </div>
             </div>
 
-            {/* --- Modals / Drawers --- */}
+            {/* Modals / Drawers */}
             <AddLeaveTypeForm
                 open={isLeaveTypeFormOpen}
                 onClose={() => setIsLeaveTypeFormOpen(false)}
@@ -354,7 +446,7 @@ const LeaveManagementPage = () => {
     );
 };
 
-// --- Sub Components ---
+// --- Sub Components (No changes below this, until the Form) ---
 
 const PendingLeaveCard = ({ request, onUpdate }: { request: LeaveRequest; onUpdate: (id: string, status: 'Approved' | 'Rejected') => void; }) => (
     <div className="bg-white rounded-xl shadow-md border border-gray-200/80 flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
@@ -377,14 +469,12 @@ const PendingLeaveCard = ({ request, onUpdate }: { request: LeaveRequest; onUpda
          </div>
       </div>
       <div className="p-4 bg-gray-50/50 flex gap-3 rounded-b-xl">
-        {/* --- FIX START --- */}
         <button onClick={() => onUpdate(request._id, 'Approved')} className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-all">
           <CheckCircle2 size={16} /> Approve
         </button>
         <button onClick={() => onUpdate(request._id, 'Rejected')} className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-all">
           <XCircle size={16} /> Reject
         </button>
-        {/* --- FIX END --- */}
       </div>
     </div>
 );
@@ -394,13 +484,12 @@ const LeaveHistoryTable = ({ requests, onRowClick }: { requests: LeaveRequest[];
         return (
             <div className="text-center py-16 bg-white rounded-xl shadow-md border border-gray-200/80 text-gray-500">
                 <FileText size={48} className="mx-auto text-gray-300 mb-4" />
-                <p>No leave history found.</p>
+                <p>No leave history found for this period.</p>
             </div>
         );
     }
     return (
         <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-gray-200/80">
-            {/* Desktop Table */}
             <div className="overflow-x-auto hidden md:block">
                 <table className="min-w-full">
                     <thead className="bg-slate-100">
@@ -420,6 +509,7 @@ const LeaveHistoryTable = ({ requests, onRowClick }: { requests: LeaveRequest[];
                                         <div className="ml-4">
                                             <div className="text-sm font-semibold text-gray-900">{req.staff.name}</div>
                                             <div className="text-sm text-gray-500">{req.staff.position || 'Staff'}</div>
+                                            <div className="text-xs text-gray-400">ID: {req.staff.staffIdNumber || 'N/A'}</div>
                                         </div>
                                     </div>
                                 </td>
@@ -432,7 +522,6 @@ const LeaveHistoryTable = ({ requests, onRowClick }: { requests: LeaveRequest[];
                 </table>
             </div>
 
-            {/* Mobile List */}
             <div className="block md:hidden divide-y divide-gray-200">
                  {requests.map((req) => (
                     <div key={req._id} className="p-4" onClick={() => onRowClick(req.staff._id)}>
@@ -441,6 +530,7 @@ const LeaveHistoryTable = ({ requests, onRowClick }: { requests: LeaveRequest[];
                                 <img className="h-11 w-11 rounded-full object-cover" src={req.staff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(req.staff.name)}`} alt={req.staff.name} />
                                 <div>
                                     <p className="text-sm font-semibold text-gray-900">{req.staff.name}</p>
+                                    <p className="text-xs text-gray-500">ID: {req.staff.staffIdNumber || 'N/A'}</p>
                                     <p className="text-xs text-gray-500">{req.leaveType}</p>
                                 </div>
                             </div>
@@ -456,6 +546,84 @@ const LeaveHistoryTable = ({ requests, onRowClick }: { requests: LeaveRequest[];
     );
 };
 
+
+// =========================================================================
+// === NEW COMPONENT: SearchableStaffDropdown ==============================
+// =========================================================================
+const SearchableStaffDropdown = ({ staffList, value, onChange }: { staffList: StaffMember[], value: string, onChange: (staffId: string) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const selectedStaff = staffList.find(s => s._id === value);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+                setSearchTerm('');
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const filteredStaff = useMemo(() => {
+        if (!searchTerm) return staffList;
+        const lowercasedTerm = searchTerm.toLowerCase();
+        return staffList.filter(staff =>
+            staff.name.toLowerCase().includes(lowercasedTerm) ||
+            staff.staffIdNumber?.toLowerCase().includes(lowercasedTerm)
+        );
+    }, [staffList, searchTerm]);
+
+    const handleSelect = (staffId: string) => {
+        onChange(staffId);
+        setIsOpen(false);
+        setSearchTerm('');
+    };
+    
+    const commonInputClasses = "w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-black text-gray-900";
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <div className="relative">
+                <input
+                    type="text"
+                    className={commonInputClasses}
+                    value={isOpen ? searchTerm : (selectedStaff?.name || '')}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onFocus={() => setIsOpen(true)}
+                    placeholder="Search by name or ID..."
+                />
+                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
+            </div>
+
+            {isOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {filteredStaff.length > 0 ? (
+                        filteredStaff.map(staff => (
+                            <div
+                                key={staff._id}
+                                onClick={() => handleSelect(staff._id)}
+                                className="px-4 py-2.5 hover:bg-slate-100 cursor-pointer text-sm"
+                            >
+                                {staff.name} <span className="text-gray-500">(ID: {staff.staffIdNumber || 'N/A'})</span>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="px-4 py-3 text-sm text-gray-500">No staff found.</div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// =========================================================================
+// === MODIFIED COMPONENT: NewLeaveRequestForm =============================
+// =========================================================================
 const NewLeaveRequestForm = ({ onClose, onSubmit, staffList, leaveTypes }: { onClose: () => void; onSubmit: (data: any) => void; staffList: StaffMember[], leaveTypes: LeaveType[] }) => {
     const [formData, setFormData] = useState({ staff: '', leaveType: '', startDate: '', endDate: '', reason: '' });
 
@@ -481,10 +649,12 @@ const NewLeaveRequestForm = ({ onClose, onSubmit, staffList, leaveTypes }: { onC
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label htmlFor="staff" className="block text-sm font-medium text-gray-600 mb-1">Staff Member*</label>
-                        <select id="staff" name="staff" required value={formData.staff} onChange={handleChange} className={commonInputClasses}>
-                            <option value="">Select Staff</option>
-                            {staffList.map(staff => <option key={staff._id} value={staff._id}>{staff.name}</option>)}
-                        </select>
+                        {/* --- MODIFICATION: Replaced <select> with SearchableStaffDropdown --- */}
+                        <SearchableStaffDropdown
+                            staffList={staffList}
+                            value={formData.staff}
+                            onChange={(staffId) => setFormData(prev => ({ ...prev, staff: staffId }))}
+                        />
                     </div>
                     <div>
                         <label htmlFor="leaveType" className="block text-sm font-medium text-gray-600 mb-1">Leave Type*</label>
@@ -516,6 +686,8 @@ const NewLeaveRequestForm = ({ onClose, onSubmit, staffList, leaveTypes }: { onC
         </div>
     );
 };
+
+// --- Other Sub Components (No changes) ---
 
 const EmployeeHistoryDrawer = ({ open, onClose, requests, staffDetails }: { open: boolean; onClose: () => void; requests: LeaveRequest[]; staffDetails: StaffMember | null }) => {
     return (

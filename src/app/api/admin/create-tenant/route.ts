@@ -133,11 +133,13 @@ const DEFAULT_STORE_ADMIN_PERMISSIONS = [
   PERMISSIONS.STAFF_TARGET_MANAGE,
   PERMISSIONS.STAFF_INCENTIVES_READ,
   PERMISSIONS.STAFF_INCENTIVES_MANAGE,
-  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_READ, // --- PERMISSION ADDED ---
-  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, // --- PERMISSION ADDED ---
+  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_READ,
+  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE,
   PERMISSIONS.STAFF_SALARY_READ,
   PERMISSIONS.STAFF_SALARY_MANAGE,
   PERMISSIONS.STAFF_SWIFT_MANAGE,
+  PERMISSIONS.STAFF_LEAVE_READ,
+  PERMISSIONS.STAFF_LEAVE_MANAGE,
 
   // Expenses Management
   PERMISSIONS.EXPENSES_CREATE,
@@ -150,23 +152,49 @@ const DEFAULT_STORE_ADMIN_PERMISSIONS = [
   PERMISSIONS.BUDGET_READ,
   PERMISSIONS.BUDGET_MANAGE,
 
-  //  Report
+  // Reports Access
   PERMISSIONS.SALES_REPORT_READ,
   PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ,
-  PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE,
   PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ,
+  PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE,
   PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_MANAGE,
   PERMISSIONS.PACKAGES_REPORTS_READ,
   PERMISSIONS.PACKAGES_REPORTS_MANAGE,
-  //SOP Management
+  PERMISSIONS.REPORT_ADVANCE_READ,
+  PERMISSIONS.REPORT_ADVANCE_MANAGE,
+  PERMISSIONS.REPORT_INCENTIVE_PAYOUT_READ,
+  PERMISSIONS.REPORT_INCENTIVE_PAYOUT_MANAGE,
+  PERMISSIONS.REPORT_LEAVE_READ,
+  PERMISSIONS.REPORT_LEAVE_MANAGE,
+  PERMISSIONS.REPORT_TARGET_READ,
+  PERMISSIONS.REPORT_TARGET_MANAGE,
+  PERMISSIONS.REPORT_PERFORMANCE_READ,
+  PERMISSIONS.REPORT_PERFORMANCE_MANAGE,
+  PERMISSIONS.REPORT_SALARY_READ,
+  PERMISSIONS.REPORT_SALARY_MANAGE,
+  PERMISSIONS.REPORT_SHIFT_READ,
+  PERMISSIONS.REPORT_SHIFT_MANAGE,
+  PERMISSIONS.REPORT_INCENTIVE_READ,
+  PERMISSIONS.REPORT_INCENTIVE_MANAGE,
+  PERMISSIONS.REPORT_STAFF_SALES_READ,
+  PERMISSIONS.REPORT_STAFF_SALES_MANAGE,
+  
+  // SOP Management
   PERMISSIONS.SOP_MANAGE,
   PERMISSIONS.SOP_READ,
   PERMISSIONS.SOP_REPORTS_READ,
   PERMISSIONS.SOP_SUBMIT_CHECKLIST,
-  //TELECALLING PERMISSIONS
+
+  // Telecalling Permissions
   PERMISSIONS.TELECALLING_PERFORM,
   PERMISSIONS.TELECALLING_VIEW_DASHBOARD,
   PERMISSIONS.TELECALLING_VIEW_REPORTS,
+  
+  // Back Office Permissions
+  PERMISSIONS.RECONCILIATION_READ,
+  PERMISSIONS.RECONCILIATION_MANAGE,
+  PERMISSIONS.PROFIT_LOSS_READ,
+  PERMISSIONS.PROFIT_LOSS_MANAGE,
 
   // Task Management
   PERMISSIONS.TASK_READ,
@@ -174,7 +202,6 @@ const DEFAULT_STORE_ADMIN_PERMISSIONS = [
   PERMISSIONS.TASK_SUBMIT_CHECKLIST,
   PERMISSIONS.TASK_REPORTS_READ,
   
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Issue Management
   PERMISSIONS.ISSUE_READ,
   PERMISSIONS.ISSUE_MANAGE,
@@ -198,7 +225,6 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     
-    // ✅ 1. ADD 'address' AND 'phone' TO THE DESTRUCTURED BODY
     const { storeName, adminEmail, adminName, adminPassword, address, phone, gstin } = await req.json();
 
     if (!storeName || !adminEmail || !adminName || !adminPassword) {
@@ -216,13 +242,12 @@ export async function POST(req: NextRequest) {
         throw new Error(`A user with the email "${adminEmail}" already exists.`);
     }
 
-    // ✅ 2. INCLUDE THE NEW FIELDS WHEN CREATING THE TENANT
     const newTenant = new Tenant({
       name: storeName,
       subdomain: subdomain,
-      address: address || '', // Use the provided address or an empty string
-      phone: phone || '',     // Use the provided phone or an empty string
-      gstin: gstin || '',     // Use the provided gstin or an empty string
+      address: address || '', 
+      phone: phone || '',     
+      gstin: gstin || '',     
     });
     await newTenant.save({ session: dbSession });
     
@@ -253,7 +278,7 @@ export async function POST(req: NextRequest) {
       tenant: { 
         name: newTenant.name, 
         subdomain: newTenant.subdomain,
-        address: newTenant.address, // ✅ 3. RETURN THE NEW FIELDS IN THE RESPONSE
+        address: newTenant.address, 
         phone: newTenant.phone
       },
       user: { email: newAdminUser.email, name: newAdminUser.name }

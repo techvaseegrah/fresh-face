@@ -11,7 +11,13 @@ export const dynamic = 'force-dynamic';
 function UnifiedLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [loginMode, setLoginMode] = useState<'admin' | 'staff'>('admin');
+  
+  // --- CHANGE START ---
+  // Read the initial login mode from the URL query parameter. Default to 'admin'.
+  const initialMode = searchParams.get('mode') === 'staff' ? 'staff' : 'admin';
+  const [loginMode, setLoginMode] = useState<'admin' | 'staff'>(initialMode);
+  // --- CHANGE END ---
+
   const [salonId, setSalonId] = useState('');
   const [email, setEmail] = useState('');
   const [staffIdNumber, setStaffIdNumber] = useState('');
@@ -31,9 +37,29 @@ function UnifiedLoginForm() {
     }
     const err = searchParams.get('error');
     if (err) {
-      setError('Please use your salon-specific URL to access this page.');
+      // More specific error messages can be helpful
+      if (err === 'CredentialsSignin') {
+        setError('Invalid credentials provided. Please check your details and try again.');
+      } else {
+        setError('Please use your salon-specific URL to access this page.');
+      }
     }
   }, [searchParams]);
+
+  // --- CHANGE START ---
+  // Function to handle changing the login mode and updating the URL
+  const handleModeChange = (mode: 'admin' | 'staff') => {
+    setLoginMode(mode);
+    // Create a new URL object from the current window location
+    const currentUrl = new URL(window.location.href);
+    // Set the 'mode' query parameter
+    currentUrl.searchParams.set('mode', mode);
+    // Use router.replace to update the URL in the browser without a full page reload
+    // and without adding a new entry to the browser's history.
+    router.replace(currentUrl.toString(), { scroll: false });
+  };
+  // --- CHANGE END ---
+
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,12 +72,15 @@ function UnifiedLoginForm() {
       password,
       email: email,
       staffIdNumber: staffIdNumber,
-      redirect: false,
+      redirect: false, // This is correct, it prevents a full redirect on success
     };
 
     const result = await signIn(provider, credentials);
 
     if (result?.error) {
+      // When signIn fails, next-auth often reloads the page with an error in the URL.
+      // Our new logic will preserve the tab state.
+      // We explicitly set the error state here for immediate feedback in case there's no reload.
       setError(result.error || `Invalid credentials for ${loginMode}.`);
       setIsLoading(false);
     } else if (result?.ok) {
@@ -65,20 +94,23 @@ function UnifiedLoginForm() {
   return (
     <>
       <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
+        {/* --- CHANGE START --- */}
+        {/* Update buttons to use the new handler function */}
         <button
           type="button"
-          onClick={() => setLoginMode('admin')}
+          onClick={() => handleModeChange('admin')}
           className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${ loginMode === 'admin' ? 'bg-white shadow text-black' : 'text-gray-600' }`}
         >
           Admin / Manager
         </button>
         <button
           type="button"
-          onClick={() => setLoginMode('staff')}
+          onClick={() => handleModeChange('staff')}
           className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${ loginMode === 'staff' ? 'bg-white shadow text-black' : 'text-gray-600' }`}
         >
           Staff
         </button>
+        {/* --- CHANGE END --- */}
       </div>
 
       <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -142,11 +174,6 @@ function UnifiedLoginForm() {
 export default function LoginPage() {
   return (
     <>
-      {/*
-        KEY FIX:
-        - Removed `min-h-screen` to allow the container to grow with its content and enable native browser scrolling.
-        - Using generous vertical padding (`py-12`) to create space at the top and bottom. This vertically centers short content on large screens while ensuring long content on small screens is scrollable from the top.
-      */}
       <div className="flex justify-center items-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
