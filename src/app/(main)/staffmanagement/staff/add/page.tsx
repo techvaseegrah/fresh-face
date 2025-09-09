@@ -323,7 +323,7 @@ const AddStaffPage: React.FC = () => {
           </div>
           <div>
             <IconLabel htmlFor="phone" icon={<Phone size={14} className="text-gray-500" />} text="Phone Number*"/>
-            <input id="phone" name="phone" type="tel" required value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
+            <input id="phone" name="phone" type="tel" required maxLength={10} value={formData.phone} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}/>
           </div>
           <div>
             <IconLabel htmlFor="aadharNumber" icon={<Fingerprint size={14} className="text-gray-500" />} text="Aadhar Number*"/>
