@@ -130,11 +130,16 @@ const DEFAULT_STORE_ADMIN_PERMISSIONS = [
   PERMISSIONS.STAFF_TARGET_MANAGE,
   PERMISSIONS.STAFF_INCENTIVES_READ,
   PERMISSIONS.STAFF_INCENTIVES_MANAGE,
-  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_READ, // --- PERMISSION ADDED ---
-  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, // --- PERMISSION ADDED ---
+  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_READ, 
+  PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE, 
   PERMISSIONS.STAFF_SALARY_READ,
   PERMISSIONS.STAFF_SALARY_MANAGE,
   PERMISSIONS.STAFF_SWIFT_MANAGE,
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  PERMISSIONS.STAFF_LEAVE_READ,
+  PERMISSIONS.STAFF_LEAVE_MANAGE,
+  // ▲▲▲ END OF ADDITION ▲▲▲
+
 
   // Expenses Management
   PERMISSIONS.EXPENSES_CREATE,
@@ -165,13 +170,11 @@ const DEFAULT_STORE_ADMIN_PERMISSIONS = [
   PERMISSIONS.TASK_SUBMIT_CHECKLIST,
   PERMISSIONS.TASK_REPORTS_READ,
   
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Issue Management
   PERMISSIONS.ISSUE_READ,
   PERMISSIONS.ISSUE_MANAGE,
   PERMISSIONS.ISSUE_SUBMIT_CHECKLIST,
   PERMISSIONS.ISSUE_REPORTS_READ,
-  // ▲▲▲ END OF ADDITION ▲▲▲
 ];
 
 export async function POST(req: NextRequest) {
@@ -181,7 +184,6 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     
-    // ✅ 1. ADD 'address' AND 'phone' TO THE DESTRUCTURED BODY
     const { storeName, adminEmail, adminName, adminPassword, address, phone, gstin } = await req.json();
 
     if (!storeName || !adminEmail || !adminName || !adminPassword) {
@@ -199,13 +201,12 @@ export async function POST(req: NextRequest) {
         throw new Error(`A user with the email "${adminEmail}" already exists.`);
     }
 
-    // ✅ 2. INCLUDE THE NEW FIELDS WHEN CREATING THE TENANT
     const newTenant = new Tenant({
       name: storeName,
       subdomain: subdomain,
-      address: address || '', // Use the provided address or an empty string
-      phone: phone || '',     // Use the provided phone or an empty string
-      gstin: gstin || '',     // Use the provided gstin or an empty string
+      address: address || '', 
+      phone: phone || '',     
+      gstin: gstin || '',     
     });
     await newTenant.save({ session: dbSession });
     
@@ -236,7 +237,7 @@ export async function POST(req: NextRequest) {
       tenant: { 
         name: newTenant.name, 
         subdomain: newTenant.subdomain,
-        address: newTenant.address, // ✅ 3. RETURN THE NEW FIELDS IN THE RESPONSE
+        address: newTenant.address, 
         phone: newTenant.phone
       },
       user: { email: newAdminUser.email, name: newAdminUser.name }
