@@ -1,9 +1,10 @@
 import Card from '@/components/ui/Card';
 
+// ✅ FIX 1: Change the `value` type from `number` to `string`.
 type InputField = {
   id: string;
   label: string;
-  value: number;
+  value: string; // This is the crucial change
 };
 
 type DiffField = {
@@ -11,15 +12,14 @@ type DiffField = {
   value: number;
 };
 
-// --- UPDATED PROPS: Added remarksValue and onRemarksChange ---
 interface ManualInputColumnProps {
   title: string;
   themeColor: 'purple' | 'pink';
   fields: InputField[];
   diffs: DiffField[];
-  remarksValue: string; // NEW: Prop to hold the remarks text
+  remarksValue: string;
   onInputChange: (id: string, value: string) => void;
-  onRemarksChange: (value: string) => void; // NEW: Handler for when remarks change
+  onRemarksChange: (value: string) => void;
 }
 
 const DiffDisplay = ({ label, value }: { label: string; value: number }) => (
@@ -34,9 +34,9 @@ export const ManualInputColumn = ({
   themeColor,
   fields,
   diffs,
-  remarksValue,     // Destructure the new props
+  remarksValue,
   onInputChange,
-  onRemarksChange,  // Destructure the new props
+  onRemarksChange,
 }: ManualInputColumnProps) => {
   const themeClasses = {
     purple: { border: 'border-purple-200', text: 'text-purple-800' },
@@ -45,11 +45,9 @@ export const ManualInputColumn = ({
   const currentTheme = themeClasses[themeColor];
 
   return (
-    // Added flex flex-col for better layout structure
     <Card className={`p-4 bg-${themeColor}-50/50 shadow-sm flex flex-col`}>
       <h2 className={`text-lg font-bold mb-3 border-b ${currentTheme.border} pb-2 ${currentTheme.text}`}>{title}</h2>
       
-      {/* Main content area grows to push the footer down */}
       <div className="space-y-4 flex-grow">
         {fields.map(field => (
           <div key={field.id}>
@@ -57,6 +55,7 @@ export const ManualInputColumn = ({
             <input
               id={field.id}
               type="number"
+              // ✅ FIX 2: The `value` prop is now correctly bound to a string.
               value={field.value}
               onChange={(e) => onInputChange(field.id, e.target.value)}
               className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
@@ -67,7 +66,6 @@ export const ManualInputColumn = ({
           </div>
         ))}
 
-        {/* --- NEW: Remarks Field Added Here --- */}
         <div className="pt-2">
           <label htmlFor={`${title}-remarks`} className="block text-sm font-medium text-gray-700">
             Remarks
@@ -83,7 +81,6 @@ export const ManualInputColumn = ({
         </div>
       </div>
       
-      {/* Footer section for differences, stays at the bottom */}
       <div className="mt-auto">
         {diffs.map((diff, index) => (
           <DiffDisplay key={index} label={diff.label} value={diff.value} />

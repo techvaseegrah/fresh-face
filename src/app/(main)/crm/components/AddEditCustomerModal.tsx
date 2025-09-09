@@ -18,7 +18,8 @@ interface AddEditCustomerModalProps {
 const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onClose, onSave, customerToEdit }) => {
   const [formData, setFormData] = useState<AddCustomerFormData>({ name: '', email: '', phoneNumber: '', gender: Gender.Other, dob: '', survey: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Replaced single formError with an object to hold errors for each field
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const isEditMode = !!customerToEdit;
 
@@ -36,19 +37,63 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
       } else {
         setFormData({ name: '', email: '', phoneNumber: '', gender: 'other', dob: '', survey: '' });
       }
-      setFormError(null);
+      // Reset errors when the modal opens or data changes
+      setErrors({});
       setIsSubmitting(false);
     }
   }, [isOpen, customerToEdit, isEditMode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    let processedValue = value;
+
+    // --- NEW: Input validation logic ---
+    if (name === 'name') {
+      // Allow only letters and spaces
+      processedValue = value.replace(/[^a-zA-Z\s]/g, '');
+    } else if (name === 'phoneNumber') {
+      // Allow only numbers
+      processedValue = value.replace(/[^0-9]/g, '');
+    }
+
+    setFormData(prev => ({ ...prev, [name]: processedValue }));
+
+    // Clear the error for the field being edited
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: { [key: string]: string } = {};
+
+    if (!formData.name.trim()) {
+      newErrors.name = 'Full Name is required.';
+    }
+    if (!formData.phoneNumber.trim()) {
+      newErrors.phoneNumber = 'Phone Number is required.';
+    } else if (formData.phoneNumber.length < 10) {
+      newErrors.phoneNumber = 'Please enter a valid 10-digit phone number.';
+    }
+    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address.';
+    }
+    
+    setErrors(newErrors);
+    // Return true if there are no errors
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setFormError(null);
+    
+    // --- NEW: Validate form before submitting ---
+    if (!validateForm()) {
+      return; // Stop submission if validation fails
+    }
+
     setIsSubmitting(true);
+    setErrors({}); // Clear old errors before new submission
 
     const apiEndpoint = isEditMode ? `/api/customer/${customerToEdit?._id}` : '/api/customer';
     const method = isEditMode ? 'PUT' : 'POST';
@@ -80,7 +125,8 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
 
     } catch (error: any) {
       console.error("Form submission error:", error);
-      setFormError(error.message);
+      // Set a general error message for API or network issues
+      setErrors({ form: error.message });
       toast.error(error.message);
     } finally {
       setIsSubmitting(false);
@@ -103,19 +149,23 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
 
         <form onSubmit={handleSubmit} className="flex-grow overflow-y-auto">
           <div className="p-6 md:p-8 space-y-4">
-            {formError && <div className="p-3 bg-red-100 text-red-700 rounded-md text-sm">{formError}</div>}
+            {/* Display general form error from API response */}
+            {errors.form && <div className="p-3 bg-red-100 text-red-700 rounded-md text-sm">{errors.form}</div>}
             
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
+              <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${errors.name ? 'border-red-500' : 'border-gray-300'}`} />
+              {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
             </div>
             <div>
               <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <input type="tel" name="phoneNumber" id="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
+              <input type="tel" name="phoneNumber" id="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required maxLength={10} className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${errors.phoneNumber ? 'border-red-500' : 'border-gray-300'}`} />
+              {errors.phoneNumber && <p className="mt-1 text-sm text-red-600">{errors.phoneNumber}</p>}
             </div>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>
-              <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" />
+              <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className={`w-full px-3 py-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 ${errors.email ? 'border-red-500' : 'border-gray-300'}`} />
+              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
             </div>
             <div>
               <label htmlFor="dob" className="block text-sm font-medium text-gray-700 mb-1">Date of Birth (Optional)</label>

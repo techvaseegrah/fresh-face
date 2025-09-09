@@ -137,7 +137,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             PERMISSIONS.SALES_REPORT_READ,
             PERMISSIONS.REPORT_GIFT_CARD_SOLD_READ,
             PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ,
-            PERMISSIONS.PACKAGES_REPORTS_READ
+            PERMISSIONS.PACKAGES_REPORTS_READ,
+            PERMISSIONS.TOOL_STOCK_READ
         ]) 
       },
       { href: '/staffmanagement', label: 'Staff Management', icon: <UsersIcon className="h-5 w-5" />, show: canSeeStaffManagement, subItems: staffSubItems.filter(item => item.show) },

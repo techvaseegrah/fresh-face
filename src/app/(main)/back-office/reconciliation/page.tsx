@@ -15,19 +15,21 @@ import { DataDisplayColumn } from './components/DataDisplayColumn';
 import { ManualInputColumn } from './components/ManualInputColumn';
 
 // Type Definitions
+// ✅ FIX 1: Change number types to string for all manual input fields
 type ReconciliationData = {
   date: string;
   software: { serviceTotal: number; productTotal: number; cash: number; gpay: number; card: number; sumup: number; total: number; };
-  bank: { gpayDeposit: number; cardDeposit: number; bankRemarks: string; };
-  cash: { depositDone: number; expenses: number; closingCash: number; cashRemarks: string; };
+  bank: { gpayDeposit: string; cardDeposit: string; bankRemarks: string; };
+  cash: { depositDone: string; expenses: string; closingCash: string; cashRemarks: string; };
 };
 
 // Initial State
+// ✅ FIX 2: Initialize with empty strings for a cleaner UI
 const initialData: ReconciliationData = {
   date: new Date().toISOString().split('T')[0],
   software: { serviceTotal: 0, productTotal: 0, cash: 0, gpay: 0, card: 0, sumup: 0, total: 0 },
-  bank: { gpayDeposit: 0, cardDeposit: 0, bankRemarks: '' },
-  cash: { depositDone: 0, expenses: 0, closingCash: 0, cashRemarks: '' },
+  bank: { gpayDeposit: '', cardDeposit: '', bankRemarks: '' },
+  cash: { depositDone: '', expenses: '', closingCash: '', cashRemarks: '' },
 };
 
 export default function ReconciliationPage() {
@@ -38,9 +40,9 @@ export default function ReconciliationPage() {
   const canReadReconciliation = hasPermission(userPermissions, PERMISSIONS.RECONCILIATION_READ);
   const canManageReconciliation = hasPermission(userPermissions, PERMISSIONS.RECONCILIATION_MANAGE);
 
-  // --- STATE MANAGEMENT (UPDATED) ---
+  // --- STATE MANAGEMENT ---
   const [formData, setFormData] = useState<ReconciliationData>(initialData);
-  const [openingBalance, setOpeningBalance] = useState(0); // STEP 1: State for opening balance
+  const [openingBalance, setOpeningBalance] = useState(0);
   const [selectedDate, setSelectedDate] = useState(initialData.date);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,7 +58,7 @@ export default function ReconciliationPage() {
     return fetch(url, { ...options, headers });
   }, []);
 
-  // --- DATA FETCHING (UPDATED) ---
+  // --- DATA FETCHING ---
   useEffect(() => {
     if (sessionStatus === 'authenticated' && !canReadReconciliation) {
         setIsLoading(false);
@@ -69,7 +71,7 @@ export default function ReconciliationPage() {
     
     const fetchData = async () => {
       setIsLoading(true);
-      setOpeningBalance(0); // Reset opening balance for each new date fetch
+      setOpeningBalance(0);
 
       try {
         const [softwareRes, savedReportRes, expensesRes] = await Promise.all([
@@ -80,8 +82,6 @@ export default function ReconciliationPage() {
 
         if (!softwareRes.ok) throw new Error('Could not fetch daily sales summary.');
         const softwareData = await softwareRes.json();
-
-        // STEP 2: Capture opening balance and separate it from today's sales data
         const { openingBalance, ...todaySales } = softwareData;
         setOpeningBalance(openingBalance || 0);
 
@@ -95,18 +95,28 @@ export default function ReconciliationPage() {
 
         if (savedReportRes.ok) {
           const savedData = await savedReportRes.json();
+          // Convert loaded numbers back to strings for the form
           setFormData({ 
             date: selectedDate, 
-            software: todaySales, // Use the sales data without the opening balance
-            bank: { ...initialData.bank, ...savedData.bank }, 
-            cash: { ...initialData.cash, ...savedData.cash, expenses: autoFetchedCashExpenses }
+            software: todaySales,
+            bank: { 
+                gpayDeposit: String(savedData.bank.gpayDeposit || ''),
+                cardDeposit: String(savedData.bank.cardDeposit || ''),
+                bankRemarks: savedData.bank.bankRemarks || ''
+            }, 
+            cash: { 
+                depositDone: String(savedData.cash.depositDone || ''),
+                expenses: String(autoFetchedCashExpenses), // Use fetched expenses
+                closingCash: String(savedData.cash.closingCash || ''),
+                cashRemarks: savedData.cash.cashRemarks || ''
+            }
           });
         } else {
           setFormData({ 
             ...initialData, 
             date: selectedDate, 
-            software: todaySales, // Use the sales data without the opening balance
-            cash: { ...initialData.cash, expenses: autoFetchedCashExpenses }
+            software: todaySales,
+            cash: { ...initialData.cash, expenses: String(autoFetchedCashExpenses) }
           });
         }
       } catch (err) {
@@ -122,37 +132,62 @@ export default function ReconciliationPage() {
     fetchData();
   }, [selectedDate, sessionStatus, session, tenantFetch, canReadReconciliation]);
 
-  // --- CALCULATION LOGIC (UPDATED) ---
+  // --- CALCULATION LOGIC ---
+  // ✅ FIX 3: Convert string state to numbers for calculations
   const differences = useMemo(() => {
     const { software, bank, cash } = formData;
-    const gpayDiff = bank.gpayDeposit - software.gpay;
-    const cardDiff = bank.cardDeposit - software.card;
+    const gpayDiff = (Number(bank.gpayDeposit) || 0) - software.gpay;
+    const cardDiff = (Number(bank.cardDeposit) || 0) - software.card;
 
-    // STEP 3: Correct the cash difference calculation
     const totalCashToAccountFor = software.cash + openingBalance;
-    const expectedClosingCash = totalCashToAccountFor - cash.expenses - cash.depositDone;
-    const cashDiff = cash.closingCash - expectedClosingCash;
+    const expectedClosingCash = totalCashToAccountFor - (Number(cash.expenses) || 0) - (Number(cash.depositDone) || 0);
+    const cashDiff = (Number(cash.closingCash) || 0) - expectedClosingCash;
 
     return { gpayDiff, cardDiff, cashDiff };
-  }, [formData, openingBalance]); // Add openingBalance to dependency array
+  }, [formData, openingBalance]);
 
   // --- Input Handler ---
+  // ✅ FIX 4: Update handler to set string values directly
   const handleInputChange = (section: 'bank' | 'cash', field: string, value: string) => {
-    const isRemarksField = field.includes('Remarks');
-    const processedValue = isRemarksField ? value : (Number(value) || 0);
-    setFormData(prev => ({
-        ...prev,
-        [section]: { ...prev[section], [field]: processedValue }
-    }));
+    if (field.includes('Remarks')) {
+        setFormData(prev => ({
+            ...prev,
+            [section]: { ...prev[section], [field]: value }
+        }));
+    } else {
+        // Only allow numeric input for a better user experience
+        if (/^\d*\.?\d*$/.test(value)) {
+            setFormData(prev => ({
+                ...prev,
+                [section]: { ...prev[section], [field]: value }
+            }));
+        }
+    }
   };
 
   // --- Form Submission Handler ---
+  // ✅ FIX 5: Convert strings to numbers before sending to API
   const handleSubmit = async () => {
     setIsSaving(true);
     try {
+      const payload = {
+        ...formData,
+        bank: {
+          gpayDeposit: Number(formData.bank.gpayDeposit) || 0,
+          cardDeposit: Number(formData.bank.cardDeposit) || 0,
+          bankRemarks: formData.bank.bankRemarks,
+        },
+        cash: {
+          depositDone: Number(formData.cash.depositDone) || 0,
+          expenses: Number(formData.cash.expenses) || 0,
+          closingCash: Number(formData.cash.closingCash) || 0,
+          cashRemarks: formData.cash.cashRemarks,
+        }
+      };
+      
       const res = await tenantFetch('/api/reconciliation', {
         method: 'POST',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errorData = await res.json();
@@ -168,7 +203,7 @@ export default function ReconciliationPage() {
     }
   };
   
-  // --- Render Logic ---
+  // --- Render Logic (No changes needed below this line) ---
   if (sessionStatus === 'loading') {
     return <div className="p-8 text-center text-gray-600">Loading user session...</div>;
   }

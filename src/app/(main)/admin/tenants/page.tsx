@@ -83,6 +83,13 @@ export default function TenantsPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [changePassword, setChangePassword] = useState(false);
   
+  // State for form validation errors
+  const [formErrors, setFormErrors] = useState({
+    storeName: '',
+    phone: '',
+    adminName: '',
+  });
+  
   // General Action State
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -126,6 +133,7 @@ export default function TenantsPage() {
     setChangePassword(false);
     setSelectedTenant(null);
     setMessage(null);
+    setFormErrors({ storeName: '', phone: '', adminName: '' }); // Reset errors
   };
   
   // Handlers for opening modals
@@ -160,9 +168,46 @@ export default function TenantsPage() {
     resetAllStates();
   };
   
+  // Validation Handlers
+  const handleStoreNameChange = (value: string) => {
+    if (/^[a-zA-Z\s]*$/.test(value)) {
+      setStoreName(value);
+      setFormErrors(prev => ({ ...prev, storeName: '' }));
+    } else {
+      setFormErrors(prev => ({ ...prev, storeName: 'Invalid input.' }));
+    }
+  };
+
+  const handlePhoneChange = (value: string) => {
+    // 1. Remove all characters that are not digits.
+    const cleanedValue = value.replace(/\D/g, '');
+
+    // 2. Limit the result to the first 10 characters.
+    const truncatedValue = cleanedValue.slice(0, 10);
+
+    // 3. Update the state with the cleaned and truncated value.
+    setPhone(truncatedValue);
+
+    // 4. Clear any previous error messages for this field.
+    setFormErrors(prev => ({ ...prev, phone: '' }));
+  };
+
+  const handleAdminNameChange = (value: string) => {
+    if (/^[a-zA-Z\s]*$/.test(value)) {
+      setAdminName(value);
+      setFormErrors(prev => ({ ...prev, adminName: '' }));
+    } else {
+      setFormErrors(prev => ({ ...prev, adminName: 'Invalid input.' }));
+    }
+  };
+  
+  // Check if any validation error exists to disable the button
+  const isFormInvalid = !!formErrors.storeName || !!formErrors.phone || !!formErrors.adminName;
+
   // --- FORM SUBMISSION HANDLERS ---
   const handleCreateSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isFormInvalid) return;
     setLoading(true);
     setMessage(null);
     try {
@@ -186,7 +231,7 @@ export default function TenantsPage() {
   
   const handleEditSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedTenant) return;
+    if (!selectedTenant || isFormInvalid) return;
     setLoading(true);
     setMessage(null);
 
@@ -304,7 +349,7 @@ export default function TenantsPage() {
         <form onSubmit={handleCreateSubmit} className="space-y-4">
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createStoreName">Store Name</label>
-             <input id="createStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+             <input id="createStoreName" type="text" value={storeName} onChange={(e) => handleStoreNameChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createAddress">Store Address</label>
@@ -312,7 +357,7 @@ export default function TenantsPage() {
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createPhone">Store Phone</label>
-             <input id="createPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+             <input id="createPhone" type="tel" value={phone} onChange={(e) => handlePhoneChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg"/>
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createGstin">GSTIN (Optional)</label>
@@ -322,7 +367,7 @@ export default function TenantsPage() {
            <h3 className="text-xl font-semibold pt-2">Store Administrator Account</h3>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createAdminName">Admin's Full Name</label>
-             <input id="createAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+             <input id="createAdminName" type="text" value={adminName} onChange={(e) => handleAdminNameChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
            </div>
            <div>
              <label className="block text-gray-700 font-bold mb-2" htmlFor="createAdminEmail">Admin's Email (Login ID)</label>
@@ -340,7 +385,7 @@ export default function TenantsPage() {
             {message && <div className={`p-3 rounded-lg ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{message.text}</div>}
            <div className="flex items-center justify-end gap-4 pt-4">
               <button type="button" onClick={closeModal} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-              <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg disabled:bg-gray-400">
+              <button type="submit" disabled={loading || isFormInvalid} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed">
                 {loading ? 'Creating...' : 'Create Store'}
               </button>
            </div>
@@ -351,7 +396,7 @@ export default function TenantsPage() {
         <form onSubmit={handleEditSubmit} className="space-y-4">
             <div>
                 <label className="block text-gray-700 font-bold mb-2" htmlFor="editStoreName">Store Name</label>
-                <input id="editStoreName" type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+                <input id="editStoreName" type="text" value={storeName} onChange={(e) => handleStoreNameChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
             </div>
             <div>
               <label className="block text-gray-700 font-bold mb-2" htmlFor="editAddress">Store Address</label>
@@ -359,7 +404,7 @@ export default function TenantsPage() {
             </div>
             <div>
               <label className="block text-gray-700 font-bold mb-2" htmlFor="editPhone">Store Phone</label>
-              <input id="editPhone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+              <input id="editPhone" type="tel" value={phone} onChange={(e) => handlePhoneChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
               <label className="block text-gray-700 font-bold mb-2" htmlFor="editGstin">GSTIN (Optional)</label>
@@ -369,7 +414,7 @@ export default function TenantsPage() {
             <h3 className="text-xl font-semibold pt-2">Store Administrator Account</h3>
              <div>
                <label className="block text-gray-700 font-bold mb-2" htmlFor="editAdminName">Admin's Full Name</label>
-               <input id="editAdminName" type="text" value={adminName} onChange={(e) => setAdminName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
+               <input id="editAdminName" type="text" value={adminName} onChange={(e) => handleAdminNameChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg" required />
              </div>
              <div>
                <label className="block text-gray-700 font-bold mb-2" htmlFor="editAdminEmail">Admin's Email (Login ID)</label>
@@ -393,7 +438,7 @@ export default function TenantsPage() {
             {message && <div className={`p-3 rounded-lg ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{message.text}</div>}
             <div className="flex items-center justify-end gap-4 pt-4">
                <button type="button" onClick={closeModal} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-               <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg disabled:bg-gray-400">
+               <button type="submit" disabled={loading || isFormInvalid} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed">
                  {loading ? 'Updating...' : 'Update Store'}
                </button>
             </div>

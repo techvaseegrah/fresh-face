@@ -8,9 +8,9 @@ interface BillItemsTableProps {
   customerIsMember: boolean;
   availableStaff: StaffMember[];
   isLoadingStaff: boolean;
-  onRemove: (index: number) => void;
-  onQuantityChange: (index: number, newQuantity: number) => void;
-  onStaffChange: (index: number, newStaffId: string) => void;
+  onRemove: (id: string) => void;
+  onQuantityChange: (id: string, newQuantity: number) => void;
+  onStaffChange: (id: string, newStaffId: string) => void;
 }
 
 const BillItemsTable: React.FC<BillItemsTableProps> = ({
@@ -37,8 +37,9 @@ const BillItemsTable: React.FC<BillItemsTableProps> = ({
           </tr>
         </thead>
         <tbody className="block md:table-row-group">
-          {items.map((item, idx) => (
-            <tr key={`${item.itemId}-${idx}`} className="block md:table-row mb-4 md:mb-0 p-3 border rounded-lg md:border-0 md:border-b md:p-0 hover:bg-gray-50">
+          {items.map((item) => (
+            // ✅ CHANGED: Using item.id as the key for stability
+            <tr key={item.id} className="block md:table-row mb-4 md:mb-0 p-3 border rounded-lg md:border-0 md:border-b md:p-0 hover:bg-gray-50">
               <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3" data-label="Item">
                 <div>
                   <span className="font-medium">{item.name}</span>
@@ -53,9 +54,10 @@ const BillItemsTable: React.FC<BillItemsTableProps> = ({
                 <div className="mt-2">
                   <select
                     value={item.staffId || ''}
-                    onChange={(e) => onStaffChange(idx, e.target.value)}
+                    // ✅ CHANGED: Passing item.id instead of index
+                    onChange={(e) => onStaffChange(item.id, e.target.value)}
                     className="w-full max-w-full sm:max-w-[200px] p-1 border rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                    disabled={isLoadingStaff}
+                    disabled={isLoadingStaff || item.itemType === 'gift_card' || item.itemType === 'package'}
                   >
                     <option value="" disabled>-- Assign Staff --</option>
                     {availableStaff.map(staff => (
@@ -66,7 +68,15 @@ const BillItemsTable: React.FC<BillItemsTableProps> = ({
               </td>
               <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-center" data-label="Qty">
                 <span className="font-bold md:hidden">Qty: </span>
-                <input type="number" min="1" value={item.quantity} onChange={(e) => onQuantityChange(idx, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border rounded text-center inline-block ml-2 md:ml-0" />
+                <input 
+                  type="number" 
+                  min="1" 
+                  value={item.quantity} 
+                  // ✅ CHANGED: Passing item.id instead of index
+                  onChange={(e) => onQuantityChange(item.id, parseInt(e.target.value) || 1)} 
+                  className="w-16 px-2 py-1 border rounded text-center inline-block ml-2 md:ml-0" 
+                  disabled={item.isRedemption} // Can't change quantity of redeemed items
+                />
               </td>
               <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-right" data-label="Unit Price">
                 <span className="font-bold md:hidden">Unit Price: </span>
@@ -77,7 +87,8 @@ const BillItemsTable: React.FC<BillItemsTableProps> = ({
                 ₹{item.finalPrice.toFixed(2)}
               </td>
               <td className="block md:table-cell px-1 py-2 md:px-4 md:py-3 md:text-center mt-2 md:mt-0" data-label="Action">
-                <button onClick={() => onRemove(idx)} disabled={item.isRemovable === false} className="w-full md:w-auto text-red-500 hover:text-red-700 text-xs px-2 py-2 md:py-1 bg-red-50 md:bg-transparent hover:bg-red-100 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">Remove</button>
+                 {/* ✅ CHANGED: Passing item.id instead of index */}
+                <button onClick={() => onRemove(item.id)} disabled={item.isRemovable === false} className="w-full md:w-auto text-red-500 hover:text-red-700 text-xs px-2 py-2 md:py-1 bg-red-50 md:bg-transparent hover:bg-red-100 rounded disabled:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed">Remove</button>
               </td>
             </tr>
           ))}

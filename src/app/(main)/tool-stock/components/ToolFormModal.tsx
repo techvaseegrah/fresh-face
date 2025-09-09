@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, FormEvent } from 'react';
-import { X } from 'lucide-react'; // Using lucide-react for icons as it seems to be in your project
+import { X } from 'lucide-react';
 
-// Define the shape of a tool object we might pass for editing
 interface ITool {
   _id: string;
   name: string;
   category: string;
   maintenanceDueDate?: string;
-  // We don't edit stock directly in this form
 }
 
 interface ToolFormModalProps {
@@ -17,13 +15,14 @@ interface ToolFormModalProps {
   onClose: () => void;
   onSuccess: () => void;
   toolToEdit?: ITool | null;
-  tenantId: string | undefined; // <--- ADD THIS LINE. This is the fix.
+  tenantId: string | undefined;
 }
 
-export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId }: ToolFormModalProps) {
+export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit, tenantId }: ToolFormModalProps) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
-  const [openingStock, setOpeningStock] = useState(0);
+  // ✅ CHANGED: State is now a string to allow for an empty value in the input.
+  const [openingStock, setOpeningStock] = useState('0');
   const [maintenanceDate, setMaintenanceDate] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -32,35 +31,34 @@ export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId 
   const isEditMode = !!toolToEdit;
 
   useEffect(() => {
-    // If a tool object is passed, populate the form fields for editing
     if (isEditMode && toolToEdit) {
       setName(toolToEdit.name);
       setCategory(toolToEdit.category);
-      // Format the date for the input[type=date] which expects 'YYYY-MM-DD'
       if (toolToEdit.maintenanceDueDate) {
         setMaintenanceDate(new Date(toolToEdit.maintenanceDueDate).toISOString().split('T')[0]);
       }
     } else {
-      // Reset form when opening for creation or when toolToEdit is cleared
       setName('');
       setCategory('');
-      setOpeningStock(0);
+      // ✅ CHANGED: Reset to a string.
+      setOpeningStock('0');
       setMaintenanceDate('');
     }
-  }, [toolToEdit, isEditMode, isOpen]); // Rerun when the modal opens or the tool to edit changes
+  }, [toolToEdit, isEditMode, isOpen]);
 
   const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
     if (!tenantId) {
         setError("Cannot perform action: Tenant information is missing.");
         return;
     }
-    e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     const body = isEditMode
       ? { name, category, maintenanceDueDate: maintenanceDate || null }
-      : { name, category, openingStock, maintenanceDueDate: maintenanceDate || null };
+      // ✅ CHANGED: Convert openingStock string to a number only on submission.
+      : { name, category, openingStock: Number(openingStock) || 0, maintenanceDueDate: maintenanceDate || null };
     
     const url = isEditMode ? `/api/tool-stock/tools/${toolToEdit?._id}` : '/api/tool-stock/tools';
     const method = isEditMode ? 'PUT' : 'POST';
@@ -70,7 +68,7 @@ export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId 
         method: method,
         headers: { 
           'Content-Type': 'application/json',
-          'x-tenant-id': tenantId, // Add the required header
+          'x-tenant-id': tenantId,
         },
         body: JSON.stringify(body),
       });
@@ -81,8 +79,8 @@ export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId 
         throw new Error(result.message || 'An unknown error occurred.');
       }
 
-      onSuccess(); // Re-fetch the tool list on the parent page
-      onClose(); // Close the modal
+      onSuccess();
+      onClose();
 
     } catch (err: any) {
       setError(err.message);
@@ -91,20 +89,18 @@ export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId 
     }
   };
 
-  // If the modal is not open, render nothing
   if (!isOpen) {
     return null;
   }
 
-  // Basic styling for a modal overlay and content
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center"
-      onClick={onClose} // Close modal on overlay click
+      onClick={onClose}
     >
       <div
         className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md"
-        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside the modal content
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">{isEditMode ? 'Edit Tool' : 'Add New Tool'}</h2>
@@ -140,7 +136,6 @@ export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId 
             />
           </div>
           
-          {/* Only show Opening Stock field when creating a new tool */}
           {!isEditMode && (
             <div className="mb-4">
               <label htmlFor="openingStock" className="block text-gray-700 font-medium mb-1">Opening Stock*</label>
@@ -149,7 +144,8 @@ export function ToolFormModal({ isOpen, onClose, onSuccess, toolToEdit,tenantId 
                 type="number"
                 min="0"
                 value={openingStock}
-                onChange={(e) => setOpeningStock(Number(e.target.value))}
+                // ✅ CHANGED: Simply set the state to the string value from the input.
+                onChange={(e) => setOpeningStock(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />

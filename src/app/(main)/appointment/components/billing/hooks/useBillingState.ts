@@ -7,6 +7,15 @@ import {
   PackageRedemption
 } from '../billing.types';
 
+// Assumes your BillLineItem type has a unique `id` property for the line item itself
+// e.g., in billing.types.ts:
+// export interface BillLineItem {
+//   id: string; // <-- This is the unique identifier for the row
+//   itemId: string; // This is the ID of the service/product from the database
+//   ... other properties
+// }
+
+
 interface AppliedGiftCard {
   cardId: string;
   code: string;
@@ -185,7 +194,8 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
           const result = await res.json();
           if (!res.ok) throw new Error(result.message || 'Failed to fetch invoice.');
           const { invoice } = result;
-          finalBillItems = invoice.lineItems.map((item: any) => ({ ...item, isRemovable: true }));
+          // Ensure each item from the invoice has a unique `id` for the UI
+          finalBillItems = invoice.lineItems.map((item: any) => ({ ...item, id: item._id || `${item.itemId}-${Math.random()}`, isRemovable: true }));
           setNotes(invoice.notes || '');
           if (invoice.billingStaffId) setSelectedStaffId(invoice.billingStaffId);
           setDiscount(invoice.manualDiscount?.value || 0);
@@ -210,6 +220,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
               });
               
               finalBillItems.push({
+                id: `${itemDetails._id}-${Date.now()}`,
                 itemType: itemToRedeem.redeemedItemType,
                 itemId: itemDetails._id,
                 name: `(Package) ${itemDetails.name}`,
@@ -230,9 +241,9 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     
           const regularServices = appointment.serviceIds?.filter(
             (service) => !finalBillItems.some(redeemed => String(redeemed.itemId) === String(service._id))
-          ).map(service => {
+          ).map((service, index) => {
             const finalPrice = (isMember && typeof service.membershipRate === 'number') ? service.membershipRate : service.price;
-            return { itemType: 'service' as const, itemId: service._id, name: service.name, unitPrice: service.price, membershipRate: service.membershipRate, quantity: 1, finalPrice, staffId: stylist._id, isRemovable: !isCorrectionMode };
+            return { id: `${service._id}-${Date.now()}-${index}`, itemType: 'service' as const, itemId: service._id, name: service.name, unitPrice: service.price, membershipRate: service.membershipRate, quantity: 1, finalPrice, staffId: stylist._id, isRemovable: !isCorrectionMode };
           }) ?? [];
           
           finalBillItems.push(...regularServices);
@@ -266,34 +277,77 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   // =================================================================================
 
   const handleAddItemToBill = useCallback((item: SearchableItem) => {
-    if (billItems.some(bi => bi.itemId === item.id)) { toast.info(`${item.name} is already in the bill.`); return; }
+    // ✅ CHANGED: Removed check that prevents adding duplicate items.
+    
     let finalPrice = item.price;
     let displayName = item.name;
     let staffId: string | undefined = stylist._id;
+
     if (item.type === 'package' || item.type === 'gift_card') { staffId = undefined; } 
     else if (item.type === 'service' && customerIsMember && typeof item.membershipRate === 'number') { finalPrice = item.membershipRate; } 
     else if (item.type === 'product') { if (item.categoryName) displayName = `${item.categoryName} - ${displayName}`; if ((item as any).unit) displayName = `${displayName} (${(item as any).unit})`; }
-    const newItem: BillLineItem = { itemType: item.type, itemId: item.id, name: displayName, unitPrice: item.price, membershipRate: item.membershipRate, quantity: 1, finalPrice: finalPrice, staffId: staffId, isRemovable: true };
+
+    const newItem: BillLineItem = { 
+      // ✅ CHANGED: Added a unique ID for this line item instance.
+      id: `${item.id}-${Date.now()}`,
+      itemType: item.type, 
+      itemId: item.id, 
+      name: displayName, 
+      unitPrice: item.price, 
+      membershipRate: item.membershipRate, 
+      quantity: 1, 
+      finalPrice: finalPrice, 
+      staffId: staffId, 
+      isRemovable: true 
+    };
+    
     const updatedBillItems = [...billItems, newItem];
     setBillItems(updatedBillItems);
     if (item.type === 'service') fetchInventoryImpact(updatedBillItems);
+    
     setSearchQuery('');
     setSearchResults([]);
     searchInputRef.current?.focus();
   }, [billItems, customerIsMember, stylist._id, fetchInventoryImpact]);
 
-  const handleRemoveItem = useCallback((indexToRemove: number) => {
-    const itemToRemove = billItems[indexToRemove];
-    const updatedBillItems = billItems.filter((_, idx) => idx !== indexToRemove);
+  // ✅ CHANGED: Now accepts the unique line item `id` instead of an `index`.
+  const handleRemoveItem = useCallback((idToRemove: string) => {
+    const itemToRemove = billItems.find(item => item.id === idToRemove);
+    if (!itemToRemove) return;
+
+    const updatedBillItems = billItems.filter((item) => item.id !== idToRemove);
     setBillItems(updatedBillItems);
-    if (itemToRemove.redemptionInfo) { setPackageRedemptions(prev => prev.filter(r => !(r.customerPackageId === itemToRemove.redemptionInfo?.customerPackageId && r.redeemedItemId === itemToRemove.redemptionInfo?.redeemedItemId))); }
+    
+    if (itemToRemove.redemptionInfo) { 
+      setPackageRedemptions(prev => prev.filter(r => !(r.customerPackageId === itemToRemove.redemptionInfo?.customerPackageId && r.redeemedItemId === itemToRemove.redemptionInfo?.redeemedItemId))); 
+    }
     fetchInventoryImpact(updatedBillItems);
   }, [billItems, fetchInventoryImpact]);
   
-  const handleQuantityChange = useCallback((index: number, newQuantity: number) => { if (newQuantity < 1) return; setBillItems(prev => prev.map((item, idx) => { if (idx === index) { const unitPriceForCalc = (customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; return { ...item, quantity: newQuantity, finalPrice: unitPriceForCalc * newQuantity }; } return item; })); }, [customerIsMember]);
-  const handleItemStaffChange = useCallback((index: number, newStaffId: string) => { setBillItems(prev => prev.map((item, idx) => { if (idx === index) { return { ...item, staffId: newStaffId }; } return item; })); }, []);
+  // ✅ CHANGED: Now accepts the unique line item `id` instead of an `index`.
+  const handleQuantityChange = useCallback((idToUpdate: string, newQuantity: number) => { 
+    if (newQuantity < 1) return; 
+    setBillItems(prev => prev.map((item) => { 
+      if (item.id === idToUpdate) { 
+        const unitPriceForCalc = (customerIsMember && item.itemType === 'service' && typeof item.membershipRate === 'number') ? item.membershipRate : item.unitPrice; 
+        return { ...item, quantity: newQuantity, finalPrice: unitPriceForCalc * newQuantity }; 
+      } 
+      return item; 
+    })); 
+  }, [customerIsMember]);
+
+  // ✅ CHANGED: Now accepts the unique line item `id` instead of an `index`.
+  const handleItemStaffChange = useCallback((idToUpdate: string, newStaffId: string) => { 
+    setBillItems(prev => prev.map((item) => { 
+      if (item.id === idToUpdate) { 
+        return { ...item, staffId: newStaffId }; 
+      } 
+      return item; 
+    })); 
+  }, []);
+
   const handlePaymentChange = useCallback((method: keyof typeof newPaymentDetails, amount: string) => { setNewPaymentDetails(prev => ({ ...prev, [method]: parseFloat(amount) || 0 })); }, []);
-  const handleGrantMembership = useCallback(async () => { if (isLoadingFee || membershipFee === null) { toast.error("Membership fee not configured."); return; } if (!membershipBarcode.trim() || !isBarcodeValid) { setError('Please enter a unique, valid barcode.'); return; } if (billItems.some(item => item.itemId === 'MEMBERSHIP_FEE_PRODUCT_ID')) { toast.info("Membership fee is already in the bill."); return; } try { const response = await tenantFetch(`/api/customer/${customer._id}/toggle-membership`, { method: 'POST', body: JSON.stringify({ isMembership: true, membershipBarcode: membershipBarcode.trim() }) }); const result = await response.json(); if (result.success) { setCustomerIsMember(true); setShowMembershipGrantOption(false); setMembershipGranted(true); setIsGrantingMembership(false); toast.success(`Membership granted! Fee added to bill.`); const membershipFeeItem: BillLineItem = { itemType: 'fee', itemId: 'MEMBERSHIP_FEE_PRODUCT_ID', name: 'New Membership Fee', unitPrice: membershipFee, quantity: 1, finalPrice: membershipFee, staffId: stylist._id, isRemovable: false }; setBillItems(prevItems => [...prevItems, membershipFeeItem]); } else { setError(result.message || 'Failed to grant membership'); } } catch (err) { setError('An unexpected error occurred while granting membership.'); } }, [isLoadingFee, membershipFee, membershipBarcode, isBarcodeValid, billItems, tenantFetch, customer._id, stylist._id]);
+  const handleGrantMembership = useCallback(async () => { if (isLoadingFee || membershipFee === null) { toast.error("Membership fee not configured."); return; } if (!membershipBarcode.trim() || !isBarcodeValid) { setError('Please enter a unique, valid barcode.'); return; } if (billItems.some(item => item.itemId === 'MEMBERSHIP_FEE_PRODUCT_ID')) { toast.info("Membership fee is already in the bill."); return; } try { const response = await tenantFetch(`/api/customer/${customer._id}/toggle-membership`, { method: 'POST', body: JSON.stringify({ isMembership: true, membershipBarcode: membershipBarcode.trim() }) }); const result = await response.json(); if (result.success) { setCustomerIsMember(true); setShowMembershipGrantOption(false); setMembershipGranted(true); setIsGrantingMembership(false); toast.success(`Membership granted! Fee added to bill.`); const membershipFeeItem: BillLineItem = { id: `membership-fee-${Date.now()}`, itemType: 'fee', itemId: 'MEMBERSHIP_FEE_PRODUCT_ID', name: 'New Membership Fee', unitPrice: membershipFee, quantity: 1, finalPrice: membershipFee, staffId: stylist._id, isRemovable: false }; setBillItems(prevItems => [...prevItems, membershipFeeItem]); } else { setError(result.message || 'Failed to grant membership'); } } catch (err) { setError('An unexpected error occurred while granting membership.'); } }, [isLoadingFee, membershipFee, membershipBarcode, isBarcodeValid, billItems, tenantFetch, customer._id, stylist._id]);
   const handlePrintReceipt = useCallback(() => window.print(), []);
   const handleApplyGiftCard = useCallback((cardData: { cardId: string; code: string; balance: number }) => { const currentTotals = totals; const amountToApply = Math.min(cardData.balance, currentTotals.trueGrandTotal - (appliedGiftCard?.amountToApply || 0)); if (amountToApply <= 0) { toast.info("The bill is already fully covered."); return; } setAppliedGiftCard({ cardId: cardData.cardId, code: cardData.code, amountToApply: amountToApply, originalBalance: cardData.balance }); toast.success(`₹${amountToApply.toFixed(2)} from gift card applied.`); }, [totals, appliedGiftCard]);
   const handleRemoveGiftCard = useCallback(() => { setAppliedGiftCard(null); toast.info("Applied gift card has been removed."); }, []);
@@ -301,6 +355,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const handleRedeemPackageItem = useCallback((redemptionData: PackageRedemption) => {
     const { itemDetails } = redemptionData;
     const newItem: BillLineItem = {
+      id: `${itemDetails._id}-redeemed-${Date.now()}`,
       itemType: redemptionData.redeemedItemType,
       itemId: itemDetails._id,
       name: `(Package) ${itemDetails.name}`,
@@ -334,7 +389,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
         const finalPaymentDetails = { cash: (originalPaymentDetails.cash || 0) + newPaymentDetails.cash, card: (originalPaymentDetails.card || 0) + newPaymentDetails.card, upi: (originalPaymentDetails.upi || 0) + newPaymentDetails.upi, other: (originalPaymentDetails.other || 0) + newPaymentDetails.other, };
         if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); }
 
-        // ✅ FIX: Construct the package redemptions payload from `billItems` to include the correct staffId.
         const finalPackageRedemptions = billItems
           .filter(item => item.isRedemption && item.redemptionInfo)
           .map(item => ({
@@ -342,7 +396,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
             redeemedItemId: item.itemId,
             redeemedItemType: item.itemType as 'service' | 'product',
             quantityRedeemed: item.quantity,
-            redeemedBy: item.staffId, // This is the crucial addition.
+            redeemedBy: item.staffId,
           }));
 
         const finalPayload: FinalizeBillingPayload = {
@@ -364,7 +418,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
             manualDiscountValue: discount,
             finalManualDiscountApplied: totals.calculatedDiscount,
             giftCardRedemption: appliedGiftCard ? { cardId: appliedGiftCard.cardId, amount: appliedGiftCard.amountToApply } : undefined,
-            // Use the newly constructed array
             packageRedemptions: finalPackageRedemptions.length > 0 ? finalPackageRedemptions : undefined,
         };
 

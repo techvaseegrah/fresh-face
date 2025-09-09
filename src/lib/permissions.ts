@@ -331,6 +331,9 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_MANAGE, description: 'Download the Gift Card Redemption report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.PACKAGES_REPORTS_READ, description: 'View Package Sales and Redemption reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.PACKAGES_REPORTS_MANAGE, description: 'Download Package reports (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // { permission: PERMISSIONS.TOOL_STOCK_READ, description: 'View tool stock, history, and details', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
+  { permission: PERMISSIONS.TOOL_STOCK_REPORTS, description: 'Download Tool stock reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
@@ -418,7 +421,7 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.TOOL_STOCK_READ, description: 'View tool stock, history, and details', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
   { permission: PERMISSIONS.TOOL_STOCK_MANAGE, description: 'Create/edit tools and perform stock adjustments (damage, loss)', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
   { permission: PERMISSIONS.TOOL_STOCK_AUDIT, description: 'Perform and manage full stock audits', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
-  { permission: PERMISSIONS.TOOL_STOCK_REPORTS, description: 'Import tool data and export stock reports', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
+  //{ permission: PERMISSIONS.TOOL_STOCK_REPORTS, description: 'Import tool data and export stock reports', category: PERMISSION_CATEGORIES.TOOL_STOCK_MANAGEMENT },
   // ▲▲▲ END OF ADDITION ▲▲▲
   
   // Super Admin
