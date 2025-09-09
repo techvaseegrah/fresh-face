@@ -408,15 +408,30 @@ const EditStaffContent: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffId, sessionStatus, session, addPositionOption]);
 
-  // Handles changes for all standard form inputs
+  // ✅ MODIFIED: THIS FUNCTION NOW HANDLES YOUR VALIDATION RULES
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      const { name, value, type } = e.target;
-      if (type === 'checkbox') {
+    const { name, value, type } = e.target;
+
+    if (type === 'checkbox') {
         const { checked } = e.target as HTMLInputElement;
-        setFormData(prevFormData => ({ ...prevFormData, [name]: checked }));
-      } else {
-        setFormData(prevFormData => ({ ...prevFormData, [name]: value, }));
-      }
+        setFormData((prevData) => ({ ...prevData, [name]: checked }));
+        return;
+    }
+
+    if (name === 'name') {
+        // Allow alphabetic characters, spaces, AND periods
+        if (/^[a-zA-Z\s.]*$/.test(value)) {
+            setFormData((prevData) => ({ ...prevData, [name]: value }));
+        }
+    } else if (name === 'phone' || name === 'aadharNumber') {
+        // Allow only numeric digits
+        if (/^\d*$/.test(value)) {
+            setFormData((prevData) => ({ ...prevData, [name]: value }));
+        }
+    } else {
+        // For all other fields, update normally
+        setFormData((prevData) => ({ ...prevData, [name]: value }));
+    }
   };
 
   // Handles profile image uploads

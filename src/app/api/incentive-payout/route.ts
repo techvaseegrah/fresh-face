@@ -1,3 +1,4 @@
+// /app/api/incentive-payout/route.ts
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import IncentivePayout from '@/models/IncentivePayout';
@@ -8,7 +9,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    // ✅ THE FIX: Get tenantId from the server session
     const session = await getServerSession(authOptions);
     if (!session?.user?.tenantId) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
     await dbConnect();
     const payouts = await IncentivePayout.find({ tenantId })
-      .populate('staff', 'name')
+      .populate('staff', 'name staffIdNumber') // MODIFIED: Added staffIdNumber to populate
       .sort({ createdAt: -1 });
       
     return NextResponse.json(payouts);
@@ -29,7 +29,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // ✅ THE FIX: Get tenantId from the server session
     const session = await getServerSession(authOptions);
     if (!session?.user?.tenantId) {
       return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
@@ -47,7 +46,7 @@ export async function POST(request: Request) {
     const newPayout = new IncentivePayout({ staff: staffId, amount, reason, tenantId });
     await newPayout.save();
     
-    const result = await IncentivePayout.findById(newPayout._id).populate('staff', 'name');
+    const result = await IncentivePayout.findById(newPayout._id).populate('staff', 'name staffIdNumber'); // MODIFIED: Added staffIdNumber to populate
     return NextResponse.json({ message: 'Payout request submitted successfully.', payout: result }, { status: 201 });
   } catch (error: any) {
     console.error("API POST /incentive-payout Error:", error);

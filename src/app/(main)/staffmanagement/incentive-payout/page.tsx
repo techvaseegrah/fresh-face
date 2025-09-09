@@ -1,20 +1,21 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { useForm, SubmitHandler } from 'react-hook-form';
+import React, { useState, useEffect, useMemo, Fragment } from 'react';
+import { useForm, SubmitHandler, Controller } from 'react-hook-form';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
-import { 
-  TrashIcon, XMarkIcon, CheckIcon, NoSymbolIcon, ClockIcon, 
-  BanknotesIcon, ArchiveBoxIcon, ArrowDownTrayIcon, TableCellsIcon 
+import {
+  TrashIcon, XMarkIcon, CheckIcon, NoSymbolIcon, ClockIcon,
+  BanknotesIcon, ArchiveBoxIcon, ArrowDownTrayIcon, TableCellsIcon
 } from '@heroicons/react/24/outline';
+import { ChevronUpDownIcon } from '@heroicons/react/20/solid';
 import { useStaff } from '../../../../context/StaffContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaMoneyBillWave, FaRegCreditCard, FaWallet } from 'react-icons/fa';
+import { Combobox, Transition } from '@headlessui/react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import jsPDF from 'jspdf';
-// FINAL FIX: Changed the import to a default import
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
@@ -23,13 +24,15 @@ import * as XLSX from 'xlsx';
 interface IStaff {
     _id: string;
     name: string;
-    profilePhotoUrl?: string; 
+    staffIdNumber?: string;
+    profilePhotoUrl?: string;
     status?: 'active' | 'inactive';
 }
 
 interface IStaffMember {
   id: string;
   name: string;
+  staffIdNumber: string;
   status: 'active' | 'inactive';
 }
 
@@ -55,19 +58,12 @@ type TFormInputs = {
   reason: string;
 };
 
-interface PayoutCalculations {
-  pendingRequests: IPayout[];
-  historyRecords: IPayout[];
-  approvedThisMonth: number;
-  totalPendingValue: number;
-}
-
 // --- Main Component ---
 export default function IncentivePayoutPage() {
   const [payouts, setPayouts] = useState<IPayout[]>([]);
   const { staffMembers } = useStaff();
   const [selectedStaffSummary, setSelectedStaffSummary] = useState<IStaffSummary | null>(null);
-  
+
   const [historyDetail, setHistoryDetail] = useState<{ staff: IStaff; summary: IStaffSummary | null; } | null>(null);
   const [isHistoryDetailVisible, setIsHistoryDetailVisible] = useState(false);
   const [isHistorySummaryLoading, setIsHistorySummaryLoading] = useState(false);
@@ -75,16 +71,20 @@ export default function IncentivePayoutPage() {
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
-  
+  const [startDate, setStartDate] = useState<Date | null>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [endDate, setEndDate] = useState<Date | null>(() => new Date());
+
   const { data: session } = useSession();
-  
+
   const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
   const canManage = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_INCENTIVE_PAYOUT_MANAGE), [userPermissions]);
 
-  const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<TFormInputs>();
+  const { register, handleSubmit, watch, reset, control, formState: { errors } } = useForm<TFormInputs>();
   const selectedStaffId = watch('staffId');
 
   // --- Data Fetching Hooks ---
@@ -97,14 +97,14 @@ export default function IncentivePayoutPage() {
         if (payoutsRes.ok) {
             const payoutsData = await payoutsRes.json();
             setPayouts(Array.isArray(payoutsData) ? payoutsData : []);
-        } else { 
+        } else {
             console.error("API Error fetching payouts:", await payoutsRes.text());
-            setPayouts([]); 
+            setPayouts([]);
         }
-      } catch (error) { 
-        console.error("Network or parsing error fetching initial data:", error); 
-        setPayouts([]); 
-      } 
+      } catch (error) {
+        console.error("Network or parsing error fetching initial data:", error);
+        setPayouts([]);
+      }
       finally { setIsLoading(false); }
     };
     fetchInitialData();
@@ -119,10 +119,10 @@ export default function IncentivePayoutPage() {
           if (!res.ok) throw new Error('Failed to fetch summary');
           const data = await res.json();
           setSelectedStaffSummary(data);
-        } catch (error) { 
+        } catch (error) {
           console.error("Failed to fetch staff summary:", error);
-          setSelectedStaffSummary(null); 
-        } 
+          setSelectedStaffSummary(null);
+        }
         finally { setIsSummaryLoading(false); }
       };
       fetchSummary();
@@ -159,12 +159,12 @@ export default function IncentivePayoutPage() {
       if (!response.ok) throw new Error('Status update failed');
       const { payout: updatedPayout } = await response.json();
       setPayouts(prev => prev.map(p => p._id === payoutId ? updatedPayout : p));
-    } catch (error) { 
+    } catch (error) {
         console.error("Error updating status:", error);
-        setPayouts(originalPayouts); 
+        setPayouts(originalPayouts);
     }
   };
-  
+
   const handleDelete = async (payoutId: string) => {
     if (!window.confirm("Are you sure? This action cannot be undone.")) return;
     const originalPayouts = [...payouts];
@@ -172,9 +172,9 @@ export default function IncentivePayoutPage() {
     try {
       const response = await fetch(`/api/incentive-payout/${payoutId}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Deletion failed');
-    } catch (error) { 
+    } catch (error) {
         console.error("Error deleting payout:", error);
-        setPayouts(originalPayouts); 
+        setPayouts(originalPayouts);
     }
   };
 
@@ -199,30 +199,66 @@ export default function IncentivePayoutPage() {
     setIsHistoryDetailVisible(false);
     setHistoryDetail(null);
   };
-  
-  const { pendingRequests, historyRecords, approvedThisMonth, totalPendingValue } = useMemo<PayoutCalculations>(() => {
-    const pending = payouts.filter(p => p.status === 'pending');
-    const history = payouts.filter(p => p.status !== 'pending');
+
+  const { pendingRequests, historyRecords, approvedThisMonth, totalPendingValue, processedThisMonthCount } = useMemo(() => {
+    const pending = [];
+    const history = [];
+    let approvedThisMonthValue = 0;
+    const processedThisMonthItems = [];
     const now = new Date();
-    const approved = payouts.filter(p => {
-        if (p.status !== 'approved' || !p.processedDate) return false;
-        const processed = new Date(p.processedDate);
-        return processed.getFullYear() === now.getFullYear() && processed.getMonth() === now.getMonth();
-    });
-    const totalApproved = approved.reduce((sum, p) => sum + p.amount, 0);
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    for (const p of payouts) {
+      if (p.status === 'pending') {
+        pending.push(p);
+      } else {
+        history.push(p);
+        if (p.processedDate) {
+          const processed = new Date(p.processedDate);
+          if (processed.getFullYear() === currentYear && processed.getMonth() === currentMonth) {
+            processedThisMonthItems.push(p);
+            if (p.status === 'approved') {
+              approvedThisMonthValue += p.amount;
+            }
+          }
+        }
+      }
+    }
+
     const totalPending = pending.reduce((sum, p) => sum + p.amount, 0);
-    return { pendingRequests: pending, historyRecords: history, approvedThisMonth: totalApproved, totalPendingValue: totalPending };
+
+    return {
+      pendingRequests: pending,
+      historyRecords: history,
+      approvedThisMonth: approvedThisMonthValue,
+      totalPendingValue: totalPending,
+      processedThisMonthCount: processedThisMonthItems.length
+    };
   }, [payouts]);
+
 
   const filteredHistory = useMemo(() => {
     return historyRecords.filter(p => {
         if (!startDate || !endDate) return true;
         const endOfDay = new Date(endDate);
         endOfDay.setHours(23, 59, 59, 999);
-        const processedDate = p.processedDate ? new Date(p.processedDate) : new Date(p.createdAt);
-        return processedDate >= startDate && processedDate <= endOfDay;
+        const recordDate = p.processedDate ? new Date(p.processedDate) : new Date(p.createdAt);
+        return recordDate >= startDate && recordDate <= endOfDay;
     });
   }, [historyRecords, startDate, endDate]);
+
+    const filteredStaffMembers = useMemo(() => {
+        const activeStaff = staffMembers.filter((s: IStaffMember) => s.status === 'active');
+        if (searchQuery === '') {
+            return activeStaff;
+        }
+        return activeStaff.filter((staff) =>
+            staff.name.toLowerCase().replace(/\s+/g, '').includes(searchQuery.toLowerCase().replace(/\s+/g, '')) ||
+            staff.staffIdNumber.toString().includes(searchQuery)
+        );
+    }, [staffMembers, searchQuery]);
+
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
@@ -230,7 +266,6 @@ export default function IncentivePayoutPage() {
 
     doc.text("Payout History", 14, 15);
 
-    // FINAL FIX: Changed the function call to use the imported autoTable function
     autoTable(doc, {
         startY: 20,
         head: [["Staff", "Amount", "Request Date", "Status", "Processed Date"]],
@@ -241,16 +276,13 @@ export default function IncentivePayoutPage() {
             p.status,
             p.processedDate ? new Date(p.processedDate).toLocaleDateString() : 'N/A'
         ]),
-        didDrawPage: (data) => {
-            // This hook is used to get consistent positioning after the table
-        }
+        didDrawPage: (data) => {}
     });
 
-    // Get the y position of the last row to draw the total underneath
     const finalY = (doc as any).lastAutoTable.finalY;
     doc.setFont('helvetica', 'bold');
     doc.text(`Total Amount: ₹${totalAmount.toLocaleString()}`, 14, finalY + 10);
-    
+
     doc.save("payout-history.pdf");
   };
 
@@ -267,10 +299,9 @@ export default function IncentivePayoutPage() {
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
 
-    // Add total row at the bottom
     XLSX.utils.sheet_add_aoa(ws, [
       ["", "Total Amount:", totalAmount]
-    ], { origin: -1 }); // -1 means append to the end
+    ], { origin: -1 });
 
     const wb = { Sheets: { 'Payout History': ws }, SheetNames: ['Payout History'] };
     XLSX.writeFile(wb, "payout-history.xlsx");
@@ -292,8 +323,8 @@ export default function IncentivePayoutPage() {
       </header>
 
       <AnimatePresence>
-        {isFormVisible && canManage && ( 
-          <motion.section 
+        {isFormVisible && canManage && (
+          <motion.section
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -301,20 +332,73 @@ export default function IncentivePayoutPage() {
               <h2 className="text-xl font-semibold mb-4 text-gray-700">New Payout Request Form</h2>
               <form onSubmit={handleSubmit(handleNewRequestSubmit)} className="space-y-4">
                   <div>
-                  <label htmlFor="staffId" className="block text-sm font-medium text-gray-700">Staff Member*</label>
-                  <select id="staffId" {...register('staffId', { required: 'Please select a staff member.' })} className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
-                      <option value="">Select Staff...</option>
-                      {staffMembers.filter((s: IStaffMember) => s.status === 'active').map((staff: IStaffMember) => (
-                      <option key={staff.id} value={staff.id}>
-                          {staff.name}
-                      </option>
-                      ))}
-                  </select>
-                  {errors.staffId && <span className="text-red-500 text-sm">{errors.staffId.message}</span>}
+                    <label htmlFor="staffId" className="block text-sm font-medium text-gray-700">Staff Member*</label>
+                    <Controller
+                        name="staffId"
+                        control={control}
+                        rules={{ required: 'Please select a staff member.' }}
+                        render={({ field }) => (
+                            <Combobox
+                                value={staffMembers.find(s => s.id === field.value) || null}
+                                onChange={(staff: IStaffMember | null) => {
+                                    field.onChange(staff ? staff.id : '');
+                                }}
+                            >
+                                <div className="relative mt-1">
+                                    {/* ✅ FIX: Added a darker border like the reference image */}
+                                    <div className="relative w-full cursor-default overflow-hidden rounded-lg bg-white text-left border border-gray-400">
+                                        <Combobox.Input
+                                            className="w-full border-none py-2 pl-3 pr-10 text-sm leading-5 text-gray-900 focus:ring-0"
+                                            /* ✅ FIX: Changed the display format to include "ID:" */
+                                            displayValue={(staff: IStaffMember | null) => staff ? `${staff.name} (ID: ${staff.staffIdNumber})` : ""}
+                                            onChange={(event) => setSearchQuery(event.target.value)}
+                                            placeholder="Search by name or ID..."
+                                        />
+                                        <Combobox.Button className="absolute inset-y-0 right-0 flex items-center pr-2">
+                                            <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                                        </Combobox.Button>
+                                    </div>
+                                    <Transition
+                                        as={Fragment}
+                                        leave="transition ease-in duration-100"
+                                        leaveFrom="opacity-100"
+                                        leaveTo="opacity-0"
+                                        afterLeave={() => setSearchQuery('')}
+                                    >
+                                        <Combobox.Options className="absolute mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm z-10">
+                                            {filteredStaffMembers.length === 0 && searchQuery !== '' ? (
+                                                <div className="relative cursor-default select-none py-2 px-4 text-gray-700">
+                                                    Nothing found.
+                                                </div>
+                                            ) : (
+                                                filteredStaffMembers.map((staff) => (
+                                                    <Combobox.Option
+                                                        key={staff.id}
+                                                        /* ✅ FIX: Removed left padding and checkmark to align text left */
+                                                        className={({ active }) => `relative cursor-default select-none py-2 px-4 ${ active ? 'bg-gray-100 text-gray-900' : 'text-gray-900' }`}
+                                                        value={staff}
+                                                    >
+                                                        {({ selected }) => (
+                                                            <span className={`block truncate ${ selected ? 'font-medium' : 'font-normal' }`}>
+                                                                {/* ✅ FIX: Changed the display format to include "ID:" */ }
+                                                                {staff.name} <span className="text-gray-500">{`(ID: ${staff.staffIdNumber})`}</span>
+                                                            </span>
+                                                        )}
+                                                    </Combobox.Option>
+                                                ))
+                                            )}
+                                        </Combobox.Options>
+                                    </Transition>
+                                </div>
+                            </Combobox>
+                        )}
+                    />
+                    {errors.staffId && <span className="text-red-500 text-sm">{errors.staffId.message}</span>}
                   </div>
-                  
+
+
                   {isSummaryLoading && <div className="text-center p-4">Loading Staff Balance...</div>}
-                  
+
                   {selectedStaffSummary && !isSummaryLoading && (
                   <div className="grid grid-cols-3 gap-4 text-center p-4 bg-gray-100 rounded-lg">
                       <div><span className="text-sm text-gray-500">Total Earned</span><p className="font-bold text-green-600 text-lg">₹{selectedStaffSummary.totalEarned.toLocaleString()}</p></div>
@@ -340,7 +424,7 @@ export default function IncentivePayoutPage() {
                   <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Submit Request</button>
                   </div>
               </form>
-          </motion.section> 
+          </motion.section>
         )}
       </AnimatePresence>
 
@@ -364,8 +448,8 @@ export default function IncentivePayoutPage() {
         <motion.div whileHover={{ scale: 1.05, y: -5 }} className="bg-white p-5 rounded-lg shadow flex items-center space-x-4">
             <div className="bg-blue-100 p-3 rounded-full"><ArchiveBoxIcon className="h-6 w-6 text-blue-500" /></div>
             <div>
-                <h3 className="text-gray-500">Total History Records</h3>
-                <p className="text-3xl font-bold">{historyRecords.length}</p>
+                <h3 className="text-gray-500">History Records (This Month)</h3>
+                <p className="text-3xl font-bold">{processedThisMonthCount}</p>
                 <span className="text-sm text-gray-400">Approved & Rejected</span>
             </div>
         </motion.div>
@@ -401,8 +485,8 @@ export default function IncentivePayoutPage() {
           <div className="flex flex-col md:flex-row justify-between md:items-center mb-4 gap-4">
             <h2 className="text-2xl font-semibold text-gray-800">Payout History</h2>
             <div className="flex items-center space-x-2">
-                <DatePicker selected={startDate} onChange={(date: Date | null) => setStartDate(date)} selectsStart startDate={startDate} endDate={endDate} placeholderText="Start Date" className="p-2 border border-gray-300 rounded-md shadow-sm w-32"/>
-                <DatePicker selected={endDate} onChange={(date: Date | null) => setEndDate(date)} selectsEnd startDate={startDate} endDate={endDate} minDate={startDate || undefined} placeholderText="End Date" className="p-2 border border-gray-300 rounded-md shadow-sm w-32"/>
+                <DatePicker selected={startDate} onChange={(date: Date | null) => setStartDate(date)} selectsStart startDate={startDate} endDate={endDate} placeholderText="Start Date" className="p-2 border border-gray-300 rounded-md shadow-sm w-32" isClearable/>
+                <DatePicker selected={endDate} onChange={(date: Date | null) => setEndDate(date)} selectsEnd startDate={startDate} endDate={endDate} minDate={startDate || undefined} placeholderText="End Date" className="p-2 border border-gray-300 rounded-md shadow-sm w-32" isClearable/>
                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleDownloadPDF} title="Download PDF" className="p-2 bg-red-100 text-red-600 rounded-lg shadow hover:bg-red-200"><ArrowDownTrayIcon className="h-5 w-5"/></motion.button>
                 <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleDownloadExcel} title="Download Excel" className="p-2 bg-green-100 text-green-600 rounded-lg shadow hover:bg-green-200"><TableCellsIcon className="h-5 w-5"/></motion.button>
             </div>
@@ -420,9 +504,9 @@ export default function IncentivePayoutPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredHistory.map((p: IPayout) => (
-                  <tr 
-                    key={p._id} 
+                {filteredHistory.length > 0 ? filteredHistory.map((p: IPayout) => (
+                  <tr
+                    key={p._id}
                     onClick={() => handleHistoryRowClick(p.staff)}
                     className="hover:bg-gray-50 cursor-pointer transition-colors"
                   >
@@ -433,6 +517,7 @@ export default function IncentivePayoutPage() {
                             </div>
                             <div className="ml-4">
                                 <div className="text-sm font-medium text-gray-900">{p.staff.name}</div>
+                                <div className="text-xs text-gray-500">{p.staff.staffIdNumber}</div>
                             </div>
                         </div>
                     </td>
@@ -446,22 +531,26 @@ export default function IncentivePayoutPage() {
                         </td>
                     )}
                   </tr>
-                ))}
+                )) : (
+                    <tr>
+                        <td colSpan={canManage ? 6 : 5} className="text-center py-10 text-gray-500">No payout history found for the selected period.</td>
+                    </tr>
+                )}
               </tbody>
             </table>
           </div>
         </section>
       </main>
-      
+
       <AnimatePresence>
       {isHistoryDetailVisible && historyDetail && (
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={closeHistoryDetail}></motion.div>
-          
-          <motion.div 
-            initial={{ x: "100%" }} 
-            animate={{ x: 0 }} 
-            exit={{ x: "100%" }} 
+
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="fixed top-0 right-0 w-full max-w-md h-full bg-white shadow-xl z-50 p-6 overflow-y-auto">
             <div className="flex justify-between items-center pb-4 border-b">
@@ -472,6 +561,7 @@ export default function IncentivePayoutPage() {
             <div className="text-center my-6">
                 <img className="h-24 w-24 rounded-full mx-auto" src={historyDetail.staff.profilePhotoUrl || `https://ui-avatars.com/api/?name=${historyDetail.staff.name.replace(' ', '+')}&background=random&size=128`} alt={historyDetail.staff.name} />
               <h3 className="text-2xl font-semibold mt-3">{historyDetail.staff.name}</h3>
+              <p className="text-sm text-gray-500">{historyDetail.staff.staffIdNumber}</p>
             </div>
 
             {isHistorySummaryLoading ? (
@@ -497,7 +587,7 @@ export default function IncentivePayoutPage() {
             ) : (
                <div className="text-center p-4 bg-gray-100 rounded-lg mb-6">Could not load financial summary.</div>
             )}
-            
+
             <div>
               <h3 className="font-bold text-gray-800 mb-3">Payout History ({historyRecords.filter(p => p.staff._id === historyDetail.staff._id).length})</h3>
               <div className="space-y-3">
