@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import {
   Wallet, Plus, FileText, Hourglass, CheckCircle2, XCircle, BarChart, FileDown, X, Scale, Banknote,
 } from 'lucide-react';
+import Select from 'react-select'; // Import react-select
 import { useStaff, StaffMember, AdvancePaymentType } from '../../../../context/StaffContext';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
@@ -22,7 +23,6 @@ const StatCard = ({ icon, title, value, description }: { icon: React.ReactNode, 
       <p className="text-sm font-medium text-gray-500">{title}</p>
       <div className="text-gray-400">{icon}</div>
     </div>
-    {/* RESPONSIVE CHANGE: Adjusted text size for better mobile viewing */}
     <p className="mt-2 text-2xl sm:text-3xl font-bold text-gray-800">{value}</p>
     {description && <p className="text-xs text-gray-400 mt-1">{description}</p>}
   </div>
@@ -50,6 +50,12 @@ const AdvancePayment: React.FC = () => {
   const handleOpenDetails = (staffId: string) => { const staff = staffMembers.find(s => s.id === staffId); if (staff) { setSelectedStaff(staff); } };
   const handleCloseDetails = () => setSelectedStaff(null);
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { const { name, value } = e.target; setFormData({ ...formData, [name]: name === 'amount' ? parseFloat(value) || 0 : value }); };
+  
+  // New handler for react-select component
+  const handleStaffSelectChange = (selectedOption: { value: string; label: string } | null) => {
+    setFormData({ ...formData, staffId: selectedOption ? selectedOption.value : '' });
+  };
+
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,46 +89,121 @@ const AdvancePayment: React.FC = () => {
     rejectPromise.catch(error => console.error('Failed to reject advance:', error));
   };
 
-  const pendingPayments = advancePayments.filter((p) => p.status === 'pending');
-  const historyPayments = advancePayments.filter((p) => p.status !== 'pending').sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
+  const pendingPayments = useMemo(() => advancePayments.filter((p) => p.status === 'pending'), [advancePayments]);
+  const historyPayments = useMemo(() => advancePayments.filter((p) => p.status !== 'pending').sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime()), [advancePayments]);
+  
   const now = new Date();
   const startOfCurrentMonth = startOfMonth(now);
   const endOfCurrentMonth = endOfMonth(now);
-  const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
-  const approvedThisMonthAmount = advancePayments
-    .filter(p => { const approvedDate = p.approvedDate ? parseISO(p.approvedDate) : null; return p.status === 'approved' && approvedDate && approvedDate >= startOfCurrentMonth && approvedDate <= endOfCurrentMonth; })
-    .reduce((sum, p) => sum + p.amount, 0);
+  
+  const totalPendingAmount = useMemo(() => pendingPayments.reduce((sum, p) => sum + p.amount, 0), [pendingPayments]);
+  
+  const approvedThisMonthAmount = useMemo(() => advancePayments
+    .filter(p => { 
+        const approvedDate = p.approvedDate ? parseISO(p.approvedDate) : null; 
+        return p.status === 'approved' && approvedDate && approvedDate >= startOfCurrentMonth && approvedDate <= endOfCurrentMonth; 
+    })
+    .reduce((sum, p) => sum + p.amount, 0), [advancePayments, startOfCurrentMonth, endOfCurrentMonth]);
 
   let staffAdvanceHistory: AdvancePaymentType[] = [];
   let remainingSalary = 0;
   let totalAdvanceCount = 0;
-
+  
   if (selectedStaff) {
     staffAdvanceHistory = advancePayments.filter(p => (typeof p.staffId === 'object' ? p.staffId.id : p.staffId) === selectedStaff.id).sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
     totalAdvanceCount = staffAdvanceHistory.filter(p => p.status === 'approved').length;
-    const currentMonthApprovedAdvances = staffAdvanceHistory.filter(p => { const requestDate = parseISO(p.requestDate); return p.status === 'approved' && requestDate >= startOfCurrentMonth && requestDate <= endOfCurrentMonth; }).reduce((sum, p) => sum + p.amount, 0);
+    
+    const currentMonthApprovedAdvances = staffAdvanceHistory.filter(p => { 
+        const approvedDate = p.approvedDate ? parseISO(p.approvedDate) : null; 
+        return p.status === 'approved' && approvedDate && approvedDate >= startOfCurrentMonth && approvedDate <= endOfCurrentMonth; 
+    }).reduce((sum, p) => sum + p.amount, 0);
+
     remainingSalary = (selectedStaff.salary || 0) - currentMonthApprovedAdvances;
   }
 
-  const getFilteredHistory = () => {
-    const approvedHistoryPayments = historyPayments.filter(p => p.status === 'approved');
+  const filteredHistoryPayments = useMemo(() => {
     const now = new Date();
+    let start, end;
+
     if (exportFilter === 'this_month') {
-        const start = startOfMonth(now);
-        const end = endOfMonth(now);
-        return approvedHistoryPayments.filter(p => { const pDate = parseISO(p.requestDate); return pDate >= start && pDate <= end; });
+      start = startOfMonth(now);
+      end = endOfMonth(now);
+    } else if (exportFilter === 'last_month') {
+      const lastMonthDate = subMonths(now, 1);
+      start = startOfMonth(lastMonthDate);
+      end = endOfMonth(lastMonthDate);
+    } else { 
+      return historyPayments;
     }
-    if (exportFilter === 'last_month') {
-        const lastMonthDate = subMonths(now, 1);
-        const start = startOfMonth(lastMonthDate);
-        const end = endOfMonth(lastMonthDate);
-        return approvedHistoryPayments.filter(p => { const pDate = parseISO(p.requestDate); return pDate >= start && pDate <= end; });
-    }
-    return approvedHistoryPayments;
+
+    return historyPayments.filter(p => {
+      const processedDate = p.status === 'approved'
+        ? (p.approvedDate ? parseISO(p.approvedDate) : null)
+        : (p.updatedAt ? parseISO(p.updatedAt) : parseISO(p.requestDate)); 
+
+      if (!processedDate) return false;
+      
+      return processedDate >= start && processedDate <= end;
+    });
+  }, [historyPayments, exportFilter]);
+
+  const historyCardDescription = useMemo(() => {
+    if (exportFilter === 'this_month') return `For ${format(now, 'MMMM yyyy')}`;
+    if (exportFilter === 'last_month') return `For ${format(subMonths(now, 1), 'MMMM yyyy')}`;
+    return 'Approved & Rejected (All Time)';
+  }, [exportFilter, now]);
+
+
+  const handleExportExcel = () => {
+    const dataToExport = filteredHistoryPayments.map(payment => {
+        const staff = staffMembers.find(s => s.id === (typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId));
+        return {
+            'Staff Name': staff?.name || 'N/A',
+            'Staff ID': staff?.staffIdNumber || 'N/A',
+            'Amount': payment.amount,
+            'Status': payment.status,
+            'Request Date': format(parseISO(payment.requestDate), 'dd MMM, yyyy'),
+            'Processed Date': payment.approvedDate ? format(parseISO(payment.approvedDate), 'dd MMM, yyyy') : 'N/A',
+            'Reason': payment.reason,
+        };
+    });
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Advance History');
+    XLSX.writeFile(workbook, `Advance_History_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
-  const handleExportExcel = () => { /* ... (Export logic is unchanged, it's not visual) ... */ };
-  const handleExportPDF = () => { /* ... (Export logic is unchanged, it's not visual) ... */ };
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    const tableData = filteredHistoryPayments.map(payment => {
+        const staff = staffMembers.find(s => s.id === (typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId));
+        return [
+            staff?.name || 'N/A',
+            `₹${payment.amount.toLocaleString('en-IN')}`,
+            payment.status.charAt(0).toUpperCase() + payment.status.slice(1),
+            format(parseISO(payment.requestDate), 'dd MMM, yyyy'),
+            payment.approvedDate ? format(parseISO(payment.approvedDate), 'dd MMM, yyyy') : 'N/A',
+        ];
+    });
+    autoTable(doc, {
+        head: [['Staff', 'Amount', 'Status', 'Request Date', 'Processed Date']],
+        body: tableData,
+        didDrawPage: (data) => {
+            doc.text('Advance Payment History', data.settings.margin.left, 15);
+        }
+    });
+    doc.save(`Advance_History_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+  
+  // Format staff members for react-select
+  const staffOptions = useMemo(() => 
+    staffMembers
+      .filter(s => s.status === 'active')
+      .map(staff => ({
+        value: staff.id,
+        label: `${staff.name} (ID: ${staff.staffIdNumber})`
+      })), [staffMembers]);
+
 
   if (loadingAdvancePayments) return <div className="flex items-center justify-center h-screen bg-slate-50 text-xl text-gray-600">Loading Advance Data...</div>;
   if (errorAdvancePayments) return <div className="p-8 text-center text-red-600 bg-red-50 rounded-lg">{errorAdvancePayments}</div>;
@@ -131,7 +212,6 @@ const AdvancePayment: React.FC = () => {
     <div className="p-4 sm:p-6 lg:p-8 bg-slate-50 min-h-screen font-sans">
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-8">
         <div>
-          {/* RESPONSIVE CHANGE: Adjusted text size for mobile */}
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-800 flex items-center gap-3">
             <Wallet className="text-indigo-500" /> Advance Payments
           </h1>
@@ -153,11 +233,45 @@ const AdvancePayment: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div>
                 <label htmlFor="staffId" className="block text-sm font-medium text-gray-600 mb-1">Staff Member*</label>
-                <select id="staffId" name="staffId" required value={formData.staffId} onChange={handleInputChange}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-black text-gray-900">
-                  <option value="">Select Staff</option>
-                  {staffMembers.filter(s => s.status === 'active').map((staff) => ( <option key={staff.id} value={staff.id}>{staff.name} (ID: {staff.staffIdNumber})</option> ))}
-                </select>
+                <Select
+                  id="staffId"
+                  name="staffId"
+                  options={staffOptions}
+                  isClearable
+                  isSearchable
+                  placeholder="Search by name or ID..."
+                  onChange={handleStaffSelectChange}
+                  value={staffOptions.find(option => option.value === formData.staffId) || null}
+                  // THIS IS THE FIX: Custom filter function
+                  filterOption={(option, inputValue) => 
+                    option.label.toLowerCase().includes(inputValue.toLowerCase())
+                  }
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      padding: '0.3rem',
+                      borderColor: '#D1D5DB',
+                      boxShadow: 'none',
+                      '&:hover': {
+                         borderColor: '#000'
+                      }
+                    }),
+                    input: (base) => ({
+                        ...base,
+                        'input:focus': {
+                            boxShadow: 'none',
+                        },
+                    }),
+                    option: (base, state) => ({
+                      ...base,
+                      backgroundColor: state.isSelected ? '#000' : base.backgroundColor,
+                       '&:hover': {
+                         backgroundColor: '#f3f4f6',
+                         color: '#111827'
+                      }
+                    })
+                  }}
+                />
               </div>
               <div>
                 <label htmlFor="amount" className="block text-sm font-medium text-gray-600 mb-1">Amount (₹)*</label>
@@ -181,10 +295,12 @@ const AdvancePayment: React.FC = () => {
         </div>
       </div>
       
+      {/* The rest of your component remains unchanged... */}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
         <StatCard icon={<Hourglass size={24} />} title="Pending Requests" value={`${pendingPayments.length}`} description={`Totaling ₹${totalPendingAmount.toLocaleString('en-IN')}`} />
         <StatCard icon={<CheckCircle2 size={24} className="text-green-500"/>} title="Approved This Month" value={`₹${approvedThisMonthAmount.toLocaleString('en-IN')}`} description={format(now, 'MMMM yyyy')} />
-        <StatCard icon={<BarChart size={24} />} title="Total History Records" value={`${historyPayments.length}`} description="Approved & Rejected" />
+        <StatCard icon={<BarChart size={24} />} title="History Records" value={`${filteredHistoryPayments.length}`} description={historyCardDescription} />
       </div>
 
       <div className="mb-10">
@@ -227,21 +343,19 @@ const AdvancePayment: React.FC = () => {
       <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-gray-200/80">
         <div className="flex flex-col sm:flex-row justify-between sm:items-center p-4 sm:p-6 border-b border-gray-200 gap-4">
             <h3 className="text-xl sm:text-2xl font-bold text-gray-700">Advance History</h3>
-            {/* RESPONSIVE CHANGE: Added flex-wrap to ensure controls wrap on small screens */}
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                 <select value={exportFilter} onChange={(e) => setExportFilter(e.target.value)} className="px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black">
                     <option value="this_month">This Month</option><option value="last_month">Last Month</option><option value="all_time">All Time</option>
                 </select>
-                <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={getFilteredHistory().length === 0} title="Export to Excel">
+                <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredHistoryPayments.length === 0} title="Export to Excel">
                     <FileDown size={16} className="text-green-600" /><span className="hidden sm:inline ml-2">Excel</span>
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={getFilteredHistory().length === 0} title="Download as PDF">
+                <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={filteredHistoryPayments.length === 0} title="Download as PDF">
                     <FileDown size={16} className="text-red-600" /><span className="hidden sm:inline ml-2">PDF</span>
                 </Button>
             </div>
         </div>
         
-        {/* RESPONSIVE STRATEGY: DESKTOP TABLE - Visible on medium screens and up */}
         <div className="overflow-x-auto hidden md:block">
           <table className="min-w-full">
             <thead className="bg-slate-100">
@@ -254,7 +368,7 @@ const AdvancePayment: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {historyPayments.map((payment) => {
+              {filteredHistoryPayments.map((payment) => {
                 const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
                 const staff = staffMembers.find(s => s.id === staffDetailsId);
                 return (
@@ -269,15 +383,14 @@ const AdvancePayment: React.FC = () => {
                   </tr>
                 );
               })}
-              {historyPayments.length === 0 && (<tr><td colSpan={5} className="text-center py-16 text-gray-500">No advance payment history available.</td></tr>)}
+              {filteredHistoryPayments.length === 0 && (<tr><td colSpan={5} className="text-center py-16 text-gray-500">No advance payment history for the selected period.</td></tr>)}
             </tbody>
           </table>
         </div>
         
-        {/* RESPONSIVE STRATEGY: MOBILE CARD LIST - Visible below medium screens */}
         <div className="block md:hidden">
             <div className='divide-y divide-gray-200'>
-            {historyPayments.map((payment) => {
+            {filteredHistoryPayments.map((payment) => {
                 const staffDetailsId = typeof payment.staffId === 'object' ? payment.staffId.id : payment.staffId;
                 const staff = staffMembers.find(s => s.id === staffDetailsId);
                 return (
@@ -297,16 +410,14 @@ const AdvancePayment: React.FC = () => {
                     </div>
                 );
             })}
-             {historyPayments.length === 0 && (<div className="text-center py-16 text-gray-500"><FileText size={40} className="mx-auto text-gray-300 mb-3" />No history available.</div>)}
+             {filteredHistoryPayments.length === 0 && (<div className="text-center py-16 text-gray-500"><FileText size={40} className="mx-auto text-gray-300 mb-3" />No history available.</div>)}
             </div>
         </div>
       </div>
 
-      {/* RESPONSIVE SIDE PANEL (MODAL) */}
       {selectedStaff && (
         <>
           <div className="fixed inset-0 bg-black/60 z-40 transition-opacity" onClick={handleCloseDetails}></div>
-          {/* On mobile, this panel will cover the full screen. On desktop, it's a side panel */}
           <div className={`fixed top-0 right-0 h-full w-full max-w-md bg-slate-50 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${selectedStaff ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="flex flex-col h-full">
               <div className="flex justify-between items-center p-4 sm:p-5 border-b border-gray-200 bg-white"><h2 className="text-lg sm:text-xl font-semibold text-gray-800">Employee Details</h2><button onClick={handleCloseDetails} className="p-2 rounded-full text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"><X size={24} /></button></div>

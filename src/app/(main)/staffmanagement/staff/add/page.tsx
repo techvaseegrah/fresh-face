@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   ArrowLeft, Save, Upload, PlusCircle, XCircle, Eye, Trash2, FileText,
   Banknote, ShieldCheck, User, Mail, Phone, Fingerprint, Briefcase,
-  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, BookCheck, // Added BookCheck for clarity, can be any icon
+  Calendar, IndianRupee, MapPin, ImageIcon, Badge, EyeOff, BookCheck,
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -29,7 +29,7 @@ interface StaffFormData {
   passbookImage: string | null;
   agreementImage: string | null;
   password: string;
-  isAvailableForBooking: boolean; // ✅ ADD THIS STATE
+  isAvailableForBooking: boolean;
 }
 
 const DEFAULT_STAFF_IMAGE = `data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d1d5db'%3e%3cpath fill-rule='evenodd' d='M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z' clip-rule='evenodd' /%3e%3c/svg%3e`;
@@ -144,7 +144,7 @@ const AddStaffPage: React.FC = () => {
     salary: "", address: "", image: DEFAULT_STAFF_IMAGE, aadharNumber: "",
     aadharImage: null, passbookImage: null, agreementImage: null,
     password: "",
-    isAvailableForBooking: true, // ✅ INITIALIZE NEW STATE
+    isAvailableForBooking: true,
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -201,12 +201,26 @@ const AddStaffPage: React.FC = () => {
 
   // --- MODIFIED: Added real-time input validation ---
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    // ✅ HANDLE CHECKBOX INPUT
     const { name, value, type } = e.target;
+
     if (type === 'checkbox') {
         const { checked } = e.target as HTMLInputElement;
         setFormData((prevData) => ({ ...prevData, [name]: checked }));
+        return;
+    }
+
+    if (name === 'name') {
+        // ✅ UPDATED: Allow alphabetic characters, spaces, AND periods
+        if (/^[a-zA-Z\s.]*$/.test(value)) {
+            setFormData((prevData) => ({ ...prevData, [name]: value }));
+        }
+    } else if (name === 'phone' || name === 'aadharNumber') {
+        // Allow only numeric digits
+        if (/^\d*$/.test(value)) {
+            setFormData((prevData) => ({ ...prevData, [name]: value }));
+        }
     } else {
+        // For all other fields, update normally
         setFormData((prevData) => ({ ...prevData, [name]: value }));
     }
   };
@@ -259,7 +273,7 @@ const AddStaffPage: React.FC = () => {
       image: formData.image === DEFAULT_STAFF_IMAGE ? null : formData.image, aadharNumber: formData.aadharNumber,
       aadharImage: formData.aadharImage, passbookImage: formData.passbookImage, agreementImage: formData.agreementImage,
       password: formData.password,
-      isAvailableForBooking: formData.isAvailableForBooking, // ✅ SEND NEW DATA TO API
+      isAvailableForBooking: formData.isAvailableForBooking,
     };
 
     try {
@@ -385,7 +399,6 @@ const AddStaffPage: React.FC = () => {
             <textarea id="address" name="address" rows={3} value={formData.address} onChange={handleInputChange} className="w-full rounded-md border border-gray-300 px-3 py-2 text-black focus:outline-none focus:ring-1 focus:ring-black focus:border-black disabled:bg-gray-100" disabled={isSubmitting}></textarea>
           </div>
           
-           {/* --- ✅ ADDED THE NEW CHECKBOX FIELD HERE --- */}
            <div className="md:col-span-2 border-t pt-5">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Settings</h3>
             <div className="relative flex items-start">
