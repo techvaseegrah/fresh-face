@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import {
   IndianRupee, Calendar, Search, Download,
-  CheckCircle, Clock, FileSpreadsheet
+  CheckCircle, Clock, FileSpreadsheet, Loader2
 } from 'lucide-react';
 import { useStaff, StaffMember, SalaryRecordType, StaffProvider } from '../../../../context/StaffContext';
 import Card from '../../../../components/ui/Card';
@@ -14,11 +14,16 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
+// --- ADDED: Import permission helpers ---
+import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
 
 
 // --- Main Report Component ---
 const SalaryReport = () => {
-    // --- THIS IS THE FIX (1/2): Get the fetch function from the context ---
+    // --- ADDED: Get user permissions and session status ---
+    const { data: session, status: sessionStatus } = useSession();
+    const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
     const { salaryRecords, staffMembers, loadingSalary, fetchSalaryRecords } = useStaff();
     
     const [searchTerm, setSearchTerm] = useState('');
@@ -32,12 +37,11 @@ const SalaryReport = () => {
       return Array.from({ length: 10 }, (_, i) => startYear + i);
     }, []);
     
-    // --- THIS IS THE FIX (2/2): Call the fetch function when the component loads ---
     useEffect(() => {
-      if (fetchSalaryRecords) {
+      if (sessionStatus === 'authenticated' && fetchSalaryRecords) {
         fetchSalaryRecords({ populateStaff: 'true' });
       }
-    }, [fetchSalaryRecords]);
+    }, [sessionStatus, fetchSalaryRecords]);
 
     const enrichedSalaryRecords = useMemo(() => {
       if (!salaryRecords.length || !staffMembers.length) return [];
@@ -109,6 +113,23 @@ const SalaryReport = () => {
             setIsExporting(false);
         }
     };
+    
+    // --- ADDED: Handle session loading and access denied states ---
+    if (sessionStatus === 'loading') {
+        return <div className="p-6 text-center"><Loader2 className="animate-spin inline-block mr-2"/>Loading session...</div>;
+    }
+
+    if (sessionStatus === 'unauthenticated' || !hasPermission(userPermissions, PERMISSIONS.REPORT_SALARY_READ)) {
+        return (
+            <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                    <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+                </div>
+            </div>
+        );
+    }
+
 
     return (
         <div className="font-sans">
@@ -135,10 +156,13 @@ const SalaryReport = () => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                         <input type="text" placeholder="Search paid staff..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 w-full pr-4 py-2 border border-slate-300 rounded-lg"/>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} disabled={isExporting}><Download size={16} className="mr-2 text-red-600"/>PDF</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleExport('excel')} disabled={isExporting}><FileSpreadsheet size={16} className="mr-2 text-green-600"/>Excel</Button>
-                    </div>
+                    {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
+                    {hasPermission(userPermissions, PERMISSIONS.REPORT_SALARY_MANAGE) && (
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} disabled={isExporting}><Download size={16} className="mr-2 text-red-600"/>PDF</Button>
+                            <Button variant="outline" size="sm" onClick={() => handleExport('excel')} disabled={isExporting}><FileSpreadsheet size={16} className="mr-2 text-green-600"/>Excel</Button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="overflow-x-auto">

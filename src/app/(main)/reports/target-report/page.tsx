@@ -7,12 +7,14 @@ import autoTable from 'jspdf-autotable';
 import {
     IndianRupee, ShoppingCart, Receipt, Wrench,
     Calculator, PhoneCall, CalendarCheck, TrendingUp,
-    FileSpreadsheet, FileText, Filter,
+    FileSpreadsheet, FileText, Filter, Loader2,
 } from 'lucide-react';
 import type { TargetSheetData } from '@/models/TargetSheet';
 import { useSession } from 'next-auth/react';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
+import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
+
 
 // --- HELPER FUNCTIONS ---
 const formatCurrency = (value: number | undefined | null) => {
@@ -49,6 +51,8 @@ const MetricCard = ({ title, achieved, target, isCurrency = true, icon }: { titl
 // --- MAIN REPORT COMPONENT ---
 export default function TargetReportPage() {
     const { data: session, status } = useSession();
+    const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
     const [data, setData] = useState<TargetSheetData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [dateRange, setDateRange] = useState({
@@ -100,7 +104,6 @@ export default function TargetReportPage() {
         { name: 'APPOINTMENTS', t: target.appointments, a: achieved.appointments, h: headingTo.appointments, icon: <CalendarCheck size={20} className="text-pink-500" /> },
     ];
 
-    // --- THIS IS THE FIX: Restored full download logic ---
     const getExportFileName = () => {
         const startStr = dateRange.start.toLocaleDateString('en-CA'); // YYYY-MM-DD
         const endStr = dateRange.end.toLocaleDateString('en-CA');
@@ -140,8 +143,20 @@ export default function TargetReportPage() {
     };
 
     if (status === 'loading' || (isLoading && !data)) {
-        return <div className="p-8 text-center">Loading Target Report...</div>;
+        return <div className="p-8 text-center flex items-center justify-center"><Loader2 className="animate-spin mr-2" />Loading Target Report...</div>;
     }
+
+    if (status === 'unauthenticated' || !hasPermission(userPermissions, PERMISSIONS.REPORT_TARGET_READ)) {
+        return (
+            <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                    <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+                </div>
+            </div>
+        );
+    }
+
     if (!data) {
         return <div className="p-8 text-center text-red-500">Failed to load target data. Please try again.</div>;
     }
@@ -170,10 +185,12 @@ export default function TargetReportPage() {
                 <div className="bg-white rounded-xl overflow-hidden">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 p-6 border-b">
                         <h3 className="text-xl font-bold text-gray-800">Detailed Metrics</h3>
-                        <div className="flex items-center gap-2">
-                             <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={isLoading}><FileSpreadsheet size={16} className="text-green-600 mr-2"/>Excel</Button>
-                             <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isLoading}><FileText size={16} className="text-red-600 mr-2"/>PDF</Button>
-                        </div>
+                        {hasPermission(userPermissions, PERMISSIONS.REPORT_TARGET_MANAGE) && (
+                            <div className="flex items-center gap-2">
+                                 <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={isLoading}><FileSpreadsheet size={16} className="text-green-600 mr-2"/>Excel</Button>
+                                 <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={isLoading}><FileText size={16} className="text-red-600 mr-2"/>PDF</Button>
+                            </div>
+                        )}
                     </div>
                     
                     <div className="overflow-x-auto hidden md:block">

@@ -5,15 +5,16 @@ import { useSession } from 'next-auth/react';
 import {
   XMarkIcon, BanknotesIcon, ArchiveBoxIcon, ArrowDownTrayIcon, TableCellsIcon
 } from '@heroicons/react/24/outline';
-import { useStaff, StaffProvider } from '../../../../context/StaffContext';
+import { StaffProvider } from '../../../../context/StaffContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaMoneyBillWave, FaRegCreditCard, FaWallet } from 'react-icons/fa';
 import { format, parseISO } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
+// --- ADDED: Import permission helpers ---
+import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
 
 // --- Type Definitions ---
 interface IStaff {
@@ -28,6 +29,10 @@ interface IStaffSummary {
 
 // --- Main Read-Only Report Component ---
 const IncentivePayoutReport = () => {
+  // --- ADDED: Get session status and user permissions ---
+  const { data: session, status } = useSession();
+  const userPermissions = session?.user?.role?.permissions || [];
+
   const [payouts, setPayouts] = useState<IPayout[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [historyDetail, setHistoryDetail] = useState<{ staff: IStaff; summary: IStaffSummary | null; } | null>(null);
@@ -41,8 +46,6 @@ const IncentivePayoutReport = () => {
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     end: new Date(),
   });
-
-  const { data: session } = useSession();
 
   useEffect(() => {
     const fetchPayouts = async () => {
@@ -117,7 +120,6 @@ const IncentivePayoutReport = () => {
     });
   }, [historyRecords, appliedDateRange]);
 
-  // --- THIS IS THE FIX: Restored full download logic ---
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
     const totalAmount = filteredHistory.reduce((sum, p) => sum + p.amount, 0);
@@ -141,7 +143,6 @@ const IncentivePayoutReport = () => {
     doc.save("payout-history.pdf");
   };
 
-  // --- THIS IS THE FIX: Restored full download logic ---
   const handleDownloadExcel = () => {
     const totalAmount = filteredHistory.reduce((sum, p) => sum + p.amount, 0);
     const dataToExport = filteredHistory.map(p => ({
@@ -157,7 +158,21 @@ const IncentivePayoutReport = () => {
     XLSX.writeFile(wb, "payout-history.xlsx");
   };
 
-  if (isLoading) { return <div className="p-8 text-center">Loading Payout Report...</div>; }
+  // --- ADDED: Handle loading and unauthorized states ---
+  if (status === "loading" || isLoading) {
+    return <div className="p-8 text-center">Loading Payout Report...</div>;
+  }
+  
+  if (status === "unauthenticated" || !hasPermission(userPermissions, PERMISSIONS.REPORT_INCENTIVE_PAYOUT_READ)) {
+      return (
+          <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                  <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                  <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="font-sans">
@@ -205,10 +220,13 @@ const IncentivePayoutReport = () => {
         <section>
           <div className="flex flex-col md:flex-row justify-between md:items-center mb-4 gap-4">
             <h2 className="text-2xl font-semibold text-gray-800">Payout History</h2>
-            <div className="flex items-center space-x-2">
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleDownloadPDF} disabled={filteredHistory.length === 0} title="Download PDF" className="p-2 bg-red-100 text-red-600 rounded-lg shadow hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"><ArrowDownTrayIcon className="h-5 w-5"/></motion.button>
-                <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleDownloadExcel} disabled={filteredHistory.length === 0} title="Download Excel" className="p-2 bg-green-100 text-green-600 rounded-lg shadow hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"><TableCellsIcon className="h-5 w-5"/></motion.button>
-            </div>
+            {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
+            {hasPermission(userPermissions, PERMISSIONS.REPORT_INCENTIVE_PAYOUT_MANAGE) && (
+              <div className="flex items-center space-x-2">
+                  <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleDownloadPDF} disabled={filteredHistory.length === 0} title="Download PDF" className="p-2 bg-red-100 text-red-600 rounded-lg shadow hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"><ArrowDownTrayIcon className="h-5 w-5"/></motion.button>
+                  <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={handleDownloadExcel} disabled={filteredHistory.length === 0} title="Download Excel" className="p-2 bg-green-100 text-green-600 rounded-lg shadow hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"><TableCellsIcon className="h-5 w-5"/></motion.button>
+              </div>
+            )}
           </div>
           <div className="bg-white rounded-lg shadow-md overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">

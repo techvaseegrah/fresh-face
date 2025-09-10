@@ -11,6 +11,8 @@ import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
+// --- ADDED: Import permission helpers ---
+import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -23,19 +25,20 @@ const CHART_COLORS = [ '#4f46e5', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#
 // --- UI Helper Components ---
 const SummaryCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number; subValue?: string; iconBgColor: string; bgIconColor: string; }> = ({ icon, title, value, subValue, iconBgColor, bgIconColor }) => ( <div className="relative bg-white p-5 rounded-xl shadow-sm border border-slate-100 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 overflow-hidden"><div className={`absolute -right-4 -bottom-5 ${bgIconColor} opacity-50`}>{React.cloneElement(icon as React.ReactElement, { size: 96, strokeWidth: 1 })}</div><div className="relative z-10"><div className={`p-3 rounded-lg inline-block ${iconBgColor}`}>{React.cloneElement(icon as React.ReactElement, { size: 24 })}</div><p className="mt-4 text-sm text-slate-500">{title}</p><p className="text-2xl font-bold text-slate-800">{value}</p>{subValue && <p className="text-lg text-slate-800 font-semibold">{subValue}</p>}</div></div> );
 const PerformancePieChart: React.FC<{ data: PerformanceData[] }> = ({ data }) => { const chartData = useMemo(() => { if (!data || data.length === 0) return null; const sortedData = [...data].sort((a, b) => b.sales - a.sales); const labels = sortedData.map(staff => staff.name); const salesData = sortedData.map(staff => staff.sales); return { labels, datasets: [{ label: 'Total Sales', data: salesData, backgroundColor: CHART_COLORS, borderColor: '#ffffff', borderWidth: 2, hoverOffset: 8 }] }; }, [data]); if (!chartData) return null; return ( <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-100"><h3 className="text-lg font-bold text-slate-800 flex items-center mb-4"><PieChart className="mr-2 text-indigo-500" size={20}/>Sales Contribution</h3><div className="relative h-64 sm:h-80 w-full"><Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }} /></div></div> ); };
-// --- FIX: Incentive Chart Component is now included ---
 const IncentivePieChart: React.FC<{ data: any[] }> = ({ data }) => { const chartData = useMemo(() => { if (!data || data.length === 0) return null; const filteredData = data.filter(staff => parseFloat(staff['Total Incentive (₹)']) > 0); if (filteredData.length === 0) return null; const labels = filteredData.map(staff => staff['Staff Name']); const incentiveData = filteredData.map(staff => parseFloat(staff['Total Incentive (₹)'])); return { labels, datasets: [{ label: 'Total Incentive (₹)', data: incentiveData, backgroundColor: CHART_COLORS.slice().reverse(), borderColor: '#ffffff', borderWidth: 2, hoverOffset: 8 }] }; }, [data]); if (!chartData) return null; return ( <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-100"><h3 className="text-lg font-bold text-slate-800 flex items-center mb-4"><PieChart className="mr-2 text-teal-500" size={20}/>Incentive Contribution</h3><div className="relative h-64 sm:h-80 w-full"><Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }} /></div></div> ); };
 
 
 // --- Main Report Component ---
 const PerformanceReport: React.FC = () => {
-  const { data: session } = useSession();
+  // --- ADDED: Get user permissions from session ---
+  const { data: session, status: sessionStatus } = useSession();
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<Date>(startOfMonth(new Date()));
   const [endDate, setEndDate] = useState<Date>(new Date());
   
   const [performanceData, setPerformanceData] = useState<PerformanceData[]>([]);
-  // --- FIX: Added state for incentive data ---
   const [incentiveReportData, setIncentiveReportData] = useState<IncentiveReportData | null>(null);
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,14 +60,13 @@ const PerformanceReport: React.FC = () => {
     if (!session?.user?.tenantId || !startDate || !endDate) return;
     setIsLoading(true);
     setError(null);
-    setIncentiveReportData(null); // Reset incentive data on new fetch
+    setIncentiveReportData(null);
 
     const formattedStartDate = format(startDate, 'yyyy-MM-dd');
     const formattedEndDate = format(endDate, 'yyyy-MM-dd');
     const tenantId = session.user.tenantId;
 
     try {
-      // --- FIX: Fetch both performance and incentive data in parallel ---
       const [performanceRes, incentiveRes] = await Promise.all([
         fetch(`/api/performance?startDate=${formattedStartDate}&endDate=${formattedEndDate}`, { headers: { 'x-tenant-id': tenantId } }),
         fetch('/api/incentives/report', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId }, body: JSON.stringify({ startDate: formattedStartDate, endDate: formattedEndDate }) })
@@ -109,7 +111,6 @@ const PerformanceReport: React.FC = () => {
   
   const formatCurrency = (value: number | string) => `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
   
-  // --- FIX: Restored full download logic ---
   const getExportData = () => {
     const headers = ["S.NO", "Employee Name", "Employee Code", "Client Count", "ABV", "Service Net Sales", "Product Sales", "Total Sales", "Projected Sales", "Projected Clients"];
     const body = filteredStaffPerformance.map((staff, index) => {
@@ -139,6 +140,22 @@ const PerformanceReport: React.FC = () => {
     autoTable(doc, { head: [headers], body, foot: [totalsRow], startY: 30, theme: 'grid', headStyles: { fillColor: [22, 160, 133], fontSize: 8 }, footStyles: { fillColor: [44, 62, 80], textColor: [255, 255, 255], fontStyle: 'bold' }, styles: { fontSize: 8, cellPadding: 2 } });
     doc.save(`Performance_Report_${format(startDate, 'yyyy-MM-dd')}_to_${format(endDate, 'yyyy-MM-dd')}.pdf`);
   };
+
+  // --- ADDED: Handle session loading and access denied states ---
+  if (sessionStatus === 'loading') {
+      return <div className="p-6 text-center">Loading session...</div>;
+  }
+
+  if (sessionStatus === 'unauthenticated' || !hasPermission(userPermissions, PERMISSIONS.REPORT_PERFORMANCE_READ)) {
+      return (
+          <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                  <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                  <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="font-sans">
@@ -173,10 +190,13 @@ const PerformanceReport: React.FC = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 w-full pr-4 py-2 border border-slate-300 rounded-lg"/>
             </div>
-            <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={isLoading || filteredStaffPerformance.length === 0}><FileDown size={16} className="mr-2 text-red-600"/>PDF</Button>
-                <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={isLoading || filteredStaffPerformance.length === 0}><Sheet size={16} className="mr-2 text-green-600"/>Excel</Button>
-            </div>
+            {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
+            {hasPermission(userPermissions, PERMISSIONS.REPORT_PERFORMANCE_MANAGE) && (
+              <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={isLoading || filteredStaffPerformance.length === 0}><FileDown size={16} className="mr-2 text-red-600"/>PDF</Button>
+                  <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={isLoading || filteredStaffPerformance.length === 0}><Sheet size={16} className="mr-2 text-green-600"/>Excel</Button>
+              </div>
+            )}
         </div>
 
         <div className="overflow-x-auto">
@@ -208,7 +228,6 @@ const PerformanceReport: React.FC = () => {
           <div className="md:hidden divide-y divide-slate-100">{/* ... Mobile view JSX ... */}</div>
         </div>
         
-        {/* --- FIX: Grid for two charts --- */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
           <PerformancePieChart data={performanceData} />
           {incentiveReportData && <IncentivePieChart data={incentiveReportData.staffSummary} />}

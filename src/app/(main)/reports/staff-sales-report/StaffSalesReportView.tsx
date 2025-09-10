@@ -4,13 +4,16 @@ import React, { useState, useEffect, useMemo, Fragment, useCallback } from 'reac
 import { useSession } from 'next-auth/react';
 import { format, startOfMonth } from 'date-fns';
 import { toast } from 'react-toastify';
-import { User, IndianRupee, Wrench, ShoppingCart, Gift, Package, Award, Calendar, Search, FileDown, X } from 'lucide-react';
+import { User, IndianRupee, Wrench, ShoppingCart, Gift, Package, Award, Calendar, Search, FileDown, X, Loader2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import { Transition } from '@headlessui/react';
+// --- ADDED: Import permission helpers ---
+import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
+
 
 // --- Type Definitions ---
 interface SaleDetail { name: string; quantity: number; price: number; }
@@ -82,7 +85,10 @@ interface StaffSalesReportViewProps {
 }
 
 export default function StaffSalesReportView({ initialData, initialError }: StaffSalesReportViewProps) {
-    const { data: session } = useSession();
+    // --- ADDED: Get user permissions and session status ---
+    const { data: session, status: sessionStatus } = useSession();
+    const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
     const [reportData, setReportData] = useState<StaffSaleRecord[]>(initialData);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(initialError || null);
@@ -162,6 +168,23 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
             XLSX.writeFile(wb, "staff_sales_report.xlsx");
         }
     };
+    
+    // --- ADDED: Handle session loading and access denied states ---
+    if (sessionStatus === 'loading') {
+        return <div className="p-6 text-center flex items-center justify-center"><Loader2 className="animate-spin mr-2" />Loading session...</div>;
+    }
+
+    if (sessionStatus === 'unauthenticated' || !hasPermission(userPermissions, PERMISSIONS.REPORT_STAFF_SALES_READ)) {
+        return (
+            <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                    <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+                </div>
+            </div>
+        );
+    }
+
 
     return (
         <div className="font-sans">
@@ -180,10 +203,13 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
             <Card>
                 <div className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b">
                     <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="text" placeholder="Search staff..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 w-full pr-4 py-2 border rounded-lg"/></div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} disabled={isLoading || !!error}><FileDown size={16} className="mr-2 text-red-600"/>PDF</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleExport('excel')} disabled={isLoading || !!error}><FileDown size={16} className="mr-2 text-green-600"/>Excel</Button>
-                    </div>
+                    {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
+                    {hasPermission(userPermissions, PERMISSIONS.REPORT_STAFF_SALES_MANAGE) && (
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} disabled={isLoading || !!error}><FileDown size={16} className="mr-2 text-red-600"/>PDF</Button>
+                            <Button variant="outline" size="sm" onClick={() => handleExport('excel')} disabled={isLoading || !!error}><FileDown size={16} className="mr-2 text-green-600"/>Excel</Button>
+                        </div>
+                    )}
                 </div>
                 
                 <div className="overflow-x-auto">
