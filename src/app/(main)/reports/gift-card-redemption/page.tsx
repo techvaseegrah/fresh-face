@@ -1,11 +1,14 @@
+// /app/your-path/GiftCardRedemptionReportPage.tsx
+
 'use client';
 
-import React, { useState, useCallback,useEffect } from 'react';
-import  Button from '@/components/ui/Button';
+import React, { useState, useCallback, useEffect } from 'react';
+import Button from '@/components/ui/Button';
 import { useSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
-// Type for the redemption report data (based on the API response)
+// --- (STEP 1: UPDATE THE INTERFACE) ---
+// Add the balanceAfter field to match the API response
 interface RedemptionReportItem {
     _id: string;
     redemptionDate: string;
@@ -14,10 +17,11 @@ interface RedemptionReportItem {
     guestName: string;
     guestNumber: string;
     amountRedeemed: number;
+    balanceAfter: number; // Add this line
 }
 
 export default function GiftCardRedemptionReportPage() {
-     const { data: session, status } = useSession();
+    const { data: session, status } = useSession();
     const userPermissions = session?.user?.role?.permissions || [];
     
     if (status === "loading") {
@@ -40,7 +44,7 @@ export default function GiftCardRedemptionReportPage() {
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
     const fetchReport = useCallback(async () => {
-       
+        setIsLoading(true); // Set loading to true when starting a fetch
         try {
             const params = new URLSearchParams({ from: fromDate, to: toDate });
             const response = await fetch(`/api/reports/gift-card-redemption?${params}`);
@@ -59,10 +63,10 @@ export default function GiftCardRedemptionReportPage() {
             setIsLoading(false);
         }
     }, [fromDate, toDate]);
+    
     useEffect(() => {
         fetchReport();
-    }, []); // The empty dependency array [] means it only runs on mount
-    // --- END: THE FIX -
+    }, []); 
 
     const handleShowReport = () => {
         fetchReport();
@@ -132,6 +136,8 @@ export default function GiftCardRedemptionReportPage() {
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Guest Name</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Guest Number</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Redeemed</th>
+                            {/* --- (STEP 2: ADD THE TABLE HEADER) --- */}
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance After</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Remark</th>
                         </tr>
                     </thead>
@@ -145,6 +151,8 @@ export default function GiftCardRedemptionReportPage() {
                                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{item.guestName}</td>
                                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{item.guestNumber}</td>
                                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">₹{item.amountRedeemed}</td>
+                                {/* --- (STEP 3: RENDER THE DATA) --- */}
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">₹{item.balanceAfter}</td>
                                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">--</td>
                             </tr>
                         ))}

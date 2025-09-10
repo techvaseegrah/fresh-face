@@ -57,7 +57,7 @@ const BillItemsTable: React.FC<BillItemsTableProps> = ({
                     // ✅ CHANGED: Passing item.id instead of index
                     onChange={(e) => onStaffChange(item.id, e.target.value)}
                     className="w-full max-w-full sm:max-w-[200px] p-1 border rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                    disabled={isLoadingStaff || item.itemType === 'gift_card' || item.itemType === 'package'}
+                    disabled={isLoadingStaff}
                   >
                     <option value="" disabled>-- Assign Staff --</option>
                     {availableStaff.map(staff => (

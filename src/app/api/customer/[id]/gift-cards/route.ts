@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/dbConnect';
 import { GiftCard } from '@/models/GiftCard';
+import { GiftCardTemplate } from '@/models/GiftCardTemplate'; 
 
 // The type definition for params is updated to expect 'id'
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {

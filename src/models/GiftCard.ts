@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Model } from 'mongoose';
+import './GiftCardTemplate'; 
 
 // Interface for TypeScript type safety
 export interface IGiftCard extends Document {

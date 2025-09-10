@@ -1,16 +1,12 @@
-// Replace the entire content of this file with the new, corrected version.
+// /api/reports/download/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { fetchSoldReportData, fetchRedemptionReportData } from '@/lib/reportService';
 import * as XLSX from 'xlsx';
-// --- START: MODIFICATION ---
-import { jsPDF } from 'jspdf'; // Use a named import for the class
-import autoTable from 'jspdf-autotable'; // Import the plugin function directly
-// --- END: MODIFICATION ---
-
-// The `declare module` is no longer needed with this direct import style.
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Helper for Excel (unchanged)
 function generateExcel(data: any[], sheetName: string): Buffer {
@@ -20,7 +16,6 @@ function generateExcel(data: any[], sheetName: string): Buffer {
     return XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
 }
 
-// --- START: NEW PDF GENERATION FUNCTION using jsPDF and jspdf-autotable ---
 async function generatePdfWithJsPDF(data: any[], title: string, reportType: 'sold' | 'redemption'): Promise<Buffer> {
     const doc = new jsPDF({
         orientation: 'landscape',
@@ -33,44 +28,54 @@ async function generatePdfWithJsPDF(data: any[], title: string, reportType: 'sol
         head = [['Invoice #', 'Purchase Date', 'Expiry Date', 'Card Name', 'Card Number', 'Guest Name', 'Guest Number', 'Staff', 'Amount']];
         dataKeys = ['invoiceNumber', 'purchaseDate', 'expiryDate', 'giftCardName', 'giftCardNumber', 'guestName', 'guestNumber', 'staff', 'amount'];
     } else { // redemption
-        head = [['Date', 'Card Name', 'Card Number', 'Guest Name', 'Guest Number', 'Amount Redeemed', 'Remark']];
-        dataKeys = ['date', 'giftCardName', 'giftCardNumber', 'guestName', 'guestNumber', 'amountRedeemed', 'remark'];
+        head = [['Date', 'Card Name', 'Card Number', 'Guest Name', 'Guest Number', 'Amount Redeemed', 'Balance After', 'Remark']];
+        dataKeys = ['date', 'giftCardName', 'giftCardNumber', 'guestName', 'guestNumber', 'amountRedeemed', 'balanceAfter', 'remark'];
     }
 
-    const body = data.map(row => dataKeys.map(key => String(row[key] ?? 'N/A')));
+    // --- START: NEW ROBUST FIX ---
+    const body = data.map(row => dataKeys.map(key => {
+        const value = row[key];
+
+        // Check if we are processing a monetary column
+        if (key === 'amount' || key === 'amountRedeemed' || key === 'balanceAfter') {
+            
+            // Log the value and its type to your server console for debugging
+            console.log(`PDF-GEN-DEBUG >> Key: "${key}", Value: "${value}", Type: "${typeof value}"`);
+
+            // Forcefully convert the value to a number. This handles both numbers and string-numbers.
+            const num = Number(value);
+
+            // Check if the conversion was successful (i.e., it's not Not-a-Number)
+            if (!isNaN(num)) {
+                // Use toFixed(2) which is guaranteed to not have thousands separators
+                return `INR ${num.toFixed(2)}`;
+            }
+        }
+
+        // For all other values, or if the number conversion failed, convert to a string safely
+        return String(value ?? 'N/A');
+    }));
+    // --- END: NEW ROBUST FIX ---
     
     doc.setFontSize(18);
     doc.text(title, 14, 22);
 
-    // --- THE FIX: Call autoTable as a function with the doc instance ---
     autoTable(doc, {
         startY: 30,
         head: head,
         body: body,
         theme: 'grid',
-        styles: {
-            fontSize: 8,
-            cellPadding: 2,
-        },
-        headStyles: {
-            fillColor: [240, 240, 240],
-            textColor: [50, 50, 50],
-            fontStyle: 'bold',
-        },
-        alternateRowStyles: {
-            fillColor: [250, 250, 250],
-        },
+        styles: { fontSize: 8, cellPadding: 2, },
+        headStyles: { fillColor: [240, 240, 240], textColor: [50, 50, 50], fontStyle: 'bold', },
+        alternateRowStyles: { fillColor: [250, 250, 250], },
     });
-    // --- END FIX ---
 
     const pdfOutput = doc.output('arraybuffer');
     return Buffer.from(pdfOutput);
 }
-// --- END: NEW PDF GENERATION FUNCTION ---
 
 
 export async function GET(req: NextRequest) {
-    // ... (The rest of your GET handler remains exactly the same)
     try {
         const session = await getServerSession(authOptions);
         if (!session?.user?.tenantId) { return new NextResponse('Unauthorized', { status: 401 }); }

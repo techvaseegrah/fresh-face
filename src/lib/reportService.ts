@@ -76,6 +76,7 @@ export async function fetchRedemptionReportData(tenantId: string, fromDate: Date
         guestName: safeDecrypt((log.customerId as any)?.name, 'customer name'),
         guestNumber: safeDecrypt((log.customerId as any)?.phoneNumber, 'customer phone'),
         amountRedeemed: log.amountRedeemed,
+        balanceAfter: log.balanceAfter,
         remark: '' // Placeholder for remarks
     }));
 }
