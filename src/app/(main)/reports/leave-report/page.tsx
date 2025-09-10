@@ -12,13 +12,15 @@ import {
     CalendarOff,
     FileSpreadsheet,
     FileDown,
-    AlertCircle, // Import AlertCircle for error display
+    AlertCircle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
+// --- ADDED: Import permission helpers ---
+import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
 
 // --- Interfaces ---
 interface StaffMember {
@@ -46,7 +48,10 @@ const getStatusChip = (status: LeaveRequest['status']) => {
 
 // --- Main Report Component ---
 const LeaveReport = () => {
+    // --- ADDED: Get user permissions from session ---
     const { data: session, status: sessionStatus } = useSession();
+    const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
+
     const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [loading, setLoading] = useState(true);
@@ -68,8 +73,6 @@ const LeaveReport = () => {
                 setLoading(true);
                 setError(null);
                 try {
-                    // --- THIS IS THE FIX: Fetch data sequentially instead of all at once ---
-                    // 1. Fetch the primary data (leave requests). If this fails, show an error.
                     const leaveRes = await fetch('/api/leave', { headers });
                     if (!leaveRes.ok) {
                         throw new Error(`Failed to fetch leave requests. The report cannot be displayed.`);
@@ -77,15 +80,13 @@ const LeaveReport = () => {
                     const leaveData = await leaveRes.json();
                     setLeaveRequests(leaveData.data || []);
 
-                    // 2. Attempt to fetch the secondary data (staff list). This is not critical.
                     const staffRes = await fetch('/api/staff?action=list', { headers });
                     if (staffRes.ok) {
                         const staffData = await staffRes.json();
                         setStaffList(staffData.data || []);
                     } else {
-                        // If it fails, log a warning and continue. The main report will still work.
                         console.warn("Could not fetch the staff list, possibly due to missing 'STAFF_LIST_READ' permission. 'Total Staff' card may be inaccurate.");
-                        setStaffList([]); // Ensure staff list is empty on failure
+                        setStaffList([]);
                     }
                 } catch (err: any) {
                     setError(err.message);
@@ -153,7 +154,18 @@ const LeaveReport = () => {
 
     if (loading || sessionStatus === 'loading') return <div className="flex items-center justify-center h-screen bg-slate-50 text-xl text-gray-600">Loading Leave Report...</div>;
     
-    // Display a prominent error if the primary data failed to load
+    // --- ADDED: Handle access denied state ---
+    if (sessionStatus === 'unauthenticated' || !hasPermission(userPermissions, PERMISSIONS.REPORT_LEAVE_READ)) {
+        return (
+            <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                    <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+                </div>
+            </div>
+        );
+    }
+    
     if (error) return (
         <div className="p-8 text-center text-red-700 bg-red-50 rounded-lg flex items-center justify-center gap-3">
             <AlertCircle size={24} />
@@ -187,10 +199,13 @@ const LeaveReport = () => {
                 <div>
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-5">
                         <h3 className="text-2xl font-bold text-gray-700">Leave History</h3>
-                        <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredHistoryRequests.length === 0}><FileSpreadsheet size={16} className="mr-2"/>Excel</Button>
-                            <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={filteredHistoryRequests.length === 0}><FileDown size={16} className="mr-2"/>PDF</Button>
-                        </div>
+                        {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
+                        {hasPermission(userPermissions, PERMISSIONS.REPORT_LEAVE_MANAGE) && (
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={filteredHistoryRequests.length === 0}><FileSpreadsheet size={16} className="mr-2"/>Excel</Button>
+                                <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={filteredHistoryRequests.length === 0}><FileDown size={16} className="mr-2"/>PDF</Button>
+                            </div>
+                        )}
                     </div>
                     <LeaveHistoryTable requests={filteredHistoryRequests} />
                 </div>

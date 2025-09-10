@@ -11,6 +11,8 @@ import autoTable from 'jspdf-autotable';
 import { HookData } from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+// --- ADDED: Import permission helpers ---
+import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 
 // --- TYPE DEFINITIONS ---
 interface StaffMember { id: string; name: string; }
@@ -18,20 +20,14 @@ interface IncentiveData { [staffId: string]: { [date: string]: { incentive: numb
 
 // --- HELPER FUNCTIONS ---
 const toLocalDateString = (date: Date) => date.toISOString().split('T')[0];
-const getWeekDateRange = (date: Date) => {
-  const start = new Date(date);
-  start.setDate(start.getDate() - (start.getDay() === 0 ? 6 : start.getDay() - 1));
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setUTCHours(23, 59, 59, 999);
-  return { startDate: start, endDate: end };
-};
 
 // --- MAIN REPORT COMPONENT ---
 export default function IncentiveReportPage() {
-  const { data: session } = useSession();
+  // --- ADDED: Get session status and user permissions ---
+  const { data: session, status } = useSession();
+  const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
   const currentTenantId = useMemo(() => session?.user?.tenantId, [session]);
+  
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [incentiveData, setIncentiveData] = useState<IncentiveData>({});
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
@@ -56,7 +52,6 @@ export default function IncentiveReportPage() {
     try {
       const headers = new Headers({ 'X-Tenant-ID': currentTenantId });
       
-      // --- THIS IS THE FIX: Fetch staff list first and handle specific permission errors ---
       const staffRes = await fetch('/api/staff?action=list', { headers });
       if (!staffRes.ok) {
         if (staffRes.status === 403 || staffRes.status === 401) {
@@ -67,14 +62,12 @@ export default function IncentiveReportPage() {
       const staffResult = await staffRes.json();
       setStaffList(staffResult.data.map((s: any) => ({ id: s.id, name: s.name })));
 
-      // Proceed to fetch incentive data only if staff list was successful
       const incentiveRes = await fetch(`/api/incentives/summary?startDate=${startDate}&endDate=${endDate}`, { headers });
       if (!incentiveRes.ok) throw new Error("Failed to load incentive data.");
       const incentiveResult = await incentiveRes.json();
       setIncentiveData(incentiveResult.data);
     } catch (err: any) {
       setError(err.message);
-      // We don't toast here anymore since the error is displayed prominently.
     } finally {
       setIsLoading(false);
     }
@@ -139,6 +132,23 @@ export default function IncentiveReportPage() {
     saveAs(data, `incentive_report_${toLocalDateString(weekDays[0])}_${toLocalDateString(weekDays[6])}.xlsx`);
   };
 
+  // --- ADDED: Handle session loading state ---
+  if (status === "loading") {
+    return <div className="p-6 text-center"><Loader2 className="animate-spin inline-block mr-2"/>Loading session...</div>;
+  }
+
+  // --- ADDED: Handle access denied state ---
+  if (status === "unauthenticated" || !hasPermission(userPermissions, PERMISSIONS.REPORT_INCENTIVE_READ)) {
+      return (
+          <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                  <h2 className="text-2xl font-bold text-red-600">Access Denied</h2>
+                  <p className="mt-2 text-gray-600">You do not have permission to view this report.</p>
+              </div>
+          </div>
+      );
+  }
+
   const dateRangeDisplay = `${weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   return (
@@ -164,10 +174,13 @@ export default function IncentiveReportPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 w-full pr-4 py-2 border border-gray-300 rounded-lg"/>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={isLoading || !!error}><Download size={16} className="mr-2 text-red-600"/>PDF</Button>
-            <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={isLoading || !!error}><Download size={16} className="mr-2 text-green-600"/>Excel</Button>
-          </div>
+          {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
+          {hasPermission(userPermissions, PERMISSIONS.REPORT_INCENTIVE_MANAGE) && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={isLoading || !!error}><Download size={16} className="mr-2 text-red-600"/>PDF</Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadExcel} disabled={isLoading || !!error}><Download size={16} className="mr-2 text-green-600"/>Excel</Button>
+            </div>
+          )}
         </div>
 
         {error && (
