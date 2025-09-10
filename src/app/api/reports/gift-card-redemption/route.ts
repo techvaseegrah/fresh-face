@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
                 guestName: guestName,
                 guestNumber: guestNumber,
                 amountRedeemed: log.amountRedeemed,
+                balanceAfter: log.balanceAfter,
                 invoiceId: log.invoiceId,
             };
         });

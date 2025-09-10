@@ -14,6 +14,16 @@ import { getSession } from 'next-auth/react';
 import CustomerGiftCardList from './CustomerGiftCardList';
 import CustomerPackageList from './CustomerPackageList';
 
+// --- 1. NEW TYPE DEFINITION (Added at the top) ---
+// Define a type for our imported invoice data for clarity
+interface ImportedInvoice {
+  _id: string;
+  createdAt: string;
+  grandTotal: number;
+  lineItems: { name: string }[];
+  invoiceNumber?: string;
+}
+
 interface CrmCustomerDetailPanelProps {
   customer: CrmCustomer | null;
   isOpen: boolean;
@@ -33,6 +43,48 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
   const [membershipBarcode, setMembershipBarcode] = useState('');
   const [isCheckingBarcode, setIsCheckingBarcode] = useState(false);
   const [barcodeError, setBarcodeError] = useState('');
+
+  // --- 2. NEW STATE & useEffect LOGIC (Added here) ---
+  // State to hold the imported history data
+  const [importedHistory, setImportedHistory] = useState<ImportedInvoice[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // This useEffect will run whenever the panel opens or the customer changes to fetch imported data
+  useEffect(() => {
+    if (isOpen && customer?._id) {
+      const fetchImportedHistory = async () => {
+        setIsLoadingHistory(true);
+        try {
+          const session = await getSession(); // Get session for tenantId
+          if (!session?.user?.tenantId) { throw new Error("Session is invalid."); }
+          
+          const res = await fetch(`/api/customer/${customer._id}/imported-invoices`, {
+            headers: { 'x-tenant-id': session.user.tenantId }
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            setImportedHistory(data);
+          } else {
+            console.error("Failed to fetch imported history");
+            setImportedHistory([]);
+          }
+        } catch (error) {
+          console.error("Error fetching imported history:", error);
+          setImportedHistory([]);
+        } finally {
+          setIsLoadingHistory(false);
+        }
+      };
+      
+      fetchImportedHistory();
+    } else {
+      // Clear the history when the panel is closed or there is no customer
+      setImportedHistory([]);
+    }
+  }, [isOpen, customer]);
+  // --- END OF NEW STATE & useEffect ---
+
 
   useEffect(() => {
     if (!isOpen || !customer) {
@@ -68,11 +120,8 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
 
   const handleConfirmGrant = () => { if (!customer || !membershipBarcode.trim() || !!barcodeError || isCheckingBarcode) { return; } onGrantMembership(customer._id, membershipBarcode.trim()); };
   
-  // --- THE FIX IS HERE ---
-  // Changed `toLocaleDateDateString` to the correct `toLocaleDateString`
-  const formatDate = (dateString?: string) => { if (!dateString) return 'N/A'; return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', }); };
-  // --- END FIX ---
-
+  const formatDate = (dateString?: string) => { if (!dateString) return 'N/A'; return new Date(dateString).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric', }); };
+  
   const formatGender = (gender?: string) => { if (!gender || gender.toLowerCase() === 'other') { return 'Not Specified'; } return gender.charAt(0).toUpperCase() + gender.slice(1); };
 
   const panelClasses = `fixed top-0 right-0 h-full bg-white shadow-2xl transition-transform duration-300 ease-in-out z-40 w-full md:w-[400px] lg:w-[450px] ${ isOpen ? 'translate-x-0' : 'translate-x-full' }`;
@@ -157,6 +206,35 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
             )}
           </div>
         </div>
+        
+        {/* --- 3. NEW JSX SECTION (Added at the end) --- */}
+        <div>
+          <h4 className="text-base font-semibold text-gray-800 mb-3 border-t pt-4">Imported Transaction History</h4>
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+            {isLoadingHistory ? (
+              <p className="text-gray-500 text-sm py-4 text-center italic">Loading imported history...</p>
+            ) : importedHistory.length > 0 ? (
+                importedHistory.map((invoice) => (
+                  <div key={invoice._id} className="p-3 bg-gray-100/70 rounded-lg text-sm">
+                    <div className="flex justify-between items-start">
+                        <p className="font-semibold">{formatDate(invoice.createdAt)}</p>
+                        <p className="font-bold text-gray-800">₹{invoice.grandTotal.toFixed(2)}</p>
+                    </div>
+                    {invoice.invoiceNumber && (
+                        <p className="text-xs text-gray-600">Invoice #: {invoice.invoiceNumber}</p>
+                    )}
+                    <div className="flex items-start gap-2 mt-2 pt-2 border-t text-xs text-gray-500">
+                        <TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                        <span>{invoice.lineItems.map(item => item.name).join(', ')}</span>
+                    </div>
+                  </div>
+              ))
+            ) : (
+              <p className="text-gray-500 text-sm py-4 text-center italic">No imported history found.</p>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );

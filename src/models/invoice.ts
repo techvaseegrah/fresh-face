@@ -20,7 +20,7 @@ interface ILineItem {
 export interface IInvoice extends Document {
   tenantId: mongoose.Schema.Types.ObjectId;
   invoiceNumber: string;
-  appointmentId: mongoose.Schema.Types.ObjectId;
+  appointmentId?: mongoose.Schema.Types.ObjectId | null;
   customerId: mongoose.Schema.Types.ObjectId;
   stylistId: mongoose.Schema.Types.ObjectId;
   billingStaffId: mongoose.Schema.Types.ObjectId;
@@ -50,6 +50,7 @@ export interface IInvoice extends Document {
   notes?: string;
   customerWasMember: boolean;
   membershipGrantedDuringBilling: boolean;
+  isImported?: boolean;
 }
 
 // --- SUB-SCHEMA for each item in the invoice ---
@@ -78,7 +79,7 @@ const lineItemSchema = new Schema<ILineItem>({
 const invoiceSchema = new Schema<IInvoice>({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
   invoiceNumber: { type: String }, 
-  appointmentId: { type: Schema.Types.ObjectId, ref: 'Appointment', required: true, index: true },
+  appointmentId: { type: Schema.Types.ObjectId, ref: 'Appointment', required: false, index: true },
   customerId: { type: Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
   stylistId: { type: Schema.Types.ObjectId, ref: 'Staff', required: true },
   billingStaffId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -107,7 +108,11 @@ const invoiceSchema = new Schema<IInvoice>({
   paymentStatus: { type: String, enum: ['Paid', 'Pending', 'Refunded'], default: 'Paid' },
   notes: { type: String, trim: true },
   customerWasMember: { type: Boolean, default: false },
-  membershipGrantedDuringBilling: { type: Boolean, default: false }
+  membershipGrantedDuringBilling: { type: Boolean, default: false },
+  isImported: { 
+      type: Boolean, 
+      default: false 
+    },
 }, { timestamps: true });
 
 

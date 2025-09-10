@@ -1,5 +1,3 @@
-// FILE: /app/crm/page.tsx - COMPLETE, MULTI-TENANT & MOBILE-RESPONSIVE
-
 'use client';
 
 import React, { useState } from 'react';
@@ -12,10 +10,14 @@ import { useSession, getSession } from 'next-auth/react';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import CustomerImportModal from '@/components/admin/CustomerImportModal';
 import { toast } from 'react-toastify';
+// --- 1. IMPORT THE NEW MODAL COMPONENT ---
+import CustomerHistoryImportModal from '@/components/admin/CustomerHistoryImportModal';
 
 export default function CrmPage() {
   const { data: session } = useSession();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  // --- 2. ADD STATE FOR OUR NEW MODAL ---
+  const [isHistoryImportModalOpen, setIsHistoryImportModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   // This custom hook is assumed to be updated for multi-tenancy
@@ -96,6 +98,10 @@ export default function CrmPage() {
             )}
             {canImportCustomers && (
               <button onClick={() => setIsImportModalOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Import</button>
+            )}
+            {/* --- 3. ADD THE NEW BUTTON --- */}
+            {canImportCustomers && (
+              <button onClick={() => setIsHistoryImportModalOpen(true)} className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg shadow-sm hover:bg-purple-700 transition-colors">Import History</button>
             )}
             {canCreateCustomers && (
               <button onClick={handleOpenAddModal} className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-black rounded-lg shadow-sm hover:bg-gray-800 transition-colors">
@@ -184,7 +190,6 @@ export default function CrmPage() {
             </div>
           )}
 
-          {/* This container makes the table scrollable on mobile without breaking the page layout */}
           {!isLoading && !pageError && customers.length > 0 && (
              <div className="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
                 <CustomerTable customers={customers} pagination={pagination} onViewDetails={handleViewCustomerDetails} onEdit={canUpdateCustomers ? handleOpenEditModal : undefined} onDelete={canDeleteCustomers ? handleDeleteCustomer : undefined} onGoToPage={goToPage} />
@@ -197,6 +202,9 @@ export default function CrmPage() {
       {isDetailPanelOpen && <div onClick={() => setIsDetailPanelOpen(false)} className="fixed inset-0 bg-black/30 z-30 md:hidden" />}
       <AddEditCustomerModal isOpen={isAddEditModalOpen} onClose={handleCloseAddEditModal} onSave={refreshData} customerToEdit={editingCustomer} />
       <CustomerImportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImportSuccess={handleImportSuccess} />
+      
+      {/* --- 4. RENDER THE NEW MODAL --- */}
+      <CustomerHistoryImportModal isOpen={isHistoryImportModalOpen} onClose={() => { setIsHistoryImportModalOpen(false); refreshData(); }} />
     </div>
   );
 }
