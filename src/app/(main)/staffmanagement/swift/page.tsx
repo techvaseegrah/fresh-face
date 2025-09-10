@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, ArrowRight, Save, Loader2, AlertCircle, Edit, XCircle, User, CalendarDays, Search, Moon } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useSession } from 'next-auth/react';
+import InputMask from 'react-input-mask';
 
 // --- TYPE DEFINITIONS ---
 interface StaffMember {
@@ -16,7 +17,7 @@ interface StaffMember {
 interface Shift {
   _id?: string;
   employeeId: string;
-  date: string; // YYYY-MM-DD format for consistency
+  date: string;
   isWeekOff: boolean;
   shiftTiming: string;
 }
@@ -73,13 +74,14 @@ const parseShiftTiming = (timing: string) => {
     const [startStr, endStr] = timing.split('-').map(s => s.trim());
     const parsePart = (part: string, defaultPeriod: 'AM' | 'PM') => {
         if (!part) return { time: '', period: defaultPeriod };
-        const match = part.match(/(\d{1,2}(?::\d{2})?)\s*(AM|PM)?/i);
+        // This regex now correctly handles partial time inputs like "10:__"
+        const match = part.match(/([\d:_]+)\s*(AM|PM)?/i);
         if (!match) return { time: '', period: defaultPeriod };
-        const time = match[1] || '';
+        const time = match[1]?.replace(/_/g, '') || ''; // Get partial time and remove underscores
         let period: 'AM' | 'PM' = defaultPeriod;
         const periodStr = match[2]?.toUpperCase();
         if (periodStr === 'AM' || periodStr === 'PM') {
-            period = periodStr; 
+            period = periodStr;
         }
         return { time, period };
     };
@@ -121,32 +123,33 @@ const ShiftDayCell: React.FC<ShiftDayCellProps> = ({ day, shift, isEditing, onTe
   const [startPeriod, setStartPeriod] = useState<'AM' | 'PM'>('AM');
   const [endTime, setEndTime] = useState('');
   const [endPeriod, setEndPeriod] = useState<'AM' | 'PM'>('PM');
-  const endTimeRef = useRef<HTMLInputElement>(null);
-
+  
   const dateStr = formatDateToISOString(day);
 
+  // THIS IS THE MAIN BUG FIX.
+  // This effect now ONLY runs when you start editing. It no longer runs
+  // after every keystroke, which prevents it from resetting your time.
   useEffect(() => {
-    if (!shift) return;
-    if (isEditing) {
+    if (isEditing && shift) {
       const { startTime: sT, startPeriod: sP, endTime: eT, endPeriod: eP } = parseShiftTiming(shift.shiftTiming);
       setStartTime(sT);
       setStartPeriod(sP);
       setEndTime(eT);
       setEndPeriod(eP);
     }
-  }, [isEditing, shift]);
+    // By only depending on `isEditing`, we prevent the reset bug.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
   useEffect(() => {
     if (!shift) return;
     if (isEditing && !shift.isWeekOff) {
-      const newShiftTiming = (startTime || endTime) 
-        ? `${startTime} ${startPeriod} - ${endTime} ${endPeriod}`
-        : '';
-      if (newShiftTiming !== shift.shiftTiming) {
+        const newShiftTiming = (startTime || endTime)
+            ? `${startTime} ${startPeriod} - ${endTime} ${endPeriod}`
+            : '';
         onTempChange(dateStr, 'shiftTiming', newShiftTiming);
-      }
     }
-  }, [startTime, startPeriod, endTime, endPeriod, isEditing, dateStr, onTempChange, shift?.isWeekOff, shift?.shiftTiming]);
+  }, [startTime, startPeriod, endTime, endPeriod]);
 
   const handleWeekOffToggle = useCallback(() => {
     if (!shift) return;
@@ -178,14 +181,6 @@ const ShiftDayCell: React.FC<ShiftDayCellProps> = ({ day, shift, isEditing, onTe
     </button>
   );
 
-  const handleStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setStartTime(value);
-    if (value.length >= 2 || value.includes(':')) {
-      endTimeRef.current?.focus();
-    }
-  };
-
   return (
     <div className="flex flex-col gap-2 p-3 rounded-lg border bg-white min-h-[120px] transition-all">
       <div className="flex justify-between items-center">
@@ -196,15 +191,32 @@ const ShiftDayCell: React.FC<ShiftDayCellProps> = ({ day, shift, isEditing, onTe
         {isEditing ? (
           <div className="w-full space-y-2">
             <fieldset disabled={shift.isWeekOff} className="space-y-2 group">
+              {/* Start Time Input */}
               <div className="flex items-center gap-1">
-                <input type="text" placeholder="Start" value={startTime} onChange={handleStartTimeChange} className="w-full p-1.5 text-center border-gray-300 border rounded-md text-sm focus:ring-2 focus:ring-black focus:border-black group-disabled:bg-gray-100 group-disabled:cursor-not-allowed" />
+                <InputMask
+                  mask="99:99"
+                  maskPlaceholder={null} // Visual improvement: Removes the "__"
+                  placeholder="Start"
+                  value={startTime}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartTime(e.target.value)}
+                  className="w-full p-1.5 text-center border-gray-300 border rounded-md text-sm focus:ring-2 focus:ring-black focus:border-black group-disabled:bg-gray-100 group-disabled:cursor-not-allowed"
+                />
                 <div className="flex w-16 shrink-0 rounded-md border border-gray-300 bg-gray-200 p-0.5">
                   <AmPmButton period="AM" selected={startPeriod === 'AM'} onClick={() => setStartPeriod('AM')} />
                   <AmPmButton period="PM" selected={startPeriod === 'PM'} onClick={() => setStartPeriod('PM')} />
                 </div>
               </div>
+
+              {/* End Time Input */}
               <div className="flex items-center gap-1">
-                <input ref={endTimeRef} type="text" placeholder="End" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full p-1.5 text-center border-gray-300 border rounded-md text-sm focus:ring-2 focus:ring-black focus:border-black group-disabled:bg-gray-100 group-disabled:cursor-not-allowed" />
+                <InputMask
+                  mask="99:99"
+                  maskPlaceholder={null} // Visual improvement: Removes the "__"
+                  placeholder="End"
+                  value={endTime}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndTime(e.target.value)}
+                  className="w-full p-1.5 text-center border-gray-300 border rounded-md text-sm focus:ring-2 focus:ring-black focus:border-black group-disabled:bg-gray-100 group-disabled:cursor-not-allowed"
+                />
                  <div className="flex w-16 shrink-0 rounded-md border border-gray-300 bg-gray-200 p-0.5">
                   <AmPmButton period="AM" selected={endPeriod === 'AM'} onClick={() => setEndPeriod('AM')} />
                   <AmPmButton period="PM" selected={endPeriod === 'PM'} onClick={() => setEndPeriod('PM')} />
@@ -217,8 +229,8 @@ const ShiftDayCell: React.FC<ShiftDayCellProps> = ({ day, shift, isEditing, onTe
           </div>
         ) : (
           <div className="text-center font-semibold">
-            {shift.isWeekOff ? (<span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full text-sm"><Moon size={14} /> OFF</span>) 
-            : shift.shiftTiming ? (<span className="text-black text-lg">{shift.shiftTiming}</span>) 
+            {shift.isWeekOff ? (<span className="flex items-center gap-1.5 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full text-sm"><Moon size={14} /> OFF</span>)
+            : shift.shiftTiming ? (<span className="text-black text-lg">{shift.shiftTiming}</span>)
             : (<span className="text-gray-400 text-lg">--</span>)}
           </div>
         )}
@@ -312,7 +324,7 @@ export default function ShiftManagementPage() {
     try {
       const { startDate: weekStart, endDate: weekEnd } = getWeekDateRange(currentDate);
       const shiftApiUrl = `/api/shifts?startDate=${weekStart.toISOString()}&endDate=${weekEnd.toISOString()}`;
-      
+
       const [staffResponse, shiftResponse] = await Promise.all([
         tenantAwareFetch('/api/staff?action=list'),
         tenantAwareFetch(shiftApiUrl)
@@ -323,7 +335,7 @@ export default function ShiftManagementPage() {
 
       const staffData = await staffResponse.json();
       const shiftData = await shiftResponse.json();
-      
+
       const activeStaff: StaffMember[] = staffData.data.filter((s: StaffMember) => s.status === 'active');
       setStaffList(activeStaff);
 
@@ -364,7 +376,7 @@ export default function ShiftManagementPage() {
       fetchData();
     }
   }, [fetchData, tenantId]);
-  
+
   const filteredStaffList = useMemo(() => {
     if (!searchQuery) return staffList;
     const lowercasedQuery = searchQuery.toLowerCase().trim();
@@ -380,7 +392,7 @@ export default function ShiftManagementPage() {
     setEditingRowId(null);
     setTempRowData(null);
   }, []);
-  
+
   const handleTempRowChange = useCallback((date: string, field: 'shiftTiming' | 'isWeekOff', value: string | boolean) => {
     setTempRowData(prev => {
       if (!prev) return prev;
@@ -447,7 +459,7 @@ export default function ShiftManagementPage() {
             </div>
           </div>
         </header>
-        
+
         <div className="mb-6 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
           <input
@@ -458,7 +470,7 @@ export default function ShiftManagementPage() {
             className="w-full max-w-sm pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black"
           />
         </div>
-        
+
         {error && (
           <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md mb-6 flex items-center gap-3">
             <AlertCircle size={20} /> <div><strong className="font-bold">Error:</strong> {error}</div>
