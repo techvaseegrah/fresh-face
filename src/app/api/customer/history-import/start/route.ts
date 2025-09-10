@@ -5,7 +5,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { getTenantIdOrBail } from '@/lib/tenant';
-import formidable, { File } from 'formidable';
+// formidable is no longer needed in this file with the new approach
+// import formidable, { File } from 'formidable'; 
 import { promises as fs } from 'fs';
 import path from 'path';
 import ImportJob, { IImportJob } from '@/models/ImportJob';
@@ -13,7 +14,8 @@ import { processHistoryImport } from '@/lib/customerHistoryImporter';
 import connectToDatabase from '@/lib/mongodb';
 import mongoose from 'mongoose';
 
-export const config = { api: { bodyParser: false } };
+// --- THIS LINE IS THE PROBLEM AND HAS BEEN REMOVED ---
+// export const config = { api: { bodyParser: false } };
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
