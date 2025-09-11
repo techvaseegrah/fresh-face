@@ -1,4 +1,4 @@
-// Replace the entire content of: src/app/api/incentives/back-sync/route.ts
+// src/app/api/incentives/back-sync/route.ts
 
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
@@ -8,16 +8,29 @@ import IncentiveRule, { IIncentiveRule } from '@/models/IncentiveRule';
 import { getTenantIdOrBail } from '@/lib/tenant';
 import mongoose from 'mongoose';
 
+// ✨ --- FIX: Updated the snapshot type to include all fields ---
 type IRuleSnapshot = {
   target: { multiplier: number };
-  sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
-  incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
+  sales: {
+    includeServiceSale: boolean;
+    includeProductSale: boolean;
+    includePackageSale: boolean;
+    includeGiftCardSale: boolean;
+    reviewNameValue: number;
+    reviewPhotoValue: number;
+  };
+  incentive: {
+    rate: number;
+    doubleRate: number;
+    applyOn: 'totalSaleValue' | 'serviceSaleOnly';
+    packageRate: number;
+    giftCardRate: number;
+  };
 };
 
-// This gives a type to the 'li' parameter later.
 type LineItemType = {
   staffId?: mongoose.Types.ObjectId | string;
-  itemType: 'service' | 'product' | 'fee';
+  itemType: 'service' | 'product' | 'fee' | 'package' | 'gift_card';
   finalPrice: number;
 };
 
@@ -53,10 +66,25 @@ export async function POST(request: Request) {
             tenantId, type: 'daily', createdAt: { $lte: dayEnd }
         }).sort({ createdAt: -1 }).lean<IIncentiveRule>();
 
-        // =================================================================================
-        // === THE FIX: Replaced the placeholder comments with the actual object creation ===
-        // =================================================================================
-        const defaultRule: IRuleSnapshot = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
+        // ✨ --- FIX: The default rule and snapshot now include the new fields ---
+        const defaultRule: IRuleSnapshot = {
+            target: { multiplier: 5 },
+            sales: {
+                includeServiceSale: true,
+                includeProductSale: true,
+                includePackageSale: false,
+                includeGiftCardSale: false,
+                reviewNameValue: 200,
+                reviewPhotoValue: 300
+            },
+            incentive: {
+                rate: 0.05,
+                doubleRate: 0.10,
+                applyOn: 'totalSaleValue',
+                packageRate: 0.02,
+                giftCardRate: 0.01
+            }
+        };
         
         const ruleSnapshot: IRuleSnapshot = {
             target: { ...defaultRule.target, ...(activeRuleDb?.target || {}) },
@@ -64,29 +92,34 @@ export async function POST(request: Request) {
             incentive: { ...defaultRule.incentive, ...(activeRuleDb?.incentive || {}) }
         };
 
-        const salesByStaff = new Map<string, { serviceSale: number, productSale: number }>();
+        // ✨ --- FIX: The map now holds all sale types ---
+        const salesByStaff = new Map<string, { serviceSale: number, productSale: number, packageSale: number, giftCardSale: number }>();
+
         for (const invoice of invoicesForDay) {
           for (const item of (invoice.lineItems || [])) {
             if (!item.staffId) continue;
             const staffId = item.staffId.toString();
 
+            // ✨ --- FIX: Initialize the staff totals with all sale types ---
             if (!salesByStaff.has(staffId)) {
-              salesByStaff.set(staffId, { serviceSale: 0, productSale: 0 });
+              salesByStaff.set(staffId, { serviceSale: 0, productSale: 0, packageSale: 0, giftCardSale: 0 });
             }
             const staffTotals = salesByStaff.get(staffId)!;
-
+            
+            // ✨ --- FIX: The logic now checks for and adds package and gift card sales ---
             if (item.itemType === 'service') {
               staffTotals.serviceSale += item.finalPrice;
             } else if (item.itemType === 'product') {
               staffTotals.productSale += item.finalPrice;
+            } else if (item.itemType === 'package') {
+              staffTotals.packageSale += item.finalPrice;
+            } else if (item.itemType === 'gift_card') {
+              staffTotals.giftCardSale += item.finalPrice;
             }
           }
         }
 
         for (const [staffId, totals] of salesByStaff.entries()) {
-            // ====================================================================
-            // === THE FIX: Added an explicit type for the 'li' parameter       ===
-            // ====================================================================
             const customerCount = new Set(invoicesForDay
                 .filter(inv => (inv.lineItems || []).some((li: LineItemType) => li.staffId?.toString() === staffId))
                 .map(inv => inv.customerId.toString())
@@ -99,6 +132,9 @@ export async function POST(request: Request) {
                 $set: {
                   serviceSale: totals.serviceSale,
                   productSale: totals.productSale,
+                  // ✨ --- FIX: Save the calculated package and gift card sales to the database ---
+                  packageSale: totals.packageSale,
+                  giftCardSale: totals.giftCardSale,
                   customerCount: customerCount,
                   appliedRule: ruleSnapshot,
                   tenantId: tenantId,

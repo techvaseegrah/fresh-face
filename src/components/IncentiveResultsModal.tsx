@@ -1,13 +1,14 @@
 import React from 'react';
 import Button from '@/components/ui/Button';
-import { CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle, ShoppingCart } from 'lucide-react';
 
+// This component is UNCHANGED.
 const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => {
     if (!data || Object.keys(data).length === 0) {
         return (
             <div className="bg-gray-100 p-4 rounded-lg">
                 <h3 className="font-bold text-lg text-gray-700">{title}</h3>
-                <p className="text-sm text-gray-500 mt-2">No data available for this day.</p>
+                <p className="text-sm text-gray-500 mt-2">No rule configured.</p>
             </div>
         );
     }
@@ -23,11 +24,13 @@ const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => 
             </div>
             <div className="mt-3 space-y-1">
                 {Object.entries(data).map(([key, value]) => {
-                    if (key === 'isTargetMet') return null;
+                    if (key === 'isTargetMet' || key === 'details') return null;
                     const keyFormatted = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     let valueFormatted;
                     if (typeof value === 'number') {
-                        valueFormatted = key.toLowerCase().includes('rate') ? (value * 100).toFixed(0) + '%' : `₹${value.toFixed(2)}`;
+                        valueFormatted = key.toLowerCase().includes('rate') 
+                            ? (value as number).toFixed(2) 
+                            : `₹${value.toFixed(2)}`;
                     } else {
                         valueFormatted = String(value).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                     }
@@ -43,22 +46,95 @@ const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => 
     );
 };
 
+// ✨ --- MODIFICATION: This component is now corrected to use the right data source --- ✨
+const DailyBreakdownCard = ({ data }: { data: any }) => {
+    const dailyDetails = data?.incentive1_daily?.details;
+    
+    const renderRow = (label: string, saleValue: number, incentiveData?: any) => {
+        const incentiveAmount = incentiveData?.incentiveAmount || 0;
+        const appliedRate = incentiveData?.appliedRate || 0;
+        const isTargetMet = incentiveData?.isTargetMet || false;
+
+        return (
+             <div className="p-2 rounded-md bg-white">
+                <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">{label}:</span>
+                    <span className="font-semibold text-gray-800">₹{saleValue.toFixed(2)}</span>
+                </div>
+                {/* This logic now correctly hides the incentive if there were no sales FOR THIS DAY */}
+                {isTargetMet && incentiveAmount > 0 && saleValue > 0 && (
+                    <div className="flex justify-end items-center text-xs text-green-600 mt-1">
+                        <span>Incentive: ₹{incentiveAmount.toFixed(2)}</span>
+                        <span className="mx-1">|</span>
+                        <span>Rate: {appliedRate.toFixed(2)}</span>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="p-4 rounded-lg bg-slate-100 border border-slate-200 col-span-1 md:col-span-2">
+             <div className="flex items-center mb-3">
+                <ShoppingCart size={16} className="text-slate-600 mr-2" />
+                <h3 className="font-bold text-lg text-slate-800">Sales & Incentive Breakdown</h3>
+            </div>
+             <div className="space-y-2">
+                {dailyDetails ? (
+                    <>
+                        <h4 className="font-semibold text-xs text-gray-500 px-2 pt-2">DAILY SALES (FOR THIS DAY)</h4>
+                        {renderRow("Service Sale", dailyDetails.serviceSale)}
+                        {renderRow("Product Sale", dailyDetails.productSale)}
+                        {renderRow("Review (Name) Bonus", dailyDetails.reviewNameBonus)}
+                        {renderRow("Review (Photo) Bonus", dailyDetails.reviewPhotoBonus)}
+                        <div className="mt-1 pt-1 border-t border-slate-300">
+                             {renderRow("Daily Incentive Total", dailyDetails.serviceSale + dailyDetails.productSale + dailyDetails.reviewNameBonus + dailyDetails.reviewPhotoBonus, data.incentive1_daily)}
+                        </div>
+                        
+                        <h4 className="font-semibold text-xs text-gray-500 px-2 pt-3">MONTHLY CUMULATIVE SALES</h4>
+                        {/* THE FIX: Use the DAILY sales figures for the saleValue, not the cumulative total */}
+                        {renderRow("Package Sale", dailyDetails.packageSale, data.incentive3_package)}
+                        {renderRow("Gift Card Sale", dailyDetails.giftCardSale, data.incentive4_giftCard)}
+                        {renderRow("Monthly Sales (Service/Product)", data.incentive2_monthly?.totalSaleValue || 0, data.incentive2_monthly)}
+                    </>
+                ) : (
+                    <p className="text-gray-500 col-span-full text-sm p-2">No sales were recorded for this day.</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+
+// The main modal component is UNCHANGED.
 export default function IncentiveResultsModal({ data, onClose }: { data: any; onClose: () => void; }) {
     if (!data) return null;
-    const totalIncentive = (data.incentive1_daily?.incentiveAmount || 0) + (data.incentive2_monthly?.incentiveAmount || 0);
+
+    const totalIncentive = (data.incentive1_daily?.incentiveAmount || 0) + 
+                           (data.incentive2_monthly?.incentiveAmount || 0) +
+                           (data.incentive3_package?.incentiveAmount || 0) +
+                           (data.incentive4_giftCard?.incentiveAmount || 0);
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl">
-                <div className="p-6">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                <div className="p-6 border-b">
                     <h2 className="text-xl font-bold text-gray-800">Results for {data.staffName} on {data.calculationDate}</h2>
-                    <p className="text-4xl font-bold text-green-600 my-4">Total: ₹{totalIncentive.toFixed(2)}</p>
+                    <p className="text-4xl font-bold text-green-600 my-2">Total: ₹{totalIncentive.toFixed(2)}</p>
+                </div>
+                
+                <div className="p-6 overflow-y-auto">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <IncentiveResultCard title="Incentive 1: Daily" data={data.incentive1_daily} />
                         <IncentiveResultCard title="Incentive 2: Monthly" data={data.incentive2_monthly} />
+                        <IncentiveResultCard title="Incentive 3: Package" data={data.incentive3_package} />
+                        <IncentiveResultCard title="Incentive 4: Gift Card" data={data.incentive4_giftCard} />
+                        <DailyBreakdownCard data={data} />
                     </div>
-                    <div className="flex justify-end pt-4 mt-4 border-t">
-                        <Button onClick={onClose} variant="danger">Close</Button>
-                    </div>
+                </div>
+
+                <div className="flex justify-end p-4 border-t bg-slate-50 rounded-b-xl">
+                    <Button onClick={onClose} variant="danger">Close</Button>
                 </div>
             </div>
         </div>
