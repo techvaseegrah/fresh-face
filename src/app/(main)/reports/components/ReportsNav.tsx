@@ -1,4 +1,3 @@
-// src/app/(main)/reports/components/ReportsNav.tsx
 'use client';
 
 import Link from 'next/link';
@@ -13,36 +12,21 @@ import {
 } from 'lucide-react';
 
 const reportLinks = [
-  { 
-    href: '/reports/sales-report', 
-    label: 'Sales Report',
-    icon: BarChart3,
-    description: 'View detailed sales analytics'
-  },
-  { 
-    href: '/reports/gift-card-sold', 
-    label: 'Gift Card Sold',
-    icon: Gift,
-    description: 'Track gift card sales'
-  },
-  { 
-    href: '/reports/gift-card-redemption', 
-    label: 'Gift Card Redemption',
-    icon: CreditCard,
-    description: 'Monitor gift card usage'
-  },
-  { 
-    href: '/reports/package-sales', 
-    label: 'Package Sales',
-    icon: Package,
-    description: 'Analyze package performance'
-  },
-  { 
-    href: '/reports/package-redemptions', 
-    label: 'Package Redemptions',
-    icon: RefreshCw,
-    description: 'Track package usage'
-  },
+  { href: '/reports/sales-report', label: 'Sales Report' },
+  { href: '/reports/gift-card-sold', label: 'Gift Card Sold' },
+  { href: '/reports/gift-card-redemption', label: 'Gift Card Redemption' },
+  { href: '/reports/package-sales', label: 'Package Sales' },
+  { href: '/reports/package-redemptions', label: 'Package Redemptions' },
+  { href: '/reports/advance-report', label: 'Advance Report' },
+  { href: '/reports/incentive-payout', label: 'Incentive Payout Report' },
+  { href: '/reports/leave-report', label: 'Leave Report' },
+  { href: '/reports/target-report', label: 'Target Report' },
+  // ▼▼▼ NEW LINK ADDED HERE ▼▼▼
+  { href: '/reports/performance-report', label: 'Performance Report' },
+   { href: '/reports/salary-report', label: 'Salary Report' },
+     { href: '/reports/shift-report', label: 'Shift Report' },
+     { href: '/reports/incentive-report', label: 'Incentive Report' },
+      { href: '/reports/staff-sales-report', label: 'Staff Sales Report' },
 ];
 
 interface ReportsNavProps {
@@ -53,50 +37,21 @@ export function ReportsNav({ onItemClick }: ReportsNavProps) {
   const pathname = usePathname();
 
   return (
-    <nav className="space-y-1">
-      <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide px-3 py-2">
-        Reports
-      </h2>
-      <div className="space-y-1">
-        {reportLinks.map((link) => {
-          const Icon = link.icon;
-          const isActive = pathname.startsWith(link.href);
-          
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={onItemClick}
-              className={cn(
-                'group flex items-center rounded-lg px-3 py-3 text-sm font-medium transition-colors min-h-[44px]',
-                isActive
-                  ? 'bg-green-100 text-green-800 border-l-4 border-green-600'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              )}
-            >
-              <Icon 
-                className={cn(
-                  'mr-3 h-5 w-5 flex-shrink-0',
-                  isActive 
-                    ? 'text-green-600' 
-                    : 'text-gray-400 group-hover:text-gray-600'
-                )}
-              />
-              <div className="flex-1">
-                <div className={cn(
-                  'font-medium',
-                  isActive ? 'text-green-800' : 'text-gray-900'
-                )}>
-                  {link.label}
-                </div>
-                <div className="text-xs text-gray-500 md:hidden">
-                  {link.description}
-                </div>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+    <nav className="flex flex-col space-y-1">
+      {reportLinks.map((link) => (
+        <Link
+          key={link.href}
+          href={link.href}
+          className={cn(
+            'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap', 
+            pathname.startsWith(link.href)
+              ? 'bg-gray-900 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+          )}
+        >
+          {link.label}
+        </Link>
+      ))}
     </nav>
   );
 }

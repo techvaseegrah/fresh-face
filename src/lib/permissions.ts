@@ -165,11 +165,28 @@ export const PERMISSIONS = {
   // Package Permissions
   PACKAGES_SETTINGS_READ: 'read:packages-settings',
   PACKAGES_SETTINGS_MANAGE: 'manage:packages-settings',
-  
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   PACKAGES_REPORTS_READ: 'packages:reports:read',
   PACKAGES_REPORTS_MANAGE: 'packages:reports:manage',
-  // ▲▲▲ END OF ADDITION ▲▲▲
+
+  // New Report Permissions
+  REPORT_ADVANCE_READ: 'reports:advance:read',
+  REPORT_ADVANCE_MANAGE: 'reports:advance:manage',
+  REPORT_INCENTIVE_PAYOUT_READ: 'reports:incentive-payout:read',
+  REPORT_INCENTIVE_PAYOUT_MANAGE: 'reports:incentive-payout:manage',
+  REPORT_LEAVE_READ: 'reports:leave:read',
+  REPORT_LEAVE_MANAGE: 'reports:leave:manage',
+  REPORT_TARGET_READ: 'reports:target:read',
+  REPORT_TARGET_MANAGE: 'reports:target:manage',
+  REPORT_PERFORMANCE_READ: 'reports:performance:read',
+  REPORT_PERFORMANCE_MANAGE: 'reports:performance:manage',
+  REPORT_SALARY_READ: 'reports:salary:read',
+  REPORT_SALARY_MANAGE: 'reports:salary:manage',
+  REPORT_SHIFT_READ: 'reports:shift:read',
+  REPORT_SHIFT_MANAGE: 'reports:shift:manage',
+  REPORT_INCENTIVE_READ: 'reports:incentive:read',
+  REPORT_INCENTIVE_MANAGE: 'reports:incentive:manage',
+  REPORT_STAFF_SALES_READ: 'reports:staff-sales:read',
+  REPORT_STAFF_SALES_MANAGE: 'reports:staff-sales:manage',
 
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
@@ -180,13 +197,11 @@ export const PERMISSIONS = {
   TASK_SUBMIT_CHECKLIST: 'task:submit_checklist',
   TASK_REPORTS_READ: 'task:reports:read',
   
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Issue Management (like Task)
   ISSUE_READ: 'issue:read',
   ISSUE_MANAGE: 'issue:manage',
   ISSUE_SUBMIT_CHECKLIST: 'issue:submit_checklist',
   ISSUE_REPORTS_READ: 'issue:reports:read',
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
   ALL: '*'
 } as const;
@@ -219,10 +234,7 @@ export const PERMISSION_CATEGORIES = {
   TELECALLING_MANAGEMENT: 'Telecalling Management',
   BACK_OFFICE_MANAGEMENT:'Back Office Management',
   TASK_MANAGEMENT: 'Task Management',
-  
-  // ▼▼▼ ADD THIS LINE ▼▼▼
   ISSUE_MANAGEMENT: 'Issue Management',
-  // ▲▲▲ END OF ADDITION ▲▲▲
 } as const;
 
 export const ALL_PERMISSIONS = [
@@ -323,11 +335,28 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_READ, description: 'View the Gift Card Redemption report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_SOLD_MANAGE, description: 'Download the Gift Card Sold report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_GIFT_CARD_REDEMPTION_MANAGE, description: 'Download the Gift Card Redemption report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
-  
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   { permission: PERMISSIONS.PACKAGES_REPORTS_READ, description: 'View Package Sales and Redemption reports', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.PACKAGES_REPORTS_MANAGE, description: 'Download Package reports (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
-  // ▲▲▲ END OF ADDITION ▲▲▲
+  
+  // New Report Permissions
+  { permission: PERMISSIONS.REPORT_ADVANCE_READ, description: 'View Advance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_ADVANCE_MANAGE, description: 'Download Advance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_PAYOUT_READ, description: 'View Incentive Payout Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_PAYOUT_MANAGE, description: 'Download Incentive Payout Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_LEAVE_READ, description: 'View Leave Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_LEAVE_MANAGE, description: 'Download Leave Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TARGET_READ, description: 'View Target Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TARGET_MANAGE, description: 'Download Target Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_PERFORMANCE_READ, description: 'View Performance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_PERFORMANCE_MANAGE, description: 'Download Performance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SALARY_READ, description: 'View Salary Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SALARY_MANAGE, description: 'Download Salary Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SHIFT_READ, description: 'View Shift Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SHIFT_MANAGE, description: 'Download Shift Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_READ, description: 'View Incentive Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_INCENTIVE_MANAGE, description: 'Download Incentive Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_STAFF_SALES_READ, description: 'View Staff Sales Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_STAFF_SALES_MANAGE, description: 'Download Staff Sales Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },
@@ -404,13 +433,11 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.TASK_SUBMIT_CHECKLIST, description: 'Submit daily Task checklists', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
   { permission: PERMISSIONS.TASK_REPORTS_READ, description: 'View Task compliance reports for all staff', category: PERMISSION_CATEGORIES.TASK_MANAGEMENT },
 
-  // ▼▼▼ ADD THIS BLOCK ▼▼▼
   // Issue Management
   { permission: PERMISSIONS.ISSUE_READ, description: 'View assigned Issues and checklists', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
   { permission: PERMISSIONS.ISSUE_MANAGE, description: 'Create, update, and delete all Issues', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
   { permission: PERMISSIONS.ISSUE_SUBMIT_CHECKLIST, description: 'Submit daily Issue checklists', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
   { permission: PERMISSIONS.ISSUE_REPORTS_READ, description: 'View Issue compliance reports for all staff', category: PERMISSION_CATEGORIES.ISSUE_MANAGEMENT },
-  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Super Admin
   { permission: PERMISSIONS.ALL, description: 'Full system access (Super Admin)', category: 'System Administration' }
