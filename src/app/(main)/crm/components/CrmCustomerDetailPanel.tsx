@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React,  { useState, useEffect } from 'react';
 import { CrmCustomer } from '../types';
 import { 
   XMarkIcon, 
@@ -8,20 +8,24 @@ import {
   TagIcon, 
   QrCodeIcon,
   PhoneIcon,
-  EnvelopeIcon 
+  EnvelopeIcon,
+  UserIcon,
+  CreditCardIcon
 } from '@heroicons/react/24/outline';
 import { getSession } from 'next-auth/react';
 import CustomerGiftCardList from './CustomerGiftCardList';
 import CustomerPackageList from './CustomerPackageList';
 
-// --- 1. NEW TYPE DEFINITION (Added at the top) ---
-// Define a type for our imported invoice data for clarity
+// --- CORRECTED INTERFACE ---
+// The interface now includes the stylistId and paymentDetails fields.
 interface ImportedInvoice {
   _id: string;
   createdAt: string;
   grandTotal: number;
   lineItems: { name: string }[];
   invoiceNumber?: string;
+  stylistId?: { name: string }; // Populated staff object
+  paymentDetails: { cash: number, card: number, upi: number, other: number };
 }
 
 interface CrmCustomerDetailPanelProps {
@@ -43,19 +47,15 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
   const [membershipBarcode, setMembershipBarcode] = useState('');
   const [isCheckingBarcode, setIsCheckingBarcode] = useState(false);
   const [barcodeError, setBarcodeError] = useState('');
-
-  // --- 2. NEW STATE & useEffect LOGIC (Added here) ---
-  // State to hold the imported history data
   const [importedHistory, setImportedHistory] = useState<ImportedInvoice[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  // This useEffect will run whenever the panel opens or the customer changes to fetch imported data
   useEffect(() => {
     if (isOpen && customer?._id) {
       const fetchImportedHistory = async () => {
         setIsLoadingHistory(true);
         try {
-          const session = await getSession(); // Get session for tenantId
+          const session = await getSession();
           if (!session?.user?.tenantId) { throw new Error("Session is invalid."); }
           
           const res = await fetch(`/api/customer/${customer._id}/imported-invoices`, {
@@ -79,12 +79,9 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
       
       fetchImportedHistory();
     } else {
-      // Clear the history when the panel is closed or there is no customer
       setImportedHistory([]);
     }
   }, [isOpen, customer]);
-  // --- END OF NEW STATE & useEffect ---
-
 
   useEffect(() => {
     if (!isOpen || !customer) {
@@ -123,6 +120,16 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
   const formatDate = (dateString?: string) => { if (!dateString) return 'N/A'; return new Date(dateString).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric', }); };
   
   const formatGender = (gender?: string) => { if (!gender || gender.toLowerCase() === 'other') { return 'Not Specified'; } return gender.charAt(0).toUpperCase() + gender.slice(1); };
+
+  // --- ADDED HELPER FUNCTION ---
+  const getPaymentMethod = (details: ImportedInvoice['paymentDetails']) => {
+    if (!details) return "N/A";
+    if (details.card > 0) return "Card";
+    if (details.cash > 0) return "Cash";
+    if (details.upi > 0) return "UPI/GPay";
+    if (details.other > 0) return "Other";
+    return "N/A";
+  };
 
   const panelClasses = `fixed top-0 right-0 h-full bg-white shadow-2xl transition-transform duration-300 ease-in-out z-40 w-full md:w-[400px] lg:w-[450px] ${ isOpen ? 'translate-x-0' : 'translate-x-full' }`;
 
@@ -207,7 +214,7 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
           </div>
         </div>
         
-        {/* --- 3. NEW JSX SECTION (Added at the end) --- */}
+        {/* --- FULLY UPDATED JSX SECTION --- */}
         <div>
           <h4 className="text-base font-semibold text-gray-800 mb-3 border-t pt-4">Imported Transaction History</h4>
           <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
@@ -220,8 +227,14 @@ const CrmCustomerDetailPanel: React.FC<CrmCustomerDetailPanelProps> = ({
                         <p className="font-semibold">{formatDate(invoice.createdAt)}</p>
                         <p className="font-bold text-gray-800">₹{invoice.grandTotal.toFixed(2)}</p>
                     </div>
+                    <div className="flex items-center justify-between text-xs text-gray-600 mt-1">
+                        {invoice.stylistId?.name ? (
+                           <span className="flex items-center gap-1.5"><UserIcon className="w-3.5 h-3.5" /> with {invoice.stylistId.name}</span>
+                        ) : <span></span> /* Empty span to maintain spacing */}
+                        <span className="flex items-center gap-1.5"><CreditCardIcon className="w-3.5 h-3.5" /> Paid by {getPaymentMethod(invoice.paymentDetails)}</span>
+                    </div>
                     {invoice.invoiceNumber && (
-                        <p className="text-xs text-gray-600">Invoice #: {invoice.invoiceNumber}</p>
+                        <p className="text-xs text-gray-500 mt-1">Invoice #: {invoice.invoiceNumber}</p>
                     )}
                     <div className="flex items-start gap-2 mt-2 pt-2 border-t text-xs text-gray-500">
                         <TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />

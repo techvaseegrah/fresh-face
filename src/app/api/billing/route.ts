@@ -143,13 +143,14 @@ export async function POST(req: NextRequest) {
 
     let allInventoryUpdates: InventoryUpdate[] = [];
     if (items.some((item: any) => item.itemType === 'service' || item.itemType === 'product')) {
-        const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
-        const serviceIds = serviceItemsInBill.map((s: any) => s.itemId);
-        if (serviceIds.length > 0) { const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId); allInventoryUpdates.push(...serviceProductUpdates); }
-        const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map((item: any) => ({ productId: item.itemId, productName: item.name, quantityToDeduct: item.quantity, unit: 'piece' }));
-        allInventoryUpdates.push(...retailProductUpdates);
-        if (allInventoryUpdates.length > 0) { const inventoryUpdateResult = await InventoryManager.applyInventoryUpdates(allInventoryUpdates, dbSession, tenantId); if (!inventoryUpdateResult.success) { const errorMessages = inventoryUpdateResult.errors.map(e => e.message).join(', '); throw new Error('One or more inventory updates failed: ' + errorMessages); } }
+    const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
+    // ✅ FIX: This correctly creates a list of service IDs based on their quantity.
+    const serviceIds = serviceItemsInBill.flatMap((s: any) => Array(s.quantity).fill(s.itemId));
+    if (serviceIds.length > 0) { 
+        const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId); 
+        allInventoryUpdates.push(...serviceProductUpdates); 
     }
+  }
     
     // STEP 2: Create and save the Invoice. This is where the invoiceId is generated.
     const invoice = new Invoice({ tenantId, appointmentId, customerId, stylistId, billingStaffId, lineItems: lineItemsWithTenantId, serviceTotal, productTotal, subtotal, membershipDiscount, grandTotal, paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling, paymentStatus: 'Paid', manualDiscount: { type: manualDiscountType || null, value: manualDiscountValue || 0, appliedAmount: finalManualDiscountApplied || 0 }, giftCardPayment: giftCardRedemption ? { cardId: giftCardRedemption.cardId, amount: giftCardRedemption.amount } : undefined });

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
-import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesIcon, TagIcon, GiftIcon, ClockIcon, EyeIcon, QrCodeIcon } from '@heroicons/react/24/solid';
+import { ChevronDownIcon, XMarkIcon, UserCircleIcon, CalendarDaysIcon, SparklesIcon, TagIcon, GiftIcon, ClockIcon, EyeIcon, QrCodeIcon, BanknotesIcon } from '@heroicons/react/24/solid';
 import { toast } from 'react-toastify';
-import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter';
+import { formatDateIST } from '@/lib/dateFormatter';
 import { useDebounce } from '@/hooks/useDebounce'; 
 import { useSession } from 'next-auth/react';
 import { CustomerPackage } from '@/app/(main)/crm/types';
@@ -63,7 +63,19 @@ interface AppointmentFormData {
 interface ServiceFromAPI { _id: string; name: string; price: number; duration: number; membershipRate?: number; }
 interface StylistFromAPI { _id: string; name: string; }
 interface CustomerSearchResult { _id: string; name: string; phoneNumber: string; email?: string; gender?: string; dob?: string; survey?: string; }
-interface AppointmentHistory { _id: string; date: string; services: string[]; totalAmount: number; stylistName: string; status: string; }
+
+interface AppointmentHistory {
+  _id: string;
+  date: string;
+  services: string[];
+  totalAmount: number;
+  stylistName: string;
+  status: string;
+  isImported?: boolean;
+  invoiceNumber?: string;
+  paymentMode?: string;
+}
+
 interface CustomerDetails { _id: string; name: string; email: string; phoneNumber: string; dob: string | null; survey: string | null; isMember: boolean; membershipDetails: { planName: string; status: string } | null; lastVisit: string | null; appointmentHistory: AppointmentHistory[]; loyaltyPoints?: number; membershipBarcode?: string; }
 interface BookAppointmentFormProps { isOpen: boolean; onClose: () => void; onBookAppointment: (data: NewBookingData) => Promise<void>; }
 
@@ -81,7 +93,6 @@ const getStatusColor = (status: string) => {
     default: return 'bg-gray-100 text-gray-800';
   }
 };
-
 
 // ===================================================================================
 //  SUB-COMPONENTS: CustomerHistoryModal & CustomerDetailPanel
@@ -129,7 +140,7 @@ const CustomerHistoryModal: React.FC<{
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-2 text-left">Date</th>
-                    <th className="px-4 py-2 text-left">Services</th>
+                    <th className="px-4 py-2 text-left">Services & Invoice</th>
                     <th className="px-4 py-2 text-left">Stylist</th>
                     <th className="px-4 py-2 text-center">Status</th>
                     <th className="px-4 py-2 text-right">Amount</th>
@@ -138,8 +149,20 @@ const CustomerHistoryModal: React.FC<{
                 <tbody>
                   {customer.appointmentHistory.map((apt: AppointmentHistory) => (
                     <tr key={apt._id} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-3">{new Date(apt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                      <td className="px-4 py-3"><div className="max-w-xs truncate" title={apt.services.join(', ')}>{apt.services.join(', ') || 'N/A'}</div></td>
+                      <td className="px-4 py-3">
+                        {new Date(apt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {apt.isImported && <span className="block text-xs text-gray-400 italic">Imported</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="max-w-xs truncate font-medium" title={apt.services.join(', ')}>{apt.services.join(', ') || 'N/A'}</div>
+                        {(apt.invoiceNumber && apt.invoiceNumber !== 'N/A') && (
+                          <div className="mt-1 text-xs text-gray-500 space-x-2">
+                            <span>Inv: <span className="font-medium text-gray-700">{apt.invoiceNumber}</span></span>
+                            <span>|</span>
+                            <span>Paid via: <span className="font-medium text-gray-700">{apt.paymentMode}</span></span>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{apt.stylistName}</td>
                       <td className="px-4 py-3 text-center"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(apt.status)}`}>{apt.status}</span></td>
                       <td className="px-4 py-3 text-right font-semibold">₹{apt.totalAmount.toFixed(2)}</td>
@@ -229,7 +252,43 @@ const CustomerDetailPanel: React.FC<CustomerDetailPanelProps> = ({ customer, isL
       <div className="flex-1">
         <div className="flex items-center justify-between mb-3"><h4 className="text-base font-semibold text-gray-800">Recent Visits</h4><button onClick={onViewFullHistory} className="text-xs text-blue-600 hover:text-blue-800 transition-colors">View All ({customer.appointmentHistory.length})</button></div>
         <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-2">
-          {customer.appointmentHistory.length > 0 ? (customer.appointmentHistory.slice(0, 5).map((apt: AppointmentHistory) => (<div key={apt._id} className="p-3 bg-gray-100/70 rounded-lg text-sm hover:bg-gray-100 transition-colors"><div className="flex justify-between items-start"><div className="flex-1"><p className="font-semibold text-gray-800">{formatDateIST(apt.date)}</p><p className="text-xs text-gray-600">with {apt.stylistName}</p></div><div className="text-right"><p className="font-bold text-gray-800">₹{apt.totalAmount.toFixed(2)}</p><span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${getStatusColor(apt.status)}`}>{apt.status}</span></div></div><div className="flex items-start gap-2 mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500"><TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span className="line-clamp-2">{apt.services.join(', ') || 'Details unavailable'}</span></div></div>))) : (<div className="text-center py-8"><ClockIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" /><p className="text-sm text-gray-500 italic">No past appointments found.</p><p className="text-xs text-gray-400 mt-1">This will be their first visit!</p></div>)}
+          {customer.appointmentHistory.length > 0 ? (customer.appointmentHistory.slice(0, 5).map((apt: AppointmentHistory) => (
+            <div key={apt._id} className="p-3 bg-gray-100/70 rounded-lg text-sm hover:bg-gray-100 transition-colors">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">{formatDateIST(apt.date)}</p>
+                  <p className="text-xs text-gray-600">with {apt.stylistName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-gray-800">₹{apt.totalAmount.toFixed(2)}</p>
+                  <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${getStatusColor(apt.status)}`}>{apt.status}</span>
+                  {apt.isImported && <span className="block text-xs text-gray-400 italic mt-1">Imported</span>}
+                </div>
+              </div>
+              <div className="flex items-start gap-2 mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
+                <TagIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span className="line-clamp-2">{apt.services.join(', ') || 'Details unavailable'}</span>
+              </div>
+              {(apt.status === 'Paid' || apt.isImported) && (apt.invoiceNumber && apt.invoiceNumber !== 'N/A') && (
+                <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-600 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <TagIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Invoice: <span className="font-semibold text-gray-800">{apt.invoiceNumber}</span></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <BanknotesIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Paid via: <span className="font-semibold text-gray-800">{apt.paymentMode}</span></span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))) : (
+            <div className="text-center py-8">
+              <ClockIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm text-gray-500 italic">No past appointments found.</p>
+              <p className="text-xs text-gray-400 mt-1">This will be their first visit!</p>
+            </div>
+          )}
         </div>
       </div>
       {customer.appointmentHistory.length > 0 && (
@@ -277,6 +336,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
   const [packageError, setPackageError] = useState<string | null>(null);
   const [redeemedItems, setRedeemedItems] = useState<NewBookingData['redeemedItems']>([]);
   const { data: session } = useSession();
+
 
   const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const tenantId = session?.user?.tenantId;
@@ -408,7 +468,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     }
   }, [isOpen, formData.date, formData.time, tenantAwareFetch]);
 
- const fetchAndSetCustomerDetails = useCallback(async (phone: string) => {
+  const fetchAndSetCustomerDetails = useCallback(async (phone: string) => {
     if (isLoadingCustomerDetails) return; 
     setIsLoadingCustomerDetails(true);
     setCustomerLookupStatus('searching');
@@ -416,12 +476,60 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     try {
       const res = await tenantAwareFetch(`/api/customer/search?query=${encodeURIComponent(phone.trim())}&details=true`);
       const data = await res.json();
+
       if (res.ok && data.success && data.customer) {
         const cust = data.customer;
+
+        try {
+          // NOTE: This endpoint name should match your backend file structure.
+          // e.g., `/api/customer/[id]/imported-invoices`
+          const importedHistoryRes = await tenantAwareFetch(`/api/customer/${cust._id}/imported-invoices`);
+          
+          if (importedHistoryRes.ok) {
+            const importedInvoices = await importedHistoryRes.json();
+            
+            const mappedImportedHistory: AppointmentHistory[] = importedInvoices.map((inv: any) => {
+              const getPaymentMode = (details: any) => {
+                if (!details) return 'N/A';
+                const modes = [];
+                if (details.cash > 0) modes.push('Cash');
+                if (details.card > 0) modes.push('Card');
+                if (details.upi > 0) modes.push('UPI');
+                if (details.other > 0) modes.push('Other');
+                return modes.length > 0 ? modes.join(', ') : 'N/A';
+              };
+
+              return {
+                _id: inv._id,
+                date: inv.createdAt,
+                services: inv.lineItems?.map((item: { name: string }) => item.name) ?? ['Imported Service'],
+                totalAmount: inv.grandTotal ?? 0,
+                stylistName: inv.stylistId?.name ?? 'N/A',
+                status: 'Paid',
+                isImported: true,
+                invoiceNumber: inv.invoiceNumber ?? 'N/A',
+                paymentMode: getPaymentMode(inv.paymentDetails),
+              };
+            });
+            
+            // Combine regular history (which now includes invoice details from the backend)
+            // with the specifically fetched imported history.
+            const combinedHistory = [...cust.appointmentHistory, ...mappedImportedHistory];
+            combinedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            cust.appointmentHistory = combinedHistory;
+
+          } else {
+            console.warn(`Could not fetch imported history. Status: ${importedHistoryRes.status}`);
+          }
+        } catch (e) {
+          console.error("Error fetching or merging imported history:", e);
+        }
+
         setFormData((prev) => ({ ...prev, customerId: cust._id, customerName: cust.name, phoneNumber: cust.phoneNumber, email: cust.email || '', gender: cust.gender || 'other', dob: cust.dob ? new Date(cust.dob).toISOString().split('T')[0] : '', survey: cust.survey || '' }));
         setSelectedCustomerDetails(cust);
         setIsCustomerSelected(true);
         setCustomerLookupStatus('found');
+
       } else {
         setSelectedCustomerDetails(null);
         setIsCustomerSelected(false);
@@ -558,8 +666,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
         setServiceSearch('');
     }
   };
-
-  // ✅ FIX: Updated to handle quantity and generate unique IDs.
+  
   const handleRedeemItem = (pkg: CustomerPackage, item: CustomerPackage['remainingItems'][0]) => {
     const redeemedCount = serviceAssignments.filter(a => a.serviceId === item.itemId && a.isRedeemed).length;
     if (redeemedCount >= item.remainingQuantity) {
@@ -594,7 +701,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     toast.success(`"${item.itemName}" added to appointment from package.`);
   };
   
-  // ✅ FIX: Updated to correctly remove a single instance of a redeemed service.
   const handleRemoveService = (_tempId: string) => {
     const assignmentToRemove = serviceAssignments.find(a => a._tempId === _tempId);
     if (!assignmentToRemove) return;
@@ -648,7 +754,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
   };
 
   if (!isOpen) return null;
-
+  
   const inputBaseClasses = 'w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/30 text-sm';
   const fieldsetClasses = 'border border-gray-200 p-4 rounded-lg';
   const legendClasses = 'text-base font-semibold text-gray-800 px-2 -ml-2';
@@ -721,7 +827,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
                                 {pkg.remainingItems.filter(i => i.remainingQuantity > 0).map(item => (
                                   <li key={item.itemId} className="flex justify-between items-center text-sm">
                                     <span className="text-gray-700">{item.itemName} ({item.remainingQuantity} left)</span>
-                                    {/* ✅ FIX: Updated disabled logic to check count against remaining quantity. */}
                                     <button
                                       type="button"
                                       onClick={() => handleRedeemItem(pkg, item)}
@@ -762,5 +867,5 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
 
       <CustomerHistoryModal isOpen={showCustomerHistory} onClose={() => setShowCustomerHistory(false)} customer={selectedCustomerDetails} />
     </>
-  ); 
+  );
 }

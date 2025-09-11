@@ -5,6 +5,7 @@ import { getTenantIdOrBail } from '@/lib/tenant';
 import connectToDatabase from '@/lib/mongodb';
 import Invoice from '@/models/invoice';
 import mongoose from 'mongoose';
+import Staff from '@/models/staff';
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -29,7 +30,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       isImported: true, // The key filter!
     })
     .sort({ createdAt: -1 }) // Show the most recent first
-    .limit(50); // Add a limit for performance
+    .populate({ path: 'stylistId', select: 'name', model: Staff })
+    .limit(50) // Add a limit for performance
+    .lean();
 
     return NextResponse.json(importedInvoices);
 
