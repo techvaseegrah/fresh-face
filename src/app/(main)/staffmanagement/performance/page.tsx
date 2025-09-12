@@ -50,6 +50,7 @@ interface DailyPerformanceRecord {
 }
 interface IncentiveReportData {
     dailyReport: any[];
+    dailySummaryReport?: any[]; 
     monthlyReport: any[];
     staffSummary: any[];
     packageReport?: any[];
@@ -170,30 +171,42 @@ const PerformancePage: React.FC = () => {
         return { totalSales, totalCustomers };
     }, [staffDailyPerformance]);
   
+    // ✅ FIX: This hook is now completely robust and will not produce NaN errors.
     const modalIncentiveSummary = useMemo(() => {
         const initial = { totalAchieved: 0, monthlyIncentive: 0, packageIncentive: 0, giftCardIncentive: 0, dailyIncentiveComponent: 0, monthlyTarget: 0 };
-        if (!selectedStaff || !incentiveReportData?.staffSummary) return initial;
+        if (!selectedStaff || !incentiveReportData) return initial;
 
-        const staffRec = incentiveReportData.staffSummary.find(rec => rec['Staff Name'] === selectedStaff.name);
-        const monthlyRec = incentiveReportData.monthlyReport?.find(rec => rec['Staff Name'] === selectedStaff.name);
-        const packageRec = incentiveReportData.packageReport?.find(rec => rec['Staff Name'] === selectedStaff.name);
-        const giftCardRec = incentiveReportData.giftCardReport?.find(rec => rec['Staff Name'] === selectedStaff.name);
-        
-        const totalAchieved = staffRec ? parseFloat(staffRec['Total Incentive (₹)'] || '0') : 0;
-        const monthlyIncentive = monthlyRec ? parseFloat(monthlyRec['Incentive (₹)'] || '0') : 0;
-        const packageIncentive = packageRec ? parseFloat(packageRec['Incentive (₹)'] || '0') : 0;
-        const giftCardIncentive = giftCardRec ? parseFloat(giftCardRec['Incentive (₹)'] || '0') : 0;
+        const staffName = selectedStaff.name;
 
-        const dailyIncentiveComponent = totalAchieved - monthlyIncentive - packageIncentive - giftCardIncentive;
+        // Safely find records using optional chaining and provide a default object if not found.
+        const staffRec = incentiveReportData.staffSummary?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const dailySummaryRec = incentiveReportData.dailySummaryReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const monthlyRec = incentiveReportData.monthlyReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const packageRec = incentiveReportData.packageReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const giftCardRec = incentiveReportData.giftCardReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
         
-        const monthlyTarget = monthlyRec ? parseFloat(monthlyRec['Target (₹)'] || '0') : 0;
+        // Use nullish coalescing operator (??) to provide a default value of '0' before parsing.
+        // This prevents parseFloat(undefined), which causes NaN.
+        const totalAchieved = parseFloat(staffRec['Total Incentive (₹)'] ?? '0');
+        const dailyIncentiveComponent = parseFloat(dailySummaryRec['Incentive (₹)'] ?? '0');
+        const monthlyIncentive = parseFloat(monthlyRec['Incentive (₹)'] ?? '0');
+        const packageIncentive = parseFloat(packageRec['Incentive (₹)'] ?? '0');
+        const giftCardIncentive = parseFloat(giftCardRec['Incentive (₹)'] ?? '0');
+        
+        const monthlyTarget = parseFloat(monthlyRec['Target (₹)'] ?? '0');
 
         return { totalAchieved, monthlyIncentive, packageIncentive, giftCardIncentive, dailyIncentiveComponent, monthlyTarget };
     }, [selectedStaff, incentiveReportData]);
 
   const topPerformersSummary = useMemo(() => { if (!performanceData || performanceData.length === 0) return { topService: { name: 'N/A', value: 0 }, topProduct: { name: 'N/A', value: 0 } }; const topService = [...performanceData].sort((a, b) => b.totalServiceSales - a.totalServiceSales)[0]; const topProduct = [...performanceData].sort((a, b) => b.totalProductSales - a.totalProductSales)[0]; return { topService: { name: topService.name, value: topService.totalServiceSales }, topProduct: { name: topProduct.name, value: topProduct.totalProductSales } }; }, [performanceData]);
   
-  const formatCurrency = (value: number | string) => `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
+  const formatCurrency = (value: number | string) => {
+    // Add a check for NaN before formatting
+    if (isNaN(Number(value))) {
+        return '₹0';
+    }
+    return `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
+  }
   
   const getExportData = () => {
     const headers = ["S.NO", "employee name", "employee code", "client count", "ABV", "service net sales", "product sales", "total sales", "total sales heading to", "No of Clients Heading To"];
@@ -328,11 +341,14 @@ const PerformancePage: React.FC = () => {
                             
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><h4 className="text-md font-semibold text-slate-800 mb-3">Summary for Period</h4>{isLoadingDetails ? <div className="py-4 text-center text-slate-500">Loading...</div> : errorDetails ? <div className="py-4 text-center text-red-500">{errorDetails}</div> : <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 text-center"><div><p className="text-lg font-bold text-green-600">{formatCurrency(panelSummary.totalSales)}</p><p className="text-xs text-slate-500 uppercase">Total Sales</p></div><div><p className="text-lg font-bold text-teal-600">{panelSummary.totalCustomers}</p><p className="text-xs text-slate-500 uppercase">Customers</p></div><div><p className="text-lg font-bold text-blue-600">{formatCurrency(modalIncentiveSummary.monthlyTarget)}</p><p className="text-xs text-slate-500 uppercase">Monthly Target</p></div><div><p className="text-lg font-bold text-purple-600">{formatCurrency(modalIncentiveSummary.totalAchieved)}</p><p className="text-xs text-slate-500 uppercase">Total Incentive</p></div></div>}</div>
                             
-                            {/* ✅ CORRECTED: This section now has the corrected title and breakdown structure */}
                             {incentiveReportData && (
                                 <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                                    <h4 className="text-md font-semibold text-slate-800 mb-3">Total Cumulative Incentives</h4>
+                                    <h4 className="text-md font-semibold text-slate-800 mb-3">Incentive Breakdown (Period Total)</h4>
                                     <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between items-center p-2 rounded bg-slate-50">
+                                            <div className="flex items-center"><CalendarDays className="w-4 h-4 mr-2 text-indigo-500" /> <span className="text-slate-600">Daily Target Incentive Total:</span></div>
+                                            <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.dailyIncentiveComponent)}</span>
+                                        </div>
                                         <div className="flex justify-between items-center p-2 rounded bg-slate-50">
                                             <div className="flex items-center"><Target className="w-4 h-4 mr-2 text-blue-500" /> <span className="text-slate-600">Monthly Sales Incentive:</span></div>
                                             <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.monthlyIncentive)}</span>
@@ -345,9 +361,9 @@ const PerformancePage: React.FC = () => {
                                         <div className="flex items-center"><Gift className="w-4 h-4 mr-2 text-rose-500" /> <span className="text-slate-600">Gift Card Sale Incentive:</span></div>
                                             <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.giftCardIncentive)}</span>
                                         </div>
-                                        <div className="flex justify-between pt-2 border-t mt-2">
-                                            <span className="font-bold text-slate-500">Total from Daily Component:</span>
-                                            <span className="font-bold text-slate-900">{formatCurrency(modalIncentiveSummary.dailyIncentiveComponent)}</span>
+                                        <div className="flex justify-between pt-2 border-t mt-2 font-bold text-base">
+                                            <span className="text-slate-600">Total Incentive Earned:</span>
+                                            <span className="text-purple-700">{formatCurrency(modalIncentiveSummary.totalAchieved)}</span>
                                         </div>
                                     </div>
                                 </div>

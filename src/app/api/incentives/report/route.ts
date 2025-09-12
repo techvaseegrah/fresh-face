@@ -10,6 +10,8 @@ import { getTenantIdOrBail } from '@/lib/tenant';
 // --- TYPE DEFINITIONS ---
 type MultiplierRule = { target: { multiplier: number }, sales: { includeServiceSale: boolean, includeProductSale: boolean, reviewNameValue?: number, reviewPhotoValue?: number }, incentive: { rate: number, doubleRate: number, applyOn: 'totalSaleValue' | 'serviceSaleOnly' } };
 type FixedTargetRule = { target: { targetValue: number }, incentive: { rate: number, doubleRate: number } };
+type MonthlyRule = { target: { multiplier: number }, sales: { includeServiceSale: boolean, includeProductSale: boolean }, incentive: { rate: number, doubleRate: number, applyOn: 'totalSaleValue' | 'serviceSaleOnly' } };
+
 
 // --- HELPER FUNCTIONS ---
 function getDaysInMonth(year: number, month: number): number { return new Date(year, month + 1, 0).getDate(); }
@@ -26,31 +28,14 @@ function findHistoricalRule<T>(rules: T[], timestamp: Date): T | null {
     return rules.find(rule => new Date((rule as any).createdAt) <= timestamp) || null;
 }
 
-// THIS IS THE CORRECT LOGIC, ADAPTED FROM YOUR WORKING API
-function calculateTotalCumulativeIncentive(sales: any[], staff: IStaff, historicalRules: any) {
-    const breakdown = { monthly: 0, package: 0, giftCard: 0 };
-    if (historicalRules.monthly) {
-        const rule = historicalRules.monthly as MultiplierRule;
-        const totalService = sales.reduce((sum, s) => sum + s.serviceSale, 0);
-        const totalProduct = sales.reduce((sum, s) => sum + s.productSale, 0);
-        const target = (staff.salary || 0) * rule.target.multiplier;
-        const achieved = (rule.sales.includeServiceSale ? totalService : 0) + (rule.sales.includeProductSale ? totalProduct : 0);
-        const base = rule.incentive.applyOn === 'serviceSaleOnly' ? totalService : achieved;
-        breakdown.monthly = calculateIncentive(achieved, target, rule.incentive.rate, rule.incentive.doubleRate, base).incentive;
-    }
-    if (historicalRules.package) {
-        const rule = historicalRules.package as FixedTargetRule;
-        const totalPackage = sales.reduce((sum, s) => sum + (s.packageSale || 0), 0);
-        const target = rule.target.targetValue;
-        breakdown.package = calculateIncentive(totalPackage, target, rule.incentive.rate, rule.incentive.doubleRate, totalPackage).incentive;
-    }
-    if (historicalRules.giftCard) {
-        const rule = historicalRules.giftCard as FixedTargetRule;
-        const totalGiftCard = sales.reduce((sum, s) => sum + (s.giftCardSale || 0), 0);
-        const target = rule.target.targetValue;
-        breakdown.giftCard = calculateIncentive(totalGiftCard, target, rule.incentive.rate, rule.incentive.doubleRate, totalGiftCard).incentive;
-    }
-    return breakdown;
+function calculateTotalCumulativeMonthly(sales: any[], staff: IStaff, rule: MonthlyRule | null) {
+    if (!rule) return 0;
+    const totalService = sales.reduce((sum, s) => sum + s.serviceSale, 0);
+    const totalProduct = sales.reduce((sum, s) => sum + s.productSale, 0);
+    const target = (staff.salary || 0) * rule.target.multiplier;
+    const achieved = (rule.sales.includeServiceSale ? totalService : 0) + (rule.sales.includeProductSale ? totalProduct : 0);
+    const base = rule.incentive.applyOn === 'serviceSaleOnly' ? totalService : achieved;
+    return calculateIncentive(achieved, target, rule.incentive.rate, rule.incentive.doubleRate, base).incentive;
 }
 
 
@@ -66,10 +51,11 @@ export async function POST(request: Request) {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
 
-    const [allStaff, allSales, allRules] = await Promise.all([
+    const [allStaff, allSalesInMonth, allRules] = await Promise.all([
         Staff.find({ tenantId, salary: { $exists: true, $gt: 0 } }).lean(),
-        DailySale.find({ tenantId, date: { $gte: start, $lte: end } }).sort({ date: 'asc' }).lean(),
+        DailySale.find({ tenantId, date: { $gte: monthStart, $lte: end } }).sort({ date: 'asc' }).lean(),
         (async () => {
             const rules = await IncentiveRule.find({ tenantId }).sort({ createdAt: -1 }).lean();
             return {
@@ -82,54 +68,83 @@ export async function POST(request: Request) {
     ]);
 
     const dailyReport: any[] = [];
-    const staffSummaryMap = new Map<string, { name: string; totalIncentive: number }>();
+    const staffSummaryMap = new Map<string, { name: string; totalIncentive: number, daily: number, monthly: number, package: number, giftCard: number }>();
 
     for (const staff of allStaff) {
         const staffIdString = staff._id.toString();
-        staffSummaryMap.set(staffIdString, { name: staff.name, totalIncentive: 0 });
+        // ✅ FIX: Initialize every staff member in the map to guarantee they have a record.
+        staffSummaryMap.set(staffIdString, { name: staff.name, totalIncentive: 0, daily: 0, monthly: 0, package: 0, giftCard: 0 });
         
-        const staffSales = allSales.filter(s => s.staff.toString() === staffIdString);
-        if (staffSales.length === 0) continue;
+        const staffSalesInMonth = allSalesInMonth.filter(s => s.staff.toString() === staffIdString);
+        if (staffSalesInMonth.length === 0) continue;
 
-        for (let i = 0; i < staffSales.length; i++) {
-            const currentSale = staffSales[i];
-            const saleDate = new Date(currentSale.date);
+        // This loop now only calculates for staff who have sales, then we add results to the pre-initialized map
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateString = d.toISOString().split('T')[0];
+            const saleForThisDay = staffSalesInMonth.find(s => new Date(s.date).toISOString().split('T')[0] === dateString);
+            
+            const historicalTimestamp = saleForThisDay ? new Date(saleForThisDay.createdAt || saleForThisDay.date) : d;
 
-            let dailyIncentive = 0, dailyTarget = 0, dailyRate = 0;
-            const historicalDailyRule = findHistoricalRule(allRules.daily, saleDate) as MultiplierRule | null;
-            if (historicalDailyRule) {
-                const daysInMonth = getDaysInMonth(saleDate.getFullYear(), saleDate.getMonth());
-                dailyTarget = ((staff.salary || 0) * historicalDailyRule.target.multiplier) / daysInMonth;
-                const reviewBonus = (currentSale.reviewsWithName * (historicalDailyRule.sales?.reviewNameValue || 0)) + (currentSale.reviewsWithPhoto * (historicalDailyRule.sales?.reviewPhotoValue || 0));
-                const achieved = (historicalDailyRule.sales?.includeServiceSale ? currentSale.serviceSale : 0) + (historicalDailyRule.sales?.includeProductSale ? currentSale.productSale : 0) + reviewBonus;
-                const base = historicalDailyRule.incentive?.applyOn === 'serviceSaleOnly' ? currentSale.serviceSale : achieved;
-                const result = calculateIncentive(achieved, dailyTarget, historicalDailyRule.incentive.rate, historicalDailyRule.incentive.doubleRate, base);
+            const dailyRule = findHistoricalRule(allRules.daily, historicalTimestamp) as MultiplierRule | null;
+            const monthlyRule = findHistoricalRule(allRules.monthly, historicalTimestamp) as MonthlyRule | null;
+            const packageRule = findHistoricalRule(allRules.package, historicalTimestamp) as FixedTargetRule | null;
+            const giftCardRule = findHistoricalRule(allRules.giftCard, historicalTimestamp) as FixedTargetRule | null;
+            
+            let dailyIncentive = 0;
+            let dailyRate = 0;
+            let dailyTarget = 0;
+            if (dailyRule && saleForThisDay) {
+                const daysInMonth = getDaysInMonth(d.getFullYear(), d.getMonth());
+                dailyTarget = ((staff.salary || 0) * dailyRule.target.multiplier) / daysInMonth;
+                const reviewBonus = (saleForThisDay.reviewsWithName * (dailyRule.sales?.reviewNameValue || 0)) + (saleForThisDay.reviewsWithPhoto * (dailyRule.sales?.reviewPhotoValue || 0));
+                const achieved = (dailyRule.sales.includeServiceSale ? saleForThisDay.serviceSale : 0) + (dailyRule.sales.includeProductSale ? saleForThisDay.productSale : 0) + reviewBonus;
+                const base = dailyRule.incentive?.applyOn === 'serviceSaleOnly' ? saleForThisDay.serviceSale : achieved;
+                const result = calculateIncentive(achieved, dailyTarget, dailyRule.incentive.rate, dailyRule.incentive.doubleRate, base);
                 dailyIncentive = result.incentive;
                 dailyRate = result.appliedRate;
             }
 
-            const salesUpToToday = staffSales.slice(0, i + 1);
-            const salesUpToYesterday = staffSales.slice(0, i);
-            const historicalRulesForDay = {
-                monthly: findHistoricalRule(allRules.monthly, saleDate),
-                package: findHistoricalRule(allRules.package, saleDate),
-                giftCard: findHistoricalRule(allRules.giftCard, saleDate)
-            };
-            
-            const cumulativeToday = calculateTotalCumulativeIncentive(salesUpToToday, staff, historicalRulesForDay);
-            const cumulativeYesterday = calculateTotalCumulativeIncentive(salesUpToYesterday, staff, historicalRulesForDay);
-            
-            const cumulativeDelta = (cumulativeToday.monthly - cumulativeYesterday.monthly) + 
-                                  (cumulativeToday.package - cumulativeYesterday.package) + 
-                                  (cumulativeToday.giftCard - cumulativeYesterday.giftCard);
+            const yesterday = new Date(d);
+            yesterday.setDate(d.getDate() - 1);
+            const salesUpToToday = staffSalesInMonth.filter(s => new Date(s.date) <= d);
+            const salesUpToYesterday = staffSalesInMonth.filter(s => new Date(s.date) <= yesterday);
+            const yesterdayTimestamp = salesUpToYesterday.length > 0 ? new Date(salesUpToYesterday[salesUpToYesterday.length - 1].createdAt || yesterday) : yesterday;
+            const monthlyRuleYesterday = findHistoricalRule(allRules.monthly, yesterdayTimestamp) as MonthlyRule | null;
 
-            const totalIncentiveForDay = dailyIncentive + cumulativeDelta;
+            const cumulativeMonthlyToday = calculateTotalCumulativeMonthly(salesUpToToday, staff, monthlyRule);
+            const cumulativeMonthlyYesterday = calculateTotalCumulativeMonthly(salesUpToYesterday, staff, monthlyRuleYesterday);
+            const monthlyIncentiveDelta = cumulativeMonthlyToday - cumulativeMonthlyYesterday;
+
+            let packageIncentiveToday = 0;
+            let giftCardIncentiveToday = 0;
+            const salesToday = saleForThisDay || { packageSale: 0, giftCardSale: 0 };
+
+            if (packageRule) {
+                const totalPackageSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.packageSale || 0), 0);
+                const { isTargetMet, appliedRate } = calculateIncentive(totalPackageSaleMonth, packageRule.target.targetValue, packageRule.incentive.rate, packageRule.incentive.doubleRate, totalPackageSaleMonth);
+                if (isTargetMet) {
+                    packageIncentiveToday = salesToday.packageSale * appliedRate;
+                }
+            }
+            if (giftCardRule) {
+                const totalGiftCardSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.giftCardSale || 0), 0);
+                const { isTargetMet, appliedRate } = calculateIncentive(totalGiftCardSaleMonth, giftCardRule.target.targetValue, giftCardRule.incentive.rate, giftCardRule.incentive.doubleRate, totalGiftCardSaleMonth);
+                if (isTargetMet) {
+                    giftCardIncentiveToday = salesToday.giftCardSale * appliedRate;
+                }
+            }
+            
+            const totalIncentiveForDay = dailyIncentive + monthlyIncentiveDelta + packageIncentiveToday + giftCardIncentiveToday;
             
             const summary = staffSummaryMap.get(staffIdString)!;
             summary.totalIncentive += totalIncentiveForDay;
+            summary.daily += dailyIncentive;
+            summary.monthly += monthlyIncentiveDelta;
+            summary.package += packageIncentiveToday;
+            summary.giftCard += giftCardIncentiveToday;
 
             dailyReport.push({
-                'Date': saleDate.toISOString().split('T')[0],
+                'Date': dateString,
                 'Staff Name': staff.name,
                 'Target (₹)': dailyTarget.toFixed(2),
                 'Applied Rate': dailyRate.toFixed(2),
@@ -138,23 +153,25 @@ export async function POST(request: Request) {
         }
     }
 
+    const dailySummaryReport: any[] = [];
     const monthlyReport: any[] = [], packageReport: any[] = [], giftCardReport: any[] = [];
-    for (const staff of allStaff) {
-        const staffSales = allSales.filter(s => s.staff.toString() === staff._id.toString());
-        const lastSaleDate = staffSales.length > 0 ? new Date(staffSales[staffSales.length - 1].date) : end;
-        const historicalRules = {
-            monthly: findHistoricalRule(allRules.monthly, lastSaleDate),
-            package: findHistoricalRule(allRules.package, lastSaleDate),
-            giftCard: findHistoricalRule(allRules.giftCard, lastSaleDate)
-        };
-        const breakdown = calculateTotalCumulativeIncentive(staffSales, staff, historicalRules);
+
+    // ✅ FIX: This loop now iterates over the map, ensuring all staff are included in the final reports.
+    for (const [staffIdString, summary] of staffSummaryMap.entries()) {
+        const staff = allStaff.find(s => s._id.toString() === staffIdString)!;
+        
+        const lastDayOfRange = new Date(Math.min(end.getTime(), new Date().getTime()));
+        const lastHistoricalTimestamp = allSalesInMonth.filter(s => s.staff.toString() === staffIdString && new Date(s.date) <= lastDayOfRange).pop()?.createdAt || lastDayOfRange;
+        const historicalMonthlyRule = findHistoricalRule(allRules.monthly, new Date(lastHistoricalTimestamp));
+
+        dailySummaryReport.push({ 'Staff Name': summary.name, 'Incentive (₹)': summary.daily.toFixed(2) });
         monthlyReport.push({ 
-            'Staff Name': staff.name, 
-            'Incentive (₹)': breakdown.monthly.toFixed(2), 
-            'Target (₹)': ((staff.salary || 0) * (historicalRules.monthly?.target.multiplier || 0)).toFixed(2) 
+            'Staff Name': summary.name, 
+            'Incentive (₹)': summary.monthly.toFixed(2), 
+            'Target (₹)': ((staff.salary || 0) * (historicalMonthlyRule?.target.multiplier || 0)).toFixed(2) 
         });
-        packageReport.push({ 'Staff Name': staff.name, 'Incentive (₹)': breakdown.package.toFixed(2) });
-        giftCardReport.push({ 'Staff Name': staff.name, 'Incentive (₹)': breakdown.giftCard.toFixed(2) });
+        packageReport.push({ 'Staff Name': summary.name, 'Incentive (₹)': summary.package.toFixed(2) });
+        giftCardReport.push({ 'Staff Name': summary.name, 'Incentive (₹)': summary.giftCard.toFixed(2) });
     }
 
     const staffSummary = Array.from(staffSummaryMap.values()).map(s => ({
@@ -164,7 +181,7 @@ export async function POST(request: Request) {
     
     return NextResponse.json({ 
         success: true, 
-        data: { dailyReport, monthlyReport, packageReport, giftCardReport, staffSummary } 
+        data: { dailyReport, dailySummaryReport, monthlyReport, packageReport, giftCardReport, staffSummary } 
     });
 
   } catch (error: any) {
