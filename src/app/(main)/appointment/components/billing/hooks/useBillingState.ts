@@ -31,6 +31,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const [modalView, setModalView] = useState<'billing' | 'success'>('billing');
   const [finalizedInvoiceData, setFinalizedInvoiceData] = useState<FinalizedInvoice | null>(null);
   const [billItems, setBillItems] = useState<BillLineItem[]>([]);
+  const [initialBillItems, setInitialBillItems] = useState<BillLineItem[]>([]); // To track original items in correction mode
   const [notes, setNotes] = useState<string>('');
   const [newPaymentDetails, setNewPaymentDetails] = useState({ cash: 0, card: 0, upi: 0, other: 0 });
   const [discount, setDiscount] = useState<number>(0);
@@ -112,6 +113,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     setModalView('billing');
     setFinalizedInvoiceData(null);
     setBillItems([]);
+    setInitialBillItems([]);
     setNotes('');
     setIsLoading(false);
     setError(null);
@@ -132,6 +134,37 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     setPackageRedemptions([]);
   }, []);
 
+  // Helper function to calculate the difference between two item lists for inventory preview
+  const calculateBillItemDelta = (initialItems: BillLineItem[], currentItems: BillLineItem[]): BillLineItem[] => {
+    const itemMap = new Map<string, number>();
+
+    // Subtract initial quantities for services
+    initialItems.forEach(item => {
+        if (item.itemType === 'service') {
+            itemMap.set(item.itemId, (itemMap.get(item.itemId) || 0) - item.quantity);
+        }
+    });
+
+    // Add current quantities for services
+    currentItems.forEach(item => {
+        if (item.itemType === 'service') {
+            itemMap.set(item.itemId, (itemMap.get(item.itemId) || 0) + item.quantity);
+        }
+    });
+
+    const deltaItems: BillLineItem[] = [];
+    itemMap.forEach((quantityChange, itemId) => {
+        if (quantityChange !== 0) {
+            const representativeItem = currentItems.find(i => i.itemId === itemId) || initialItems.find(i => i.itemId === itemId);
+            if (representativeItem) {
+                deltaItems.push({ ...representativeItem, quantity: quantityChange });
+            }
+        }
+    });
+
+    return deltaItems;
+  };
+
   // =================================================================================
   // IV. DATA FETCHING CALLBACKS
   // =================================================================================
@@ -139,26 +172,41 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const fetchBusinessDetails = useCallback(async () => { setIsLoadingBusinessDetails(true); try { const res = await fetch('/api/settings/business-details'); const data = await res.json(); if (data.success && data.details) { setBusinessDetails(data.details); } else { setBusinessDetails({ name: 'Your Salon Name', address: '123 Beauty Street, Your City', phone: '9876543210' }); } } catch (err) { console.error('Failed to fetch business details:', err); setBusinessDetails({ name: 'Your Salon Name', address: '123 Beauty Street, Your City', phone: '9876543210' }); } finally { setIsLoadingBusinessDetails(false); } }, []);
   
   const fetchInventoryImpact = useCallback(async (currentBillItems: BillLineItem[]) => {
-    const serviceItems = currentBillItems.filter(item => item.itemType === 'service');
-    if (serviceItems.length === 0 || !customer._id) {
-      setInventoryImpact(null);
-      return;
+    const itemsForImpact = isCorrectionMode
+      ? calculateBillItemDelta(initialBillItems, currentBillItems)
+      : currentBillItems;
+    
+    const serviceItems = itemsForImpact.filter(item => item.itemType === 'service');
+    
+    // ** THE FIX IS HERE **
+    // We flatten the delta into a simple array of service IDs, which is what the original API expects.
+    // We only consider positive quantities (newly added services) for the preview.
+    const serviceIdsForPreview = serviceItems.flatMap(item => 
+        item.quantity > 0 ? Array(item.quantity).fill(item.itemId) : []
+    );
+
+    if (serviceIdsForPreview.length === 0 || !customer._id) {
+        setInventoryImpact(null);
+        return;
     }
+    
     setIsLoadingInventory(true);
     try {
-      const serviceIdsWithQuantities = serviceItems.flatMap(s => Array(s.quantity).fill(s.itemId));
-      const response = await tenantFetch('/api/billing/inventory-preview', {
-        method: 'POST',
-        body: JSON.stringify({ serviceIds: serviceIdsWithQuantities, customerId: customer._id })
-      });
-      const data = await response.json();
-      if (data.success) setInventoryImpact(data.data);
+        const response = await tenantFetch('/api/billing/inventory-preview', {
+            method: 'POST',
+            // Send the payload in the format the backend already understands
+            body: JSON.stringify({ serviceIds: serviceIdsForPreview, customerId: customer._id })
+        });
+        const data = await response.json();
+        if (data.success) setInventoryImpact(data.data);
+        else setInventoryImpact(null);
     } catch (err) {
-      console.error('Failed to fetch inventory impact:', err);
+        console.error('Failed to fetch inventory impact:', err);
+        setInventoryImpact(null);
     } finally {
-      setIsLoadingInventory(false);
+        setIsLoadingInventory(false);
     }
-  }, [customer._id, tenantFetch]);
+  }, [customer._id, tenantFetch, isCorrectionMode, initialBillItems]);
 
   const fetchAllActiveStaff = useCallback(async () => { setIsLoadingStaff(true); try { const res = await tenantFetch('/api/staff?action=listForBilling'); const data = await res.json(); if (data.success) setAvailableStaff(data.staff); } catch (err) { console.error('Failed to fetch all active staff:', err); } finally { setIsLoadingStaff(false); } }, [tenantFetch]);
   const fetchBillingProcessors = useCallback(async () => { setIsLoadingProcessors(true); try { const res = await tenantFetch('/api/users/billing-staff'); const data = await res.json(); if (data.success) { setBillingProcessors(data.staff); const session = await getSession(); const currentUserId = session?.user?.id; if (currentUserId && data.staff.some((s: StaffMember) => s._id === currentUserId)) { setSelectedStaffId(currentUserId); } } } catch (err) { console.error('Failed to fetch billing processors:', err); } finally { setIsLoadingProcessors(false); } }, [tenantFetch]);
@@ -178,6 +226,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
       setIsLoadingBill(true);
       setError(null);
       setBillItems([]);
+      setInitialBillItems([]);
       setPackageRedemptions([]);
       setNotes('');
       setDiscount(0);
@@ -231,11 +280,15 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
         }
   
         setBillItems(finalBillItems);
+        if (isCorrectionMode) {
+          setInitialBillItems(JSON.parse(JSON.stringify(finalBillItems))); // Deep copy for comparison
+        }
         setPackageRedemptions(finalRedemptions);
       } catch (err: any) {
         console.error("Error during bill initialization:", err);
         setError(`Could not load bill: ${err.message}`);
         setBillItems([]);
+        setInitialBillItems([]);
         setPackageRedemptions([]);
       } finally {
         setIsLoadingBill(false);

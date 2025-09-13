@@ -1,4 +1,3 @@
-// src/app/appointment/page.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback, FC } from 'react';
@@ -22,6 +21,7 @@ import { formatDuration } from '@/lib/utils';
 import { Tooltip } from 'react-tooltip';
 import 'react-tooltip/dist/react-tooltip.css';
 
+// ... (Interface and component definitions remain the same) ...
 interface AppointmentWithCustomer {
   _id: string;
   id: string;
@@ -107,7 +107,6 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
     );
 };
 
-
 export default function AppointmentPage() {
   const { data: session } = useSession();
   const [allAppointments, setAllAppointments] = useState<AppointmentWithCustomer[]>([]);
@@ -126,6 +125,7 @@ export default function AppointmentPage() {
   const [totalAppointmentsCount, setTotalAppointmentsCount] = useState(0);
   const [isDesktop, setIsDesktop] = useState(true);
 
+  // ... (useEffect hooks and other handlers remain the same) ...
   useEffect(() => {
     const checkScreenSize = () => {
         setIsDesktop(window.innerWidth >= 1024);
@@ -229,16 +229,18 @@ export default function AppointmentPage() {
       const response = await tenantFetch(url, { method, body: JSON.stringify(finalPayload) });
       const result = await response.json();
 
-      if (!response.ok || !result.success || !result.invoice) {
+      // ** THE FIX IS HERE **
+      // We now check for 'result.data' (from the PUT route) OR 'result.invoice' (from the POST route).
+      const invoiceData = result.data || result.invoice;
+
+      if (!response.ok || !result.success || !invoiceData) {
         throw new Error(result.message || (isUpdating ? 'Failed to update invoice.' : 'Failed to create invoice.'));
       }
       
-      // Return the invoice data to the modal for the success screen
-      return result.invoice;
+      // Return the invoice data, regardless of which key it came from.
+      return invoiceData;
 
     } catch (err: any) {
-      // Show error to the user, but re-throw it so the modal can stop its loading state.
-      toast.error(err.message || 'An unexpected error occurred.');
       throw err;
     }
   };
@@ -249,6 +251,7 @@ export default function AppointmentPage() {
     fetchAppointments();
   };
 
+  // ... (rest of the component remains the same) ...
   const handleFilterChange = (newStatus: string) => { setStatusFilter(newStatus); };
   const canCreateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE));
   const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
