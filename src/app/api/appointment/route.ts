@@ -1,4 +1,6 @@
-// src/app/api/appointment/route.ts
+// ===================================================================================
+//  UPDATED FILE: src/app/api/appointment/route.ts
+// ===================================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -11,7 +13,8 @@ import mongoose from 'mongoose';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
-import { InventoryManager } from '@/lib/inventoryManager'; 
+// ❌ REMOVED: No longer need InventoryManager in this file.
+// import { InventoryManager } from '@/lib/inventoryManager'; 
 import { getTenantIdOrBail } from '@/lib/tenant';
 import { whatsAppService } from '@/lib/whatsapp';
 import { encrypt, decrypt} from '@/lib/crypto';
@@ -19,7 +22,7 @@ import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 import CustomerPackage from '@/models/CustomerPackage';
 
 // ===================================================================================
-//  GET: Handler
+//  GET: Handler (No Changes Needed)
 // ===================================================================================
 export async function GET(req: NextRequest) {
   try {
@@ -175,7 +178,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ===================================================================================
-//  POST: Handler (✅ UPDATED TO SUPPORT DUPLICATE SERVICES)
+//  POST: Handler (✅ CORRECTED: Inventory logic removed)
 // ===================================================================================
 export async function POST(req: NextRequest) {
   
@@ -190,7 +193,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     const { 
-      customerName, phoneNumber, email, gender, dob, survey,
+      customerName, phoneNumber, email, dob, survey, // ❌ REMOVED: `gender` is no longer needed here
       date, time, notes, status, 
       appointmentType = 'Online', serviceAssignments,
       redeemedItems,
@@ -210,7 +213,8 @@ export async function POST(req: NextRequest) {
         name: encrypt(customerName.trim()),
         phoneNumber: encrypt(normalizedPhone),
         email: email ? encrypt(email.trim()) : undefined,
-        gender: gender || 'other',
+        // You can still save gender, it's just not needed for inventory calculations here
+        gender: body.gender || 'other', 
         phoneHash: phoneHashToFind,
         searchableName: customerName.trim().toLowerCase(),
         last4PhoneNumber: normalizedPhone.slice(-4),
@@ -245,23 +249,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // =========================================================================
-    // === START: MODIFIED SERVICE VALIDATION AND HANDLING =====================
-    // =========================================================================
-
     const allServiceIdsWithDuplicates = serviceAssignments.map((a: any) => a.serviceId);
     
-    // 1. Get the set of UNIQUE service IDs for efficient database validation.
     const uniqueServiceIds = [...new Set(allServiceIdsWithDuplicates)];
     const primaryStylistId = serviceAssignments[0].stylistId;
 
-    // 2. Find all unique services from the database.
     const foundServicesFromDB = await ServiceItem.find({ 
         _id: { $in: uniqueServiceIds },
         tenantId: tenantId
     }).lean();
 
-    // 3. Validate that every unique service ID submitted was found in the database.
     if (foundServicesFromDB.length !== uniqueServiceIds.length) {
         const foundIdsSet = new Set(foundServicesFromDB.map(s => s._id.toString()));
         const missingIds = uniqueServiceIds.filter(id => !foundIdsSet.has(id));
@@ -269,11 +266,8 @@ export async function POST(req: NextRequest) {
         throw new Error("One or more selected services could not be found. They may have been recently deleted.");
     }
 
-    // 4. Create a map for quick lookups (ID -> Service Details).
     const serviceDetailsMap = new Map(foundServicesFromDB.map(service => [service._id.toString(), service]));
 
-    // 5. Reconstruct the full list of services, including duplicates, in the correct order.
-    // This `fullServiceDetailsList` will now be the source of truth for calculations.
     const fullServiceDetailsList = allServiceIdsWithDuplicates.map(id => {
         const service = serviceDetailsMap.get(id);
         if (!service) {
@@ -282,25 +276,17 @@ export async function POST(req: NextRequest) {
         return service;
     });
 
+
     // =========================================================================
-    // === END: MODIFIED SERVICE VALIDATION AND HANDLING =======================
+    // ✅ BUG FIX: The entire inventory management block has been removed from here.
+    // Inventory will now only be deducted in the `/api/billing` route.
     // =========================================================================
 
-    if (InventoryManager.calculateMultipleServicesInventoryImpact && InventoryManager.applyInventoryUpdates) {
-        const { totalUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(
-          allServiceIdsWithDuplicates, // Use the list with duplicates
-          gender,
-          tenantId
-        );
-        if (totalUpdates.length > 0) {
-          await InventoryManager.applyInventoryUpdates(totalUpdates, session, tenantId);
-        }
-    }
 
     const totalEstimatedDuration = fullServiceDetailsList.reduce((sum, service) => sum + service.duration, 0);
     const tempAppointmentForCalc = new Appointment({
       customerId: customerDoc!._id,
-      serviceIds: allServiceIdsWithDuplicates, // Use the list with duplicates
+      serviceIds: allServiceIdsWithDuplicates,
       tenantId: tenantId,
     });
     const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
@@ -314,7 +300,7 @@ export async function POST(req: NextRequest) {
       tenantId: tenantId,
       customerId: customerDoc!._id,
       stylistId: primaryStylistId,
-      serviceIds: allServiceIdsWithDuplicates, // Save the list WITH duplicates
+      serviceIds: allServiceIdsWithDuplicates,
       notes,
       status,
       appointmentType,

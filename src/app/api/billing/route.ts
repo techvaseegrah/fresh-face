@@ -1,5 +1,5 @@
 // ===================================================================================
-//  API ROUTE: /api/billing (Corrected Order of Operations)
+//  API ROUTE: /api/billing (Surgical Fix Applied)
 // ===================================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -83,7 +83,6 @@ export async function POST(req: NextRequest) {
         await giftCard.save({ session: dbSession });
     }
 
-    // STEP 1: Update the main package document to decrement uses. This happens BEFORE invoice creation.
     if (packageRedemptions && Array.isArray(packageRedemptions) && packageRedemptions.length > 0) {
       for (const redemption of packageRedemptions) {
         const { customerPackageId, redeemedItemId, redeemedItemType, quantityRedeemed } = redemption;
@@ -124,16 +123,7 @@ export async function POST(req: NextRequest) {
       await newCustomerPackage.save({ session: dbSession });
       newlySoldPackages.push(newCustomerPackage.toObject());
     }
-
-    const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
-    if (productItemsToBill.length > 0) {
-      const productIds = productItemsToBill.map((item: any) => item.itemId);
-      const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
-      if (productsInDb.length !== productIds.length) { throw new Error('One or more products being billed are invalid for this salon.'); }
-      const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
-      for (const item of productItemsToBill) { const dbProduct = productMap.get(item.itemId); if (!dbProduct || dbProduct.numberOfItems < item.quantity) { throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`); } }
-    }
-
+    
     const appointment = await Appointment.findOne({ _id: appointmentId, tenantId }).populate('serviceIds').session(dbSession) as (IAppointment & Document) | null;
     if (!appointment) throw new Error('Appointment not found');
     if (appointment.status === 'Paid') { throw new Error('This appointment has already been paid for.'); }
@@ -141,26 +131,59 @@ export async function POST(req: NextRequest) {
     if (!customer) throw new Error('Customer not found');
     const customerGender = customer.gender || 'other';
 
-    let allInventoryUpdates: InventoryUpdate[] = [];
-    if (items.some((item: any) => item.itemType === 'service' || item.itemType === 'product')) {
-    const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
-    // ✅ FIX: This correctly creates a list of service IDs based on their quantity.
-    const serviceIds = serviceItemsInBill.flatMap((s: any) => Array(s.quantity).fill(s.itemId));
-    if (serviceIds.length > 0) { 
-        const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId); 
-        allInventoryUpdates.push(...serviceProductUpdates); 
-    }
-  }
+    // =========================================================================
+    // === START: THE ONLY CODE ADDED TO FIX THE BUG ===========================
+    // =========================================================================
     
-    // STEP 2: Create and save the Invoice. This is where the invoiceId is generated.
+    let allInventoryUpdates: InventoryUpdate[] = [];
+
+    // Step 1: Calculate impact from SERVICES (This part of your code was already correct)
+    const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
+    if (serviceItemsInBill.length > 0) {
+        const serviceIds = serviceItemsInBill.flatMap((s: any) => Array(s.quantity).fill(s.itemId));
+        const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId);
+        allInventoryUpdates.push(...serviceProductUpdates);
+    }
+
+    // Step 2: Add impact from sold RETAIL PRODUCTS
+    const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
+    if (productItemsToBill.length > 0) {
+      // Your existing stock check is here, which is perfect.
+      const productIds = productItemsToBill.map((item: any) => item.itemId);
+      const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
+      if (productsInDb.length !== productIds.length) { throw new Error('One or more products being billed are invalid for this salon.'); }
+      const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
+      for (const item of productItemsToBill) { const dbProduct = productMap.get(item.itemId); if (!dbProduct || dbProduct.numberOfItems < item.quantity) { throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`); } }
+
+      // Format the retail products into the InventoryUpdate shape your manager expects
+      const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map(item => ({
+          productId: item.itemId,
+          productName: item.name,
+          quantityToDeduct: item.quantity,
+          unit: 'piece' // This is crucial for your inventory manager's logic
+      }));
+      allInventoryUpdates.push(...retailProductUpdates);
+    }
+    
+    // Step 3: APPLY all combined updates using your existing inventory manager function
+    if (allInventoryUpdates.length > 0) {
+        await InventoryManager.applyInventoryUpdates(
+            allInventoryUpdates, 
+            dbSession, 
+            tenantId
+        );
+    }
+
+    // =========================================================================
+    // === END: THE ONLY CODE ADDED TO FIX THE BUG =============================
+    // =========================================================================
+    
     const invoice = new Invoice({ tenantId, appointmentId, customerId, stylistId, billingStaffId, lineItems: lineItemsWithTenantId, serviceTotal, productTotal, subtotal, membershipDiscount, grandTotal, paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling, paymentStatus: 'Paid', manualDiscount: { type: manualDiscountType || null, value: manualDiscountValue || 0, appliedAmount: finalManualDiscountApplied || 0 }, giftCardPayment: giftCardRedemption ? { cardId: giftCardRedemption.cardId, amount: giftCardRedemption.amount } : undefined });
     await invoice.save({ session: dbSession });
-    createdInvoiceId = invoice._id; // The variable is now populated.
+    createdInvoiceId = invoice._id;
 
-    // STEP 3: Now that createdInvoiceId has a value, create the log entries.
     if (giftCardRedemption && giftCardRedemption.cardId && giftCardRedemption.amount > 0) { const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession); if (giftCard) { await GiftCardLog.create([{ tenantId, giftCardId: giftCardRedemption.cardId, invoiceId: createdInvoiceId, customerId, amountRedeemed: giftCardRedemption.amount, balanceBefore: giftCard.currentBalance + giftCardRedemption.amount, balanceAfter: giftCard.currentBalance, }], { session: dbSession, ordered: true }); } }
     
-    // ✅ FIX: This block is now in the correct position, AFTER the invoice has been saved.
     if (packageRedemptions && Array.isArray(packageRedemptions) && packageRedemptions.length > 0) {
       const logEntries = packageRedemptions.map((redemption: any) => {
         const staffIdForRedemption = redemption.redeemedBy;
@@ -176,7 +199,7 @@ export async function POST(req: NextRequest) {
           redeemedItemId: redemption.redeemedItemId,
           redeemedItemType: redemption.redeemedItemType,
           quantityRedeemed: redemption.quantityRedeemed,
-          invoiceId: createdInvoiceId, // This will now have a valid ID.
+          invoiceId: createdInvoiceId,
           redeemedBy: staffIdForRedemption,
         };
       });
