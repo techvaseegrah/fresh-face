@@ -5,8 +5,10 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 const reportLinks = [
-  // ▼▼▼ MODIFIED LINK ▼▼▼
-   { href: '/reports/appointment-report', label: 'Appointment Report' },
+  { href: '/reports/appointment-report', label: 'Appointment Report' },
+  // ▼▼▼ ADD THIS LINE ▼▼▼
+  { href: '/reports/eb-report', label: 'EB Report' }, 
+  // ▲▲▲ END OF ADDITION ▲▲▲
   { href: '/reports', label: 'Sales Report' }, 
   { href: '/reports/gift-card-sold', label: 'Gift Card Sold' },
   { href: '/reports/gift-card-redemption', label: 'Gift Card Redemption' },
@@ -31,9 +33,6 @@ export function ReportsNav() {
   return (
     <nav className="flex flex-col space-y-1">
       {reportLinks.map((link) => {
-        // ▼▼▼ MODIFIED ACTIVE STATE LOGIC ▼▼▼
-        // This ensures the main 'Sales Report' link is only active on the exact '/reports' path,
-        // while other links are active if the path starts with their href.
         const isActive = link.href === '/reports'
           ? pathname === link.href
           : pathname.startsWith(link.href);
