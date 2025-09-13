@@ -3,16 +3,12 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
-import Invoice from '@/models/invoice'; // Import Invoice model
-import IncentiveRule, { IIncentiveRule } from '@/models/IncentiveRule';
+import Invoice from '@/models/invoice';
+import IncentiveRule from '@/models/IncentiveRule'; // Removed IIncentiveRule as it's not directly used
 import { getTenantIdOrBail } from '@/lib/tenant';
 
-// Define a type for the rule snapshot object
-type IRuleSnapshot = {
-  target: { multiplier: number };
-  sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
-  incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
-};
+// This type definition is no longer needed as we build the snapshot differently
+// type IRuleSnapshot = { ... };
 
 export async function POST(request: Request) {
   try {
@@ -21,7 +17,6 @@ export async function POST(request: Request) {
     if (tenantId instanceof NextResponse) return tenantId;
 
     const body = await request.json();
-    // This route is called for ONE staff member at a time when you click "Save & Lock Day"
     const { staffId, date, reviewsWithName = 0, reviewsWithPhoto = 0 } = body;
 
     if (!staffId || !date) {
@@ -32,28 +27,27 @@ export async function POST(request: Request) {
     const dayStart = new Date(Date.UTC(year, month - 1, day));
     const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
 
-    // --- Step 1: Find the historically correct incentive rule ---
-    const activeRuleDb = await IncentiveRule.findOne({
-      tenantId,
-      type: 'daily',
-      createdAt: { $lte: dayEnd } // Find the last rule created on or before this date
-    }).sort({ createdAt: -1 }).lean<IIncentiveRule>();
+    // ✨ --- MODIFICATION: This section now fetches all four rules to create a complete snapshot --- ✨
+    const dailyRule = await IncentiveRule.findOne({ tenantId, type: 'daily', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
+    const monthlyRule = await IncentiveRule.findOne({ tenantId, type: 'monthly', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
+    const packageRule = await IncentiveRule.findOne({ tenantId, type: 'package', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
+    const giftCardRule = await IncentiveRule.findOne({ tenantId, type: 'giftCard', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
 
-    const defaultRule: IRuleSnapshot = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
-    
-    const ruleSnapshot: IRuleSnapshot = {
-        target: { ...defaultRule.target, ...(activeRuleDb?.target || {}) },
-        sales: { ...defaultRule.sales, ...(activeRuleDb?.sales || {}) },
-        incentive: { ...defaultRule.incentive, ...(activeRuleDb?.incentive || {}) }
+    const ruleSnapshot = {
+        daily: dailyRule,
+        monthly: monthlyRule,
+        package: packageRule,
+        giftCard: giftCardRule,
     };
-
+    
     // --- Step 2: Sync sales data for this specific staff member on this day ---
+    // (This part of your code was already correct and is unchanged)
     const allInvoicesForDay = await Invoice.find({
       tenantId: tenantId,
       createdAt: { $gte: dayStart, $lte: dayEnd }
     }).lean();
 
-    const totals = { serviceSale: 0, productSale: 0 };
+    const totals = { serviceSale: 0, productSale: 0, packageSale: 0, giftCardSale: 0 };
     const customerIds = new Set<string>();
 
     for (const invoice of allInvoicesForDay) {
@@ -64,6 +58,10 @@ export async function POST(request: Request) {
                     totals.serviceSale += item.finalPrice;
                 } else if (item.itemType === 'product') {
                     totals.productSale += item.finalPrice;
+                } else if (item.itemType === 'package') {
+                    totals.packageSale += item.finalPrice;
+                } else if (item.itemType === 'gift_card') {
+                    totals.giftCardSale += item.finalPrice;
                 }
                 staffWasInvolvedInThisInvoice = true;
             }
@@ -73,27 +71,28 @@ export async function POST(request: Request) {
         }
     }
 
-    // --- Step 3: Create or Update the DailySale record with the correct logic ---
+    // --- Step 3: Create or Update the DailySale record ---
     const updatedRecord = await DailySale.findOneAndUpdate(
       { staff: staffId, date: dayStart, tenantId },
       { 
-        // $set: Overwrites these fields with the latest, freshly calculated data.
         $set: {
           serviceSale: totals.serviceSale,
           productSale: totals.productSale,
+          packageSale: totals.packageSale,
+          giftCardSale: totals.giftCardSale,
           customerCount: customerIds.size,
-          appliedRule: ruleSnapshot, // Locks in the rule
+          // ✨ --- MODIFICATION: Save the new, correct, and complete snapshot --- ✨
+          appliedRule: ruleSnapshot,
           tenantId: tenantId,
         },
-        // $inc: Increments the review counts, adding new values to existing ones.
         $inc: { 
           reviewsWithName: Number(reviewsWithName) || 0,
           reviewsWithPhoto: Number(reviewsWithPhoto) || 0,
         },
       },
       { 
-        new: true, // Return the modified document
-        upsert: true, // Create the document if it doesn't exist
+        new: true,
+        upsert: true,
         setDefaultsOnInsert: true
       }
     );

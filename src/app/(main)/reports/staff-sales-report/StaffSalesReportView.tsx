@@ -4,31 +4,44 @@ import React, { useState, useEffect, useMemo, Fragment, useCallback } from 'reac
 import { useSession } from 'next-auth/react';
 import { format, startOfMonth } from 'date-fns';
 import { toast } from 'react-toastify';
-import { User, IndianRupee, Wrench, ShoppingCart, Gift, Package, Award, Calendar, Search, FileDown, X, Loader2 } from 'lucide-react';
+import { User, IndianRupee, Wrench, ShoppingCart, Gift, Package, Award, Calendar, Search, FileDown, X, Loader2, Hash } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import Card from '../../../../components/ui/Card';
 import Button from '../../../../components/ui/Button';
 import { Transition } from '@headlessui/react';
-// --- ADDED: Import permission helpers ---
 import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
 
 
-// --- Type Definitions ---
+// --- MODIFIED: Type Definition ---
 interface SaleDetail { name: string; quantity: number; price: number; }
 interface DailyBreakdown { service: SaleDetail[]; product: SaleDetail[]; giftCard: SaleDetail[]; package: SaleDetail[]; membership: SaleDetail[]; }
 export interface StaffSaleRecord {
-    staffId: string; staffIdNumber: string; name: string; totalSales: number; service: number;
-    product: number; giftCard: number; package: number; membership: number;
+    staffId: string;
+    staffIdNumber: string; // Employee Code
+    name: string;
+    totalSales: number;
+    service: number;
+    product: number;
+    giftCard: number;
+    package: number;
+    membership: number;
+    billCount: number;
+    // --- ADDED: New properties ---
+    serviceCount: number;
+    productCount: number;
+    membershipCount: number;
+    totalDiscount: number;
     dailyBreakdown: Record<string, DailyBreakdown>;
 }
 
-// --- Helper Functions ---
+// --- Helper Functions (Unchanged) ---
 const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// --- Staff Detail Drawer Component ---
+// --- Staff Detail Drawer Component (Unchanged) ---
 const StaffDetailDrawer: React.FC<{ staffData: StaffSaleRecord | null; onClose: () => void; }> = ({ staffData, onClose }) => {
+    // ... (This component remains unchanged)
     const sortedDays = useMemo(() => {
         if (!staffData) return [];
         return Object.keys(staffData.dailyBreakdown).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
@@ -77,7 +90,6 @@ const StaffDetailDrawer: React.FC<{ staffData: StaffSaleRecord | null; onClose: 
         </Transition>
     );
 };
-
 // --- Main View Component ---
 interface StaffSalesReportViewProps {
     initialData: StaffSaleRecord[];
@@ -85,10 +97,8 @@ interface StaffSalesReportViewProps {
 }
 
 export default function StaffSalesReportView({ initialData, initialError }: StaffSalesReportViewProps) {
-    // --- ADDED: Get user permissions and session status ---
     const { data: session, status: sessionStatus } = useSession();
     const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
-
     const [reportData, setReportData] = useState<StaffSaleRecord[]>(initialData);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(initialError || null);
@@ -137,16 +147,27 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
         }
     }, [initialError]);
 
+    // --- MODIFIED: Export function to include new columns ---
     const handleExport = (type: 'pdf' | 'excel') => {
-        const doc = new jsPDF();
-        const tableColumn = ["Staff", "Service Sales", "Product Sales", "Gift Card Sales", "Package Sales", "Membership Sales", "Total Sales"];
+        const doc = new jsPDF({ orientation: 'landscape' });
+        const tableColumn = [
+            "Staff", "Emp. Code", "Bill Count", "Svc. Count", "Prod. Count", "Mem. Count", 
+            "Service Sales", "Product Sales", "Gift Card Sales", "Package Sales", "Membership Sales", 
+            "Total Discount", "Total Sales"
+        ];
         const tableRows = filteredData.map(item => [
             item.name,
+            item.staffIdNumber || 'N/A',
+            item.billCount,
+            item.serviceCount,
+            item.productCount,
+            item.membershipCount,
             formatCurrency(item.service),
             formatCurrency(item.product),
             formatCurrency(item.giftCard),
             formatCurrency(item.package),
             formatCurrency(item.membership),
+            formatCurrency(item.totalDiscount),
             formatCurrency(item.totalSales)
         ]);
 
@@ -169,7 +190,6 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
         }
     };
     
-    // --- ADDED: Handle session loading and access denied states ---
     if (sessionStatus === 'loading') {
         return <div className="p-6 text-center flex items-center justify-center"><Loader2 className="animate-spin mr-2" />Loading session...</div>;
     }
@@ -184,7 +204,6 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
             </div>
         );
     }
-
 
     return (
         <div className="font-sans">
@@ -203,7 +222,6 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
             <Card>
                 <div className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b">
                     <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="text" placeholder="Search staff..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 w-full pr-4 py-2 border rounded-lg"/></div>
-                    {/* --- MODIFIED: Conditionally render export buttons based on permission --- */}
                     {hasPermission(userPermissions, PERMISSIONS.REPORT_STAFF_SALES_MANAGE) && (
                         <div className="flex items-center gap-2">
                             <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} disabled={isLoading || !!error}><FileDown size={16} className="mr-2 text-red-600"/>PDF</Button>
@@ -214,29 +232,41 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
                 
                 <div className="overflow-x-auto">
                     <table className="min-w-full">
+                        {/* --- MODIFIED: Table Head --- */}
                         <thead className="bg-gray-50"><tr>
                             <th className="p-4 text-left text-xs font-semibold text-gray-500 uppercase">Staff</th>
+                            <th className="p-4 text-left text-xs font-semibold text-gray-500 uppercase">Emp. Code</th>
+                            <th className="p-4 text-center text-xs font-semibold text-gray-500 uppercase">Bill Count</th>
+                            <th className="p-4 text-center text-xs font-semibold text-gray-500 uppercase">Svc. Count</th>
+                            <th className="p-4 text-center text-xs font-semibold text-gray-500 uppercase">Prod. Count</th>
+                            <th className="p-4 text-center text-xs font-semibold text-gray-500 uppercase">Mem. Count</th>
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Service Sales</th>
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Product Sales</th>
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Gift Card Sales</th>
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Package Sales</th>
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Membership Sales</th>
+                            <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Total Discount</th>
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Total Sales</th>
                         </tr></thead>
                         <tbody className="divide-y">
-                            {isLoading ? <tr><td colSpan={7} className="text-center p-10">Loading...</td></tr> :
-                             error ? <tr><td colSpan={7} className="text-center p-10 text-red-500">{error}</td></tr> :
+                            {/* --- MODIFIED: Table Body and Colspan --- */}
+                            {isLoading ? <tr><td colSpan={13} className="text-center p-10">Loading...</td></tr> :
+                             error ? <tr><td colSpan={13} className="text-center p-10 text-red-500">{error}</td></tr> :
                              filteredData.map(staff => (
                                 <tr key={staff.staffId} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedStaff(staff)}>
-                                    <td className="p-4">
-                                        <div className="font-semibold text-indigo-600">{staff.name}</div>
-                                    </td>
-                                    <td className="p-4 text-right">{formatCurrency(staff.service)}</td>
-                                    <td className="p-4 text-right">{formatCurrency(staff.product)}</td>
-                                    <td className="p-4 text-right">{formatCurrency(staff.giftCard)}</td>
-                                    <td className="p-4 text-right">{formatCurrency(staff.package)}</td>
-                                    <td className="p-4 text-right">{formatCurrency(staff.membership)}</td>
-                                    <td className="p-4 text-right font-bold">{formatCurrency(staff.totalSales)}</td>
+                                    <td className="p-4 whitespace-nowrap"><div className="font-semibold text-indigo-600">{staff.name}</div></td>
+                                    <td className="p-4 whitespace-nowrap text-gray-600">{staff.staffIdNumber}</td>
+                                    <td className="p-4 text-center font-medium">{staff.billCount}</td>
+                                    <td className="p-4 text-center font-medium text-blue-600">{staff.serviceCount}</td>
+                                    <td className="p-4 text-center font-medium text-green-600">{staff.productCount}</td>
+                                    <td className="p-4 text-center font-medium text-purple-600">{staff.membershipCount}</td>
+                                    <td className="p-4 text-right whitespace-nowrap">{formatCurrency(staff.service)}</td>
+                                    <td className="p-4 text-right whitespace-nowrap">{formatCurrency(staff.product)}</td>
+                                    <td className="p-4 text-right whitespace-nowrap">{formatCurrency(staff.giftCard)}</td>
+                                    <td className="p-4 text-right whitespace-nowrap">{formatCurrency(staff.package)}</td>
+                                    <td className="p-4 text-right whitespace-nowrap">{formatCurrency(staff.membership)}</td>
+                                    <td className="p-4 text-right whitespace-nowrap text-red-600">{formatCurrency(staff.totalDiscount)}</td>
+                                    <td className="p-4 text-right whitespace-nowrap font-bold">{formatCurrency(staff.totalSales)}</td>
                                 </tr>
                              ))}
                         </tbody>

@@ -1,40 +1,142 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 
-// Interfaces and default data
-interface Rule { target: { multiplier: number; }; sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; }; incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };}
-interface SettingsProps { onClose: () => void; tenantId: string; }
-const defaultRule: Rule = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' }};
+// --- Interface for Daily/Monthly rules (Existing) ---
+interface MultiplierRule {
+  target: { multiplier: number; };
+  sales: {
+    includeServiceSale: boolean;
+    includeProductSale: boolean;
+    reviewNameValue?: number; 
+    reviewPhotoValue?: number;
+  };
+  incentive: {
+    rate: number;
+    doubleRate: number;
+    applyOn: 'totalSaleValue' | 'serviceSaleOnly';
+  };
+}
 
-// Helper component
-const RuleEditor = ({ title, rule, onChange }: { title: string; rule: Rule; onChange: (path: string, value: any) => void; }) => (
-    <Card title={title}>
-        <div className="space-y-4 p-2">
-            <div><label className="font-semibold text-gray-700 block mb-1">Target Multiplier (of Salary)</label><input type="number" value={rule.target.multiplier} onChange={(e) => onChange('target.multiplier', Number(e.target.value))} className="w-full p-2 border rounded text-black"/></div>
-            <div>
-                <label className="font-semibold text-gray-700 block mb-1">Sales to Include for Target</label>
-                <div className="flex items-center mt-1"><input type="checkbox" id={`${title}-service`} checked={rule.sales.includeServiceSale} onChange={(e) => onChange('sales.includeServiceSale', e.target.checked)} className="h-4 w-4"/><label htmlFor={`${title}-service`} className="ml-2 text-gray-600">Service Sale</label></div>
-                <div className="flex items-center mt-1"><input type="checkbox" id={`${title}-product`} checked={rule.sales.includeProductSale} onChange={(e) => onChange('sales.includeProductSale', e.target.checked)} className="h-4 w-4"/><label htmlFor={`${title}-product`} className="ml-2 text-gray-600">Product Sale</label></div>
-            </div>
-            <div><label className="font-semibold text-gray-700 block mb-1">Review (Name) Value (₹)</label><input type="number" value={rule.sales.reviewNameValue} onChange={(e) => onChange('sales.reviewNameValue', Number(e.target.value))} className="w-full p-2 border rounded text-black"/></div>
-            <div><label className="font-semibold text-gray-700 block mb-1">Review (Photo) Value (₹)</label><input type="number" value={rule.sales.reviewPhotoValue} onChange={(e) => onChange('sales.reviewPhotoValue', Number(e.target.value))} className="w-full p-2 border rounded text-black"/></div>
-            <hr/>
-            <div><label className="font-semibold text-gray-700 block mb-1">Incentive Rate (e.g., 0.05 for 5%)</label><input type="number" step="0.01" value={rule.incentive.rate} onChange={(e) => onChange('incentive.rate', Number(e.target.value))} className="w-full p-2 border rounded text-black"/></div>
-            <div><label className="font-semibold text-gray-700 block mb-1">Double Incentive Rate (e.g., 0.10 for 10%)</label><input type="number" step="0.01" value={rule.incentive.doubleRate} onChange={(e) => onChange('incentive.doubleRate', Number(e.target.value))} className="w-full p-2 border rounded text-black"/></div>
-            <div>
-                <label className="font-semibold text-gray-700 block mb-1">Apply Incentive On</label>
-                 <select value={rule.incentive.applyOn} onChange={(e) => onChange('incentive.applyOn', e.target.value)} className="w-full p-2 border rounded text-black bg-white"><option value="totalSaleValue">Total Sale Value</option><option value="serviceSaleOnly">Service Sale Only</option></select>
+// --- New interface for Package/Gift Card rules ---
+interface FixedTargetRule {
+  target: { targetValue: number; };
+  incentive: {
+    rate: number;
+    doubleRate: number;
+  };
+}
+
+
+interface SettingsProps {
+  onClose: () => void;
+  tenantId: string;
+}
+
+// --- Default States for all four rules ---
+const defaultDailyRule: MultiplierRule = {
+  target: { multiplier: 5 },
+  sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 },
+  incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' }
+};
+const defaultMonthlyRule: MultiplierRule = {
+  target: { multiplier: 5 },
+  sales: { includeServiceSale: true, includeProductSale: false },
+  incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'serviceSaleOnly' }
+};
+const defaultPackageRule: FixedTargetRule = {
+    target: { targetValue: 20000 },
+    incentive: { rate: 0.03, doubleRate: 0.05 }
+};
+const defaultGiftCardRule: FixedTargetRule = {
+    target: { targetValue: 10000 },
+    incentive: { rate: 0.01, doubleRate: 0.02 }
+};
+
+
+// --- Existing Editor for Daily/Monthly ---
+const MultiplierRuleEditor = ({ title, rule, onChange, ruleType }: { title: string; rule: MultiplierRule; onChange: (path: string, value: any) => void; ruleType: 'daily' | 'monthly' }) => (
+    <Card>
+        <div className="p-4">
+            <h3 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">{title}</h3>
+            <div className="space-y-4">
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Target Multiplier (of Salary)</label>
+                    <input type="number" value={rule.target.multiplier} onChange={(e) => onChange(`${ruleType}.target.multiplier`, Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Sales to Include for Target</label>
+                    <div className="flex items-center mt-2"><input type="checkbox" id={`${ruleType}-service`} checked={rule.sales.includeServiceSale} onChange={(e) => onChange(`${ruleType}.sales.includeServiceSale`, e.target.checked)} className="h-4 w-4 rounded"/><label htmlFor={`${ruleType}-service`} className="ml-2 text-gray-600">Service Sale</label></div>
+                    <div className="flex items-center mt-1"><input type="checkbox" id={`${ruleType}-product`} checked={rule.sales.includeProductSale} onChange={(e) => onChange(`${ruleType}.sales.includeProductSale`, e.target.checked)} className="h-4 w-4 rounded"/><label htmlFor={`${ruleType}-product`} className="ml-2 text-gray-600">Product Sale</label></div>
+                </div>
+                {ruleType === 'daily' && rule.sales.reviewNameValue !== undefined && (
+                    <>
+                        <div>
+                            <label className="font-semibold text-gray-700 block mb-1">Review (Name) Value (₹)</label>
+                            <input type="number" value={rule.sales.reviewNameValue} onChange={(e) => onChange('daily.sales.reviewNameValue', Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                        </div>
+                        <div>
+                            <label className="font-semibold text-gray-700 block mb-1">Review (Photo) Value (₹)</label>
+                            <input type="number" value={rule.sales.reviewPhotoValue} onChange={(e) => onChange('daily.sales.reviewPhotoValue', Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                        </div>
+                    </>
+                )}
+                <hr/>
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Incentive Rate (e.g., 0.05 for 5%)</label>
+                    <input type="number" step="0.01" value={rule.incentive.rate} onChange={(e) => onChange(`${ruleType}.incentive.rate`, Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Double Incentive Rate (for 2x Target)</label>
+                    <input type="number" step="0.01" value={rule.incentive.doubleRate} onChange={(e) => onChange(`${ruleType}.incentive.doubleRate`, Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Apply Incentive On</label>
+                    <select value={rule.incentive.applyOn} onChange={(e) => onChange(`${ruleType}.incentive.applyOn`, e.target.value)} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500">
+                        <option value="totalSaleValue">Total Achieved Value</option>
+                        <option value="serviceSaleOnly">Service Sale Only</option>
+                    </select>
+                </div>
             </div>
         </div>
     </Card>
 );
 
-// Main Modal Component
+// --- New, separate editor for Package/Gift Card ---
+const FixedTargetRuleEditor = ({ title, rule, onChange, ruleType }: { title: string; rule: FixedTargetRule; onChange: (path: string, value: any) => void; ruleType: 'package' | 'giftCard' }) => (
+    <Card>
+        <div className="p-4">
+            <h3 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">{title}</h3>
+            <div className="space-y-4">
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Monthly Target Value (₹)</label>
+                    <input type="number" value={rule.target.targetValue} onChange={(e) => onChange(`${ruleType}.target.targetValue`, Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+                <hr/>
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Incentive Rate (e.g., 0.03 for 3%)</label>
+                    <input type="number" step="0.01" value={rule.incentive.rate} onChange={(e) => onChange(`${ruleType}.incentive.rate`, Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+                <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Double Incentive Rate (for 2x Target)</label>
+                    <input type="number" step="0.01" value={rule.incentive.doubleRate} onChange={(e) => onChange(`${ruleType}.incentive.doubleRate`, Number(e.target.value))} className="w-full p-2 border rounded text-black bg-white focus:ring-2 focus:ring-indigo-500"/>
+                </div>
+            </div>
+        </div>
+    </Card>
+);
+
+
+// --- Main Modal Component ---
 export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsProps) {
-  const [dailyRule, setDailyRule] = useState<Rule>(defaultRule);
-  const [monthlyRule, setMonthlyRule] = useState<Rule>({ ...defaultRule, sales: {...defaultRule.sales, includeProductSale: false }, incentive: {...defaultRule.incentive, applyOn: 'serviceSaleOnly' }});
+  const [dailyRule, setDailyRule] = useState<MultiplierRule>(defaultDailyRule);
+  const [monthlyRule, setMonthlyRule] = useState<MultiplierRule>(defaultMonthlyRule);
+  const [packageRule, setPackageRule] = useState<FixedTargetRule>(defaultPackageRule);
+  const [giftCardRule, setGiftCardRule] = useState<FixedTargetRule>(defaultGiftCardRule);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -46,8 +148,10 @@ export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsPr
         const res = await fetch('/api/incentives/rules', { headers });
         const data = await res.json();
         if (res.ok) {
-          setDailyRule(data.daily);
-          setMonthlyRule(data.monthly);
+          setDailyRule({ ...defaultDailyRule, ...data.daily });
+          setMonthlyRule({ ...defaultMonthlyRule, ...data.monthly });
+          setPackageRule({ ...defaultPackageRule, ...data.package });
+          setGiftCardRule({ ...defaultGiftCardRule, ...data.giftCard });
         } else {
           toast.error(data.message || 'Failed to load rules.');
         }
@@ -57,7 +161,9 @@ export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsPr
         setLoading(false);
       }
     }
-    fetchRules();
+    if (tenantId) {
+        fetchRules();
+    }
   }, [tenantId]);
 
   const handleSave = async () => {
@@ -67,7 +173,12 @@ export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsPr
         const res = await fetch('/api/incentives/rules', {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify({ daily: dailyRule, monthly: monthlyRule })
+            body: JSON.stringify({ 
+                daily: dailyRule, 
+                monthly: monthlyRule,
+                package: packageRule,
+                giftCard: giftCardRule
+            })
         });
         const data = await res.json();
         if(res.ok) {
@@ -83,31 +194,50 @@ export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsPr
     }
   };
   
-  const handleRuleChange = (ruleType: 'daily' | 'monthly', path: string, value: any) => {
-    const setter = ruleType === 'daily' ? setDailyRule : setMonthlyRule;
-    setter(prev => {
-        const keys = path.split('.');
-        let temp = { ...prev };
+  const handleRuleChange = (path: string, value: any) => {
+    const ruleType = path.split('.')[0] as 'daily' | 'monthly' | 'package' | 'giftCard';
+    const setterMap = {
+        daily: setDailyRule,
+        monthly: setMonthlyRule,
+        package: setPackageRule,
+        giftCard: setGiftCardRule
+    };
+    const setter = setterMap[ruleType];
+
+    // ✨ --- FIX: Give 'prev' an explicit type to resolve the error --- ✨
+    setter((prev: MultiplierRule | FixedTargetRule) => {
+        const keys = path.split('.').slice(1);
+        let temp = JSON.parse(JSON.stringify(prev));
         let current = temp as any;
-        for (let i = 0; i < keys.length - 1; i++) { current = current[keys[i]]; }
+        for (let i = 0; i < keys.length - 1; i++) {
+            current = current[keys[i]];
+        }
         current[keys[keys.length - 1]] = value;
         return temp;
     });
   };
 
-  if (loading) return <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 text-white font-bold">Loading Settings...</div>;
+  if (loading) {
+      return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+            <div className="text-white font-bold text-lg">Loading Settings...</div>
+          </div>
+      );
+  }
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Manage Incentive Rules</h2>
-        <div className="grid md:grid-cols-2 gap-8">
-            <RuleEditor title="Incentive 1: Daily Rules" rule={dailyRule} onChange={(path, value) => handleRuleChange('daily', path, value)} />
-            <RuleEditor title="Incentive 2: Monthly Rules" rule={monthlyRule} onChange={(path, value) => handleRuleChange('monthly', path, value)} />
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4 animate-fade-in">
+      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+        <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-3">Manage Incentive Rules</h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <MultiplierRuleEditor title="Incentive 1: Daily" rule={dailyRule} onChange={handleRuleChange} ruleType="daily" />
+            <MultiplierRuleEditor title="Incentive 2: Monthly" rule={monthlyRule} onChange={handleRuleChange} ruleType="monthly" />
+            <FixedTargetRuleEditor title="Incentive 3: Package" rule={packageRule} onChange={handleRuleChange} ruleType="package" />
+            <FixedTargetRuleEditor title="Incentive 4: Gift Card" rule={giftCardRule} onChange={handleRuleChange} ruleType="giftCard" />
         </div>
-        <div className="flex justify-end gap-4 mt-6 pt-4 border-t">
-            <Button onClick={onClose} variant="danger">Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} variant="black">{saving ? 'Saving...' : 'Save All Rules'}</Button>
+        <div className="flex justify-end gap-4 mt-8 pt-4 border-t">
+            <Button onClick={onClose} variant="outline">Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} variant="success">{saving ? 'Saving...' : 'Save All Rules'}</Button>
         </div>
       </div>
     </div>

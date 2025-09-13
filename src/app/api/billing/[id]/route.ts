@@ -14,6 +14,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { FinalizeBillingPayload } from '@/app/(main)/appointment/billingmodal';
 import { InventoryManager } from '@/lib/inventoryManager'; 
 import { Gender } from '@/types/gender'; 
+import { recalculateAndSaveDailySale } from '../route';
 
 // GET function can remain as it was in the last correct version (with population)
 export async function GET(
@@ -146,7 +147,11 @@ export async function PUT(
     if (loyaltySettingDoc?.value) {
       const { rupeesForPoints, pointsAwarded } = loyaltySettingDoc.value;
       if (rupeesForPoints > 0 && pointsAwarded > 0) {
-        const oldGrandTotal = originalInvoice.grandTotal || 0;
+        const originalAppointment = await Appointment.findOne({ _id: appointmentId, tenantId }).session(dbSession).lean();
+        if (!originalAppointment) {
+          throw new Error("Original appointment not found for loyalty point calculation.");
+        }
+        const oldGrandTotal = originalAppointment.finalAmount || 0;
         const newGrandTotal = grandTotal;
         const oldPoints = Math.floor(oldGrandTotal / rupeesForPoints) * pointsAwarded;
         const newPoints = Math.floor(newGrandTotal / rupeesForPoints) * pointsAwarded;

@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWeekend, addMonths, subMonths, startOfDay } from 'date-fns';
-import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Calendar, Bed, CheckCircle, XCircle, Target, Clock, PlusCircle, ArrowRight } from 'lucide-react';
+// --- MODIFICATION: Added the 'Hourglass' icon ---
+import { Loader2, AlertCircle, ChevronLeft, ChevronRight, Calendar, Bed, CheckCircle, XCircle, Target, Clock, PlusCircle, ArrowRight, Hourglass } from 'lucide-react';
 import Button from '@/components/ui/Button';
 
 // --- Type Definitions ---
@@ -85,6 +86,8 @@ export default function StaffAttendancePage() {
 
     const monthlyStats = useMemo(() => {
         const achievedMinutes = records.reduce((sum, r) => sum + (r.totalWorkingMinutes || 0), 0);
+        // --- MODIFICATION: Calculate remaining minutes ---
+        const remainingMinutes = Math.max(0, monthlySummary.requiredMonthlyMinutes - achievedMinutes);
         const totalOvertimeHours = records.reduce((sum, r) => sum + (r.overtimeHours || 0), 0);
         const presentDays = records.filter(r => (r.status === 'present' || r.status === 'late') && r.isWorkComplete).length;
         const leaveDays = records.filter(r => r.status === 'on_leave' || (['present', 'late', 'incomplete'].includes(r.status) && !r.isWorkComplete)).length;
@@ -103,13 +106,16 @@ export default function StaffAttendancePage() {
             }
         });
 
-        return { presentDays, absentDays, leaveDays, weekOffs, achievedMinutes, totalOvertimeHours };
-    }, [records, currentMonthDate]);
+        // --- MODIFICATION: Return the new 'remainingMinutes' value ---
+        return { presentDays, absentDays, leaveDays, weekOffs, achievedMinutes, totalOvertimeHours, remainingMinutes };
+    }, [records, currentMonthDate, monthlySummary.requiredMonthlyMinutes]);
     
     // --- Data for the StatCards ---
     const statCardData = [
         { title: "Target Hours", value: formatDuration(monthlySummary.requiredMonthlyMinutes), icon: <Target size={20}/>, gradient: "from-blue-500 to-indigo-600" },
         { title: "Achieved", value: formatDuration(monthlyStats.achievedMinutes), icon: <Clock size={20}/>, gradient: "from-green-400 to-teal-500" },
+        // --- MODIFICATION: Add the new card for Remaining Hours ---
+        { title: "Remaining Hours", value: formatDuration(monthlyStats.remainingMinutes), icon: <Hourglass size={20}/>, gradient: "from-yellow-500 to-amber-600" },
         { title: "OT Hours", value: formatDuration(monthlyStats.totalOvertimeHours * 60), icon: <PlusCircle size={20}/>, gradient: "from-purple-500 to-fuchsia-500" },
         { title: "Present", value: `${monthlyStats.presentDays}`, icon: <CheckCircle size={20}/>, gradient: "from-emerald-500 to-lime-600" },
         { title: "Absent", value: `${monthlyStats.absentDays}`, icon: <XCircle size={20}/>, gradient: "from-pink-500 to-rose-500" },
@@ -281,7 +287,8 @@ export default function StaffAttendancePage() {
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4">
+                    {/* --- MODIFICATION: Adjusted grid columns to fit the new card --- */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
                         {statCardData.map(card => <StatCard key={card.title} {...card} />)}
                     </div>
 

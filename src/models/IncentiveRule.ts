@@ -1,15 +1,22 @@
+// models/IncentiveRule.ts
+
 import mongoose, { Schema, Document, model, models } from 'mongoose';
 
-// Defines the structure for a versioned rule. Versioning is now handled by createdAt.
 export interface IIncentiveRule extends Document {
   tenantId: mongoose.Schema.Types.ObjectId;
-  type: 'daily' | 'monthly';
+  // ✨ --- ADDITION: Add 'package' and 'giftCard' to the rule types --- ✨
+  type: 'daily' | 'monthly' | 'package' | 'giftCard'; 
   target: {
-    multiplier: number;
+    // Multiplier is for Daily/Monthly
+    multiplier?: number; 
+    // ✨ --- ADDITION: targetValue is for Package/GiftCard --- ✨
+    targetValue?: number;
   };
   sales: {
     includeServiceSale: boolean;
     includeProductSale: boolean;
+    includePackageSale: boolean;
+    includeGiftCardSale: boolean;
     reviewNameValue: number;
     reviewPhotoValue: number;
   };
@@ -17,33 +24,40 @@ export interface IIncentiveRule extends Document {
     rate: number;
     doubleRate: number;
     applyOn: 'totalSaleValue' | 'serviceSaleOnly';
+    packageRate: number;
+    giftCardRate: number;
   };
-  createdAt: Date; // Mongoose adds this automatically with timestamps: true
+  createdAt: Date;
 }
 
 const IncentiveRuleSchema = new Schema<IIncentiveRule>({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
-  type: { type: String, enum: ['daily', 'monthly'], required: true },
+  // ✨ --- ADDITION: Update the enum to include new types --- ✨
+  type: { type: String, enum: ['daily', 'monthly', 'package', 'giftCard'], required: true }, 
   target: {
-    multiplier: { type: Number, required: true, default: 5 },
+    // Allow both fields to exist, but only one will be used depending on the rule type
+    multiplier: { type: Number, required: false },
+    targetValue: { type: Number, required: false },
   },
   sales: {
     includeServiceSale: { type: Boolean, default: true },
     includeProductSale: { type: Boolean, default: true },
+    includePackageSale: { type: Boolean, default: false },
+    includeGiftCardSale: { type: Boolean, default: false },
     reviewNameValue: { type: Number, default: 200 },
     reviewPhotoValue: { type: Number, default: 300 },
   },
   incentive: {
     rate: { type: Number, required: true, default: 0.05 },
     doubleRate: { type: Number, default: 0.10 },
-    applyOn: { type: String, enum: ['totalSaleValue', 'serviceSaleOnly'], default: 'totalSaleValue' }
+    applyOn: { type: String, enum: ['totalSaleValue', 'serviceSaleOnly'], default: 'totalSaleValue' },
+    packageRate: { type: Number, default: 0.02 },
+    giftCardRate: { type: Number, default: 0.01 }
   },
-}, { 
-  // This is the key: It automatically adds `createdAt` and `updatedAt` with full timestamps.
-  timestamps: true 
+}, {
+  timestamps: true
 });
 
-// New index on `createdAt` for finding the latest version very quickly.
 IncentiveRuleSchema.index({ tenantId: 1, type: 1, createdAt: -1 });
 
 const IncentiveRule = models.IncentiveRule || model<IIncentiveRule>('IncentiveRule', IncentiveRuleSchema);

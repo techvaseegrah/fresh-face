@@ -1,6 +1,4 @@
-// ===================================================================================
-//  API ROUTE: /api/billing (Surgical Fix Applied)
-// ===================================================================================
+// /api/billing/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
@@ -40,15 +38,107 @@ interface PopulatedInvoiceForReceipt extends Omit<IInvoice, 'customerId' | 'styl
   billingStaffId: { name: string; } | null;
 }
 
+// ✅ FIX: The logic inside this function has been updated to be correct.
+export async function recalculateAndSaveDailySale(
+    { tenantId, staffIds, date, dbSession }:
+    { tenantId: string, staffIds: string[], date: Date, dbSession: mongoose.ClientSession }
+) {
+    if (staffIds.length === 0) return;
+
+    const dayStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const dayEnd = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+
+    // --- START OF THE FIX ---
+    // 1. Find all appointments for the target date first.
+    const appointmentsForDay = await Appointment.find({
+        tenantId,
+        appointmentDateTime: { $gte: dayStart, $lte: dayEnd }
+    }).select('_id').session(dbSession).lean();
+
+    const appointmentIdsForDay = appointmentsForDay.map(a => a._id);
+
+    // 2. Now find all paid invoices linked to those specific appointments.
+    // This correctly captures all relevant sales regardless of when the invoice was created or updated.
+    const allInvoicesForDay = await Invoice.find({
+        tenantId,
+        appointmentId: { $in: appointmentIdsForDay },
+        paymentStatus: 'Paid'
+    }).session(dbSession).lean();
+    // --- END OF THE FIX ---
+
+    const dailyRule = await IncentiveRule.findOne({ type: 'daily', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean();
+    const monthlyRule = await IncentiveRule.findOne({ type: 'monthly', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean();
+    const packageRule = await IncentiveRule.findOne({ type: 'package', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean();
+    const giftCardRule = await IncentiveRule.findOne({ type: 'giftCard', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean();
+
+    const ruleSnapshot = {
+        daily: dailyRule,
+        monthly: monthlyRule,
+        package: packageRule,
+        giftCard: giftCardRule,
+    };
+
+    const salesByStaff = new Map<string, { serviceSale: number, productSale: number, packageSale: number, giftCardSale: number }>();
+    const customersByStaff = new Map<string, Set<string>>();
+
+    for (const invoice of allInvoicesForDay) {
+        for (const item of (invoice.lineItems || [])) {
+            if (!item.staffId) continue;
+            const staffIdStr = item.staffId.toString();
+
+            if (!salesByStaff.has(staffIdStr)) {
+                salesByStaff.set(staffIdStr, { serviceSale: 0, productSale: 0, packageSale: 0, giftCardSale: 0 });
+                customersByStaff.set(staffIdStr, new Set<string>());
+            }
+
+            const totals = salesByStaff.get(staffIdStr)!;
+            if (item.itemType === 'service') totals.serviceSale += item.finalPrice;
+            if (item.itemType === 'product') totals.productSale += item.finalPrice;
+            if (item.itemType === 'package') totals.packageSale += item.finalPrice;
+            if (item.itemType === 'gift_card') totals.giftCardSale += item.finalPrice;
+
+            const customerSet = customersByStaff.get(staffIdStr);
+            if (customerSet) {
+                customerSet.add(invoice.customerId.toString());
+            }
+        }
+    }
+
+    const allStaffInvolved = [...new Set([...staffIds, ...Array.from(salesByStaff.keys())])];
+
+    for (const staffId of allStaffInvolved) {
+        const totals = salesByStaff.get(staffId) || { serviceSale: 0, productSale: 0, packageSale: 0, giftCardSale: 0 };
+        const customerCount = customersByStaff.get(staffId)?.size || 0;
+
+        await DailySale.findOneAndUpdate(
+            { staff: staffId, date: dayStart, tenantId },
+            {
+                $set: {
+                    serviceSale: totals.serviceSale,
+                    productSale: totals.productSale,
+                    packageSale: totals.packageSale,
+                    giftCardSale: totals.giftCardSale,
+                    customerCount: customerCount,
+                    appliedRule: ruleSnapshot,
+                    tenantId: tenantId
+                },
+                $setOnInsert: { reviewsWithName: 0, reviewsWithPhoto: 0 }
+            },
+            { new: true, upsert: true, setDefaultsOnInsert: true, session: dbSession }
+        );
+    }
+}
+
 // ===================================================================================
-//  MAIN POST HANDLER
+//  MAIN POST HANDLER (This remains unchanged)
 // ===================================================================================
 export async function POST(req: NextRequest) {
+  // ... (The rest of your POST handler code is unchanged)
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) return tenantId;
 
   const dbSession = await mongoose.startSession();
-  
+
   let createdInvoiceId: mongoose.Types.ObjectId | null = null;
   let pointsEarned = 0;
   const newlySoldPackages = [];
@@ -71,7 +161,7 @@ export async function POST(req: NextRequest) {
     const giftCardAmountPaid = giftCardRedemption?.amount || 0;
     const totalPaid = totalPaidByMethods + giftCardAmountPaid;
     if (Math.abs(totalPaid - grandTotal) > 0.01) { throw new Error(`Payment amount mismatch. Grand Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${totalPaid.toFixed(2)}`); }
-    
+
     if (giftCardRedemption && giftCardRedemption.cardId && giftCardRedemption.amount > 0) {
         const { cardId, amount } = giftCardRedemption;
         const giftCard = await GiftCard.findById(cardId).session(dbSession);
@@ -110,14 +200,14 @@ export async function POST(req: NextRequest) {
       const expiryDate = new Date(purchaseDate);
       expiryDate.setDate(expiryDate.getDate() + template.validityInDays);
       const remainingItems = template.items.map(item => ({ itemType: item.itemType, itemId: item.itemId, totalQuantity: item.quantity, remainingQuantity: item.quantity, }));
-      
+
       const staffIdForSale = packageItem.staffId;
       if (!staffIdForSale) {
         throw new Error(`The package "${packageItem.name}" must be assigned to a staff member to be sold.`);
       }
 
       const newCustomerPackage = new CustomerPackage({
-        tenantId, customerId, packageTemplateId, purchaseDate, expiryDate, status: 'active', remainingItems, packageName: template.name, purchasePrice: purchasePrice, 
+        tenantId, customerId, packageTemplateId, purchaseDate, expiryDate, status: 'active', remainingItems, packageName: template.name, purchasePrice: purchasePrice,
         soldBy: staffIdForSale,
       });
       await newCustomerPackage.save({ session: dbSession });
@@ -191,7 +281,7 @@ export async function POST(req: NextRequest) {
           const redeemedItemName = items.find((i: any) => i.itemId === redemption.redeemedItemId)?.name || `item ID ${redemption.redeemedItemId}`;
           throw new Error(`A staff member must be assigned to the redeemed item: "${redeemedItemName}".`);
         }
-        
+
         return {
           tenantId,
           customerPackageId: redemption.customerPackageId,
@@ -207,23 +297,20 @@ export async function POST(req: NextRequest) {
     }
 
     await Appointment.updateOne({ _id: appointmentId, tenantId }, { amount: subtotal, membershipDiscount, finalAmount: grandTotal, paymentDetails, billingStaffId, invoiceId: invoice._id, status: 'Paid', }, { session: dbSession });
-    
+
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty', tenantId }).session(dbSession);
     if (loyaltySettingDoc?.value && grandTotal > 0) { const { rupeesForPoints, pointsAwarded: awarded } = loyaltySettingDoc.value; if (rupeesForPoints > 0 && awarded > 0) { pointsEarned = Math.floor(grandTotal / rupeesForPoints) * awarded; if (pointsEarned > 0) { await LoyaltyTransaction.create([{ tenantId, customerId, points: pointsEarned, type: 'Credit', description: `Earned from an invoice`, reason: `Invoice`, transactionDate: new Date(), }], { session: dbSession, ordered: true }); } } }
-    
+
     if (stylistId) { await Stylist.updateOne({ _id: stylistId, tenantId }, { isAvailable: true, currentAppointmentId: null, lastAvailabilityChange: new Date(), }, { session: dbSession }); }
 
-    const allStaffIdsInvolved = [...new Set(items.map((item: any) => item.staffId).filter(Boolean).map(String))];
-    if (allStaffIdsInvolved.length > 0) {
-        const correctDate = appointment.appointmentDateTime;
-        const dayStart = new Date(Date.UTC(correctDate.getUTCFullYear(), correctDate.getUTCMonth(), correctDate.getUTCDate()));
-        const dayEnd = new Date(Date.UTC(correctDate.getUTCFullYear(), correctDate.getUTCMonth(), correctDate.getUTCDate(), 23, 59, 59, 999));
-        const activeRuleDb = await IncentiveRule.findOne({ type: 'daily', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean<IIncentiveRule>();
-        const defaultDaily = { target: { multiplier: 5 }, sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 }, incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' } };
-        const ruleSnapshot = { target: { ...defaultDaily.target, ...(activeRuleDb?.target || {}) }, sales: { ...defaultDaily.sales, ...(activeRuleDb?.sales || {}) }, incentive: { ...defaultDaily.incentive, ...(activeRuleDb?.incentive || {}) } };
-        const allPaidInvoicesForDay = await Invoice.find({ tenantId, createdAt: { $gte: dayStart, $lte: dayEnd }, paymentStatus: 'Paid' }).session(dbSession).lean();
-        for (const staffId of allStaffIdsInvolved) { let newServiceSale = 0; let newProductSale = 0; const customerIds = new Set<string>(); for (const item of items) { if (item.staffId?.toString() === staffId) { if (item.itemType === 'service') newServiceSale += item.finalPrice; if (item.itemType === 'product') newProductSale += item.finalPrice; } } for (const inv of [...allPaidInvoicesForDay, invoice.toObject()]) { for (const item of (inv.lineItems || [])) { if (item.staffId?.toString() === staffId) { customerIds.add(inv.customerId.toString()); break; } } } if (newServiceSale > 0 || newProductSale > 0) { await DailySale.findOneAndUpdate( { staff: staffId, date: dayStart, tenantId }, { $inc: { serviceSale: newServiceSale, productSale: newProductSale, }, $set: { customerCount: customerIds.size, appliedRule: ruleSnapshot, tenantId: tenantId }, $setOnInsert: { reviewsWithName: 0, reviewsWithPhoto: 0 } }, { new: true, upsert: true, setDefaultsOnInsert: true, session: dbSession }); } }
-    }
+    const allStaffIdsInvolved = [...new Set(items.map((item: any) => item.staffId).filter((id: any) => id != null).map((id: any) => id.toString()))];
+
+    await recalculateAndSaveDailySale({
+        tenantId,
+        staffIds: allStaffIdsInvolved,
+        date: appointment.appointmentDateTime,
+        dbSession,
+    });
 
     await dbSession.commitTransaction();
 
@@ -231,13 +318,11 @@ export async function POST(req: NextRequest) {
     await dbSession.abortTransaction();
     console.error("Billing transaction failed and was aborted:", error);
     dbSession.endSession();
-    // Return a 400 Bad Request for validation errors, 500 for others.
     if (error.name === 'ValidationError') { return NextResponse.json({ success: false, message: `Validation Error: ${error.message}` }, { status: 400 }); }
     const errorMessage = error.message || String(error);
     return NextResponse.json({ success: false, message: errorMessage }, { status: 500 });
   }
-  
-  // Post-transaction logic (does not roll back on failure)
+
   const newlyIssuedCards = [];
   try {
     for (const item of items) {
@@ -278,7 +363,6 @@ export async function POST(req: NextRequest) {
     console.error("A non-critical, post-transaction error occurred:", postTransactionError.message);
   }
 
-  // Final response preparation
   try {
     if (!createdInvoiceId) { throw new Error("Invoice was created but its ID was not captured."); }
     const populatedInvoice = await Invoice.findById(createdInvoiceId).populate('customerId').populate('stylistId').populate('billingStaffId').lean() as IInvoice & PopulatedInvoiceForReceipt | null;
@@ -304,7 +388,7 @@ export async function POST(req: NextRequest) {
       issuedGiftCards: newlyIssuedCards,
       soldPackages: newlySoldPackages,
     };
-    
+
     return NextResponse.json({ success: true, invoice: responsePayload, });
 
   } catch (finalResponseError: any) {

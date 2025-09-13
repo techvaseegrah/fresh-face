@@ -8,14 +8,13 @@ import React, {
     ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Star, TrendingUp, Users, IndianRupee, X, CalendarDays, Sheet, FileDown, PieChart } from 'lucide-react';
+import { Search, Star, TrendingUp, Users, IndianRupee, X, CalendarDays, Sheet, FileDown, PieChart, Gift, Package, Target } from 'lucide-react';
 import { format, parseISO, startOfMonth } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useSession } from 'next-auth/react';
 
-// --- Imports for Charting ---
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
@@ -40,17 +39,36 @@ interface SummaryData {
     revenueGenerated: number;
     avgServiceQuality: string;
 }
+
+// ✅ ADDITION: Updated interface to match the new, richer API response.
 interface DailyPerformanceRecord {
   date: string;
   serviceSales: number;
   productSales: number;
+  packageSales: number;
+  giftCardSales: number;
   customersServed: number;
-  rating: number;
+  rates: {
+    daily: number;
+    monthly: number;
+    package: number;
+    giftCard: number;
+  };
+  incentives: {
+    daily: number;
+    monthly: number;
+    package: number;
+    giftCard: number;
+  };
 }
+
 interface IncentiveReportData {
     dailyReport: any[];
+    dailySummaryReport?: any[]; 
     monthlyReport: any[];
     staffSummary: any[];
+    packageReport?: any[];
+    giftCardReport?: any[];
 }
 
 const CHART_COLORS = [ '#4f46e5', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899', '#64748b', '#14b8a6', '#f97316', '#a855f7' ];
@@ -160,11 +178,42 @@ const PerformancePage: React.FC = () => {
 
   const handleCloseDetails = () => setSelectedStaff(null);
 
-  const panelSummary = useMemo(() => { if (!staffDailyPerformance.length) return { totalSales: 0, totalCustomers: 0 }; const totalSales = staffDailyPerformance.reduce((sum, day) => sum + day.serviceSales + day.productSales, 0); const totalCustomers = staffDailyPerformance.reduce((sum, day) => sum + day.customersServed, 0); return { totalSales, totalCustomers }; }, [staffDailyPerformance]);
-  const modalIncentiveSummary = useMemo(() => { if (!selectedStaff || !incentiveReportData?.monthlyReport || !incentiveReportData?.dailyReport) return { monthlyTarget: 0, monthlyAchieved: 0 }; const totalDailyIncentive = incentiveReportData.dailyReport.filter(d => d['Staff Name'] === selectedStaff.name).reduce((sum, day) => sum + parseFloat(day['Incentive (₹)'] || '0'), 0); const staffMonthlyRecord = incentiveReportData.monthlyReport.find((rec) => rec['Staff Name'] === selectedStaff.name); const monthlyTarget = staffMonthlyRecord ? parseFloat(staffMonthlyRecord['Target (₹)'] || '0') : 0; return { monthlyTarget, monthlyAchieved: totalDailyIncentive }; }, [selectedStaff, incentiveReportData]);
+    const panelSummary = useMemo(() => {
+        if (!staffDailyPerformance.length) return { totalSales: 0, totalCustomers: 0 };
+        const totalSales = staffDailyPerformance.reduce((sum, day) => sum + day.serviceSales + day.productSales + (day.packageSales || 0) + (day.giftCardSales || 0), 0);
+        const totalCustomers = staffDailyPerformance.reduce((sum, day) => sum + day.customersServed, 0);
+        return { totalSales, totalCustomers };
+    }, [staffDailyPerformance]);
+  
+    const modalIncentiveSummary = useMemo(() => {
+        const initial = { totalAchieved: 0, monthlyIncentive: 0, packageIncentive: 0, giftCardIncentive: 0, dailyIncentiveComponent: 0, monthlyTarget: 0 };
+        if (!selectedStaff || !incentiveReportData) return initial;
+
+        const staffName = selectedStaff.name;
+        const staffRec = incentiveReportData.staffSummary?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const dailySummaryRec = incentiveReportData.dailySummaryReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const monthlyRec = incentiveReportData.monthlyReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const packageRec = incentiveReportData.packageReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        const giftCardRec = incentiveReportData.giftCardReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
+        
+        const totalAchieved = parseFloat(staffRec['Total Incentive (₹)'] ?? '0');
+        const dailyIncentiveComponent = parseFloat(dailySummaryRec['Incentive (₹)'] ?? '0');
+        const monthlyIncentive = parseFloat(monthlyRec['Incentive (₹)'] ?? '0');
+        const packageIncentive = parseFloat(packageRec['Incentive (₹)'] ?? '0');
+        const giftCardIncentive = parseFloat(giftCardRec['Incentive (₹)'] ?? '0');
+        const monthlyTarget = parseFloat(monthlyRec['Target (₹)'] ?? '0');
+
+        return { totalAchieved, monthlyIncentive, packageIncentive, giftCardIncentive, dailyIncentiveComponent, monthlyTarget };
+    }, [selectedStaff, incentiveReportData]);
+
   const topPerformersSummary = useMemo(() => { if (!performanceData || performanceData.length === 0) return { topService: { name: 'N/A', value: 0 }, topProduct: { name: 'N/A', value: 0 } }; const topService = [...performanceData].sort((a, b) => b.totalServiceSales - a.totalServiceSales)[0]; const topProduct = [...performanceData].sort((a, b) => b.totalProductSales - a.totalProductSales)[0]; return { topService: { name: topService.name, value: topService.totalServiceSales }, topProduct: { name: topProduct.name, value: topProduct.totalProductSales } }; }, [performanceData]);
   
-  const formatCurrency = (value: number | string) => `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
+  const formatCurrency = (value: number | string) => {
+    if (isNaN(Number(value))) {
+        return '₹0';
+    }
+    return `₹${Math.round(Number(value)).toLocaleString('en-IN')}`;
+  }
   
   const getExportData = () => {
     const headers = ["S.NO", "employee name", "employee code", "client count", "ABV", "service net sales", "product sales", "total sales", "total sales heading to", "No of Clients Heading To"];
@@ -198,138 +247,186 @@ const PerformancePage: React.FC = () => {
 
   return (
     <div className="bg-slate-50 min-h-screen p-4 sm:p-6 lg:p-8 space-y-8">
-      <header className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Performance Dashboard</h1>
-          <p className="text-sm sm:text-base text-slate-500 mt-1">
-            Showing results from <strong>{format(startDate, 'dd MMM, yyyy')}</strong> to <strong>{format(endDate, 'dd MMM, yyyy')}</strong>.
-          </p>
-        </div>
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 w-full lg:w-auto">
-            <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg p-2">
-                 <input type="date" value={format(startDate, 'yyyy-MM-dd')} onChange={(e) => setStartDate(new Date(e.target.value))} className="bg-transparent w-full focus:outline-none text-sm"/>
-                 <span className="text-slate-400 text-sm">to</span>
-                 <input type="date" value={format(endDate, 'yyyy-MM-dd')} onChange={(e) => setEndDate(new Date(e.target.value))} className="bg-transparent w-full focus:outline-none text-sm"/>
+        <header className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+            <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Performance Dashboard</h1>
+            <p className="text-sm sm:text-base text-slate-500 mt-1">
+                Showing results from <strong>{format(startDate, 'dd MMM, yyyy')}</strong> to <strong>{format(endDate, 'dd MMM, yyyy')}</strong>.
+            </p>
             </div>
-            <div className="relative w-full lg:w-auto lg:min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 w-full bg-white pr-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"/>
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 w-full lg:w-auto">
+                <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg p-2">
+                    <input type="date" value={format(startDate, 'yyyy-MM-dd')} onChange={(e) => setStartDate(new Date(e.target.value))} className="bg-transparent w-full focus:outline-none text-sm"/>
+                    <span className="text-slate-400 text-sm">to</span>
+                    <input type="date" value={format(endDate, 'yyyy-MM-dd')} onChange={(e) => setEndDate(new Date(e.target.value))} className="bg-transparent w-full focus:outline-none text-sm"/>
+                </div>
+                <div className="relative w-full lg:w-auto lg:min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <input type="text" placeholder="Search staff..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 w-full bg-white pr-4 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"/>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={handleDownloadPdf} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors shadow-sm"><FileDown size={16} /><span>PDF</span></button>
+                    <button onClick={handleDownloadExcel} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors shadow-sm"><Sheet size={16} /><span>Excel</span></button>
+                </div>
             </div>
-            <div className="flex items-center gap-2">
-                <button onClick={handleDownloadPdf} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors shadow-sm"><FileDown size={16} /><span>PDF</span></button>
-                <button onClick={handleDownloadExcel} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors shadow-sm"><Sheet size={16} /><span>Excel</span></button>
-            </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        {isLoading ? <><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /></> :
-         error ? <div className="col-span-full text-center p-10 bg-white rounded-xl shadow-sm text-red-500">{error}</div> :
-          <>
-            <SummaryCard icon={<Users className="text-teal-600" />} title="Total Customers" value={summaryData?.totalCustomers || 0} iconBgColor="bg-teal-100" bgIconColor="text-teal-100"/>
-            <SummaryCard icon={<IndianRupee className="text-green-600" />} title="Revenue Generated" value={formatCurrency(summaryData?.revenueGenerated || 0)} iconBgColor="bg-green-100" bgIconColor="text-green-100"/>
-            <SummaryCard icon={<Star className="text-amber-600" />} title="Top Service Earner" value={formatCurrency(topPerformersSummary.topService.value)} subValue={topPerformersSummary.topService.name} iconBgColor="bg-amber-100" bgIconColor="text-amber-100"/>
-            <SummaryCard icon={<TrendingUp className="text-indigo-600" />} title="Top Product Earner" value={formatCurrency(topPerformersSummary.topProduct.value)} subValue={topPerformersSummary.topProduct.name} iconBgColor="bg-indigo-100" bgIconColor="text-indigo-100"/>
-          </>
-        }
-      </div>
-
-      <div className="space-y-8">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100">
-          <div className="p-4 sm:p-6 border-b border-slate-200 text-center"><div className="text-lg sm:text-xl font-bold text-slate-800 uppercase tracking-wider">Staff Performance Report</div></div>
-          <div className="overflow-x-auto">
-            <div className="hidden md:block">
-              <div className="flex items-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase bg-slate-100">
-                <div className="w-[4%] text-center">S.No</div><div className="w-[8%] text-center">Staff ID</div><div className="w-[15%]">Staff Name</div><div className="w-[12%] text-right">Total Sales</div><div className="w-[11%] text-center">Clients</div><div className="w-[12%] text-right">ABV</div><div className="w-[19%] text-center">Projected Sales</div><div className="w-[19%] text-center">Projected Clients</div>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {isLoading ? (<div className="text-center p-10 text-slate-500">Loading...</div>) : error ? (<div className="text-center p-10 text-red-500">{error}</div>) :
-                  <>
-                    {filteredStaffPerformance.map((staff, index) => { const abv = staff.customers > 0 ? staff.sales / staff.customers : 0; const projectedSales = daysEnded > 0 ? (staff.sales / daysEnded) * projectionDays : 0; const projectedClients = daysEnded > 0 ? (staff.customers / daysEnded) * projectionDays : 0; return ( <div key={staff.staffId} onClick={() => handleOpenDetails(staff)} className="flex items-center p-4 hover:bg-indigo-50 transition-colors cursor-pointer"><div className="w-[4%] text-sm font-medium text-slate-500 text-center">{index + 1}.</div><div className="w-[8%] text-sm font-semibold text-slate-600 text-center">{staff.staffIdNumber}</div><div className="w-[15%] text-sm font-semibold text-slate-800 truncate">{staff.name}</div><div className="w-[12%] text-sm text-slate-700 text-right">{formatCurrency(staff.sales)}</div><div className="w-[11%] text-sm text-slate-700 text-center">{staff.customers}</div><div className="w-[12%] text-sm text-indigo-600 font-bold text-right">{formatCurrency(abv)}</div><div className="w-[19%] text-center"><span className="inline-flex w-32 justify-center items-center py-1 px-2.5 rounded-full text-xs font-bold bg-green-100 text-green-800">{formatCurrency(projectedSales)}</span></div><div className="w-[19%] text-center"><span className="inline-flex w-32 justify-center items-center py-1 px-2.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">{Math.round(projectedClients)} Clients</span></div></div> ); })}
-                    <div className="flex items-center p-4 font-bold text-slate-800 bg-slate-100 border-t-2 border-slate-200"><div className="w-[4%]"></div><div className="w-[8%]"></div><div className="w-[15%] text-sm uppercase tracking-wider">Grand Total</div><div className="w-[12%] text-sm text-right">{formatCurrency(grandTotals.totalSales)}</div><div className="w-[11%] text-sm text-center">{grandTotals.totalClients}</div><div className="w-[12%] text-sm text-right text-indigo-700">{formatCurrency(grandTotals.avgAbv)}</div><div className="w-[19%] text-sm text-center">{formatCurrency(grandTotals.projectedSales)}</div><div className="w-[19%] text-sm text-center">{Math.round(grandTotals.projectedClients)}</div></div>
-                  </>
-                }
-              </div>
-            </div>
-            <div className="md:hidden divide-y divide-slate-100">
-                {isLoading ? (<div className="text-center p-10 text-slate-500">Loading...</div>) : error ? (<div className="text-center p-10 text-red-500">{error}</div>) :
-                    filteredStaffPerformance.map((staff) => {
-                        const abv = staff.customers > 0 ? staff.sales / staff.customers : 0;
-                        return (
-                            <div key={staff.staffId} onClick={() => handleOpenDetails(staff)} className="p-4 active:bg-indigo-50">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="font-bold text-slate-800">{staff.name}</p>
-                                        <p className="text-xs text-slate-500">ID: {staff.staffIdNumber}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-bold text-lg text-indigo-600">{formatCurrency(abv)}</p>
-                                        <p className="text-xs text-slate-500">ABV</p>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
-                                    <div><p className="text-xs text-slate-500">Total Sales</p><p className="font-semibold text-slate-700">{formatCurrency(staff.sales)}</p></div>
-                                    <div><p className="text-xs text-slate-500">Clients</p><p className="font-semibold text-slate-700">{staff.customers}</p></div>
-                                </div>
-                            </div>
-                        )
-                    })
-                }
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {isLoading ? <><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /><SummaryCardSkeleton /></> :
+            error ? <div className="col-span-full text-center p-10 bg-white rounded-xl shadow-sm text-red-500">{error}</div> :
+            <>
+                <SummaryCard icon={<Users className="text-teal-600" />} title="Total Customers" value={summaryData?.totalCustomers || 0} iconBgColor="bg-teal-100" bgIconColor="text-teal-100"/>
+                <SummaryCard icon={<IndianRupee className="text-green-600" />} title="Revenue Generated" value={formatCurrency(summaryData?.revenueGenerated || 0)} iconBgColor="bg-green-100" bgIconColor="text-green-100"/>
+                <SummaryCard icon={<Star className="text-amber-600" />} title="Top Service Earner" value={formatCurrency(topPerformersSummary.topService.value)} subValue={topPerformersSummary.topService.name} iconBgColor="bg-amber-100" bgIconColor="text-amber-100"/>
+                <SummaryCard icon={<TrendingUp className="text-indigo-600" />} title="Top Product Earner" value={formatCurrency(topPerformersSummary.topProduct.value)} subValue={topPerformersSummary.topProduct.name} iconBgColor="bg-indigo-100" bgIconColor="text-indigo-100"/>
+            </>
+            }
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <PerformancePieChart data={performanceData} />
-          {incentiveReportData && <IncentivePieChart data={incentiveReportData.staffSummary} chartRef={incentiveChartRef} />}
-        </div>
-      </div>
-
-      {selectedStaff && (
-        <ModalPortal>
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60" onClick={handleCloseDetails}>
-              <div className="relative w-full h-full sm:max-w-3xl sm:max-h-[90vh] bg-slate-50 sm:rounded-2xl shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-                <header className="flex-shrink-0 flex justify-between items-center p-4 border-b border-slate-200 bg-white sm:rounded-t-2xl">
-                  <h2 className="text-lg font-semibold text-slate-800">Performance Details</h2><button onClick={handleCloseDetails} className="p-1 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"><X size={24} /></button>
-                </header>
-
-                <div className="flex-grow p-4 sm:p-6 overflow-y-auto">
-                    <div className="space-y-6">
-                        <div className="flex items-center p-4 bg-white rounded-xl shadow-sm border border-slate-200"><img className="h-14 w-14 sm:h-16 sm:w-16 rounded-full object-cover" src={selectedStaff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedStaff.name)}&background=4f46e5&color=fff`} alt={selectedStaff.name} /><div className="ml-4"><h3 className="text-lg sm:text-xl font-bold text-slate-900">{selectedStaff.name}</h3><p className="text-sm text-slate-600">{selectedStaff.position}</p></div></div>
-                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><h4 className="text-md font-semibold text-slate-800 mb-3">Summary for Period</h4>{isLoadingDetails ? <div className="py-4 text-center text-slate-500">Loading...</div> : errorDetails ? <div className="py-4 text-center text-red-500">{errorDetails}</div> : <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 text-center"><div><p className="text-lg font-bold text-green-600">{formatCurrency(panelSummary.totalSales)}</p><p className="text-xs text-slate-500 uppercase">Total Sales</p></div><div><p className="text-lg font-bold text-teal-600">{panelSummary.totalCustomers}</p><p className="text-xs text-slate-500 uppercase">Customers</p></div><div><p className="text-lg font-bold text-blue-600">{formatCurrency(modalIncentiveSummary.monthlyTarget)}</p><p className="text-xs text-slate-500 uppercase">Inc. Target</p></div><div><p className="text-lg font-bold text-purple-600">{formatCurrency(modalIncentiveSummary.monthlyAchieved)}</p><p className="text-xs text-slate-500 uppercase">Inc. Achieved</p></div></div>}</div>
-                        
-                        <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 max-h-[45vh] overflow-y-auto">
-                            <h4 className="text-md font-semibold text-slate-800 mb-3 px-2 sticky top-0 bg-white py-2 z-10 border-b">Daily Breakdown</h4>
-                            {isLoadingDetails ? <div className="py-10 text-center text-slate-500">Loading...</div> : errorDetails ? <div className="py-10 text-center text-red-500">{errorDetails}</div> : staffDailyPerformance.length > 0 ? (
-                            <div className="space-y-2 px-1 pb-1">
-                                {staffDailyPerformance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((day) => {
-                                    const dailyTotalSales = day.serviceSales + day.productSales;
-                                    const dailyAbv = day.customersServed > 0 ? Math.round(dailyTotalSales / day.customersServed) : 0;
-                                    const incentiveDay = incentiveReportData?.dailyReport.find(inc => inc.Date === day.date.split('T')[0] && inc['Staff Name'] === selectedStaff.name);
-                                    return (
-                                        <div key={day.date} className="p-3 rounded-lg hover:bg-slate-50 border border-slate-100">
-                                            <div className="font-semibold flex items-center text-sm mb-3 text-slate-700"><CalendarDays className="w-4 h-4 mr-2 text-indigo-500" />{format(parseISO(day.date), 'dd MMM, yyyy')}</div>
-                                            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-1 text-center text-xs">
-                                                <div className="p-2 rounded-md bg-blue-100 text-blue-800"><p className="font-bold">{formatCurrency(day.serviceSales)}</p><p className="text-[10px] uppercase">Service</p></div>
-                                                <div className="p-2 rounded-md bg-purple-100 text-purple-800"><p className="font-bold">{formatCurrency(day.productSales)}</p><p className="text-[10px] uppercase">Product</p></div>
-                                                <div className="p-2 rounded-md bg-teal-100 text-teal-800"><p className="font-bold">{day.customersServed}</p><p className="text-[10px] uppercase">Clients</p></div>
-                                                <div className="p-2 rounded-md bg-indigo-100 text-indigo-800"><p className="font-bold">{formatCurrency(dailyAbv)}</p><p className="text-[10px] uppercase">ABV</p></div>
-                                                <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{incentiveDay ? formatCurrency(incentiveDay['Target (₹)']) : 'N/A'}</p><p className="text-[10px] uppercase">Target</p></div>
-                                                <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{incentiveDay ? incentiveDay['Applied Rate'] : 'N/A'}</p><p className="text-[10px] uppercase">Rate</p></div>
-                                                <div className="p-2 rounded-md bg-green-100 text-green-800"><p className="font-bold">{incentiveDay ? formatCurrency(incentiveDay['Incentive (₹)']) : 'N/A'}</p><p className="text-[10px] uppercase">Incentive</p></div>
-                                            </div>
+        <div className="space-y-8">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100">
+            <div className="p-4 sm:p-6 border-b border-slate-200 text-center"><div className="text-lg sm:text-xl font-bold text-slate-800 uppercase tracking-wider">Staff Performance Report</div></div>
+            <div className="overflow-x-auto">
+                <div className="hidden md:block">
+                <div className="flex items-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase bg-slate-100">
+                    <div className="w-[4%] text-center">S.No</div><div className="w-[8%] text-center">Staff ID</div><div className="w-[15%]">Staff Name</div><div className="w-[12%] text-right">Total Sales</div><div className="w-[11%] text-center">Clients</div><div className="w-[12%] text-right">ABV</div><div className="w-[19%] text-center">Projected Sales</div><div className="w-[19%] text-center">Projected Clients</div>
+                </div>
+                <div className="divide-y divide-slate-100">
+                    {isLoading ? (<div className="text-center p-10 text-slate-500">Loading...</div>) : error ? (<div className="text-center p-10 text-red-500">{error}</div>) :
+                    <>
+                        {filteredStaffPerformance.map((staff, index) => { const abv = staff.customers > 0 ? staff.sales / staff.customers : 0; const projectedSales = daysEnded > 0 ? (staff.sales / daysEnded) * projectionDays : 0; const projectedClients = daysEnded > 0 ? (staff.customers / daysEnded) * projectionDays : 0; return ( <div key={staff.staffId} onClick={() => handleOpenDetails(staff)} className="flex items-center p-4 hover:bg-indigo-50 transition-colors cursor-pointer"><div className="w-[4%] text-sm font-medium text-slate-500 text-center">{index + 1}.</div><div className="w-[8%] text-sm font-semibold text-slate-600 text-center">{staff.staffIdNumber}</div><div className="w-[15%] text-sm font-semibold text-slate-800 truncate">{staff.name}</div><div className="w-[12%] text-sm text-slate-700 text-right">{formatCurrency(staff.sales)}</div><div className="w-[11%] text-sm text-slate-700 text-center">{staff.customers}</div><div className="w-[12%] text-sm text-indigo-600 font-bold text-right">{formatCurrency(abv)}</div><div className="w-[19%] text-center"><span className="inline-flex w-32 justify-center items-center py-1 px-2.5 rounded-full text-xs font-bold bg-green-100 text-green-800">{formatCurrency(projectedSales)}</span></div><div className="w-[19%] text-center"><span className="inline-flex w-32 justify-center items-center py-1 px-2.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">{Math.round(projectedClients)} Clients</span></div></div> ); })}
+                        <div className="flex items-center p-4 font-bold text-slate-800 bg-slate-100 border-t-2 border-slate-200"><div className="w-[4%]"></div><div className="w-[8%]"></div><div className="w-[15%] text-sm uppercase tracking-wider">Grand Total</div><div className="w-[12%] text-sm text-right">{formatCurrency(grandTotals.totalSales)}</div><div className="w-[11%] text-sm text-center">{grandTotals.totalClients}</div><div className="w-[12%] text-sm text-right text-indigo-700">{formatCurrency(grandTotals.avgAbv)}</div><div className="w-[19%] text-center">{formatCurrency(grandTotals.projectedSales)}</div><div className="w-[19%] text-sm text-center">{Math.round(grandTotals.projectedClients)}</div></div>
+                    </>
+                    }
+                </div>
+                </div>
+                <div className="md:hidden divide-y divide-slate-100">
+                    {isLoading ? (<div className="text-center p-10 text-slate-500">Loading...</div>) : error ? (<div className="text-center p-10 text-red-500">{error}</div>) :
+                        filteredStaffPerformance.map((staff) => {
+                            const abv = staff.customers > 0 ? staff.sales / staff.customers : 0;
+                            return (
+                                <div key={staff.staffId} onClick={() => handleOpenDetails(staff)} className="p-4 active:bg-indigo-50">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-bold text-slate-800">{staff.name}</p>
+                                            <p className="text-xs text-slate-500">ID: {staff.staffIdNumber}</p>
                                         </div>
-                                    )
-                                })}
+                                        <div className="text-right">
+                                            <p className="font-bold text-lg text-indigo-600">{formatCurrency(abv)}</p>
+                                            <p className="text-xs text-slate-500">ABV</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                                        <div><p className="text-xs text-slate-500">Total Sales</p><p className="font-semibold text-slate-700">{formatCurrency(staff.sales)}</p></div>
+                                        <div><p className="text-xs text-slate-500">Clients</p><p className="font-semibold text-slate-700">{staff.customers}</p></div>
+                                    </div>
+                                </div>
+                            )
+                        })
+                    }
+                </div>
+            </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <PerformancePieChart data={performanceData} />
+            {incentiveReportData && <IncentivePieChart data={incentiveReportData.staffSummary} chartRef={incentiveChartRef} />}
+            </div>
+        </div>
+
+        {selectedStaff && (
+            <ModalPortal>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60" onClick={handleCloseDetails}>
+                <div className="relative w-full h-full sm:max-w-4xl sm:max-h-[90vh] bg-slate-50 sm:rounded-2xl shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <header className="flex-shrink-0 flex justify-between items-center p-4 border-b border-slate-200 bg-white sm:rounded-t-2xl">
+                    <h2 className="text-lg font-semibold text-slate-800">Performance Details</h2><button onClick={handleCloseDetails} className="p-1 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"><X size={24} /></button>
+                    </header>
+
+                    <div className="flex-grow p-4 sm:p-6 overflow-y-auto">
+                        <div className="space-y-6">
+                            <div className="flex items-center p-4 bg-white rounded-xl shadow-sm border border-slate-200"><img className="h-14 w-14 sm:h-16 sm:w-16 rounded-full object-cover" src={selectedStaff.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedStaff.name)}&background=4f46e5&color=fff`} alt={selectedStaff.name} /><div className="ml-4"><h3 className="text-lg sm:text-xl font-bold text-slate-900">{selectedStaff.name}</h3><p className="text-sm text-slate-600">{selectedStaff.position}</p></div></div>
+                            
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200"><h4 className="text-md font-semibold text-slate-800 mb-3">Summary for Period</h4>{isLoadingDetails ? <div className="py-4 text-center text-slate-500">Loading...</div> : errorDetails ? <div className="py-4 text-center text-red-500">{errorDetails}</div> : <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 text-center"><div><p className="text-lg font-bold text-green-600">{formatCurrency(panelSummary.totalSales)}</p><p className="text-xs text-slate-500 uppercase">Total Sales</p></div><div><p className="text-lg font-bold text-teal-600">{panelSummary.totalCustomers}</p><p className="text-xs text-slate-500 uppercase">Customers</p></div><div><p className="text-lg font-bold text-blue-600">{formatCurrency(modalIncentiveSummary.monthlyTarget)}</p><p className="text-xs text-slate-500 uppercase">Monthly Target</p></div><div><p className="text-lg font-bold text-purple-600">{formatCurrency(modalIncentiveSummary.totalAchieved)}</p><p className="text-xs text-slate-500 uppercase">Total Incentive</p></div></div>}</div>
+                            
+                            {incentiveReportData && (
+                                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                    <h4 className="text-md font-semibold text-slate-800 mb-3">Incentive Breakdown (Period Total)</h4>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between items-center p-2 rounded bg-slate-50">
+                                            <div className="flex items-center"><CalendarDays className="w-4 h-4 mr-2 text-indigo-500" /> <span className="text-slate-600">Daily Target Incentive Total:</span></div>
+                                            <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.dailyIncentiveComponent)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-2 rounded bg-slate-50">
+                                            <div className="flex items-center"><Target className="w-4 h-4 mr-2 text-blue-500" /> <span className="text-slate-600">Monthly Sales Incentive:</span></div>
+                                            <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.monthlyIncentive)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-2 rounded bg-slate-50">
+                                            <div className="flex items-center"><Package className="w-4 h-4 mr-2 text-amber-500" /> <span className="text-slate-600">Package Sale Incentive:</span></div>
+                                            <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.packageIncentive)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-2 rounded bg-slate-50">
+                                        <div className="flex items-center"><Gift className="w-4 h-4 mr-2 text-rose-500" /> <span className="text-slate-600">Gift Card Sale Incentive:</span></div>
+                                            <span className="font-semibold text-slate-800">{formatCurrency(modalIncentiveSummary.giftCardIncentive)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-2 border-t mt-2 font-bold text-base">
+                                            <span className="text-slate-600">Total Incentive Earned:</span>
+                                            <span className="text-purple-700">{formatCurrency(modalIncentiveSummary.totalAchieved)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 max-h-[45vh] overflow-y-auto">
+                                <h4 className="text-md font-semibold text-slate-800 mb-3 px-2 sticky top-0 bg-white py-2 z-10 border-b">Daily Breakdown</h4>
+                                {isLoadingDetails ? <div className="py-10 text-center text-slate-500">Loading...</div> : errorDetails ? <div className="py-10 text-center text-red-500">{errorDetails}</div> : staffDailyPerformance.length > 0 ? (
+                                <div className="space-y-2 px-1 pb-1">
+                                    {staffDailyPerformance.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((day) => {
+                                        const dailyTotalSales = day.serviceSales + day.productSales + (day.packageSales || 0) + (day.giftCardSales || 0);
+                                        const dailyAbv = day.customersServed > 0 ? Math.round(dailyTotalSales / day.customersServed) : 0;
+                                        
+                                        // ✅ MODIFICATION: Calculate total incentive directly from the detailed day object.
+                                        const dailyTotalIncentive = (day.incentives?.daily || 0) + (day.incentives?.monthly || 0) + (day.incentives?.package || 0) + (day.incentives?.giftCard || 0);
+                                        
+                                        const incentiveDay = incentiveReportData?.dailyReport.find(inc => inc.Date === day.date.split('T')[0] && inc['Staff Name'] === selectedStaff.name);
+                                        const dailyTargetValue = incentiveDay ? formatCurrency(incentiveDay['Target (₹)']) : 'N/A';
+
+                                        return (
+                                            <div key={day.date} className="p-3 rounded-lg hover:bg-slate-50 border border-slate-100">
+                                                <div className="font-semibold flex items-center text-sm mb-3 text-slate-700"><CalendarDays className="w-4 h-4 mr-2 text-indigo-500" />{format(parseISO(day.date), 'dd MMM, yyyy')}</div>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-xs mb-2">
+                                                    <div className="p-2 rounded-md bg-blue-100 text-blue-800"><p className="font-bold">{formatCurrency(day.serviceSales)}</p><p className="text-[10px] uppercase">Service</p></div>
+                                                    <div className="p-2 rounded-md bg-purple-100 text-purple-800"><p className="font-bold">{formatCurrency(day.productSales)}</p><p className="text-[10px] uppercase">Product</p></div>
+                                                    <div className="p-2 rounded-md bg-amber-100 text-amber-800"><p className="font-bold">{formatCurrency(day.packageSales || 0)}</p><p className="text-[10px] uppercase">Package</p></div>
+                                                    <div className="p-2 rounded-md bg-rose-100 text-rose-800"><p className="font-bold">{formatCurrency(day.giftCardSales || 0)}</p><p className="text-[10px] uppercase">Gift Card</p></div>
+                                                </div>
+                                                
+                                                {/* ✅ ADDITION: This new grid displays all four specific rates for the day. */}
+                                                <div className="grid grid-cols-4 gap-2 text-center text-xs mb-2">
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.daily || 0).toFixed(2)}</p><p className="text-[10px] uppercase">Daily Rate</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.monthly || 0).toFixed(2)}</p><p className="text-[10px] uppercase">Monthly Rate</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.package || 0).toFixed(2)}</p><p className="text-[10px] uppercase">Package Rate</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.giftCard || 0).toFixed(2)}</p><p className="text-[10px] uppercase">GiftCard Rate</p></div>
+                                                </div>
+
+                                                {/* ✅ MODIFICATION: This grid is now 4 columns wide and no longer displays the old "Rate" box. */}
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-xs">
+                                                    <div className="p-2 rounded-md bg-teal-100 text-teal-800"><p className="font-bold">{day.customersServed}</p><p className="text-[10px] uppercase">Clients</p></div>
+                                                    <div className="p-2 rounded-md bg-indigo-100 text-indigo-800"><p className="font-bold">{formatCurrency(dailyAbv)}</p><p className="text-[10px] uppercase">ABV</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{dailyTargetValue}</p><p className="text-[10px] uppercase">Target</p></div>
+                                                    <div className={`p-2 rounded-md ${dailyTotalIncentive > 0 ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}><p className="font-bold">{formatCurrency(dailyTotalIncentive)}</p><p className="text-[10px] uppercase">Incentive</p></div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                ) : ( <p className="text-sm text-center text-slate-500 py-10">No daily records found.</p> )}
                             </div>
-                            ) : ( <p className="text-sm text-center text-slate-500 py-10">No daily records found.</p> )}
                         </div>
                     </div>
                 </div>
-              </div>
-            </div>
-        </ModalPortal>
-      )}
+                </div>
+            </ModalPortal>
+        )}
     </div>
   );
 };
