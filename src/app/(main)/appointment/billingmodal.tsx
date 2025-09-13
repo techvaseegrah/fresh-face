@@ -14,7 +14,7 @@ import BillingTotals from './components/billing/BillingTotals';
 import SuccessCard from './components/billing/SuccessCard';
 import Receipt from '@/components/Receipt';
 import ApplyGiftCardModal from './components/billing/ApplyGiftCardModal';
-import RedeemPackageModal from './components/billing/RedeemPackageModal'; // 1. IMPORT the new modal
+import RedeemPackageModal from './components/billing/RedeemPackageModal';
 
 interface BillingModalProps {
   isOpen: boolean;
@@ -49,7 +49,7 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
   const [isClient, setIsClient] = useState(false);
   const [showCustomerHistory, setShowCustomerHistory] = useState(false);
   const [isGiftCardModalOpen, setIsGiftCardModalOpen] = useState(false);
-  const [isRedeemPackageModalOpen, setIsRedeemPackageModalOpen] = useState(false); // 2. ADD state for the new modal
+  const [isRedeemPackageModalOpen, setIsRedeemPackageModalOpen] = useState(false);
 
   const state = useBillingState(props);
 
@@ -68,7 +68,9 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
     ? "bg-white p-4 sm:p-6 rounded-lg shadow-xl w-full max-w-6xl h-full max-h-[95vh] flex flex-col"
     : "w-full h-full flex items-center justify-center";
 
-  const isFinalizeButtonDisabled = state.isLoading || state.isLoadingBill || state.billItems.length === 0 || !state.selectedStaffId || (state.billItems.some(item => !item.staffId && item.itemType !== 'gift_card' && item.itemType !== 'package')) || state.totals.balance > 0.01;
+  // CORRECTED LINE: The check excluding 'gift_card' and 'package' has been removed.
+  // Now, ALL items must have a staffId assigned to enable the button.
+  const isFinalizeButtonDisabled = state.isLoading || state.isLoadingBill || state.billItems.length === 0 || !state.selectedStaffId || (state.billItems.some(item => !item.staffId)) || state.totals.balance > 0.01;
 
   return (
     <>
@@ -119,7 +121,6 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
                     <div>
                       <div className="flex justify-between items-center mb-3">
                         <h3 className="text-lg font-medium text-gray-700">Bill Items ({state.billItems.length})</h3>
-                        {/* 3. ADD the "Redeem from Package" button */}
                         <button
                           onClick={() => setIsRedeemPackageModalOpen(true)}
                           className="px-3 py-1 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200 transition-colors"
@@ -159,7 +160,7 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
                     
                     <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff (Processor) <span className="text-red-500">*</span></label><select id="billingStaff" value={state.selectedStaffId} onChange={e => state.setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={state.isLoadingProcessors}><option value="">{state.isLoadingProcessors ? 'Loading staff...' : 'Select billing staff'}</option>{state.billingProcessors.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
                     
-                    <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{state.discountType === 'fixed' ? '₹' : '%'}</span><input type="number" min="0" value={state.discount || ''} onChange={e => state.setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => state.setDiscountType('fixed')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border transition-colors ${state.discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (₹)</button><button onClick={() => state.setDiscountType('percentage')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${state.discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
+                    <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{state.discountType === 'fixed' ? '?' : '%'}</span><input type="number" min="0" value={state.discount || ''} onChange={e => state.setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => state.setDiscountType('fixed')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border transition-colors ${state.discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (?)</button><button onClick={() => state.setDiscountType('percentage')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${state.discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
 
                     <PaymentSection
                         newPaymentDetails={state.newPaymentDetails}
@@ -226,7 +227,6 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
         />
       )}
 
-      {/* 4. RENDER the new modal conditionally */}
       {isRedeemPackageModalOpen && (
         <RedeemPackageModal
           customerId={customer._id}

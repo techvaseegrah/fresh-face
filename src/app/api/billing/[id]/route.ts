@@ -1,4 +1,4 @@
-// FILE: /app/api/billing/[id]/route.ts
+// /app/api/billing/[id]/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
@@ -11,24 +11,19 @@ import LoyaltyTransaction from '@/models/loyaltyTransaction';
 import { getTenantIdOrBail } from '@/lib/tenant';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { hasPermission, PERMISSIONS } from '@/lib/permissions'; // Assuming you have permissions set up
+import { hasPermission, PERMISSIONS } from '@/lib/permissions'; 
 import { FinalizeBillingPayload } from '@/app/(main)/appointment/billingmodal';
+import { recalculateAndSaveDailySale } from '../route';
 
 // ===================================================================================
 //  GET: Handler to fetch a single invoice by its ID
 // ===================================================================================
 export async function GET(
-  request: NextRequest, // Changed to NextRequest
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const tenantId = getTenantIdOrBail(request);
   if (tenantId instanceof NextResponse) return tenantId;
-
-  // Optional: Add permission check for reading bills
-  // const session = await getServerSession(authOptions);
-  // if (!session || !hasPermission(session.user.role.permissions, PERMISSIONS.BILLING_READ)) {
-  //   return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  // }
   
   const { id } = params;
   if (!id) {
@@ -36,7 +31,6 @@ export async function GET(
   }
   try {
     await dbConnect();
-    // --- MT: Scope the findById by tenantId ---
     const invoice = await Invoice.findOne({ _id: id, tenantId }).lean();
     if (!invoice) {
       return NextResponse.json({ success: false, message: 'Invoice not found.' }, { status: 404 });
@@ -55,17 +49,11 @@ export async function GET(
 //  PUT: Handler to update an existing invoice (e.g., "Save Correction")
 // ===================================================================================
 export async function PUT(
-  request: NextRequest, // Changed to NextRequest
-  { params }: { params: { id: string } } // This is the INVOICE ID
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
   const tenantId = getTenantIdOrBail(request);
   if (tenantId instanceof NextResponse) return tenantId;
-
-  // Optional: Add permission check for updating bills
-  // const authSession = await getServerSession(authOptions);
-  // if (!authSession || !hasPermission(authSession.user.role.permissions, PERMISSIONS.BILLING_UPDATE)) {
-  //   return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  // }
   
   const { id } = params;
   
@@ -83,14 +71,12 @@ export async function PUT(
     } = body;
     
     // --- 1. LOYALTY POINT RECONCILIATION ---
-    // --- MT: Scope settings lookup by tenantId ---
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty', tenantId }).session(dbSession).lean();
     let pointsDifference = 0;
 
     if (loyaltySettingDoc?.value) {
       const { rupeesForPoints, pointsAwarded } = loyaltySettingDoc.value;
       if (rupeesForPoints > 0 && pointsAwarded > 0) {
-        // --- MT: Scope appointment lookup by tenantId ---
         const originalAppointment = await Appointment.findOne({ _id: appointmentId, tenantId }).session(dbSession).lean();
         if (!originalAppointment) {
           throw new Error("Original appointment not found for loyalty point calculation.");
@@ -112,7 +98,6 @@ export async function PUT(
       },
       paymentStatus: 'Paid'
     };
-    // --- MT: Scope invoice update by tenantId ---
     const updatedInvoice = await Invoice.findOneAndUpdate({ _id: id, tenantId }, invoiceUpdateData, {
       new: true,
       session: dbSession,
@@ -123,7 +108,6 @@ export async function PUT(
     
     // --- 3. CREATE LOYALTY ADJUSTMENT TRANSACTION (if necessary) ---
     if (pointsDifference !== 0 && customerId) {
-      // --- MT: Add tenantId to new loyalty transaction ---
       await LoyaltyTransaction.create([{
           tenantId: tenantId,
           customerId,
@@ -133,17 +117,14 @@ export async function PUT(
           reason: `Invoice Correction`,
           transactionDate: new Date(),
       }], { session: dbSession });
-
-      // --- MT: Scope customer update by tenantId if you use it ---
-      // await Customer.updateOne({ _id: customerId, tenantId }, { 
-      //   $inc: { loyaltyPoints: pointsDifference } 
-      // }, { session: dbSession });
     }
 
     // --- 4. SYNCHRONIZE THE APPOINTMENT ---
-    const newServiceIds = items
+    // ✅ FIX: Explicitly type the constant as string[] to resolve the TypeScript error.
+    const newServiceIds: string[] = items
       .filter(item => item.itemType === 'service')
       .map(serviceItem => serviceItem.itemId);
+      
     const appointmentUpdatePayload = {
       finalAmount: updatedInvoice.grandTotal,
       amount: updatedInvoice.subtotal,
@@ -153,10 +134,28 @@ export async function PUT(
       serviceIds: newServiceIds,
       status: 'Paid',
     };
-    // --- MT: Scope appointment update by tenantId ---
     await Appointment.updateOne({ _id: appointmentId, tenantId }, appointmentUpdatePayload, { session: dbSession });
     
-    // --- 5. COMMIT AND RESPOND ---
+    // --- 5. RECALCULATE DAILY SALE FOR INCENTIVES ---
+    const relatedAppointment = await Appointment.findById(appointmentId).session(dbSession).lean();
+    if (!relatedAppointment) {
+        throw new Error("Could not find the related appointment to recalculate daily sales.");
+    }
+    
+    const allStaffIdsInvolved: string[] = [...new Set(
+        items.map((item: any) => item.staffId).filter((id: any) => id != null).map((id: any) => id.toString())
+    )];
+
+    if (allStaffIdsInvolved.length > 0) {
+      await recalculateAndSaveDailySale({
+          tenantId,
+          staffIds: allStaffIdsInvolved,
+          date: relatedAppointment.appointmentDateTime,
+          dbSession,
+      });
+    }
+    
+    // --- 6. COMMIT AND RESPOND ---
     await dbSession.commitTransaction();
 
     return NextResponse.json({

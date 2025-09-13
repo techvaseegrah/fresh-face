@@ -5,14 +5,13 @@ import dbConnect from '@/lib/mongodb';
 import Invoice from '@/models/invoice'; // Your Invoice model
 import { getTenantIdOrBail } from '@/lib/tenant';
 import mongoose from 'mongoose';
+import Appointment from '@/models/Appointment'; // <<< ADD THIS IMPORT
 
 export const dynamic = 'force-dynamic';
 
-// --- Type Definitions (Unchanged) ---
 interface SaleDetail { name: string; quantity: number; price: number; }
 interface DailyBreakdown { service: SaleDetail[]; product: SaleDetail[]; giftCard: SaleDetail[]; package: SaleDetail[]; membership: SaleDetail[]; }
 
-// --- Timezone-Safe Date Formatter (Unchanged) ---
 const toTenantLocalDateString = (date: Date): string => {
   return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Kolkata' }).format(date);
 };
@@ -36,24 +35,39 @@ export async function GET(request: NextRequest) {
     const endDate = new Date(endDateParam);
     endDate.setUTCHours(23, 59, 59, 999);
     
-    // --- THIS IS THE NEW LOGIC TO HANDLE OLD, INCOMPLETE INVOICE DATA ---
+    // --- THIS IS THE NEW, CORRECTED LOGIC ---
     const aggregationPipeline = [
-      // 1. Match invoices within the date range, for the correct tenant, and that are paid
+      // 1. Match invoices by tenant and payment status first (more efficient)
       { 
         $match: {
           tenantId: new mongoose.Types.ObjectId(tenantId),
-          createdAt: { $gte: startDate, $lte: endDate },
           paymentStatus: 'Paid',
         }
       },
-      // 2. Deconstruct the lineItems array to process each item individually
+      // 2. <<< NEW: Look up the associated appointment for each invoice
+      {
+        $lookup: {
+          from: 'appointments', // The collection name for Appointments
+          localField: 'appointmentId',
+          foreignField: '_id',
+          as: 'appointmentInfo'
+        }
+      },
+      // 3. <<< NEW: Deconstruct the appointmentInfo array and remove invoices without a valid appointment
+      {
+        $unwind: '$appointmentInfo'
+      },
+      // 4. <<< NEW: Filter by the APPOINTMENT's date, not the invoice's creation date
+      {
+        $match: {
+          'appointmentInfo.appointmentDateTime': { $gte: startDate, $lte: endDate }
+        }
+      },
+      // 5. Deconstruct the lineItems array to process each item individually
       { 
         $unwind: '$lineItems' 
       },
-      // 3. *** THE CRUCIAL FIX ***
-      //    Create a new field `effectiveStaffId`.
-      //    It checks if `lineItems.staffId` exists. If it does, use it.
-      //    If it's MISSING (for your old data), it falls back to the main `stylistId` of the invoice.
+      // 6. Create `effectiveStaffId` to handle old data (your existing logic, which is good)
       {
         $addFields: {
           'effectiveStaffId': {
@@ -61,25 +75,25 @@ export async function GET(request: NextRequest) {
           }
         }
       },
-      // 4. Filter out any sales that still don't have a staff ID after our fix
+      // 7. Filter out any sales that still don't have a staff ID
       {
         $match: {
           'effectiveStaffId': { $exists: true, $ne: null }
         }
       },
-      // 5. Group by our new, reliable `effectiveStaffId` field
+      // 8. Group by staff, calculate totals, and count unique bills
       { 
         $group: {
-          _id: '$effectiveStaffId', // Group sales by the staff member
+          _id: '$effectiveStaffId',
+          uniqueInvoices: { $addToSet: '$_id' }, // For bill count
           service: { $sum: { $cond: [{ $eq: ['$lineItems.itemType', 'service'] }, { $toDouble: '$lineItems.finalPrice' }, 0] } },
           product: { $sum: { $cond: [{ $eq: ['$lineItems.itemType', 'product'] }, { $toDouble: '$lineItems.finalPrice' }, 0] } },
           giftCard: { $sum: { $cond: [{ $eq: ['$lineItems.itemType', 'gift_card'] }, { $toDouble: '$lineItems.finalPrice' }, 0] } },
           package: { $sum: { $cond: [{ $eq: ['$lineItems.itemType', 'package'] }, { $toDouble: '$lineItems.finalPrice' }, 0] } },
           membership: { $sum: { $cond: [{ $and: [ { $eq: ['$lineItems.itemType', 'fee'] }, { $regexMatch: { input: '$lineItems.name', regex: /membership/i } } ] }, { $toDouble: '$lineItems.finalPrice' }, 0] } },
-          // Collect all items for the daily breakdown view
           dailyBreakdownSource: { 
             $push: {
-              date: "$createdAt",
+              date: "$appointmentInfo.appointmentDateTime", // Use appointment date for breakdown
               name: '$lineItems.name',
               quantity: '$lineItems.quantity',
               price: { $toDouble: '$lineItems.finalPrice' },
@@ -88,7 +102,7 @@ export async function GET(request: NextRequest) {
           }
         }
       },
-      // 6. Look up staff details (this part is unchanged)
+      // 9. Look up staff details
       { 
         $lookup: {
           from: 'staffs',
@@ -97,20 +111,21 @@ export async function GET(request: NextRequest) {
           as: 'staffInfo'
         }
       },
-      // 7. Deconstruct the staffInfo array
+      // 10. Deconstruct the staffInfo array
       { 
         $unwind: {
           path: '$staffInfo',
-          preserveNullAndEmptyArrays: true // Keep staff record even if lookup fails
+          preserveNullAndEmptyArrays: true 
         }
       },
-      // 8. Project the final shape of the data
+      // 11. Project the final shape of the data
       { 
         $project: {
           _id: 0,
           staffId: '$_id',
           staffIdNumber: '$staffInfo.staffIdNumber',
-          name: { $ifNull: ['$staffInfo.name', 'Unknown Staff'] }, // Handle cases where staff might be deleted
+          name: { $ifNull: ['$staffInfo.name', 'Unknown Staff'] },
+          billCount: { $size: '$uniqueInvoices' }, // Calculate bill count
           service: '$service',
           product: '$product',
           giftCard: '$giftCard',
@@ -124,7 +139,7 @@ export async function GET(request: NextRequest) {
 
     const staffSales = await Invoice.aggregate(aggregationPipeline);
 
-    // This part for processing the daily breakdown remains the same and is correct.
+    // This part for processing the daily breakdown remains the same.
     const reportData = staffSales.map(staff => {
         const dailyBreakdown: Record<string, DailyBreakdown> = {};
         staff.dailyBreakdownSource.forEach((item: any) => {
