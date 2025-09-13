@@ -3,23 +3,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { format, startOfMonth, parseISO } from 'date-fns';
-import { Loader2, AlertCircle, CalendarDays, TrendingUp, Wallet, ClipboardList, ArrowUpCircle, Tag } from 'lucide-react';
+import { Loader2, AlertCircle, CalendarDays, TrendingUp, Wallet, ClipboardList, ArrowUpCircle, Tag, Package, Gift } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, TooltipProps } from 'recharts';
-// ✅ FIX: Importing the correct, specific types for the Tooltip payload
 import { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 
-// --- TYPE DEFINITION (Unchanged) ---
+// --- TYPE DEFINITION ---
 interface PerformanceData {
     summary: {
         totalSales: number;
         totalServiceSales: number;
         totalProductSales: number;
+        totalPackageSales: number;
+        totalGiftCardSales: number;
         totalCustomers: number;
     };
     dailyBreakdown: {
         date: string;
         serviceSale: number;
         productSale: number;
+        packageSale: number;
+        giftCardSale: number;
         customerCount: number;
         incentive: {
             target: number;
@@ -29,14 +32,13 @@ interface PerformanceData {
     }[];
 }
 
-// --- UI HELPER COMPONENT (WITH HOVER ANIMATION) ---
+// --- UI HELPER COMPONENT ---
 const SummaryCard: React.FC<{
     icon: React.ReactNode;
     title: string;
     value: string;
     color: string;
 }> = ({ icon, title, value, color }) => (
-    // ✅ UPDATE: Added transition, hover:scale, and hover:shadow classes for animation
     <div className={`relative p-4 sm:p-5 rounded-2xl text-white shadow-lg overflow-hidden ${color} transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-xl`}>
         <div className="relative z-10">
             <p className="text-xs sm:text-sm text-white/90">{title}</p>
@@ -49,8 +51,13 @@ const SummaryCard: React.FC<{
     </div>
 );
 
-
-const formatCurrency = (value: number) => `₹${Math.round(value).toLocaleString('en-IN')}`;
+// ✅ FIX: This function now safely handles missing or invalid numbers, preventing "NaN".
+const formatCurrency = (value: number | null | undefined) => {
+    if (value == null || isNaN(value)) {
+        return '₹0';
+    }
+    return `₹${Math.round(value).toLocaleString('en-IN')}`;
+};
 
 // --- MAIN PERFORMANCE PAGE ---
 export default function StaffPerformancePage() {
@@ -97,10 +104,11 @@ export default function StaffPerformancePage() {
             name: format(parseISO(day.date), 'dd MMM'),
             Services: day.serviceSale,
             Products: day.productSale,
+            Packages: day.packageSale,
+            GiftCards: day.giftCardSale,
         })).reverse() || [];
     }, [performanceData]);
 
-    // ✅ FIX: Correctly typed CustomTooltip component using the specific imported types.
     const CustomTooltip = ({ active, payload, label }: TooltipProps<ValueType, NameType>) => {
         if (active && payload && payload.length) {
             return (
@@ -108,7 +116,6 @@ export default function StaffPerformancePage() {
                     <p className="label font-bold text-gray-800">{label}</p>
                     {payload.map((pld, index) => (
                         <p key={index} style={{ color: pld.color }} className="text-sm">
-                            {/* Casting `pld.value` to `number` ensures type safety */}
                             {`${pld.name}: ${formatCurrency(pld.value as number || 0)}`}
                         </p>
                     ))}
@@ -160,7 +167,7 @@ export default function StaffPerformancePage() {
                 <div className="text-center py-20 text-gray-500"><p className="text-sm sm:text-base">No performance data found for the selected period.</p></div>
             ) : (
                 <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 sm:gap-6">
                         <SummaryCard
                             title="Total Sales"
                             value={formatCurrency(performanceData.summary.totalSales)}
@@ -174,7 +181,7 @@ export default function StaffPerformancePage() {
                             color="bg-gradient-to-br from-cyan-400 to-sky-500"
                         />
                          <SummaryCard
-                            title="Highest Sale (Service)"
+                            title="Service Sales"
                             value={formatCurrency(performanceData.summary.totalServiceSales)}
                             icon={<ArrowUpCircle size={20} className="sm:w-6 sm:h-6" />}
                             color="bg-gradient-to-br from-violet-500 to-purple-500"
@@ -184,6 +191,18 @@ export default function StaffPerformancePage() {
                             value={formatCurrency(performanceData.summary.totalProductSales)}
                             icon={<Tag size={20} className="sm:w-6 sm:h-6" />}
                             color="bg-gradient-to-br from-orange-400 to-amber-500"
+                        />
+                        <SummaryCard
+                            title="Package Sales"
+                            value={formatCurrency(performanceData.summary.totalPackageSales)}
+                            icon={<Package size={20} className="sm:w-6 sm:h-6" />}
+                            color="bg-gradient-to-br from-amber-500 to-yellow-500"
+                        />
+                        <SummaryCard
+                            title="Gift Card Sales"
+                            value={formatCurrency(performanceData.summary.totalGiftCardSales)}
+                            icon={<Gift size={20} className="sm:w-6 sm:h-6" />}
+                            color="bg-gradient-to-br from-lime-500 to-green-500"
                         />
                     </div>
                     
@@ -201,8 +220,10 @@ export default function StaffPerformancePage() {
                                         <YAxis stroke="#6b7280" tick={{ fontSize: 10 }} className="sm:text-xs" tickFormatter={(value: number) => `₹${Number(value) / 1000}k`} />
                                         <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(239, 246, 255, 0.5)' }} />
                                         <Legend wrapperStyle={{ fontSize: '12px' }} className="sm:text-sm"/>
-                                        <Bar dataKey="Services" fill="#3B82F6" name="Service Sales" radius={[4, 4, 0, 0]} />
-                                        <Bar dataKey="Products" fill="#10B981" name="Product Sales" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="Services" fill="#6366F1" name="Service Sales" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="Products" fill="#A855F7" name="Product Sales" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="Packages" fill="#F59E0B" name="Package Sales" radius={[4, 4, 0, 0]} />
+                                        <Bar dataKey="GiftCards" fill="#84CC16" name="Gift Card Sales" radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
@@ -217,6 +238,8 @@ export default function StaffPerformancePage() {
                                             <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
                                             <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Service Sales</th>
                                             <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Product Sales</th>
+                                            <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Package Sales</th>
+                                            <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Gift Card Sales</th>
                                             <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Customers</th>
                                             <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Incentive</th>
                                         </tr>
@@ -227,6 +250,8 @@ export default function StaffPerformancePage() {
                                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">{format(parseISO(day.date), 'dd MMM, yyyy')}</td>
                                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 text-right">{formatCurrency(day.serviceSale)}</td>
                                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 text-right">{formatCurrency(day.productSale)}</td>
+                                                <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 text-right">{formatCurrency(day.packageSale)}</td>
+                                                <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 text-right">{formatCurrency(day.giftCardSale)}</td>
                                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 text-center">{day.customerCount}</td>
                                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-bold text-green-600 text-right">{formatCurrency(day.incentive.amount)}</td>
                                             </tr>

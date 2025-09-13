@@ -38,7 +38,7 @@ interface PopulatedInvoiceForReceipt extends Omit<IInvoice, 'customerId' | 'styl
   billingStaffId: { name: string; } | null;
 }
 
-// ✅ FIX for Error 1: Added 'export' to make this function available in other files.
+// ✅ FIX: The logic inside this function has been updated to be correct.
 export async function recalculateAndSaveDailySale(
     { tenantId, staffIds, date, dbSession }:
     { tenantId: string, staffIds: string[], date: Date, dbSession: mongoose.ClientSession }
@@ -47,6 +47,24 @@ export async function recalculateAndSaveDailySale(
 
     const dayStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     const dayEnd = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+
+    // --- START OF THE FIX ---
+    // 1. Find all appointments for the target date first.
+    const appointmentsForDay = await Appointment.find({
+        tenantId,
+        appointmentDateTime: { $gte: dayStart, $lte: dayEnd }
+    }).select('_id').session(dbSession).lean();
+
+    const appointmentIdsForDay = appointmentsForDay.map(a => a._id);
+
+    // 2. Now find all paid invoices linked to those specific appointments.
+    // This correctly captures all relevant sales regardless of when the invoice was created or updated.
+    const allInvoicesForDay = await Invoice.find({
+        tenantId,
+        appointmentId: { $in: appointmentIdsForDay },
+        paymentStatus: 'Paid'
+    }).session(dbSession).lean();
+    // --- END OF THE FIX ---
 
     const dailyRule = await IncentiveRule.findOne({ type: 'daily', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean();
     const monthlyRule = await IncentiveRule.findOne({ type: 'monthly', tenantId, createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).session(dbSession).lean();
@@ -59,12 +77,6 @@ export async function recalculateAndSaveDailySale(
         package: packageRule,
         giftCard: giftCardRule,
     };
-
-    const allInvoicesForDay = await Invoice.find({
-        tenantId,
-        createdAt: { $gte: dayStart, $lte: dayEnd },
-        paymentStatus: 'Paid'
-    }).session(dbSession).lean();
 
     const salesByStaff = new Map<string, { serviceSale: number, productSale: number, packageSale: number, giftCardSale: number }>();
     const customersByStaff = new Map<string, Set<string>>();
@@ -118,9 +130,10 @@ export async function recalculateAndSaveDailySale(
 }
 
 // ===================================================================================
-//  MAIN POST HANDLER
+//  MAIN POST HANDLER (This remains unchanged)
 // ===================================================================================
 export async function POST(req: NextRequest) {
+  // ... (The rest of your POST handler code is unchanged)
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) return tenantId;
 
@@ -334,7 +347,6 @@ export async function POST(req: NextRequest) {
     const responsePayload = {
       _id: populatedInvoice._id.toString(),
       invoiceNumber: populatedInvoice.invoiceNumber,
-      // ✅ FIX for Error 4: Changed 'populated' to 'populatedInvoice'
       grandTotal: populatedInvoice.grandTotal,
       createdAt: populatedInvoice.createdAt.toISOString(),
       finalManualDiscountApplied: populatedInvoice.manualDiscount.appliedAmount,

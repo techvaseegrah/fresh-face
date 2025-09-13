@@ -4,16 +4,57 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
 import Staff from '@/models/staff';
-import mongoose from 'mongoose';
+import IncentiveRule from '@/models/IncentiveRule';
+import { startOfMonth } from 'date-fns';
+
+// --- TYPE DEFINITIONS ---
+type DailyRule = {
+  target: { multiplier: number };
+  sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
+  incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
+};
+type MonthlyRule = {
+  target: { multiplier: number };
+  sales: { includeServiceSale: boolean; includeProductSale: boolean; };
+  incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
+}
+type FixedTargetRule = {
+    target: { targetValue: number };
+    incentive: { rate: number; doubleRate: number };
+}
+
+// --- HELPER FUNCTIONS ---
+function getDaysInMonth(year: number, month: number): number { return new Date(year, month + 1, 0).getDate(); }
+
+function calculateIncentive(achieved: number, target: number, rate: number, doubleRate: number, base: number) {
+    if (achieved < target || target <= 0) return { incentive: 0, isTargetMet: false, appliedRate: 0 };
+    const doubleTarget = target * 2;
+    const appliedRate = achieved >= doubleTarget ? doubleRate : rate;
+    return { incentive: base * appliedRate, isTargetMet: true, appliedRate };
+}
+
+function findHistoricalRule<T>(rules: T[], timestamp: Date): T | null {
+    if (!rules || rules.length === 0) return null;
+    return rules.find(rule => new Date((rule as any).createdAt) <= timestamp) || null;
+}
+
+function calculateTotalCumulativeMonthly(sales: any[], staff: any, rule: MonthlyRule | null) {
+    if (!rule) return 0;
+    const totalService = sales.reduce((sum, s) => sum + s.serviceSale, 0);
+    const totalProduct = sales.reduce((sum, s) => sum + s.productSale, 0);
+    const target = (staff.salary || 0) * rule.target.multiplier;
+    const achieved = (rule.sales.includeServiceSale ? (totalService || 0) : 0) + (rule.sales.includeProductSale ? (totalProduct || 0) : 0);
+    const base = rule.incentive.applyOn === 'serviceSaleOnly' ? totalService : achieved;
+    return calculateIncentive(achieved, target, rule.incentive.rate, rule.incentive.doubleRate, base).incentive;
+}
+
 
 export async function GET(request: NextRequest) {
-    // Session retrieval is unchanged, it correctly gets the logged-in user's info.
     const session = await getServerSession(authOptions);
     if (!session?.user?.id || !session.user.tenantId) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // ✅ THE CHANGE: Extracted tenantId from the session to use in all database queries.
     const staffId = session.user.id;
     const tenantId = session.user.tenantId;
 
@@ -31,72 +72,141 @@ export async function GET(request: NextRequest) {
         const endDate = new Date(endDateParam);
         endDate.setHours(23, 59, 59, 999);
 
-        // ✅ THE CHANGE: Added `tenantId` to the `findById` and `find` queries
-        // to ensure data is fetched only for the correct tenant.
-        const [staff, dailyRecords] = await Promise.all([
+        const [staff, allSalesInMonth, allRules] = await Promise.all([
             Staff.findOne({ _id: staffId, tenantId: tenantId }).lean(),
             DailySale.find({
                 staff: staffId,
-                tenantId: tenantId, // Ensures that sales records are from the same tenant.
-                date: { $gte: startDate, $lte: endDate }
-            }).sort({ date: -1 }).lean()
+                tenantId: tenantId,
+                date: { $gte: startOfMonth(startDate), $lte: endDate }
+            }).sort({ date: 'asc' }).lean(),
+            (async () => {
+                const rules = await IncentiveRule.find({ tenantId }).sort({ createdAt: -1 }).lean();
+                return {
+                    daily: rules.filter(r => r.type === 'daily'),
+                    monthly: rules.filter(r => r.type === 'monthly'),
+                    package: rules.filter(r => r.type === 'package'),
+                    giftCard: rules.filter(r => r.type === 'giftCard'),
+                };
+            })(),
         ]);
 
         if (!staff) {
-            // Changed from 404 to 401 for better security; no need to reveal if staff exists.
             return NextResponse.json({ success: false, error: 'Staff member not found for this salon.' }, { status: 401 });
         }
         if (!staff.salary) {
              return NextResponse.json({ success: false, error: 'Your salary is not set, cannot calculate performance targets.' }, { status: 400 });
         }
 
-        // --- The rest of your logic remains unchanged as it correctly processes the data ---
-        const dailyBreakdown = dailyRecords.map(rec => {
-            let incentive = { target: 0, rate: 0, amount: 0 };
-            if (rec.appliedRule) {
-                const rule = rec.appliedRule;
-                const daysInMonth = new Date(rec.date.getUTCFullYear(), rec.date.getUTCMonth() + 1, 0).getDate();
-                const target = (staff.salary! * rule.target.multiplier) / daysInMonth;
-                const achieved = (rule.sales.includeServiceSale ? rec.serviceSale || 0 : 0) + (rule.sales.includeProductSale ? rec.productSale || 0 : 0);
-                const base = rule.incentive.applyOn === 'serviceSaleOnly' ? (rec.serviceSale || 0) : achieved;
-                if (achieved >= target) {
-                    const rate = achieved >= (target * 2) ? rule.incentive.doubleRate : rule.incentive.rate;
-                    incentive = { target, rate, amount: base * rate };
-                } else {
-                    incentive = { target, rate: 0, amount: 0 };
-                }
-            }
-            return {
-                date: rec.date.toISOString().split('T')[0],
-                serviceSale: rec.serviceSale || 0,
-                productSale: rec.productSale || 0,
-                customerCount: rec.customerCount || 0,
-                incentive,
-            };
+        const dailyBreakdown = [];
+        const salesInRange = allSalesInMonth.filter(s => {
+            const saleDate = new Date(s.date);
+            return saleDate >= startDate && saleDate <= endDate;
         });
 
+        for (const saleForThisDay of salesInRange) {
+            const d = new Date(saleForThisDay.date);
+            const historicalTimestamp = new Date(saleForThisDay.createdAt || saleForThisDay.date);
+
+            const dailyRule = findHistoricalRule(allRules.daily, historicalTimestamp) as DailyRule | null;
+            const monthlyRule = findHistoricalRule(allRules.monthly, historicalTimestamp) as MonthlyRule | null;
+            const packageRule = findHistoricalRule(allRules.package, historicalTimestamp) as FixedTargetRule | null;
+            const giftCardRule = findHistoricalRule(allRules.giftCard, historicalTimestamp) as FixedTargetRule | null;
+            
+            let dailyIncentive = 0;
+            let dailyTarget = 0;
+            let dailyRate = 0;
+            if (dailyRule) {
+                const daysInMonth = getDaysInMonth(d.getFullYear(), d.getMonth());
+                const target = (staff.salary * dailyRule.target.multiplier) / daysInMonth;
+                const reviewBonus = (saleForThisDay.reviewsWithName * dailyRule.sales.reviewNameValue) + (saleForThisDay.reviewsWithPhoto * dailyRule.sales.reviewPhotoValue);
+                const achieved = (dailyRule.sales.includeServiceSale ? (saleForThisDay.serviceSale || 0) : 0) + (dailyRule.sales.includeProductSale ? (saleForThisDay.productSale || 0) : 0) + reviewBonus;
+                const base = dailyRule.incentive.applyOn === 'serviceSaleOnly' ? (saleForThisDay.serviceSale || 0) : achieved;
+                const result = calculateIncentive(achieved, target, dailyRule.incentive.rate, dailyRule.incentive.doubleRate, base);
+                dailyIncentive = result.incentive;
+                dailyTarget = target;
+                dailyRate = result.appliedRate;
+            }
+
+            const salesUpToToday = allSalesInMonth.filter(s => new Date(s.date) <= d);
+            const salesUpToYesterday = allSalesInMonth.filter(s => new Date(s.date) < d);
+            const yesterdayTimestamp = salesUpToYesterday.length > 0 ? new Date(salesUpToYesterday[salesUpToYesterday.length - 1].createdAt || d) : d;
+            const monthlyRuleYesterday = findHistoricalRule(allRules.monthly, yesterdayTimestamp) as MonthlyRule | null;
+
+            const cumulativeMonthlyToday = calculateTotalCumulativeMonthly(salesUpToToday, staff, monthlyRule);
+            const cumulativeMonthlyYesterday = calculateTotalCumulativeMonthly(salesUpToYesterday, staff, monthlyRuleYesterday);
+            const monthlyIncentiveDelta = cumulativeMonthlyToday - cumulativeMonthlyYesterday;
+
+            let packageIncentiveToday = 0;
+            if (packageRule) {
+                const totalPackageSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.packageSale || 0), 0);
+                const { isTargetMet, appliedRate } = calculateIncentive(totalPackageSaleMonth, packageRule.target.targetValue, packageRule.incentive.rate, packageRule.incentive.doubleRate, totalPackageSaleMonth);
+                if (isTargetMet) {
+                    packageIncentiveToday = (saleForThisDay.packageSale || 0) * appliedRate;
+                }
+            }
+
+            let giftCardIncentiveToday = 0;
+            if (giftCardRule) {
+                const totalGiftCardSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.giftCardSale || 0), 0);
+                const { isTargetMet, appliedRate } = calculateIncentive(totalGiftCardSaleMonth, giftCardRule.target.targetValue, giftCardRule.incentive.rate, giftCardRule.incentive.doubleRate, totalGiftCardSaleMonth);
+                if (isTargetMet) {
+                    giftCardIncentiveToday = (saleForThisDay.giftCardSale || 0) * appliedRate;
+                }
+            }
+
+            const totalIncentiveForDay = dailyIncentive + monthlyIncentiveDelta + packageIncentiveToday + giftCardIncentiveToday;
+
+            dailyBreakdown.push({
+                date: saleForThisDay.date.toISOString().split('T')[0],
+                serviceSale: saleForThisDay.serviceSale || 0,
+                productSale: saleForThisDay.productSale || 0,
+                // ✅ FIX: Added the missing package and gift card sale amounts.
+                packageSale: saleForThisDay.packageSale || 0,
+                giftCardSale: saleForThisDay.giftCardSale || 0,
+                customerCount: saleForThisDay.customerCount || 0,
+                incentive: {
+                    target: dailyTarget,
+                    rate: dailyRate,
+                    amount: totalIncentiveForDay,
+                },
+            });
+        }
+
+        // ✅ FIX: Updated the summary calculation to include the new sales data.
         const summary = dailyBreakdown.reduce((acc, day) => {
             acc.totalServiceSales += day.serviceSale;
             acc.totalProductSales += day.productSale;
+            acc.totalPackageSales += day.packageSale;
+            acc.totalGiftCardSales += day.giftCardSale;
             acc.totalCustomers += day.customerCount;
             return acc;
-        }, { totalServiceSales: 0, totalProductSales: 0, totalCustomers: 0 });
+        }, { 
+            totalServiceSales: 0, 
+            totalProductSales: 0, 
+            totalPackageSales: 0, 
+            totalGiftCardSales: 0, 
+            totalCustomers: 0 
+        });
 
-        const totalSales = summary.totalServiceSales + summary.totalProductSales;
+        const totalSales = summary.totalServiceSales + summary.totalProductSales + summary.totalPackageSales + summary.totalGiftCardSales;
         
+        // ✅ FIX: Added the new sales totals to the final response object.
         const performanceData = {
             summary: {
                 totalSales,
                 totalServiceSales: summary.totalServiceSales,
                 totalProductSales: summary.totalProductSales, 
+                totalPackageSales: summary.totalPackageSales,
+                totalGiftCardSales: summary.totalGiftCardSales,
                 totalCustomers: summary.totalCustomers,
             },
-            dailyBreakdown: dailyBreakdown
+            dailyBreakdown: dailyBreakdown.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         };
         
         return NextResponse.json({ success: true, data: performanceData });
 
     } catch (error: any) {
+        console.error("API Error in /api/staff/performance:", error);
         return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
     }
 }

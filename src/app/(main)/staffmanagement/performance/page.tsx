@@ -39,6 +39,8 @@ interface SummaryData {
     revenueGenerated: number;
     avgServiceQuality: string;
 }
+
+// ✅ ADDITION: Updated interface to match the new, richer API response.
 interface DailyPerformanceRecord {
   date: string;
   serviceSales: number;
@@ -46,8 +48,20 @@ interface DailyPerformanceRecord {
   packageSales: number;
   giftCardSales: number;
   customersServed: number;
-  rating: number;
+  rates: {
+    daily: number;
+    monthly: number;
+    package: number;
+    giftCard: number;
+  };
+  incentives: {
+    daily: number;
+    monthly: number;
+    package: number;
+    giftCard: number;
+  };
 }
+
 interface IncentiveReportData {
     dailyReport: any[];
     dailySummaryReport?: any[]; 
@@ -171,28 +185,22 @@ const PerformancePage: React.FC = () => {
         return { totalSales, totalCustomers };
     }, [staffDailyPerformance]);
   
-    // ✅ FIX: This hook is now completely robust and will not produce NaN errors.
     const modalIncentiveSummary = useMemo(() => {
         const initial = { totalAchieved: 0, monthlyIncentive: 0, packageIncentive: 0, giftCardIncentive: 0, dailyIncentiveComponent: 0, monthlyTarget: 0 };
         if (!selectedStaff || !incentiveReportData) return initial;
 
         const staffName = selectedStaff.name;
-
-        // Safely find records using optional chaining and provide a default object if not found.
         const staffRec = incentiveReportData.staffSummary?.find(rec => rec['Staff Name'] === staffName) ?? {};
         const dailySummaryRec = incentiveReportData.dailySummaryReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
         const monthlyRec = incentiveReportData.monthlyReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
         const packageRec = incentiveReportData.packageReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
         const giftCardRec = incentiveReportData.giftCardReport?.find(rec => rec['Staff Name'] === staffName) ?? {};
         
-        // Use nullish coalescing operator (??) to provide a default value of '0' before parsing.
-        // This prevents parseFloat(undefined), which causes NaN.
         const totalAchieved = parseFloat(staffRec['Total Incentive (₹)'] ?? '0');
         const dailyIncentiveComponent = parseFloat(dailySummaryRec['Incentive (₹)'] ?? '0');
         const monthlyIncentive = parseFloat(monthlyRec['Incentive (₹)'] ?? '0');
         const packageIncentive = parseFloat(packageRec['Incentive (₹)'] ?? '0');
         const giftCardIncentive = parseFloat(giftCardRec['Incentive (₹)'] ?? '0');
-        
         const monthlyTarget = parseFloat(monthlyRec['Target (₹)'] ?? '0');
 
         return { totalAchieved, monthlyIncentive, packageIncentive, giftCardIncentive, dailyIncentiveComponent, monthlyTarget };
@@ -201,7 +209,6 @@ const PerformancePage: React.FC = () => {
   const topPerformersSummary = useMemo(() => { if (!performanceData || performanceData.length === 0) return { topService: { name: 'N/A', value: 0 }, topProduct: { name: 'N/A', value: 0 } }; const topService = [...performanceData].sort((a, b) => b.totalServiceSales - a.totalServiceSales)[0]; const topProduct = [...performanceData].sort((a, b) => b.totalProductSales - a.totalProductSales)[0]; return { topService: { name: topService.name, value: topService.totalServiceSales }, topProduct: { name: topProduct.name, value: topProduct.totalProductSales } }; }, [performanceData]);
   
   const formatCurrency = (value: number | string) => {
-    // Add a check for NaN before formatting
     if (isNaN(Number(value))) {
         return '₹0';
     }
@@ -377,11 +384,11 @@ const PerformancePage: React.FC = () => {
                                         const dailyTotalSales = day.serviceSales + day.productSales + (day.packageSales || 0) + (day.giftCardSales || 0);
                                         const dailyAbv = day.customersServed > 0 ? Math.round(dailyTotalSales / day.customersServed) : 0;
                                         
-                                        const incentiveDay = incentiveReportData?.dailyReport.find(inc => inc.Date === day.date.split('T')[0] && inc['Staff Name'] === selectedStaff.name);
+                                        // ✅ MODIFICATION: Calculate total incentive directly from the detailed day object.
+                                        const dailyTotalIncentive = (day.incentives?.daily || 0) + (day.incentives?.monthly || 0) + (day.incentives?.package || 0) + (day.incentives?.giftCard || 0);
                                         
-                                        const dailyIncentiveValue = incentiveDay ? parseFloat(incentiveDay['Incentive (₹)']) : 0;
+                                        const incentiveDay = incentiveReportData?.dailyReport.find(inc => inc.Date === day.date.split('T')[0] && inc['Staff Name'] === selectedStaff.name);
                                         const dailyTargetValue = incentiveDay ? formatCurrency(incentiveDay['Target (₹)']) : 'N/A';
-                                        const dailyRateValue = incentiveDay ? incentiveDay['Applied Rate'] : 'N/A';
 
                                         return (
                                             <div key={day.date} className="p-3 rounded-lg hover:bg-slate-50 border border-slate-100">
@@ -392,12 +399,21 @@ const PerformancePage: React.FC = () => {
                                                     <div className="p-2 rounded-md bg-amber-100 text-amber-800"><p className="font-bold">{formatCurrency(day.packageSales || 0)}</p><p className="text-[10px] uppercase">Package</p></div>
                                                     <div className="p-2 rounded-md bg-rose-100 text-rose-800"><p className="font-bold">{formatCurrency(day.giftCardSales || 0)}</p><p className="text-[10px] uppercase">Gift Card</p></div>
                                                 </div>
-                                                <div className="grid grid-cols-3 md:grid-cols-5 gap-2 text-center text-xs">
+                                                
+                                                {/* ✅ ADDITION: This new grid displays all four specific rates for the day. */}
+                                                <div className="grid grid-cols-4 gap-2 text-center text-xs mb-2">
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.daily || 0).toFixed(2)}</p><p className="text-[10px] uppercase">Daily Rate</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.monthly || 0).toFixed(2)}</p><p className="text-[10px] uppercase">Monthly Rate</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.package || 0).toFixed(2)}</p><p className="text-[10px] uppercase">Package Rate</p></div>
+                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{(day.rates?.giftCard || 0).toFixed(2)}</p><p className="text-[10px] uppercase">GiftCard Rate</p></div>
+                                                </div>
+
+                                                {/* ✅ MODIFICATION: This grid is now 4 columns wide and no longer displays the old "Rate" box. */}
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-xs">
                                                     <div className="p-2 rounded-md bg-teal-100 text-teal-800"><p className="font-bold">{day.customersServed}</p><p className="text-[10px] uppercase">Clients</p></div>
                                                     <div className="p-2 rounded-md bg-indigo-100 text-indigo-800"><p className="font-bold">{formatCurrency(dailyAbv)}</p><p className="text-[10px] uppercase">ABV</p></div>
                                                     <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{dailyTargetValue}</p><p className="text-[10px] uppercase">Target</p></div>
-                                                    <div className="p-2 rounded-md bg-slate-100 text-slate-800"><p className="font-bold">{dailyRateValue}</p><p className="text-[10px] uppercase">Rate</p></div>
-                                                    <div className={`p-2 rounded-md ${dailyIncentiveValue > 0 ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}><p className="font-bold">{formatCurrency(dailyIncentiveValue)}</p><p className="text-[10px] uppercase">Incentive</p></div>
+                                                    <div className={`p-2 rounded-md ${dailyTotalIncentive > 0 ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}><p className="font-bold">{formatCurrency(dailyTotalIncentive)}</p><p className="text-[10px] uppercase">Incentive</p></div>
                                                 </div>
                                             </div>
                                         )

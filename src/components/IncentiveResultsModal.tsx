@@ -2,8 +2,8 @@ import React from 'react';
 import Button from '@/components/ui/Button';
 import { CheckCircle, XCircle, ShoppingCart } from 'lucide-react';
 
-// This component is UNCHANGED.
-const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => {
+// ✨ --- MODIFICATION: The card component is updated to accept and display daily sales --- ✨
+const IncentiveResultCard = ({ title, data, dailySaleValue }: { title: string; data: any; dailySaleValue?: number }) => {
     if (!data || Object.keys(data).length === 0) {
         return (
             <div className="bg-gray-100 p-4 rounded-lg">
@@ -22,10 +22,28 @@ const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => 
                     {isTargetMet ? 'Target Met' : 'Target Missed'}
                 </span>
             </div>
+
+            {/* ✅ ADDITION: This block displays the sales for today if the value is provided */}
+            {dailySaleValue !== undefined && dailySaleValue > 0 && (
+                 <div className="mt-2 pt-2 border-t border-gray-200">
+                    <div className="flex justify-between text-sm">
+                        <span className="font-semibold text-indigo-600">Today's Sale:</span>
+                        <span className="font-semibold text-indigo-600">{`₹${dailySaleValue.toFixed(2)}`}</span>
+                    </div>
+                 </div>
+            )}
+
             <div className="mt-3 space-y-1">
                 {Object.entries(data).map(([key, value]) => {
                     if (key === 'isTargetMet' || key === 'details') return null;
-                    const keyFormatted = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    
+                    let keyFormatted = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    
+                    // ✅ ADDITION: Renames 'Total Sale Value' to be more specific for clarity
+                    if ((title.includes('Package') || title.includes('Gift Card')) && key === 'totalSaleValue') {
+                        keyFormatted = 'Total Sale Value (Month)';
+                    }
+
                     let valueFormatted;
                     if (typeof value === 'number') {
                         valueFormatted = key.toLowerCase().includes('rate') 
@@ -34,6 +52,7 @@ const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => 
                     } else {
                         valueFormatted = String(value).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                     }
+
                     return (
                         <div key={key} className="flex justify-between text-sm">
                             <span className="text-gray-500">{keyFormatted}:</span>
@@ -46,7 +65,7 @@ const IncentiveResultCard = ({ title, data }: { title: string; data: any; }) => 
     );
 };
 
-// ✨ --- MODIFICATION: This component is now corrected to use the right data source --- ✨
+// This component is UNCHANGED.
 const DailyBreakdownCard = ({ data }: { data: any }) => {
     const dailyDetails = data?.incentive1_daily?.details;
     
@@ -61,7 +80,6 @@ const DailyBreakdownCard = ({ data }: { data: any }) => {
                     <span className="text-sm text-gray-600">{label}:</span>
                     <span className="font-semibold text-gray-800">₹{saleValue.toFixed(2)}</span>
                 </div>
-                {/* This logic now correctly hides the incentive if there were no sales FOR THIS DAY */}
                 {isTargetMet && incentiveAmount > 0 && saleValue > 0 && (
                     <div className="flex justify-end items-center text-xs text-green-600 mt-1">
                         <span>Incentive: ₹{incentiveAmount.toFixed(2)}</span>
@@ -92,7 +110,6 @@ const DailyBreakdownCard = ({ data }: { data: any }) => {
                         </div>
                         
                         <h4 className="font-semibold text-xs text-gray-500 px-2 pt-3">MONTHLY CUMULATIVE SALES</h4>
-                        {/* THE FIX: Use the DAILY sales figures for the saleValue, not the cumulative total */}
                         {renderRow("Package Sale", dailyDetails.packageSale, data.incentive3_package)}
                         {renderRow("Gift Card Sale", dailyDetails.giftCardSale, data.incentive4_giftCard)}
                         {renderRow("Monthly Sales (Service/Product)", data.incentive2_monthly?.totalSaleValue || 0, data.incentive2_monthly)}
@@ -105,8 +122,7 @@ const DailyBreakdownCard = ({ data }: { data: any }) => {
     );
 }
 
-
-// The main modal component is UNCHANGED.
+// ✨ --- MODIFICATION: The main modal now passes the daily sales data to the cards --- ✨
 export default function IncentiveResultsModal({ data, onClose }: { data: any; onClose: () => void; }) {
     if (!data) return null;
 
@@ -127,8 +143,19 @@ export default function IncentiveResultsModal({ data, onClose }: { data: any; on
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <IncentiveResultCard title="Incentive 1: Daily" data={data.incentive1_daily} />
                         <IncentiveResultCard title="Incentive 2: Monthly" data={data.incentive2_monthly} />
-                        <IncentiveResultCard title="Incentive 3: Package" data={data.incentive3_package} />
-                        <IncentiveResultCard title="Incentive 4: Gift Card" data={data.incentive4_giftCard} />
+
+                        {/* ✅ ADDITION: Pass the daily sale value from the daily details object */}
+                        <IncentiveResultCard 
+                            title="Incentive 3: Package" 
+                            data={data.incentive3_package} 
+                            dailySaleValue={data.incentive1_daily?.details?.packageSale} 
+                        />
+                        <IncentiveResultCard 
+                            title="Incentive 4: Gift Card" 
+                            data={data.incentive4_giftCard} 
+                            dailySaleValue={data.incentive1_daily?.details?.giftCardSale} 
+                        />
+
                         <DailyBreakdownCard data={data} />
                     </div>
                 </div>

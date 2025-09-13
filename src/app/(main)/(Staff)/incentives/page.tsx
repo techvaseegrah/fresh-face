@@ -1,12 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-// MODIFIED: Get the full session object to access tenantId
 import { useSession } from 'next-auth/react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { Loader2, AlertCircle, IndianRupee, Gift, Target, CheckCircle, XCircle, Calendar as CalendarIcon, TrendingUp } from 'lucide-react';
-
-// --- (Helper Functions and Components like formatCurrency, IncentiveCard, DashboardCard remain unchanged) ---
+import { Loader2, AlertCircle, IndianRupee, Gift, Target, CheckCircle, XCircle, Calendar as CalendarIcon, TrendingUp, Package } from 'lucide-react';
 
 const formatCurrency = (value: number) => {
     if (typeof value !== 'number' || isNaN(value)) {
@@ -30,7 +27,8 @@ const IncentiveCard: React.FC<{ title: string, data: any, icon: React.ReactNode 
         );
     }
 
-    const { target, achieved, isTargetMet, incentiveAmount, appliedRate } = data;
+    const { target, achieved, isTargetMet, incentiveAmount, appliedRate, todaySale } = data;
+    const isCumulative = title.includes('Package') || title.includes('Gift Card');
 
     return (
         <div className={`bg-white p-6 rounded-xl shadow-md border-l-8 ${isTargetMet ? 'border-green-500' : 'border-red-500'} transition-all duration-300 ease-in-out hover:scale-[1.02] hover:shadow-xl`}>
@@ -54,13 +52,23 @@ const IncentiveCard: React.FC<{ title: string, data: any, icon: React.ReactNode 
                     <span className="text-gray-500 flex items-center"><Target size={16} className="mr-2"/>Target</span>
                     <span className="font-semibold text-gray-900">{formatCurrency(target)}</span>
                 </div>
+                
+                {isCumulative && (
+                    <div className="flex justify-between items-center bg-indigo-50 p-2 rounded-md">
+                        <span className="text-indigo-600 font-semibold flex items-center"><CalendarIcon size={16} className="mr-2"/>Today's Sale</span>
+                        <span className="font-bold text-indigo-700">{formatCurrency(todaySale)}</span>
+                    </div>
+                )}
+
                 <div className="flex justify-between items-center bg-gray-50 p-2 rounded-md">
-                    <span className="text-gray-500 flex items-center"><CheckCircle size={16} className="mr-2"/>Achieved</span>
+                    <span className="text-gray-500 flex items-center"><CheckCircle size={16} className="mr-2"/>
+                        {isCumulative ? 'Achieved (Month)' : 'Achieved'}
+                    </span>
                     <span className="font-semibold text-gray-900">{formatCurrency(achieved)}</span>
                 </div>
                 <div className="flex justify-between items-center bg-gray-50 p-2 rounded-md">
                     <span className="text-gray-500 flex items-center"><Gift size={16} className="mr-2"/>Applied Rate</span>
-                    <span className="font-semibold text-gray-900">{(appliedRate * 100).toFixed(0)}%</span>
+                    <span className="font-semibold text-gray-900">{(appliedRate || 0).toFixed(2)}</span>
                 </div>
             </div>
             
@@ -86,38 +94,31 @@ const DashboardCard: React.FC<{ title: string, amount: number, period: string, i
 );
 
 
-// --- Main Page Component ---
 export default function StaffIncentivesPage() {
-    // MODIFIED: Get the full session object to use the tenantId
     const { data: session, status } = useSession();
-    const [dailyIncentiveData, setDailyIncentiveData] = useState<any>(null);
+    const [incentiveData, setIncentiveData] = useState<any>(null);
     const [monthlyTotal, setMonthlyTotal] = useState<number>(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [date, setDate] = useState<Date>(new Date());
 
     useEffect(() => {
-        // --- MODIFIED: This function now fetches total monthly incentive from your dashboard API ---
+        // ✅ FIX: This function now calls our new, dedicated API for the monthly total.
         const fetchMonthlyTotal = async () => {
-             if (!session?.user?.tenantId) return;
+             if (!session?.user?.tenantId || !date) return;
+             const formattedDate = format(date, 'yyyy-MM-dd');
 
              try {
-                // Using the API route from your StaffDashboardPage
-                const res = await fetch(`/api/stafflogin-dashboard`, {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-tenant-id': session.user.tenantId,
-                    },
-                });
+                // Call the new API, passing the selected date
+                const res = await fetch(`/api/staff/monthly-incentive-total?date=${formattedDate}`);
                 const data = await res.json();
                  if (!res.ok || !data.success) {
                     throw new Error(data.error || "Failed to fetch monthly total.");
                 }
-                // Set the total from the API response
-                setMonthlyTotal(data.data?.incentives?.totalEarned || 0);
+                setMonthlyTotal(data.totalEarned || 0);
              } catch (err) {
                 console.error("Could not fetch monthly total:", err);
-                setMonthlyTotal(0); // Reset on error
+                setMonthlyTotal(0);
              }
         };
 
@@ -132,10 +133,10 @@ export default function StaffIncentivesPage() {
                 if (!res.ok || !data.success) {
                     throw new Error(data.error || "Failed to fetch daily incentives.");
                 }
-                setDailyIncentiveData(data.data);
+                setIncentiveData(data.data);
             } catch (err: any) {
                 setError(err.message);
-                setDailyIncentiveData(null);
+                setIncentiveData(null);
             } finally {
                 setIsLoading(false);
             }
@@ -148,7 +149,10 @@ export default function StaffIncentivesPage() {
 
     }, [status, session, date]);
 
-    const totalIncentiveForDay = (dailyIncentiveData?.daily?.incentiveAmount || 0) + (dailyIncentiveData?.monthly?.incentiveAmount || 0);
+    const totalIncentiveForDay = (incentiveData?.daily?.incentiveAmount || 0) + 
+                                (incentiveData?.monthly?.incentiveAmount || 0) +
+                                (incentiveData?.package?.incentiveAmount || 0) +
+                                (incentiveData?.giftcard?.incentiveAmount || 0);
 
     return (
         <div className="bg-gray-50 min-h-screen p-4 md:p-8">
@@ -183,7 +187,6 @@ export default function StaffIncentivesPage() {
                     </div>
                 ) : (
                     <>
-                        {/* --- Dashboard Section --- */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                            <DashboardCard 
                                 title="Total Incentive This Month"
@@ -199,17 +202,26 @@ export default function StaffIncentivesPage() {
                            />
                         </div>
 
-                        {/* --- Incentive Details --- */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <IncentiveCard 
                                 title="Daily Incentive" 
-                                data={dailyIncentiveData?.daily}
-                                icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
+                                data={incentiveData?.daily}
+                                icon={<CalendarIcon size={24} />}
                             />
                             <IncentiveCard 
-                                title="Monthly Incentive (To Date)" 
-                                data={dailyIncentiveData?.monthly}
-                                icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>}
+                                title="Monthly Incentive" 
+                                data={incentiveData?.monthly}
+                                icon={<TrendingUp size={24} />}
+                            />
+                            <IncentiveCard 
+                                title="Package Incentive" 
+                                data={incentiveData?.package}
+                                icon={<Package size={24} />}
+                            />
+                            <IncentiveCard 
+                                title="Gift Card Incentive" 
+                                data={incentiveData?.giftcard}
+                                icon={<Gift size={24} />}
                             />
                         </div>
                     </>
