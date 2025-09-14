@@ -140,13 +140,46 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
                     </div>
                     
                     {state.isLoadingInventory && <div className="text-sm text-gray-500">Loading inventory preview...</div>}
-                    {state.inventoryImpact?.inventoryImpact?.length > 0 && (<div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 className="text-sm font-medium text-blue-800 mb-3">Inventory Impact ({state.inventoryImpact.customerGender})</h4>
-                    <div className="space-y-2">
-                      {state.inventoryImpact.inventoryImpact.map((impact: any, index: number) => (<div key={index} className={`p-3 rounded-md border text-sm ${impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' : impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
-                        <div className="flex justify-between items-center"><div><span className="font-medium">{impact.productName}</span>
-                        <div className="text-xs text-gray-600">Current: {impact.currentQuantity.toFixed(1)}{impact.unit} → After: {(impact.currentQuantity - impact.usageQuantity).toFixed(1)}{impact.unit}</div></div>
-                        <div className="text-right"><div className="font-medium">-{impact.usageQuantity.toFixed(1)}{impact.unit}</div>{impact.alertLevel !== 'ok' && <div className={`text-xs font-bold ${impact.alertLevel === 'insufficient' ? 'text-red-600' : 'text-orange-600'}`}>{impact.alertLevel.toUpperCase()}!</div>}</div></div></div>))}</div></div>)}
+                    
+                    {/* START OF MODIFICATION - This section is now interactive */}
+                    {state.editableInventoryImpact && state.editableInventoryImpact.length > 0 && (
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <h4 className="text-sm font-medium text-blue-800 mb-3">
+                          Inventory Impact <span className="font-normal text-blue-600">(Editable)</span>
+                        </h4>
+                        <div className="space-y-2">
+                          {state.editableInventoryImpact.map((impact: any, index: number) => (
+                            <div key={impact.productId || index} className={`p-3 rounded-md border text-sm ${impact.alertLevel === 'insufficient' ? 'bg-red-50 border-red-200' : impact.alertLevel === 'critical' ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <span className="font-medium">{impact.productName}</span>
+                                  <div className="text-xs text-gray-600">
+                                    Current: {impact.currentQuantity.toFixed(1)}{impact.unit} → After: {(impact.currentQuantity - impact.usageQuantity).toFixed(1)}{impact.unit}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    value={impact.usageQuantity}
+                                    onChange={(e) => state.handleInventoryImpactChange(index, parseFloat(e.target.value) || 0)}
+                                    className="w-20 text-right px-2 py-1 border rounded-md text-sm"
+                                    step="0.1"
+                                    min="0"
+                                  />
+                                  <span className="text-sm font-medium text-gray-700 w-12">{impact.unit}</span>
+                                  {impact.alertLevel !== 'ok' && (
+                                    <div className={`text-xs font-bold ${impact.alertLevel === 'insufficient' ? 'text-red-600' : 'text-orange-600'}`}>
+                                      {impact.alertLevel.toUpperCase()}!
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* END OF MODIFICATION */}
                     
                     <ItemSearch 
                         searchQuery={state.searchQuery}
@@ -160,7 +193,7 @@ const BillingModal: React.FC<BillingModalProps> = (props) => {
                     
                     <div className="pt-4 border-t"><label htmlFor="billingStaff" className="block text-sm font-medium text-gray-700 mb-1">Billing Staff (Processor) <span className="text-red-500">*</span></label><select id="billingStaff" value={state.selectedStaffId} onChange={e => state.setSelectedStaffId(e.target.value)} className="w-full px-3 py-2 border rounded-md" disabled={state.isLoadingProcessors}><option value="">{state.isLoadingProcessors ? 'Loading staff...' : 'Select billing staff'}</option>{state.billingProcessors.map(staff => <option key={staff._id} value={staff._id}>{staff.name} ({staff.email})</option>)}</select></div>
                     
-                    <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{state.discountType === 'fixed' ? '?' : '%'}</span><input type="number" min="0" value={state.discount || ''} onChange={e => state.setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => state.setDiscountType('fixed')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border transition-colors ${state.discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (?)</button><button onClick={() => state.setDiscountType('percentage')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${state.discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
+                    <div className="pt-4 border-t"><label className="block text-sm font-medium text-gray-700 mb-2">Manual Discount</label><div className="flex"><div className="relative flex-grow"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">{state.discountType === 'fixed' ? '₹' : '%'}</span><input type="number" min="0" value={state.discount || ''} onChange={e => state.setDiscount(parseFloat(e.target.value) || 0)} className="w-full pl-7 pr-3 py-2 border border-r-0 border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="0"/></div><button onClick={() => state.setDiscountType('fixed')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border transition-colors ${state.discountType === 'fixed' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Fixed (₹)</button><button onClick={() => state.setDiscountType('percentage')} className={`px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-l-0 rounded-r-md transition-colors ${state.discountType === 'percentage' ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Percent (%)</button></div></div>
 
                     <PaymentSection
                         newPaymentDetails={state.newPaymentDetails}

@@ -130,10 +130,9 @@ export async function recalculateAndSaveDailySale(
 }
 
 // ===================================================================================
-//  MAIN POST HANDLER (This remains unchanged)
+//  MAIN POST HANDLER
 // ===================================================================================
 export async function POST(req: NextRequest) {
-  // ... (The rest of your POST handler code is unchanged)
   const tenantId = getTenantIdOrBail(req);
   if (tenantId instanceof NextResponse) return tenantId;
 
@@ -149,6 +148,8 @@ export async function POST(req: NextRequest) {
       paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling,
       manualDiscountType, manualDiscountValue, finalManualDiscountApplied,
       giftCardRedemption, packageRedemptions,
+      // MODIFICATION: Destructure the new field from the body
+      manualInventoryUpdates,
   } = body;
 
   try {
@@ -222,50 +223,80 @@ export async function POST(req: NextRequest) {
     const customerGender = customer.gender || 'other';
 
     // =========================================================================
-    // === START: THE ONLY CODE ADDED TO FIX THE BUG ===========================
+    // === START: INVENTORY LOGIC MODIFICATION =================================
     // =========================================================================
     
-    let allInventoryUpdates: InventoryUpdate[] = [];
+    // Check if manual updates were provided by the frontend.
+    if (manualInventoryUpdates && Array.isArray(manualInventoryUpdates) && manualInventoryUpdates.length > 0) {
+        // PATH 1: Use the manually provided updates.
+        console.log("Applying manual inventory updates from frontend.");
+        
+        // Basic validation of the incoming data and format for InventoryManager
+        const validatedUpdates: InventoryUpdate[] = manualInventoryUpdates
+          .filter(update => update.quantityToDeduct > 0) // Only process deductions > 0
+          .map(update => {
+            if (!update.productId || typeof update.quantityToDeduct !== 'number') {
+              throw new Error("Invalid manual inventory update format received.");
+            }
+            return {
+              productId: update.productId,
+              quantityToDeduct: update.quantityToDeduct,
+              productName: 'N/A (Manual Override)',
+              unit: 'unit',
+            };
+        });
 
-    // Step 1: Calculate impact from SERVICES (This part of your code was already correct)
-    const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
-    if (serviceItemsInBill.length > 0) {
-        const serviceIds = serviceItemsInBill.flatMap((s: any) => Array(s.quantity).fill(s.itemId));
-        const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId);
-        allInventoryUpdates.push(...serviceProductUpdates);
-    }
+        if (validatedUpdates.length > 0) {
+            await InventoryManager.applyInventoryUpdates(
+                validatedUpdates, 
+                dbSession, 
+                tenantId
+            );
+        }
+    } else {
+        // PATH 2: Fallback to the original automatic calculation logic.
+        console.log("No manual updates provided. Calculating inventory impact automatically.");
+        
+        let allInventoryUpdates: InventoryUpdate[] = [];
 
-    // Step 2: Add impact from sold RETAIL PRODUCTS
-    const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
-    if (productItemsToBill.length > 0) {
-      // Your existing stock check is here, which is perfect.
-      const productIds = productItemsToBill.map((item: any) => item.itemId);
-      const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
-      if (productsInDb.length !== productIds.length) { throw new Error('One or more products being billed are invalid for this salon.'); }
-      const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
-      for (const item of productItemsToBill) { const dbProduct = productMap.get(item.itemId); if (!dbProduct || dbProduct.numberOfItems < item.quantity) { throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`); } }
+        // Step 1: Calculate impact from SERVICES
+        const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
+        if (serviceItemsInBill.length > 0) {
+            const serviceIds = serviceItemsInBill.flatMap((s: any) => Array(s.quantity).fill(s.itemId));
+            const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId);
+            allInventoryUpdates.push(...serviceProductUpdates);
+        }
 
-      // Format the retail products into the InventoryUpdate shape your manager expects
-      const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map(item => ({
-          productId: item.itemId,
-          productName: item.name,
-          quantityToDeduct: item.quantity,
-          unit: 'piece' // This is crucial for your inventory manager's logic
-      }));
-      allInventoryUpdates.push(...retailProductUpdates);
-    }
-    
-    // Step 3: APPLY all combined updates using your existing inventory manager function
-    if (allInventoryUpdates.length > 0) {
-        await InventoryManager.applyInventoryUpdates(
-            allInventoryUpdates, 
-            dbSession, 
-            tenantId
-        );
+        // Step 2: Add impact from sold RETAIL PRODUCTS
+        const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
+        if (productItemsToBill.length > 0) {
+          const productIds = productItemsToBill.map((item: any) => item.itemId);
+          const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
+          if (productsInDb.length !== productIds.length) { throw new Error('One or more products being billed are invalid for this salon.'); }
+          const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
+          for (const item of productItemsToBill) { const dbProduct = productMap.get(item.itemId); if (!dbProduct || dbProduct.numberOfItems < item.quantity) { throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`); } }
+
+          const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map(item => ({
+              productId: item.itemId,
+              productName: item.name,
+              quantityToDeduct: item.quantity,
+              unit: 'piece'
+          }));
+          allInventoryUpdates.push(...retailProductUpdates);
+        }
+        
+        // Step 3: APPLY all combined updates
+        if (allInventoryUpdates.length > 0) {
+            await InventoryManager.applyInventoryUpdates(
+                allInventoryUpdates, 
+                dbSession, 
+                tenantId
+            );
+        }
     }
 
     // =========================================================================
-    // === END: THE ONLY CODE ADDED TO FIX THE BUG =============================
+    // === END: INVENTORY LOGIC MODIFICATION ===================================
     // =========================================================================
     
     const invoice = new Invoice({ tenantId, appointmentId, customerId, stylistId, billingStaffId, lineItems: lineItemsWithTenantId, serviceTotal, productTotal, subtotal, membershipDiscount, grandTotal, paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling, paymentStatus: 'Paid', manualDiscount: { type: manualDiscountType || null, value: manualDiscountValue || 0, appliedAmount: finalManualDiscountApplied || 0 }, giftCardPayment: giftCardRedemption ? { cardId: giftCardRedemption.cardId, amount: giftCardRedemption.amount } : undefined });
