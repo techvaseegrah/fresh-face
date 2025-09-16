@@ -292,7 +292,7 @@ const AddStaffPage: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-bold text-gray-800">Add New Staff Member</h1>
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 md:p-8">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-md p-6 md:p-8" autoComplete="off">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
           <div className="md:col-span-2 mb-4">
             <IconLabel htmlFor="image-upload-input" icon={<ImageIcon size={14} className="text-gray-500" />} text="Profile Photo"/>
