@@ -187,7 +187,24 @@ export const PERMISSIONS = {
   REPORT_INCENTIVE_MANAGE: 'reports:incentive:manage',
   REPORT_STAFF_SALES_READ: 'reports:staff-sales:read',
   REPORT_STAFF_SALES_MANAGE: 'reports:staff-sales:manage',
+  REPORT_TASK_LIBRARY_READ: 'reports:task-library:read',
+  REPORT_TASK_LIBRARY_MANAGE: 'reports:task-library:manage',
+  REPORT_TASK_COMPLIANCE_READ: 'reports:task_compliance:read',
+  REPORT_TASK_COMPLIANCE_MANAGE: 'reports:task_compliance:manage',
 
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // New Report Permissions for Expenses, Budget, SOP, and Issues
+  REPORT_EXPENSES_READ: 'reports:expenses:read',
+  REPORT_EXPENSES_MANAGE: 'reports:expenses:manage',
+  REPORT_BUDGET_VS_ACTUAL_READ: 'reports:budget_vs_actual:read',
+  REPORT_BUDGET_VS_ACTUAL_MANAGE: 'reports:budget_vs_actual:manage',
+  REPORT_SOP_COMPLIANCE_READ: 'reports:sop_compliance:read',
+  REPORT_SOP_COMPLIANCE_MANAGE: 'reports:sop_compliance:manage',
+  REPORT_ISSUE_COMPLIANCE_READ: 'reports:issue_compliance:read',
+  REPORT_ISSUE_COMPLIANCE_MANAGE: 'reports:issue_compliance:manage',
+  REPORT_ISSUE_LIBRARY_READ: 'reports:issue_dashboard:read',
+  REPORT_ISSUE_LIBRARY_MANAGE: 'reports:issue_dashboard:manage',
+  // ▲▲▲ END OF ADDITION ▲▲▲
   // Tenant Permissions
   TENANTS_CREATE: 'tenants:create',
 
@@ -374,6 +391,28 @@ export const ALL_PERMISSIONS = [
   { permission: PERMISSIONS.REPORT_INCENTIVE_MANAGE, description: 'Download Incentive Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_STAFF_SALES_READ, description: 'View Staff Sales Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
   { permission: PERMISSIONS.REPORT_STAFF_SALES_MANAGE, description: 'Download Staff Sales Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TASK_LIBRARY_READ, description: 'View Task Library Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TASK_LIBRARY_MANAGE, description: 'Download Task Library Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TASK_COMPLIANCE_READ, description: 'View Task Compliance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_TASK_COMPLIANCE_MANAGE, description: 'Download Task Compliance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // Issue Dashboard Report
+  // ▼▼▼ ADD THIS BLOCK ▼▼▼
+  // Expenses Report
+  { permission: PERMISSIONS.REPORT_EXPENSES_READ, description: 'View Expenses Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_EXPENSES_MANAGE, description: 'Download Expenses Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // Budget vs Actual Report
+  { permission: PERMISSIONS.REPORT_BUDGET_VS_ACTUAL_READ, description: 'View Budget vs. Actual Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_BUDGET_VS_ACTUAL_MANAGE, description: 'Download Budget vs. Actual Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // SOP Compliance Report
+  { permission: PERMISSIONS.REPORT_SOP_COMPLIANCE_READ, description: 'View SOP Compliance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_SOP_COMPLIANCE_MANAGE, description: 'Download SOP Compliance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // Issue Compliance Report
+  { permission: PERMISSIONS.REPORT_ISSUE_COMPLIANCE_READ, description: 'View Issue Compliance Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_ISSUE_COMPLIANCE_MANAGE, description: 'Download Issue Compliance Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // Issue Dashboard Report
+  { permission: PERMISSIONS.REPORT_ISSUE_LIBRARY_READ, description: 'View Issue Dashboard Report', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  { permission: PERMISSIONS.REPORT_ISSUE_LIBRARY_MANAGE, description: 'Download Issue Dashboard Report (Excel/PDF)', category: PERMISSION_CATEGORIES.REPORTS_ACCESS },
+  // ▲▲▲ END OF ADDITION ▲▲▲
 
   // Alerts Management
   { permission: PERMISSIONS.ALERTS_CREATE, description: 'Create alerts', category: PERMISSION_CATEGORIES.ALERTS_MANAGEMENT },

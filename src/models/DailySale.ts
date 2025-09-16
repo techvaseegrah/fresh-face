@@ -2,7 +2,7 @@
 
 import mongoose, { Document, Schema, Model, Types } from 'mongoose';
 
-// ✨ --- MODIFICATION: This interface now represents a complete snapshot of all four rules --- ✨
+// Interface for the rule snapshot (Unchanged)
 export interface IAppliedRule {
   daily: any;
   monthly: any;
@@ -10,6 +10,7 @@ export interface IAppliedRule {
   giftCard: any;
 }
 
+// ✨ --- MODIFICATION: Added the 'discount' property --- ✨
 export interface IDailySale extends Document {
   tenantId: Types.ObjectId;
   staff: Types.ObjectId;
@@ -21,12 +22,13 @@ export interface IDailySale extends Document {
   reviewsWithName: number;
   reviewsWithPhoto: number;
   customerCount: number;
-  appliedRule?: IAppliedRule; // This will now store the complete snapshot
+  discount: number; // This field is now included
+  appliedRule?: IAppliedRule;
   createdAt: Date; 
   updatedAt: Date; 
 }
 
-// ✨ --- MODIFICATION: The schema is updated to match the new snapshot structure --- ✨
+// Schema for the rule snapshot (Unchanged)
 const AppliedRuleSchema = new Schema<IAppliedRule>({
   daily: { type: Schema.Types.Mixed, required: false },
   monthly: { type: Schema.Types.Mixed, required: false },
@@ -35,6 +37,7 @@ const AppliedRuleSchema = new Schema<IAppliedRule>({
 }, { _id: false });
 
 
+// ✨ --- MODIFICATION: Added the 'discount' field to the schema --- ✨
 const DailySaleSchema: Schema<IDailySale> = new Schema({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
   staff: { type: Schema.Types.ObjectId, ref: 'Staff', required: true },
@@ -46,6 +49,7 @@ const DailySaleSchema: Schema<IDailySale> = new Schema({
   reviewsWithName: { type: Number, default: 0 },
   reviewsWithPhoto: { type: Number, default: 0 },
   customerCount: { type: Number, default: 0 },
+  discount: { type: Number, default: 0 }, // This field is now included in the database schema
   appliedRule: { type: AppliedRuleSchema, required: false }
 }, { 
   timestamps: true 
