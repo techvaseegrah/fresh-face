@@ -1,5 +1,3 @@
-// /api/billing/[id]/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import mongoose from 'mongoose';
@@ -12,7 +10,6 @@ import Product, { IProduct } from '@/models/Product';
 import { getTenantIdOrBail } from '@/lib/tenant';
 import { FinalizeBillingPayload } from '@/app/(main)/appointment/billingmodal';
 import { recalculateAndSaveDailySale } from '../route';
-// --- Add imports for the new logic ---
 import { GiftCard } from '@/models/GiftCard';
 import { GiftCardLog } from '@/models/GiftCardLog';
 import CustomerPackage from '@/models/CustomerPackage';
@@ -21,7 +18,6 @@ import PackageTemplate from '@/models/PackageTemplate';
 import { GiftCardTemplate } from '@/models/GiftCardTemplate';
 import Staff from '@/models/staff';
 
-// --- Helper function for generating unique codes ---
 const generateUniqueCode = async (tenantId: string, session: mongoose.ClientSession, length = 8): Promise<string> => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let isUnique = false;
@@ -39,17 +35,13 @@ const generateUniqueCode = async (tenantId: string, session: mongoose.ClientSess
     return result;
 };
 
-
-// ===================================================================================
-//  GET: Fetches an existing invoice. (This is correct and remains unchanged)
-// ===================================================================================
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // This function remains unchanged
   const tenantId = getTenantIdOrBail(request);
   if (tenantId instanceof NextResponse) return tenantId;
-  
   const { id } = params;
   if (!id || id === 'undefined') {
     return NextResponse.json({ success: false, message: 'Invoice ID is required.' }, { status: 400 });
@@ -60,27 +52,19 @@ export async function GET(
       .populate({ path: 'customerId', select: 'name phoneNumber isMembership' })
       .populate({ path: 'billingStaffId', select: 'name email' })
       .lean();
-      
     if (!invoice) {
       return NextResponse.json({ success: false, message: 'Invoice not found.' }, { status: 404 });
     }
     const responseData = { ...invoice, customer: invoice.customerId, billingStaff: invoice.billingStaffId };
     delete (responseData as any).customerId;
     delete (responseData as any).billingStaffId;
-
     return NextResponse.json({ success: true, invoice: responseData }, { status: 200 });
   } catch (error: any) {
     console.error(`[API ERROR] GET /api/billing/${id}:`, error);
-    return NextResponse.json(
-      { success: false, message: 'Server error fetching invoice.', error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, message: 'Server error fetching invoice.', error: error.message }, { status: 500 });
   }
 }
 
-// ===================================================================================
-//  PUT: Handles the complete update of a bill, including all side-effects.
-// ===================================================================================
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } } 
@@ -89,7 +73,6 @@ export async function PUT(
   if (tenantId instanceof NextResponse) return tenantId;
   
   const { id } = params;
-  
   const dbSession = await mongoose.startSession();
   dbSession.startTransaction();
 
@@ -97,7 +80,6 @@ export async function PUT(
     await dbConnect();
     const body: FinalizeBillingPayload = await request.json(); 
     
-    // Destructure all expected fields, including the ones for packages/gift cards
     const {
       appointmentId, customerId, items, grandTotal, membershipDiscount, paymentDetails, 
       billingStaffId, serviceTotal, productTotal, subtotal, notes, manualDiscountType,
@@ -120,11 +102,11 @@ export async function PUT(
     // 2. Reverse redeemed package items
     const originalPackageLogs = await CustomerPackageLog.find({ invoiceId: originalInvoice._id, tenantId }).session(dbSession);
     for (const log of originalPackageLogs) {
-        await CustomerPackage.updateOne({ _id: log.customerPackageId, 'remainingItems.itemId': log.redeemedItemId }, { $inc: { 'remainingItems.$.remainingQuantity': log.quantityRedemed }, $set: { status: 'active' } }, { session: dbSession });
+        await CustomerPackage.updateOne({ _id: log.customerPackageId, 'remainingItems.itemId': log.redeemedItemId }, { $inc: { 'remainingItems.$.remainingQuantity': log.quantityRedeemed }, $set: { status: 'active' } }, { session: dbSession });
     }
     await CustomerPackageLog.deleteMany({ invoiceId: originalInvoice._id, tenantId }).session(dbSession);
     
-    // 3. --- NEW LOGIC --- Reverse packages that were SOLD on this invoice
+    // 3. Reverse packages that were SOLD on this invoice
     const oldSoldPackages = await CustomerPackage.find({ purchaseInvoiceId: originalInvoice._id, tenantId }).session(dbSession);
     for(const pkg of oldSoldPackages) {
         const usageLogs = await CustomerPackageLog.countDocuments({ customerPackageId: pkg._id, invoiceId: { $ne: originalInvoice._id } }).session(dbSession);
@@ -132,19 +114,23 @@ export async function PUT(
         await CustomerPackage.deleteOne({ _id: pkg._id }).session(dbSession);
     }
 
-    // 4. --- NEW LOGIC --- Reverse gift cards that were SOLD on this invoice
+    // 4. --- MODIFIED LOGIC --- Reverse gift cards SOLD on this invoice, but save their codes
+    const existingUniqueCodes = new Map<string, string>(); // Key: templateId, Value: uniqueCode
     const oldSoldCards = await GiftCard.find({ purchaseInvoiceId: originalInvoice._id, tenantId }).session(dbSession);
     for(const card of oldSoldCards) {
         if(card.currentBalance < card.initialBalance) throw new Error(`Cannot correct invoice. Gift Card #${card.uniqueCode} sold in this bill has already been used.`);
+        
+        // Before deleting, save its unique code mapped to its template ID
+        existingUniqueCodes.set(card.giftCardTemplateId.toString(), card.uniqueCode);
+
         await GiftCard.deleteOne({ _id: card._id }).session(dbSession);
     }
     
-
     // --- APPLICATION PHASE ---
     const newlySoldPackages = [];
     const newlyIssuedGiftCards = [];
 
-    // 1. Apply new gift card redemptions (used as payment)
+    // 1. Apply new gift card redemptions
     if (giftCardRedemption?.cardId && giftCardRedemption.amount > 0) {
         const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession);
         if (!giftCard) throw new Error("Applied gift card not found.");
@@ -183,7 +169,7 @@ export async function PUT(
       newlySoldPackages.push(newPkg.toObject());
     }
 
-    // 4. Sell new gift cards
+    // 4. --- MODIFIED LOGIC --- Sell new gift cards, reusing old codes if available
     for (const item of items.filter(i => i.itemType === 'gift_card')) {
         const template = await GiftCardTemplate.findById(item.itemId).session(dbSession).lean();
         if (!template || !template.isActive) throw new Error(`Gift Card type "${item.name}" is not for sale.`);
@@ -191,9 +177,12 @@ export async function PUT(
         const expiryDate = new Date();
         expiryDate.setDate(expiryDate.getDate() + template.validityInDays);
         
+        // Check if we have a pre-existing unique code for this card template.
+        const codeToUse = existingUniqueCodes.get(item.itemId.toString()) || await generateUniqueCode(tenantId, dbSession);
+        
         const [newCardDoc] = await GiftCard.create([{
             tenantId,
-            uniqueCode: await generateUniqueCode(tenantId, dbSession),
+            uniqueCode: codeToUse, // Use the determined code
             initialBalance: template.amount,
             currentBalance: template.amount,
             issueDate: new Date(),
@@ -205,18 +194,15 @@ export async function PUT(
             giftCardTemplateId: template._id,
         }], { session: dbSession });
 
-        const populatedNewCard = await GiftCard.findById(newCardDoc._id).populate<{issuedByStaffId: { name: string } }>({ path: 'issuedByStaffId', select: 'name' }).session(dbSession).lean();
+        const populatedNewCard = await GiftCard.findById(newCardDoc._id).populate<{ issuedByStaffId: { name: string } }>({ path: 'issuedByStaffId', select: 'name' }).session(dbSession).lean();
         const cardToReturn = { ...populatedNewCard, invoice: { invoiceNumber: originalInvoice.invoiceNumber }, };
         newlyIssuedGiftCards.push(cardToReturn);
     }
     
-    // --- INVENTORY & FINALIZATION PHASE (Your existing logic) ---
+    // --- INVENTORY & FINALIZATION PHASE ---
     if (manualInventoryUpdates && manualInventoryUpdates.length > 0) {
-        // This logic remains as you wrote it, assuming it's correct for your needs.
-        console.log("Applying direct manual deductions from user input.");
         for (const update of manualInventoryUpdates) {
             await Product.updateOne({ _id: update.productId, tenantId }, { $inc: { totalQuantity: -update.quantityToDeduct } }, { session: dbSession });
-             console.log(`Deducted ${update.quantityToDeduct} from product ${update.productId}`);
         }
     }
 
@@ -234,7 +220,6 @@ export async function PUT(
     
     if (!updatedInvoiceDoc) { throw new Error('Invoice not found during update.'); }
     
-    // Adjust loyalty points
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty', tenantId }).session(dbSession).lean();
     if (loyaltySettingDoc?.value) {
       const { rupeesForPoints, pointsAwarded } = loyaltySettingDoc.value;
@@ -251,7 +236,6 @@ export async function PUT(
       }
     }
 
-    // Update the linked appointment
     const newServiceIds = items.filter(item => item.itemType === 'service').map(serviceItem => serviceItem.itemId);
     const appointmentUpdatePayload = {
       finalAmount: updatedInvoiceDoc.grandTotal, amount: updatedInvoiceDoc.subtotal,
@@ -260,7 +244,6 @@ export async function PUT(
     };
     await Appointment.updateOne({ _id: appointmentId, tenantId }, appointmentUpdatePayload, { session: dbSession });
     
-    // Recalculate daily sales reports
     const appointmentForDate = await Appointment.findById(appointmentId).session(dbSession).lean();
     if(appointmentForDate) {
       const oldStaffIds = originalInvoice.lineItems.map(item => item.staffId?.toString()).filter(Boolean) as string[];

@@ -22,24 +22,12 @@ interface UseBillingStateProps {
   onFinalizeAndPay: (payload: FinalizeBillingPayload) => Promise<FinalizedInvoice>;
 }
 
-// You should add 'manualInventoryUpdates' to this type in your billing.types.ts file
-// For now, we'll augment it inline in the handleFinalizeClick function.
-// interface FinalizeBillingPayload {
-//   ...
-//   manualInventoryUpdates?: { productId: string; quantityToDeduct: number }[];
-// }
-
-
 export const useBillingState = ({ isOpen, appointment, customer, stylist, onFinalizeAndPay }: UseBillingStateProps) => {
   
-  // =================================================================================
-  // I. STATE MANAGEMENT
-  // =================================================================================
-
   const [modalView, setModalView] = useState<'billing' | 'success'>('billing');
   const [finalizedInvoiceData, setFinalizedInvoiceData] = useState<FinalizedInvoice | null>(null);
   const [billItems, setBillItems] = useState<BillLineItem[]>([]);
-  const [initialBillItems, setInitialBillItems] = useState<BillLineItem[]>([]); // To track original items in correction mode
+  const [initialBillItems, setInitialBillItems] = useState<BillLineItem[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [newPaymentDetails, setNewPaymentDetails] = useState({ cash: 0, card: 0, upi: 0, other: 0 });
   const [discount, setDiscount] = useState<number>(0);
@@ -59,11 +47,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const [billingProcessors, setBillingProcessors] = useState<StaffMember[]>([]);
   const [businessDetails, setBusinessDetails] = useState<BusinessDetails | null>(null);
   const [inventoryImpact, setInventoryImpact] = useState<any>(null);
-  
-  // START: ADDED FOR EDITABLE INVENTORY
   const [editableInventoryImpact, setEditableInventoryImpact] = useState<any[]>([]);
-  // END: ADDED FOR EDITABLE INVENTORY
-
   const [membershipFee, setMembershipFee] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isLoadingBill, setIsLoadingBill] = useState<boolean>(false);
@@ -77,10 +61,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const [isLoadingInventory, setIsLoadingInventory] = useState(false);
   const [packageRedemptions, setPackageRedemptions] = useState<PackageRedemption[]>([]);
   
-  // =================================================================================
-  // II. DERIVED STATE & MEMOS
-  // =================================================================================
-
   const isCorrectionMode = useMemo(() => appointment.status === 'Paid', [appointment.status]);
   const originalAmountPaid = useMemo(() => isCorrectionMode ? (appointment.finalAmount || 0) : 0, [appointment, isCorrectionMode]);
   const originalPaymentDetails = useMemo(() => isCorrectionMode ? (appointment.paymentDetails || { cash: 0, card: 0, upi: 0, other: 0 }) : { cash: 0, card: 0, upi: 0, other: 0 }, [appointment, isCorrectionMode]);
@@ -110,10 +90,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     return { serviceTotal, productTotal, subtotalBeforeDiscount, membershipSavings, calculatedDiscount, trueGrandTotal, displayTotal: amountDueForDisplay, refundDue, totalNewPaid, balance, changeDue };
   }, [billItems, customerIsMember, newPaymentDetails, discount, discountType, originalAmountPaid, isCorrectionMode, appliedGiftCard]);
 
-  // =================================================================================
-  // III. CORE UTILITIES
-  // =================================================================================
-
   const tenantFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const session = await getSession();
     if (!session?.user?.tenantId) { throw new Error("Your session is invalid. Please log in again."); }
@@ -131,7 +107,7 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     setIsLoading(false);
     setError(null);
     setInventoryImpact(null);
-    setEditableInventoryImpact([]); // Reset editable inventory
+    setEditableInventoryImpact([]);
     setSearchQuery('');
     setSearchResults([]);
     setCustomerIsMember(false);
@@ -148,7 +124,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     setPackageRedemptions([]);
   }, []);
 
-  // Helper function to calculate the difference between two item lists for inventory preview
   const calculateBillItemDelta = (initialItems: BillLineItem[], currentItems: BillLineItem[]): BillLineItem[] => {
     const itemMap = new Map<string, number>();
     initialItems.forEach(item => {
@@ -166,10 +141,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
     });
     return deltaItems;
   };
-
-  // =================================================================================
-  // IV. DATA FETCHING CALLBACKS
-  // =================================================================================
 
   const fetchBusinessDetails = useCallback(async () => { setIsLoadingBusinessDetails(true); try { const res = await fetch('/api/settings/business-details'); const data = await res.json(); if (data.success && data.details) { setBusinessDetails(data.details); } else { setBusinessDetails({ name: 'Your Salon Name', address: '123 Beauty Street, Your City', phone: '9876543210' }); } } catch (err) { console.error('Failed to fetch business details:', err); setBusinessDetails({ name: 'Your Salon Name', address: '123 Beauty Street, Your City', phone: '9876543210' }); } finally { setIsLoadingBusinessDetails(false); } }, []);
   const fetchInventoryImpact = useCallback(async (currentBillItems: BillLineItem[]) => {
@@ -189,10 +160,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const fetchBillingProcessors = useCallback(async () => { setIsLoadingProcessors(true); try { const res = await tenantFetch('/api/users/billing-staff'); const data = await res.json(); if (data.success) { setBillingProcessors(data.staff); const session = await getSession(); const currentUserId = session?.user?.id; if (currentUserId && data.staff.some((s: StaffMember) => s._id === currentUserId)) { setSelectedStaffId(currentUserId); } } } catch (err) { console.error('Failed to fetch billing processors:', err); } finally { setIsLoadingProcessors(false); } }, [tenantFetch]);
   const fetchMembershipFee = useCallback(async () => { setIsLoadingFee(true); try { const res = await tenantFetch('/api/settings/membership'); const data = await res.json(); if (data.success && typeof data.price === 'number') setMembershipFee(data.price); else setError('Error: Membership fee is not configured.'); } catch (err) { setError('Error: Membership fee is not configured.'); } finally { setIsLoadingFee(false); } }, [tenantFetch]);
   
-  // =================================================================================
-  // V. SIDE EFFECTS (useEffect)
-  // =================================================================================
-
   useEffect(() => {
     if (!isOpen) { resetModalState(); return; }
     const initializeBill = async () => {
@@ -240,8 +207,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   useEffect(() => { if (searchQuery.trim().length < 2) { setSearchResults([]); return; } const handler = setTimeout(async () => { setIsSearching(true); try { const res = await tenantFetch(`/api/billing/search-items?query=${encodeURIComponent(searchQuery)}`); const data = await res.json(); if (data.success) setSearchResults(data.items); } catch (e) { console.error('Item search failed:', e); } finally { setIsSearching(false); } }, 400); return () => clearTimeout(handler); }, [searchQuery, tenantFetch]);
   useEffect(() => { if (!membershipBarcode.trim()) { setIsBarcodeValid(true); return; } const handler = setTimeout(async () => { setIsCheckingBarcode(true); try { const res = await tenantFetch(`/api/customer/check-barcode?barcode=${encodeURIComponent(membershipBarcode.trim())}`); const data = await res.json(); setIsBarcodeValid(!data.exists); } catch (err) { setIsBarcodeValid(false); } finally { setIsCheckingBarcode(false); } }, 500); return () => clearTimeout(handler); }, [membershipBarcode, tenantFetch]);
 
-  // START: ADDED FOR EDITABLE INVENTORY
-  // Sync fetched inventory impact to the editable state
   useEffect(() => {
     if (inventoryImpact?.inventoryImpact) {
       setEditableInventoryImpact(inventoryImpact.inventoryImpact);
@@ -249,11 +214,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
       setEditableInventoryImpact([]);
     }
   }, [inventoryImpact]);
-  // END: ADDED FOR EDITABLE INVENTORY
-
-  // =================================================================================
-  // VI. EVENT HANDLERS
-  // =================================================================================
 
   const handleAddItemToBill = useCallback((item: SearchableItem) => {
     let finalPrice = item.price; let displayName = item.name; let staffId: string | undefined = stylist._id;
@@ -280,11 +240,10 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
   const handleRemoveGiftCard = useCallback(() => { setAppliedGiftCard(null); toast.info("Applied gift card has been removed."); }, []);
   const handleRedeemPackageItem = useCallback((redemptionData: PackageRedemption) => { const { itemDetails } = redemptionData; const newItem: BillLineItem = { id: `${itemDetails._id}-redeemed-${Date.now()}`, itemType: redemptionData.redeemedItemType, itemId: itemDetails._id, name: `(Package) ${itemDetails.name}`, unitPrice: itemDetails.price, membershipRate: undefined, quantity: 1, finalPrice: 0, staffId: '', isRemovable: true, redemptionInfo: { customerPackageId: redemptionData.customerPackageId, redeemedItemId: redemptionData.redeemedItemId }, isRedemption: true }; setBillItems(prev => [...prev, newItem]); setPackageRedemptions(prev => [...prev, redemptionData]); toast.success(`Redeemed "${itemDetails.name}" and added to bill.`); }, []);
 
-  // START: ADDED FOR EDITABLE INVENTORY
   const handleInventoryImpactChange = useCallback((index: number, newQuantity: number) => {
     setEditableInventoryImpact(prevImpact => {
         const updatedImpact = [...prevImpact];
-        const clampedQuantity = Math.max(0, newQuantity); // Prevent negative quantities
+        const clampedQuantity = Math.max(0, newQuantity);
         if (updatedImpact[index]) {
             updatedImpact[index] = {
                 ...updatedImpact[index],
@@ -294,7 +253,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
         return updatedImpact;
     });
   }, []);
-  // END: ADDED FOR EDITABLE INVENTORY
 
   const handleFinalizeClick = useCallback(async () => {
     if (billItems.length === 0 || totals.trueGrandTotal < 0) { setError('Cannot finalize an empty or negative value bill.'); return; }
@@ -308,8 +266,6 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
         if (totals.changeDue > 0 && newPaymentDetails.cash > 0) { finalPaymentDetails.cash -= Math.min(newPaymentDetails.cash, totals.changeDue); }
         const finalPackageRedemptions = billItems.filter(item => item.isRedemption && item.redemptionInfo).map(item => ({ customerPackageId: item.redemptionInfo!.customerPackageId, redeemedItemId: item.itemId, redeemedItemType: item.itemType as 'service' | 'product', quantityRedeemed: item.quantity, redeemedBy: item.staffId }));
         
-        // START: MODIFIED FOR EDITABLE INVENTORY
-        // Augmenting the type here. Ideally, you'd add `manualInventoryUpdates` to the FinalizeBillingPayload type definition.
         const finalPayload: FinalizeBillingPayload & { manualInventoryUpdates?: any[] } = { 
             appointmentId: appointment._id, 
             customerId: customer._id, 
@@ -330,32 +286,22 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
             finalManualDiscountApplied: totals.calculatedDiscount, 
             giftCardRedemption: appliedGiftCard ? { cardId: appliedGiftCard.cardId, amount: appliedGiftCard.amountToApply } : undefined, 
             packageRedemptions: finalPackageRedemptions.length > 0 ? finalPackageRedemptions : undefined,
-            // Add the new field to the payload sent to the API
             manualInventoryUpdates: editableInventoryImpact.map(impact => ({
               productId: impact.productId,
               quantityToDeduct: impact.usageQuantity,
             })),
         };
-        // END: MODIFIED FOR EDITABLE INVENTORY
 
         const invoiceData = await onFinalizeAndPay(finalPayload);
         setFinalizedInvoiceData(invoiceData);
         setModalView('success');
     } catch (err: any) { setError(err.message || "An unknown error occurred during finalization."); } finally { setIsLoading(false); }
-  }, [ billItems, totals, selectedStaffId, originalPaymentDetails, newPaymentDetails, appointment, customer, stylist, notes, membershipGranted, discount, discountType, onFinalizeAndPay, appliedGiftCard, editableInventoryImpact ]); // Added editableInventoryImpact dependency
+  }, [ billItems, totals, selectedStaffId, originalPaymentDetails, newPaymentDetails, appointment, customer, stylist, notes, membershipGranted, discount, discountType, onFinalizeAndPay, appliedGiftCard, editableInventoryImpact ]);
   
-  // =================================================================================
-  // VII. RETURNED VALUES
-  // =================================================================================
-
   return {
     modalView, finalizedInvoiceData, billItems, notes, newPaymentDetails, discount, discountType, customerIsMember, membershipGranted, showMembershipGrantOption, isGrantingMembership, membershipBarcode, isBarcodeValid, membershipFee, searchQuery, searchResults, selectedStaffId, availableStaff, billingProcessors, businessDetails, inventoryImpact,
-    
-    // START: ADDED FOR EDITABLE INVENTORY
     editableInventoryImpact,
     handleInventoryImpactChange,
-    // END: ADDED FOR EDITABLE INVENTORY
-
     isCorrectionMode, originalAmountPaid, totals, appliedGiftCard, error, isLoading, isLoadingBill, isSearching, isCheckingBarcode, isLoadingFee, isLoadingStaff, isLoadingProcessors, isLoadingBusinessDetails, isLoadingInventory, setNotes, setDiscount, setDiscountType, setIsGrantingMembership, setMembershipBarcode, setSearchQuery, setSelectedStaffId, handleAddItemToBill, handleRemoveItem, handleQuantityChange, handleGrantMembership, handlePaymentChange, handleItemStaffChange, handleFinalizeClick, handlePrintReceipt, handleApplyGiftCard, handleRemoveGiftCard, handleRedeemPackageItem, searchInputRef,
   };
 };

@@ -164,15 +164,13 @@ export async function processHistoryImport(filePath: string, jobId: string) {
                 const day = parseInt(parts[0], 10);
                 const month = parseInt(parts[1], 10);
                 const year = parseInt(parts[2], 10);
-                const hours = parts.length > 3 ? parseInt(parts[3], 10) : 0;
-                const minutes = parts.length > 4 ? parseInt(parts[4], 10) : 0;
-                transactionDate = new Date(year, month - 1, day, hours, minutes);
+                transactionDate = new Date(year, month - 1, day);
             }
         }
         if (!transactionDate || isNaN(transactionDate.getTime())) {
             throw new Error(`Invalid Transaction Date format for value: '${dateValue}'. Please use DD-MM-YYYY HH:mm.`);
         }
-
+        transactionDate.setHours(0, 0, 0, 0);
         const newInvoice = new Invoice({
             tenantId,
             invoiceNumber: invoiceId.startsWith('_autogen_') ? undefined : invoiceId,
