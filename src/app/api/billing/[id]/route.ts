@@ -78,13 +78,16 @@ export async function PUT(
 
   try {
     await dbConnect();
-    const body: FinalizeBillingPayload = await request.json(); 
+    
+    type CorrectBillPayload = FinalizeBillingPayload & { originalManualInventoryUpdates?: { productId: string; quantityToDeduct: number }[] };
+    const body: CorrectBillPayload = await request.json(); 
     
     const {
       appointmentId, customerId, items, grandTotal, membershipDiscount, paymentDetails, 
       billingStaffId, serviceTotal, productTotal, subtotal, notes, manualDiscountType,
       manualDiscountValue, finalManualDiscountApplied, manualInventoryUpdates,
-      giftCardRedemption, packageRedemptions
+      giftCardRedemption, packageRedemptions,
+      originalManualInventoryUpdates
     } = body;
     
     const originalInvoice = await Invoice.findOne({ _id: id, tenantId }).session(dbSession);
@@ -92,122 +95,99 @@ export async function PUT(
         throw new Error("Original invoice not found for correction.");
     }
     
-    // --- REVERSAL PHASE ---
-
-    // 1. Reverse gift cards used AS PAYMENT
-    if (originalInvoice.giftCardPayment?.cardId) {
-        await GiftCard.updateOne({ _id: originalInvoice.giftCardPayment.cardId }, { $inc: { currentBalance: originalInvoice.giftCardPayment.amount }, $set: { status: 'active' } }, { session: dbSession });
-    }
-
-    // 2. Reverse redeemed package items
+    // --- REVERSAL & APPLICATION (NON-INVENTORY) ---
+    if (originalInvoice.giftCardPayment?.cardId) { await GiftCard.updateOne({ _id: originalInvoice.giftCardPayment.cardId }, { $inc: { currentBalance: originalInvoice.giftCardPayment.amount }, $set: { status: 'active' } }, { session: dbSession }); }
     const originalPackageLogs = await CustomerPackageLog.find({ invoiceId: originalInvoice._id, tenantId }).session(dbSession);
-    for (const log of originalPackageLogs) {
-        await CustomerPackage.updateOne({ _id: log.customerPackageId, 'remainingItems.itemId': log.redeemedItemId }, { $inc: { 'remainingItems.$.remainingQuantity': log.quantityRedeemed }, $set: { status: 'active' } }, { session: dbSession });
-    }
+    for (const log of originalPackageLogs) { await CustomerPackage.updateOne({ _id: log.customerPackageId, 'remainingItems.itemId': log.redeemedItemId }, { $inc: { 'remainingItems.$.remainingQuantity': log.quantityRedeemed }, $set: { status: 'active' } }, { session: dbSession }); }
     await CustomerPackageLog.deleteMany({ invoiceId: originalInvoice._id, tenantId }).session(dbSession);
-    
-    // 3. Reverse packages that were SOLD on this invoice
     const oldSoldPackages = await CustomerPackage.find({ purchaseInvoiceId: originalInvoice._id, tenantId }).session(dbSession);
-    for(const pkg of oldSoldPackages) {
-        const usageLogs = await CustomerPackageLog.countDocuments({ customerPackageId: pkg._id, invoiceId: { $ne: originalInvoice._id } }).session(dbSession);
-        if(usageLogs > 0) throw new Error(`Cannot correct invoice. The package "${pkg.packageName}" sold in this bill has already been used on another bill.`);
-        await CustomerPackage.deleteOne({ _id: pkg._id }).session(dbSession);
-    }
-
-    // 4. --- MODIFIED LOGIC --- Reverse gift cards SOLD on this invoice, but save their codes
-    const existingUniqueCodes = new Map<string, string>(); // Key: templateId, Value: uniqueCode
-    const oldSoldCards = await GiftCard.find({ purchaseInvoiceId: originalInvoice._id, tenantId }).session(dbSession);
-    for(const card of oldSoldCards) {
-        if(card.currentBalance < card.initialBalance) throw new Error(`Cannot correct invoice. Gift Card #${card.uniqueCode} sold in this bill has already been used.`);
-        
-        // Before deleting, save its unique code mapped to its template ID
-        existingUniqueCodes.set(card.giftCardTemplateId.toString(), card.uniqueCode);
-
-        await GiftCard.deleteOne({ _id: card._id }).session(dbSession);
-    }
+    for(const pkg of oldSoldPackages) { const usageLogs = await CustomerPackageLog.countDocuments({ customerPackageId: pkg._id, invoiceId: { $ne: originalInvoice._id } }).session(dbSession); if(usageLogs > 0) throw new Error(`Cannot correct invoice. The package "${pkg.packageName}" sold in this bill has already been used on another bill.`); await CustomerPackage.deleteOne({ _id: pkg._id }).session(dbSession); }
+    const existingUniqueCodes = new Map<string, string>(); const oldSoldCards = await GiftCard.find({ purchaseInvoiceId: originalInvoice._id, tenantId }).session(dbSession);
+    for(const card of oldSoldCards) { if(card.currentBalance < card.initialBalance) throw new Error(`Cannot correct invoice. Gift Card #${card.uniqueCode} sold in this bill has already been used.`); existingUniqueCodes.set(card.giftCardTemplateId.toString(), card.uniqueCode); await GiftCard.deleteOne({ _id: card._id }).session(dbSession); }
+    const newlySoldPackages = []; const newlyIssuedGiftCards = [];
+    if (giftCardRedemption?.cardId && giftCardRedemption.amount > 0) { const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession); if (!giftCard) throw new Error("Applied gift card not found."); if (giftCard.currentBalance < giftCardRedemption.amount) throw new Error(`Insufficient gift card balance.`); giftCard.currentBalance -= giftCardRedemption.amount; if (giftCard.currentBalance < 0.01) giftCard.status = 'redeemed'; await giftCard.save({ session: dbSession }); }
+    if (packageRedemptions && packageRedemptions.length > 0) { for (const redemption of packageRedemptions) { const customerPackage = await CustomerPackage.findById(redemption.customerPackageId).session(dbSession); if (!customerPackage) throw new Error(`Package for redemption not found.`); const itemToRedeem = customerPackage.remainingItems.find(item => item.itemId.toString() === redemption.redeemedItemId); if (!itemToRedeem || itemToRedeem.remainingQuantity < redemption.quantityRedeemed) throw new Error(`Insufficient quantity in package for item ${itemToRedeem?.itemId}.`); itemToRedeem.remainingQuantity -= redemption.quantityRedeemed; if (customerPackage.remainingItems.every(item => item.remainingQuantity === 0)) customerPackage.status = 'completed'; await customerPackage.save({ session: dbSession }); } await CustomerPackageLog.create(packageRedemptions.map(r => ({ ...r, tenantId, customerId, invoiceId: originalInvoice._id })), { session: dbSession }); }
+    for (const item of items.filter(i => i.itemType === 'package')) { const template = await PackageTemplate.findById(item.itemId).session(dbSession).lean(); if (!template || !template.isActive) throw new Error(`Package "${item.name}" is not for sale.`); const expiryDate = new Date(); expiryDate.setDate(expiryDate.getDate() + template.validityInDays); const [newPkg] = await CustomerPackage.create([{ tenantId, customerId, packageTemplateId: template._id, purchaseDate: new Date(), expiryDate, status: 'active', remainingItems: template.items.map(i => ({ itemType: i.itemType, itemId: i.itemId, totalQuantity: i.quantity, remainingQuantity: i.quantity })), packageName: template.name, purchasePrice: item.finalPrice, soldBy: item.staffId, purchaseInvoiceId: originalInvoice._id, }], { session: dbSession }); newlySoldPackages.push(newPkg.toObject()); }
+    for (const item of items.filter(i => i.itemType === 'gift_card')) { const template = await GiftCardTemplate.findById(item.itemId).session(dbSession).lean(); if (!template || !template.isActive) throw new Error(`Gift Card type "${item.name}" is not for sale.`); const expiryDate = new Date(); expiryDate.setDate(expiryDate.getDate() + template.validityInDays); const codeToUse = existingUniqueCodes.get(item.itemId.toString()) || await generateUniqueCode(tenantId, dbSession); const [newCardDoc] = await GiftCard.create([{ tenantId, uniqueCode: codeToUse, initialBalance: template.amount, currentBalance: template.amount, issueDate: new Date(), expiryDate, status: 'active', customerId, purchaseInvoiceId: originalInvoice._id, issuedByStaffId: item.staffId, giftCardTemplateId: template._id, }], { session: dbSession }); const populatedNewCard = await GiftCard.findById(newCardDoc._id).populate<{ issuedByStaffId: { name: string } }>({ path: 'issuedByStaffId', select: 'name' }).session(dbSession).lean(); const cardToReturn = { ...populatedNewCard, invoice: { invoiceNumber: originalInvoice.invoiceNumber }, }; newlyIssuedGiftCards.push(cardToReturn); }
     
-    // --- APPLICATION PHASE ---
-    const newlySoldPackages = [];
-    const newlyIssuedGiftCards = [];
+    // =========================================================================
+    // === START: CORRECT INVENTORY CORRECTION LOGIC ===========================
+    // =========================================================================
 
-    // 1. Apply new gift card redemptions
-    if (giftCardRedemption?.cardId && giftCardRedemption.amount > 0) {
-        const giftCard = await GiftCard.findById(giftCardRedemption.cardId).session(dbSession);
-        if (!giftCard) throw new Error("Applied gift card not found.");
-        if (giftCard.currentBalance < giftCardRedemption.amount) throw new Error(`Insufficient gift card balance.`);
-        giftCard.currentBalance -= giftCardRedemption.amount;
-        if (giftCard.currentBalance < 0.01) giftCard.status = 'redeemed';
-        await giftCard.save({ session: dbSession });
+    const inventoryChangeMap = new Map<string, { numberOfItemsChange: number, totalQuantityChange: number, name: string }>();
+
+    // Helper function to calculate the net change for each product
+    const updateChangeMap = (productId: string, name: string, numChange: number, quantChange: number) => {
+        if (!inventoryChangeMap.has(productId)) {
+            inventoryChangeMap.set(productId, { numberOfItemsChange: 0, totalQuantityChange: 0, name });
+        }
+        const entry = inventoryChangeMap.get(productId)!;
+        entry.numberOfItemsChange += numChange;
+        entry.totalQuantityChange += quantChange;
+        if (name) entry.name = name;
+    };
+
+    // 1. REVERSAL: Add back stock from ORIGINAL invoice's retail products
+    for (const item of originalInvoice.lineItems.filter(i => i.itemType === 'product')) {
+        if(item.itemId) updateChangeMap(item.itemId.toString(), item.name, item.quantity, 0);
     }
-
-    // 2. Apply new package item redemptions
-    if (packageRedemptions && packageRedemptions.length > 0) {
-      for (const redemption of packageRedemptions) {
-        const customerPackage = await CustomerPackage.findById(redemption.customerPackageId).session(dbSession);
-        if (!customerPackage) throw new Error(`Package for redemption not found.`);
-        const itemToRedeem = customerPackage.remainingItems.find(item => item.itemId.toString() === redemption.redeemedItemId);
-        if (!itemToRedeem || itemToRedeem.remainingQuantity < redemption.quantityRedeemed) throw new Error(`Insufficient quantity in package for item ${itemToRedeem?.itemId}.`);
-        itemToRedeem.remainingQuantity -= redemption.quantityRedeemed;
-        if (customerPackage.remainingItems.every(item => item.remainingQuantity === 0)) customerPackage.status = 'completed';
-        await customerPackage.save({ session: dbSession });
-      }
-      await CustomerPackageLog.create(packageRedemptions.map(r => ({ ...r, tenantId, customerId, invoiceId: originalInvoice._id })), { session: dbSession });
-    }
-
-    // 3. Sell new packages
-    for (const item of items.filter(i => i.itemType === 'package')) {
-      const template = await PackageTemplate.findById(item.itemId).session(dbSession).lean();
-      if (!template || !template.isActive) throw new Error(`Package "${item.name}" is not for sale.`);
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + template.validityInDays);
-      const [newPkg] = await CustomerPackage.create([{
-        tenantId, customerId, packageTemplateId: template._id, purchaseDate: new Date(), expiryDate, status: 'active',
-        remainingItems: template.items.map(i => ({ itemType: i.itemType, itemId: i.itemId, totalQuantity: i.quantity, remainingQuantity: i.quantity })),
-        packageName: template.name, purchasePrice: item.finalPrice, soldBy: item.staffId,
-        purchaseInvoiceId: originalInvoice._id,
-      }], { session: dbSession });
-      newlySoldPackages.push(newPkg.toObject());
-    }
-
-    // 4. --- MODIFIED LOGIC --- Sell new gift cards, reusing old codes if available
-    for (const item of items.filter(i => i.itemType === 'gift_card')) {
-        const template = await GiftCardTemplate.findById(item.itemId).session(dbSession).lean();
-        if (!template || !template.isActive) throw new Error(`Gift Card type "${item.name}" is not for sale.`);
-        
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + template.validityInDays);
-        
-        // Check if we have a pre-existing unique code for this card template.
-        const codeToUse = existingUniqueCodes.get(item.itemId.toString()) || await generateUniqueCode(tenantId, dbSession);
-        
-        const [newCardDoc] = await GiftCard.create([{
-            tenantId,
-            uniqueCode: codeToUse, // Use the determined code
-            initialBalance: template.amount,
-            currentBalance: template.amount,
-            issueDate: new Date(),
-            expiryDate,
-            status: 'active',
-            customerId,
-            purchaseInvoiceId: originalInvoice._id,
-            issuedByStaffId: item.staffId,
-            giftCardTemplateId: template._id,
-        }], { session: dbSession });
-
-        const populatedNewCard = await GiftCard.findById(newCardDoc._id).populate<{ issuedByStaffId: { name: string } }>({ path: 'issuedByStaffId', select: 'name' }).session(dbSession).lean();
-        const cardToReturn = { ...populatedNewCard, invoice: { invoiceNumber: originalInvoice.invoiceNumber }, };
-        newlyIssuedGiftCards.push(cardToReturn);
-    }
-    
-    // --- INVENTORY & FINALIZATION PHASE ---
-    if (manualInventoryUpdates && manualInventoryUpdates.length > 0) {
-        for (const update of manualInventoryUpdates) {
-            await Product.updateOne({ _id: update.productId, tenantId }, { $inc: { totalQuantity: -update.quantityToDeduct } }, { session: dbSession });
+    // 2. REVERSAL: Add back stock from ORIGINAL invoice's manual updates (In-House)
+    if (originalManualInventoryUpdates) {
+        for (const item of originalManualInventoryUpdates) {
+            updateChangeMap(item.productId, "Manual Update", 0, item.quantityToDeduct);
         }
     }
 
+    // 3. APPLICATION: Deduct stock for NEW invoice's retail products
+    for (const item of items.filter(i => i.itemType === 'product')) {
+        updateChangeMap(item.itemId.toString(), item.name, -item.quantity, 0);
+    }
+    // 4. APPLICATION: Deduct stock for NEW invoice's manual updates (In-House)
+    if (manualInventoryUpdates) {
+        for (const item of manualInventoryUpdates) {
+            updateChangeMap(item.productId, "Manual Update", 0, -item.quantityToDeduct);
+        }
+    }
+
+    // 5. VALIDATE AND APPLY all net changes to the database
+    if (inventoryChangeMap.size > 0) {
+        const productIds = Array.from(inventoryChangeMap.keys());
+        const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
+        const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
+
+        for (const [productId, change] of inventoryChangeMap.entries()) {
+            const dbProduct = productMap.get(productId);
+            if (!dbProduct) throw new Error(`Product "${change.name}" not found in inventory.`);
+            
+            // Check stock for Retail items
+            if (change.numberOfItemsChange !== 0 && (dbProduct.numberOfItems + change.numberOfItemsChange) < 0) {
+                throw new Error(`Insufficient stock for "${change.name}". Current: ${dbProduct.numberOfItems}, Required Change: ${change.numberOfItemsChange}`);
+            }
+            // Check stock for In-House items
+            if (change.totalQuantityChange !== 0 && (dbProduct.totalQuantity + change.totalQuantityChange) < 0) {
+                throw new Error(`Insufficient stock for "${change.name}". Current: ${dbProduct.totalQuantity}, Required Change: ${change.totalQuantityChange}`);
+            }
+
+            // Apply the changes if any
+            if (change.numberOfItemsChange !== 0 || change.totalQuantityChange !== 0) {
+                 await Product.updateOne(
+                    { _id: productId, tenantId },
+                    { $inc: { 
+                        numberOfItems: change.numberOfItemsChange, 
+                        totalQuantity: change.totalQuantityChange 
+                    }},
+                    { session: dbSession }
+                );
+            }
+        }
+    }
+
+    // =========================================================================
+    // === END: CORRECT INVENTORY CORRECTION LOGIC =============================
+    // =========================================================================
+
+    // --- FINALIZATION PHASE ---
     const lineItemsWithTenantId = items.map(item => ({ ...item, tenantId }));
-    
     const invoiceUpdateData = {
       lineItems: lineItemsWithTenantId, grandTotal, membershipDiscount, paymentDetails, 
       billingStaffId, serviceTotal, productTotal, subtotal, notes, customerId,
@@ -215,27 +195,18 @@ export async function PUT(
       giftCardPayment: giftCardRedemption ? { cardId: giftCardRedemption.cardId, amount: giftCardRedemption.amount } : null,
       paymentStatus: 'Paid'
     };
-
     const updatedInvoiceDoc = await Invoice.findOneAndUpdate({ _id: id, tenantId }, invoiceUpdateData, { new: true, session: dbSession, runValidators: true });
-    
     if (!updatedInvoiceDoc) { throw new Error('Invoice not found during update.'); }
-    
     const loyaltySettingDoc = await Setting.findOne({ key: 'loyalty', tenantId }).session(dbSession).lean();
     if (loyaltySettingDoc?.value) {
       const { rupeesForPoints, pointsAwarded } = loyaltySettingDoc.value;
       if (rupeesForPoints > 0 && pointsAwarded > 0) {
         const pointsDifference = (Math.floor(grandTotal / rupeesForPoints) * pointsAwarded) - (Math.floor((originalInvoice.grandTotal || 0) / rupeesForPoints) * pointsAwarded);
         if (pointsDifference !== 0) {
-          await LoyaltyTransaction.create([{
-              tenantId, customerId, points: Math.abs(pointsDifference),
-              type: pointsDifference > 0 ? 'Credit' : 'Debit',
-              description: `Point adjustment for corrected invoice #${updatedInvoiceDoc.invoiceNumber || id}`,
-              reason: `Invoice Correction`, transactionDate: new Date(),
-          }], { session: dbSession });
+          await LoyaltyTransaction.create([{ tenantId, customerId, points: Math.abs(pointsDifference), type: pointsDifference > 0 ? 'Credit' : 'Debit', description: `Point adjustment for corrected invoice #${updatedInvoiceDoc.invoiceNumber || id}`, reason: `Invoice Correction`, transactionDate: new Date(), }], { session: dbSession });
         }
       }
     }
-
     const newServiceIds = items.filter(item => item.itemType === 'service').map(serviceItem => serviceItem.itemId);
     const appointmentUpdatePayload = {
       finalAmount: updatedInvoiceDoc.grandTotal, amount: updatedInvoiceDoc.subtotal,
@@ -243,7 +214,6 @@ export async function PUT(
       billingStaffId: updatedInvoiceDoc.billingStaffId, serviceIds: newServiceIds, status: 'Paid',
     };
     await Appointment.updateOne({ _id: appointmentId, tenantId }, appointmentUpdatePayload, { session: dbSession });
-    
     const appointmentForDate = await Appointment.findById(appointmentId).session(dbSession).lean();
     if(appointmentForDate) {
       const oldStaffIds = originalInvoice.lineItems.map(item => item.staffId?.toString()).filter(Boolean) as string[];
@@ -255,7 +225,6 @@ export async function PUT(
     await dbSession.commitTransaction();
 
     const finalInvoice = await Invoice.findById(id).populate({ path: 'customerId', select: 'name' }).populate({ path: 'billingStaffId', select: 'name' }).lean();
-
     const responseData = {
       ...finalInvoice,
       customer: finalInvoice?.customerId,

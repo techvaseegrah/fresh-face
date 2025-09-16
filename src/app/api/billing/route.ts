@@ -222,18 +222,14 @@ export async function POST(req: NextRequest) {
     if (!customer) throw new Error('Customer not found');
     const customerGender = customer.gender || 'other';
 
-    // =========================================================================
-    // === START: INVENTORY LOGIC MODIFICATION =================================
-    // =========================================================================
-    
-    // Check if manual updates were provided by the frontend.
+    let allInventoryUpdates: InventoryUpdate[] = [];
+
+    // --- STEP 1: Process MANUAL updates from the frontend (if any) ---
     if (manualInventoryUpdates && Array.isArray(manualInventoryUpdates) && manualInventoryUpdates.length > 0) {
-        // PATH 1: Use the manually provided updates.
-        console.log("Applying manual inventory updates from frontend.");
+        console.log("Processing manual inventory updates from frontend.");
         
-        // Basic validation of the incoming data and format for InventoryManager
-        const validatedUpdates: InventoryUpdate[] = manualInventoryUpdates
-          .filter(update => update.quantityToDeduct > 0) // Only process deductions > 0
+        const validatedManualUpdates: InventoryUpdate[] = manualInventoryUpdates
+          .filter(update => update.quantityToDeduct > 0)
           .map(update => {
             if (!update.productId || typeof update.quantityToDeduct !== 'number') {
               throw new Error("Invalid manual inventory update format received.");
@@ -245,58 +241,65 @@ export async function POST(req: NextRequest) {
               unit: 'unit',
             };
         });
-
-        if (validatedUpdates.length > 0) {
-            await InventoryManager.applyInventoryUpdates(
-                validatedUpdates, 
-                dbSession, 
-                tenantId
-            );
-        }
-    } else {
-        // PATH 2: Fallback to the original automatic calculation logic.
-        console.log("No manual updates provided. Calculating inventory impact automatically.");
         
-        let allInventoryUpdates: InventoryUpdate[] = [];
+        allInventoryUpdates.push(...validatedManualUpdates);
+    }
 
-        // Step 1: Calculate impact from SERVICES
+    // --- STEP 2: Process AUTOMATIC updates for SERVICES ---
+    // This part assumes that if you have manual updates, they cover the services.
+    // If manual updates are NOT provided, then we calculate service impact automatically.
+    if (!manualInventoryUpdates || manualInventoryUpdates.length === 0) {
+        console.log("No manual updates found, calculating service inventory impact automatically.");
         const serviceItemsInBill = items.filter((item: any) => item.itemType === 'service');
         if (serviceItemsInBill.length > 0) {
             const serviceIds = serviceItemsInBill.flatMap((s: any) => Array(s.quantity).fill(s.itemId));
             const { totalUpdates: serviceProductUpdates } = await InventoryManager.calculateMultipleServicesInventoryImpact(serviceIds, customerGender, tenantId);
             allInventoryUpdates.push(...serviceProductUpdates);
         }
+    }
 
-        // Step 2: Add impact from sold RETAIL PRODUCTS
-        const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
-        if (productItemsToBill.length > 0) {
-          const productIds = productItemsToBill.map((item: any) => item.itemId);
-          const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
-          if (productsInDb.length !== productIds.length) { throw new Error('One or more products being billed are invalid for this salon.'); }
-          const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
-          for (const item of productItemsToBill) { const dbProduct = productMap.get(item.itemId); if (!dbProduct || dbProduct.numberOfItems < item.quantity) { throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`); } }
-
-          const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map(item => ({
-              productId: item.itemId,
-              productName: item.name,
-              quantityToDeduct: item.quantity,
-              unit: 'piece'
-          }));
-          allInventoryUpdates.push(...retailProductUpdates);
-        }
+    // --- STEP 3: ALWAYS process AUTOMATIC updates for RETAIL PRODUCTS ---
+    console.log("Calculating retail product inventory impact.");
+    const productItemsToBill = items.filter((item: any) => item.itemType === 'product' && item.itemId !== MEMBERSHIP_FEE_ITEM_ID);
+    
+    if (productItemsToBill.length > 0) {
+        const productIds = productItemsToBill.map((item: any) => item.itemId);
+        const productsInDb = await Product.find({ _id: { $in: productIds }, tenantId }).session(dbSession);
         
-        // Step 3: APPLY all combined updates
-        if (allInventoryUpdates.length > 0) {
-            await InventoryManager.applyInventoryUpdates(
-                allInventoryUpdates, 
-                dbSession, 
-                tenantId
-            );
+        if (productsInDb.length !== productIds.length) { 
+            throw new Error('One or more products being billed are invalid for this salon.'); 
         }
+
+        const productMap = new Map(productsInDb.map(p => [p._id.toString(), p]));
+        for (const item of productItemsToBill) { 
+            const dbProduct = productMap.get(item.itemId); 
+            if (!dbProduct || dbProduct.numberOfItems < item.quantity) { 
+                throw new Error(`Insufficient stock for "${item.name}". Requested: ${item.quantity}, Available: ${dbProduct?.numberOfItems || 0}.`); 
+            } 
+        }
+
+        const retailProductUpdates: InventoryUpdate[] = productItemsToBill.map(item => ({
+            productId: item.itemId,
+            productName: item.name,
+            quantityToDeduct: item.quantity,
+            unit: 'piece'
+        }));
+        
+        allInventoryUpdates.push(...retailProductUpdates);
+    }
+    
+    // --- STEP 4: APPLY all combined updates ---
+    if (allInventoryUpdates.length > 0) {
+        console.log("Applying combined inventory updates:", allInventoryUpdates);
+        await InventoryManager.applyInventoryUpdates(
+            allInventoryUpdates, 
+            dbSession, 
+            tenantId
+        );
     }
 
     // =========================================================================
-    // === END: INVENTORY LOGIC MODIFICATION ===================================
+    // === END: INVENTORY LOGIC MODIFICATION (THE FIX) =========================
     // =========================================================================
     
     const invoice = new Invoice({ tenantId, appointmentId, customerId, stylistId, billingStaffId, lineItems: lineItemsWithTenantId, serviceTotal, productTotal, subtotal, membershipDiscount, grandTotal, paymentDetails, notes, customerWasMember, membershipGrantedDuringBilling, paymentStatus: 'Paid', manualDiscount: { type: manualDiscountType || null, value: manualDiscountValue || 0, appliedAmount: finalManualDiscountApplied || 0 }, giftCardPayment: giftCardRedemption ? { cardId: giftCardRedemption.cardId, amount: giftCardRedemption.amount } : undefined });
