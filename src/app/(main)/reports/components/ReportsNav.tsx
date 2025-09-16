@@ -25,6 +25,13 @@ const reportLinks = [
   { href: '/reports/shift-report', label: 'Shift Report' },
   { href: '/reports/incentive-report', label: 'Incentive Report' },
   { href: '/reports/staff-sales-report', label: 'Staff Sales Report' },
+  { href: '/reports/expenses', label: 'Expenses Report' },
+  { href: '/reports/budget-vs-actual', label: 'Budget vs. Actual Report' },
+  { href: '/reports/task-library', label: 'Task Library Report' },
+  { href: '/reports/task-compliance', label: 'Task Compliance Report' },
+  { href: '/reports/issue-library', label: 'Issue Library Report' },
+  { href: '/reports/issue-compliance', label: 'Issue Compliance Report' },
+  { href: '/reports/sop-compliance', label: 'SOP Compliance Report' },
 ];
 
 export function ReportsNav() {

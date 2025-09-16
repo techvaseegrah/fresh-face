@@ -5,12 +5,14 @@ import { toast } from 'react-toastify';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 
-// --- Interface for Daily/Monthly rules (Existing) ---
+// ✨ --- MODIFICATION: Added includePackageSale and includeGiftCardSale --- ✨
 interface MultiplierRule {
   target: { multiplier: number; };
   sales: {
     includeServiceSale: boolean;
     includeProductSale: boolean;
+    includePackageSale?: boolean; // Now optional for the Daily rule
+    includeGiftCardSale?: boolean; // Now optional for the Daily rule
     reviewNameValue?: number; 
     reviewPhotoValue?: number;
   };
@@ -21,7 +23,6 @@ interface MultiplierRule {
   };
 }
 
-// --- New interface for Package/Gift Card rules ---
 interface FixedTargetRule {
   target: { targetValue: number; };
   incentive: {
@@ -36,10 +37,17 @@ interface SettingsProps {
   tenantId: string;
 }
 
-// --- Default States for all four rules ---
+// ✨ --- MODIFICATION: Added new properties to the default daily rule --- ✨
 const defaultDailyRule: MultiplierRule = {
   target: { multiplier: 5 },
-  sales: { includeServiceSale: true, includeProductSale: true, reviewNameValue: 200, reviewPhotoValue: 300 },
+  sales: { 
+    includeServiceSale: true, 
+    includeProductSale: true, 
+    includePackageSale: false, // Default to false
+    includeGiftCardSale: false, // Default to false
+    reviewNameValue: 200, 
+    reviewPhotoValue: 300 
+  },
   incentive: { rate: 0.05, doubleRate: 0.10, applyOn: 'totalSaleValue' }
 };
 const defaultMonthlyRule: MultiplierRule = {
@@ -57,7 +65,6 @@ const defaultGiftCardRule: FixedTargetRule = {
 };
 
 
-// --- Existing Editor for Daily/Monthly ---
 const MultiplierRuleEditor = ({ title, rule, onChange, ruleType }: { title: string; rule: MultiplierRule; onChange: (path: string, value: any) => void; ruleType: 'daily' | 'monthly' }) => (
     <Card>
         <div className="p-4">
@@ -71,6 +78,14 @@ const MultiplierRuleEditor = ({ title, rule, onChange, ruleType }: { title: stri
                     <label className="font-semibold text-gray-700 block mb-1">Sales to Include for Target</label>
                     <div className="flex items-center mt-2"><input type="checkbox" id={`${ruleType}-service`} checked={rule.sales.includeServiceSale} onChange={(e) => onChange(`${ruleType}.sales.includeServiceSale`, e.target.checked)} className="h-4 w-4 rounded"/><label htmlFor={`${ruleType}-service`} className="ml-2 text-gray-600">Service Sale</label></div>
                     <div className="flex items-center mt-1"><input type="checkbox" id={`${ruleType}-product`} checked={rule.sales.includeProductSale} onChange={(e) => onChange(`${ruleType}.sales.includeProductSale`, e.target.checked)} className="h-4 w-4 rounded"/><label htmlFor={`${ruleType}-product`} className="ml-2 text-gray-600">Product Sale</label></div>
+                    
+                    {/* ✨ --- MODIFICATION: Add Package and Gift Card checkboxes ONLY for the Daily rule --- ✨ */}
+                    {ruleType === 'daily' && (
+                        <>
+                            <div className="flex items-center mt-1"><input type="checkbox" id="daily-package" checked={rule.sales.includePackageSale} onChange={(e) => onChange('daily.sales.includePackageSale', e.target.checked)} className="h-4 w-4 rounded"/><label htmlFor="daily-package" className="ml-2 text-gray-600">Package Sale</label></div>
+                            <div className="flex items-center mt-1"><input type="checkbox" id="daily-giftcard" checked={rule.sales.includeGiftCardSale} onChange={(e) => onChange('daily.sales.includeGiftCardSale', e.target.checked)} className="h-4 w-4 rounded"/><label htmlFor="daily-giftcard" className="ml-2 text-gray-600">Gift Card Sale</label></div>
+                        </>
+                    )}
                 </div>
                 {ruleType === 'daily' && rule.sales.reviewNameValue !== undefined && (
                     <>
@@ -105,7 +120,6 @@ const MultiplierRuleEditor = ({ title, rule, onChange, ruleType }: { title: stri
     </Card>
 );
 
-// --- New, separate editor for Package/Gift Card ---
 const FixedTargetRuleEditor = ({ title, rule, onChange, ruleType }: { title: string; rule: FixedTargetRule; onChange: (path: string, value: any) => void; ruleType: 'package' | 'giftCard' }) => (
     <Card>
         <div className="p-4">
@@ -129,8 +143,6 @@ const FixedTargetRuleEditor = ({ title, rule, onChange, ruleType }: { title: str
     </Card>
 );
 
-
-// --- Main Modal Component ---
 export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsProps) {
   const [dailyRule, setDailyRule] = useState<MultiplierRule>(defaultDailyRule);
   const [monthlyRule, setMonthlyRule] = useState<MultiplierRule>(defaultMonthlyRule);
@@ -148,7 +160,7 @@ export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsPr
         const res = await fetch('/api/incentives/rules', { headers });
         const data = await res.json();
         if (res.ok) {
-          setDailyRule({ ...defaultDailyRule, ...data.daily });
+          setDailyRule({ ...defaultDailyRule, ...data.daily, sales: { ...defaultDailyRule.sales, ...data.daily?.sales } });
           setMonthlyRule({ ...defaultMonthlyRule, ...data.monthly });
           setPackageRule({ ...defaultPackageRule, ...data.package });
           setGiftCardRule({ ...defaultGiftCardRule, ...data.giftCard });
@@ -204,7 +216,6 @@ export default function IncentiveSettingsModal({ onClose, tenantId }: SettingsPr
     };
     const setter = setterMap[ruleType];
 
-    // ✨ --- FIX: Give 'prev' an explicit type to resolve the error --- ✨
     setter((prev: MultiplierRule | FixedTargetRule) => {
         const keys = path.split('.').slice(1);
         let temp = JSON.parse(JSON.stringify(prev));

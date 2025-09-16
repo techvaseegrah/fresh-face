@@ -1,106 +1,240 @@
-// src/app/api/incentives/route.ts
-
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
-import Invoice from '@/models/invoice';
-import IncentiveRule from '@/models/IncentiveRule'; // Removed IIncentiveRule as it's not directly used
+import Staff from '@/models/staff';
+import IncentiveRule from '@/models/IncentiveRule';
+import Invoice from '@/models/invoice'; 
 import { getTenantIdOrBail } from '@/lib/tenant';
 
-// This type definition is no longer needed as we build the snapshot differently
-// type IRuleSnapshot = { ... };
+// --- TYPE DEFINITIONS (Unchanged) ---
+type DailyRule = {
+  target: { multiplier: number };
+  sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
+  incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
+};
+type MonthlyRule = {
+  target: { multiplier: number };
+  sales: { includeServiceSale: boolean; includeProductSale: boolean; };
+  incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
+}
+type FixedTargetRule = {
+    target: { targetValue: number };
+    incentive: { rate: number; doubleRate: number };
+}
 
-export async function POST(request: Request) {
+// --- HELPER FUNCTIONS (Unchanged) ---
+function getDaysInMonth(year: number, month: number): number { return new Date(year, month + 1, 0).getDate(); }
+
+function calculateIncentive(achieved: number, target: number, rate: number, doubleRate: number, base: number) {
+    if (achieved < target || target <= 0) return { incentive: 0, isTargetMet: false, appliedRate: 0 };
+    const doubleTarget = target * 2;
+    const appliedRate = achieved >= doubleTarget ? doubleRate : rate;
+    return { incentive: base * appliedRate, isTargetMet: true, appliedRate };
+}
+
+function findHistoricalRule<T>(rules: T[], timestamp: Date): T | null {
+    if (!rules || rules.length === 0) return null;
+    return rules.find(rule => new Date((rule as any).createdAt) <= timestamp) || null;
+}
+
+function calculateTotalCumulativeMonthly(sales: any[], staff: any, rule: MonthlyRule | null) {
+    if (!rule) return 0;
+    const totalService = sales.reduce((sum, s) => sum + s.serviceSale, 0);
+    const totalProduct = sales.reduce((sum, s) => sum + s.productSale, 0);
+    const target = (staff.salary || 0) * rule.target.multiplier;
+    const achieved = (rule.sales.includeServiceSale ? totalService : 0) + (rule.sales.includeProductSale ? totalProduct : 0);
+    const base = rule.incentive.applyOn === 'serviceSaleOnly' ? totalService : achieved;
+    return calculateIncentive(achieved, target, rule.incentive.rate, rule.incentive.doubleRate, base).incentive;
+}
+
+export async function GET(request: Request, { params }: { params: { staffId: string } }) {
   try {
     await dbConnect();
     const tenantId = getTenantIdOrBail(request as any);
     if (tenantId instanceof NextResponse) return tenantId;
 
-    const body = await request.json();
-    const { staffId, date, reviewsWithName = 0, reviewsWithPhoto = 0 } = body;
+    const { staffId } = params;
+    const { searchParams } = new URL(request.url);
+    const dateQuery = searchParams.get('date');
 
-    if (!staffId || !date) {
-      return NextResponse.json({ message: 'Staff ID and date are required.' }, { status: 400 });
+    if (!dateQuery) {
+        return NextResponse.json({ message: 'Date query parameter is required.' }, { status: 400 });
+    }
+
+    const staff = await Staff.findOne({ _id: staffId, tenantId }).lean();
+    if (!staff || !staff.salary || staff.salary <= 0) {
+        return NextResponse.json({ message: 'Staff member not found or their salary is not set.' }, { status: 404 });
     }
     
-    const [year, month, day] = date.split('-').map(Number);
-    const dayStart = new Date(Date.UTC(year, month - 1, day));
-    const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+    const [year, month, day] = dateQuery.split('-').map(Number);
+    const targetDate = new Date(Date.UTC(year, month - 1, day));
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
-    // ✨ --- MODIFICATION: This section now fetches all four rules to create a complete snapshot --- ✨
-    const dailyRule = await IncentiveRule.findOne({ tenantId, type: 'daily', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
-    const monthlyRule = await IncentiveRule.findOne({ tenantId, type: 'monthly', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
-    const packageRule = await IncentiveRule.findOne({ tenantId, type: 'package', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
-    const giftCardRule = await IncentiveRule.findOne({ tenantId, type: 'giftCard', createdAt: { $lte: dayEnd } }).sort({ createdAt: -1 }).lean();
+    const allSalesInMonth = await DailySale.find({ 
+        staff: staffId, 
+        date: { $gte: monthStart, $lte: monthEnd }, 
+        tenantId 
+    }).sort({ date: 'asc' }).lean();
 
-    const ruleSnapshot = {
-        daily: dailyRule,
-        monthly: monthlyRule,
-        package: packageRule,
-        giftCard: giftCardRule,
+    const allRules = {
+        daily: await IncentiveRule.find({ tenantId, type: 'daily' }).sort({ createdAt: -1 }).lean(),
+        monthly: await IncentiveRule.find({ tenantId, type: 'monthly' }).sort({ createdAt: -1 }).lean(),
+        package: await IncentiveRule.find({ tenantId, type: 'package' }).sort({ createdAt: -1 }).lean(),
+        giftCard: await IncentiveRule.find({ tenantId, type: 'giftCard' }).sort({ createdAt: -1 }).lean(),
     };
+
+    const saleForThisDay = allSalesInMonth.find(s => new Date(s.date).toISOString().split('T')[0] === dateQuery);
     
-    // --- Step 2: Sync sales data for this specific staff member on this day ---
-    // (This part of your code was already correct and is unchanged)
-    const allInvoicesForDay = await Invoice.find({
-      tenantId: tenantId,
-      createdAt: { $gte: dayStart, $lte: dayEnd }
-    }).lean();
+    const historicalTimestamp = saleForThisDay ? new Date(saleForThisDay.createdAt || saleForThisDay.date) : targetDate;
+    
+    const dailyRule = findHistoricalRule(allRules.daily, historicalTimestamp) as DailyRule | null;
+    const monthlyRule = findHistoricalRule(allRules.monthly, historicalTimestamp) as MonthlyRule | null;
+    const packageRule = findHistoricalRule(allRules.package, historicalTimestamp) as FixedTargetRule | null;
+    const giftCardRule = findHistoricalRule(allRules.giftCard, historicalTimestamp) as FixedTargetRule | null;
+    
+    let dailyResult = null, monthlyResult = null, packageResult = null, giftCardResult = null;
+    
+    if (dailyRule && saleForThisDay) {
+        let netServiceSaleForCalculation = saleForThisDay.serviceSale;
+        let netProductSaleForCalculation = saleForThisDay.productSale;
 
-    const totals = { serviceSale: 0, productSale: 0, packageSale: 0, giftCardSale: 0 };
-    const customerIds = new Set<string>();
+        const dayStart = new Date(Date.UTC(year, month - 1, day));
+        const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+        
+        const allInvoicesForDay = await Invoice.find({
+            tenantId: tenantId,
+            createdAt: { $gte: dayStart, $lte: dayEnd }
+        }).lean();
 
-    for (const invoice of allInvoicesForDay) {
-        let staffWasInvolvedInThisInvoice = false;
-        for (const item of (invoice.lineItems || [])) {
-            if (item.staffId?.toString() === staffId) {
-                if (item.itemType === 'service') {
-                    totals.serviceSale += item.finalPrice;
-                } else if (item.itemType === 'product') {
-                    totals.productSale += item.finalPrice;
-                } else if (item.itemType === 'package') {
-                    totals.packageSale += item.finalPrice;
-                } else if (item.itemType === 'gift_card') {
-                    totals.giftCardSale += item.finalPrice;
+        for (const invoice of allInvoicesForDay) {
+            let staffValueOnThisInvoice = 0;
+            let staffServiceValueOnInvoice = 0;
+            let staffProductValueOnInvoice = 0;
+
+            for (const item of (invoice.lineItems || [])) {
+                if (item.staffId?.toString() === staffId) {
+                    const itemValue = item.finalPrice;
+                    staffValueOnThisInvoice += itemValue;
+                    if (item.itemType === 'service') staffServiceValueOnInvoice += itemValue;
+                    if (item.itemType === 'product') staffProductValueOnInvoice += itemValue;
                 }
-                staffWasInvolvedInThisInvoice = true;
+            }
+
+            const manualDiscountAmount = invoice.manualDiscount?.appliedAmount || 0;
+            const invoiceSubtotal = invoice.subtotal || 0;
+
+            if (manualDiscountAmount > 0 && invoiceSubtotal > 0 && staffValueOnThisInvoice > 0) {
+                 const staffShareOfDiscount = (manualDiscountAmount * staffValueOnThisInvoice) / invoiceSubtotal;
+                 // Prorate the discount share across service and product sales
+                 netServiceSaleForCalculation -= (staffShareOfDiscount * (staffServiceValueOnInvoice / staffValueOnThisInvoice));
+                 netProductSaleForCalculation -= (staffShareOfDiscount * (staffProductValueOnInvoice / staffValueOnThisInvoice));
             }
         }
-        if (staffWasInvolvedInThisInvoice) {
-            customerIds.add(invoice.customerId.toString());
-        }
+
+        const daysInMonth = getDaysInMonth(targetDate.getUTCFullYear(), targetDate.getUTCMonth());
+        const dailyTarget = (staff.salary * dailyRule.target.multiplier) / daysInMonth;
+        
+        const reviewNameBonus = (saleForThisDay.reviewsWithName * dailyRule.sales.reviewNameValue);
+        const reviewPhotoBonus = (saleForThisDay.reviewsWithPhoto * dailyRule.sales.reviewPhotoValue);
+
+        // ✨ --- THIS IS THE FIX --- ✨
+        // The 'achieved' value is now based on the NET sales after prorated invoice discounts.
+        const achieved = (dailyRule.sales.includeServiceSale ? netServiceSaleForCalculation : 0) 
+                       + (dailyRule.sales.includeProductSale ? netProductSaleForCalculation : 0) 
+                       + reviewNameBonus 
+                       + reviewPhotoBonus;
+        
+        // The 'base' for the incentive rate also needs to use the correct net values.
+        const base = dailyRule.incentive.applyOn === 'serviceSaleOnly' 
+            ? netServiceSaleForCalculation 
+            : achieved;
+            
+        const { incentive, isTargetMet, appliedRate } = calculateIncentive(achieved, dailyTarget, dailyRule.incentive.rate, dailyRule.incentive.doubleRate, base);
+        
+        dailyResult = { 
+            targetValue: dailyTarget, 
+            totalSaleValue: achieved, // This now shows the correct net total sale value
+            incentiveAmount: incentive, 
+            isTargetMet, 
+            appliedRate, 
+            ruleUsed: 'Recorded',
+            details: { 
+                serviceSale: netServiceSaleForCalculation, // Display the correct net value
+                productSale: netProductSaleForCalculation, // Display the correct net value
+                packageSale: saleForThisDay.packageSale, 
+                giftCardSale: saleForThisDay.giftCardSale, 
+                reviewNameBonus: reviewNameBonus,
+                reviewPhotoBonus: reviewPhotoBonus
+            }
+        };
     }
 
-    // --- Step 3: Create or Update the DailySale record ---
-    const updatedRecord = await DailySale.findOneAndUpdate(
-      { staff: staffId, date: dayStart, tenantId },
-      { 
-        $set: {
-          serviceSale: totals.serviceSale,
-          productSale: totals.productSale,
-          packageSale: totals.packageSale,
-          giftCardSale: totals.giftCardSale,
-          customerCount: customerIds.size,
-          // ✨ --- MODIFICATION: Save the new, correct, and complete snapshot --- ✨
-          appliedRule: ruleSnapshot,
-          tenantId: tenantId,
-        },
-        $inc: { 
-          reviewsWithName: Number(reviewsWithName) || 0,
-          reviewsWithPhoto: Number(reviewsWithPhoto) || 0,
-        },
-      },
-      { 
-        new: true,
-        upsert: true,
-        setDefaultsOnInsert: true
-      }
-    );
+    // --- (The rest of the file remains unchanged) ---
+    const yesterday = new Date(targetDate);
+    yesterday.setDate(targetDate.getDate() - 1);
+    const salesUpToToday = allSalesInMonth.filter(s => new Date(s.date) <= targetDate);
+    const salesUpToYesterday = allSalesInMonth.filter(s => new Date(s.date) <= yesterday);
+    const yesterdayTimestamp = salesUpToYesterday.length > 0 ? new Date(salesUpToYesterday[salesUpToYesterday.length - 1].createdAt || yesterday) : yesterday;
+    const monthlyRuleYesterday = findHistoricalRule(allRules.monthly, yesterdayTimestamp) as MonthlyRule | null;
+    
+    const cumulativeMonthlyToday = calculateTotalCumulativeMonthly(salesUpToToday, staff, monthlyRule);
+    const cumulativeMonthlyYesterday = calculateTotalCumulativeMonthly(salesUpToYesterday, staff, monthlyRuleYesterday);
+    const monthlyIncentiveDelta = cumulativeMonthlyToday - cumulativeMonthlyYesterday;
 
-    return NextResponse.json({ message: 'Daily sales and reviews saved successfully. Rule has been locked in.', data: updatedRecord }, { status: 200 });
+    if(monthlyRule) {
+        monthlyResult = {
+            targetValue: staff.salary * monthlyRule.target.multiplier,
+            totalSaleValue: salesUpToToday.reduce((sum, sale) => sum + (sale.serviceSale || 0), 0),
+            incentiveAmount: monthlyIncentiveDelta,
+            isTargetMet: cumulativeMonthlyToday > 0,
+            appliedRate: 0
+        };
+    }
+
+    const salesToday = saleForThisDay || { packageSale: 0, giftCardSale: 0 };
+
+    if(packageRule) {
+        const totalPackageSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.packageSale || 0), 0);
+        const { isTargetMet, appliedRate } = calculateIncentive(totalPackageSaleMonth, packageRule.target.targetValue, packageRule.incentive.rate, packageRule.incentive.doubleRate, totalPackageSaleMonth);
+        
+        const packageIncentiveToday = isTargetMet ? (salesToday.packageSale * appliedRate) : 0;
+
+        packageResult = {
+            targetValue: packageRule.target.targetValue,
+            totalSaleValue: totalPackageSaleMonth,
+            incentiveAmount: packageIncentiveToday,
+            isTargetMet,
+            appliedRate
+        };
+    }
+    
+    if(giftCardRule) {
+        const totalGiftCardSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.giftCardSale || 0), 0);
+        const { isTargetMet, appliedRate } = calculateIncentive(totalGiftCardSaleMonth, giftCardRule.target.targetValue, giftCardRule.incentive.rate, giftCardRule.incentive.doubleRate, totalGiftCardSaleMonth);
+
+        const giftCardIncentiveToday = isTargetMet ? (salesToday.giftCardSale * appliedRate) : 0;
+
+        giftCardResult = {
+            targetValue: giftCardRule.target.targetValue,
+            totalSaleValue: totalGiftCardSaleMonth,
+            incentiveAmount: giftCardIncentiveToday,
+            isTargetMet,
+            appliedRate
+        };
+    }
+
+    return NextResponse.json({
+        staffName: staff.name,
+        calculationDate: targetDate.toISOString().split('T')[0],
+        incentive1_daily: dailyResult,
+        incentive2_monthly: monthlyResult,
+        incentive3_package: packageResult,
+        incentive4_giftCard: giftCardResult,
+    });
 
   } catch (error: any) {
-    console.error("API POST /api/incentives Error:", error);
-    return NextResponse.json({ message: 'An internal server error occurred', error: error.message }, { status: 500 });
+    console.error("--- FATAL ERROR in /api/incentives/calculation/[staffId] ---", error);
+    return NextResponse.json({ message: 'An internal server error occurred.', error: error.message }, { status: 500 });
   }
 }

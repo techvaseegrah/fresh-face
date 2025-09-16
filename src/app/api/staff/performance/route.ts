@@ -5,12 +5,20 @@ import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
 import Staff from '@/models/staff';
 import IncentiveRule from '@/models/IncentiveRule';
+import Invoice from '@/models/invoice'; // Import the Invoice model
 import { startOfMonth } from 'date-fns';
 
-// --- TYPE DEFINITIONS ---
+// --- TYPE DEFINITIONS (Unchanged) ---
 type DailyRule = {
   target: { multiplier: number };
-  sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
+  sales: { 
+    includeServiceSale: boolean; 
+    includeProductSale: boolean; 
+    includePackageSale?: boolean;
+    includeGiftCardSale?: boolean;
+    reviewNameValue: number; 
+    reviewPhotoValue: number; 
+  };
   incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
 };
 type MonthlyRule = {
@@ -23,21 +31,18 @@ type FixedTargetRule = {
     incentive: { rate: number; doubleRate: number };
 }
 
-// --- HELPER FUNCTIONS ---
+// --- HELPER FUNCTIONS (Unchanged) ---
 function getDaysInMonth(year: number, month: number): number { return new Date(year, month + 1, 0).getDate(); }
-
 function calculateIncentive(achieved: number, target: number, rate: number, doubleRate: number, base: number) {
     if (achieved < target || target <= 0) return { incentive: 0, isTargetMet: false, appliedRate: 0 };
     const doubleTarget = target * 2;
     const appliedRate = achieved >= doubleTarget ? doubleRate : rate;
     return { incentive: base * appliedRate, isTargetMet: true, appliedRate };
 }
-
 function findHistoricalRule<T>(rules: T[], timestamp: Date): T | null {
     if (!rules || rules.length === 0) return null;
     return rules.find(rule => new Date((rule as any).createdAt) <= timestamp) || null;
 }
-
 function calculateTotalCumulativeMonthly(sales: any[], staff: any, rule: MonthlyRule | null) {
     if (!rule) return 0;
     const totalService = sales.reduce((sum, s) => sum + s.serviceSale, 0);
@@ -72,7 +77,8 @@ export async function GET(request: NextRequest) {
         const endDate = new Date(endDateParam);
         endDate.setHours(23, 59, 59, 999);
 
-        const [staff, allSalesInMonth, allRules] = await Promise.all([
+        // ✅ FIX: Fetch all necessary data upfront, including invoices
+        const [staff, allSalesInMonth, allRules, allInvoicesInRange] = await Promise.all([
             Staff.findOne({ _id: staffId, tenantId: tenantId }).lean(),
             DailySale.find({
                 staff: staffId,
@@ -88,6 +94,11 @@ export async function GET(request: NextRequest) {
                     giftCard: rules.filter(r => r.type === 'giftCard'),
                 };
             })(),
+            Invoice.find({
+                tenantId: tenantId,
+                createdAt: { $gte: startDate, $lte: endDate },
+                'manualDiscount.appliedAmount': { $gt: 0 }
+            }).lean()
         ]);
 
         if (!staff) {
@@ -105,6 +116,33 @@ export async function GET(request: NextRequest) {
 
         for (const saleForThisDay of salesInRange) {
             const d = new Date(saleForThisDay.date);
+            const dateString = d.toISOString().split('T')[0];
+
+            // ✅ FIX: Start of the discount calculation logic for this day
+            let netServiceSale = saleForThisDay.serviceSale || 0;
+            const invoicesForDay = allInvoicesInRange.filter(inv => new Date(inv.createdAt).toISOString().split('T')[0] === dateString);
+
+            for (const invoice of invoicesForDay) {
+                const manualDiscountAmount = invoice.manualDiscount?.appliedAmount || 0;
+                let totalServiceValueOnInvoice = 0;
+                let staffServiceValueOnInvoice = 0;
+
+                for (const item of (invoice.lineItems || [])) {
+                    if (item.itemType === 'service') {
+                        totalServiceValueOnInvoice += item.finalPrice;
+                        if (item.staffId?.toString() === staffId) {
+                            staffServiceValueOnInvoice += item.finalPrice;
+                        }
+                    }
+                }
+
+                if (totalServiceValueOnInvoice > 0 && staffServiceValueOnInvoice > 0) {
+                     const staffShareOfDiscount = (manualDiscountAmount * staffServiceValueOnInvoice) / totalServiceValueOnInvoice;
+                     netServiceSale -= staffShareOfDiscount;
+                }
+            }
+            // ✅ FIX: End of discount calculation. 'netServiceSale' is now accurate.
+
             const historicalTimestamp = new Date(saleForThisDay.createdAt || saleForThisDay.date);
 
             const dailyRule = findHistoricalRule(allRules.daily, historicalTimestamp) as DailyRule | null;
@@ -118,9 +156,16 @@ export async function GET(request: NextRequest) {
             if (dailyRule) {
                 const daysInMonth = getDaysInMonth(d.getFullYear(), d.getMonth());
                 const target = (staff.salary * dailyRule.target.multiplier) / daysInMonth;
-                const reviewBonus = (saleForThisDay.reviewsWithName * dailyRule.sales.reviewNameValue) + (saleForThisDay.reviewsWithPhoto * dailyRule.sales.reviewPhotoValue);
-                const achieved = (dailyRule.sales.includeServiceSale ? (saleForThisDay.serviceSale || 0) : 0) + (dailyRule.sales.includeProductSale ? (saleForThisDay.productSale || 0) : 0) + reviewBonus;
-                const base = dailyRule.incentive.applyOn === 'serviceSaleOnly' ? (saleForThisDay.serviceSale || 0) : achieved;
+                const reviewBonus = (saleForThisDay.reviewsWithName * (dailyRule.sales.reviewNameValue || 0)) + (saleForThisDay.reviewsWithPhoto * (dailyRule.sales.reviewPhotoValue || 0));
+                
+                // ✅ FIX: Use the corrected 'netServiceSale' for incentive calculation
+                const achieved = (dailyRule.sales.includeServiceSale ? netServiceSale : 0) 
+                               + (dailyRule.sales.includeProductSale ? (saleForThisDay.productSale || 0) : 0) 
+                               + (dailyRule.sales.includePackageSale ? (saleForThisDay.packageSale || 0) : 0)
+                               + (dailyRule.sales.includeGiftCardSale ? (saleForThisDay.giftCardSale || 0) : 0)
+                               + reviewBonus;
+                
+                const base = dailyRule.incentive.applyOn === 'serviceSaleOnly' ? netServiceSale : achieved;
                 const result = calculateIncentive(achieved, target, dailyRule.incentive.rate, dailyRule.incentive.doubleRate, base);
                 dailyIncentive = result.incentive;
                 dailyTarget = target;
@@ -158,9 +203,9 @@ export async function GET(request: NextRequest) {
 
             dailyBreakdown.push({
                 date: saleForThisDay.date.toISOString().split('T')[0],
-                serviceSale: saleForThisDay.serviceSale || 0,
+                // ✅ FIX: Return the corrected 'netServiceSale' to the frontend
+                serviceSale: netServiceSale,
                 productSale: saleForThisDay.productSale || 0,
-                // ✅ FIX: Added the missing package and gift card sale amounts.
                 packageSale: saleForThisDay.packageSale || 0,
                 giftCardSale: saleForThisDay.giftCardSale || 0,
                 customerCount: saleForThisDay.customerCount || 0,
@@ -172,7 +217,6 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // ✅ FIX: Updated the summary calculation to include the new sales data.
         const summary = dailyBreakdown.reduce((acc, day) => {
             acc.totalServiceSales += day.serviceSale;
             acc.totalProductSales += day.productSale;
@@ -190,7 +234,6 @@ export async function GET(request: NextRequest) {
 
         const totalSales = summary.totalServiceSales + summary.totalProductSales + summary.totalPackageSales + summary.totalGiftCardSales;
         
-        // ✅ FIX: Added the new sales totals to the final response object.
         const performanceData = {
             summary: {
                 totalSales,
