@@ -289,7 +289,7 @@ export default function EditAppointmentForm({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-grow">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-grow" >
           {error && (<div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{error}</div>)}
 
           <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">

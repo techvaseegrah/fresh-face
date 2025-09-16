@@ -769,7 +769,7 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
           </div>
 
           <div className="flex-grow overflow-y-auto grid grid-cols-1 lg:grid-cols-3 gap-x-8">
-            <form onSubmit={handleSubmit} className="space-y-6 lg:col-span-2 flex flex-col">
+            <form onSubmit={handleSubmit} className="space-y-6 lg:col-span-2 flex flex-col"autoComplete="off">
               <div className="space-y-6 flex-grow">
                 {formError && (<div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{formError}</div>)}
                 {stockIssues && stockIssues.length > 0 && (

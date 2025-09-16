@@ -147,7 +147,7 @@ const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({ isOpen, onC
             </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-grow overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex-grow overflow-y-auto" autoComplete="off">
           <div className="p-6 md:p-8 space-y-4">
             {/* Display general form error from API response */}
             {errors.form && <div className="p-3 bg-red-100 text-red-700 rounded-md text-sm">{errors.form}</div>}
