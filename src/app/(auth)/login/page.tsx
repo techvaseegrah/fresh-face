@@ -180,7 +180,7 @@ export default function LoginPage() {
             <div className="mx-auto h-14 w-14 sm:h-16 sm:w-16 bg-black rounded-full flex items-center justify-center">
               <span className="text-white text-xl sm:text-2xl font-bold">FF</span>
             </div>
-            <h2 className="mt-6 text-2xl sm:text-3xl font-extrabold text-gray-900">Sign in to Fresh Face</h2>
+            <h2 className="mt-6 text-2xl sm:text-3xl font-extrabold text-gray-900">Sign in to Salon Capp</h2>
             <p className="mt-2 text-sm text-gray-600">Salon Management System</p>
           </div>
 
