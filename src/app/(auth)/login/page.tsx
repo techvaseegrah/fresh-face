@@ -1,22 +1,34 @@
-// /app/(auth)/login/page.tsx - FINAL, TRULY SCROLLABLE RESPONSIVE VERSION
+// /app/(auth)/login/page.tsx - FINAL COMPLETE VERSION
 'use client';
 
 import { useState, useEffect, Suspense, FormEvent } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, Building, User, AtSign, KeyRound } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 
 export const dynamic = 'force-dynamic';
+
+// Define animation variants for cleaner code
+const inputVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  exit: { opacity: 0, y: -20, transition: { duration: 0.2 } },
+};
+
+const errorVariants = {
+    hidden: { opacity: 0, y: -10, height: 0 },
+    visible: { opacity: 1, y: 0, height: 'auto', transition: { duration: 0.3 } },
+    exit: { opacity: 0, y: -10, height: 0, transition: { duration: 0.2 } },
+};
 
 function UnifiedLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // --- CHANGE START ---
-  // Read the initial login mode from the URL query parameter. Default to 'admin'.
   const initialMode = searchParams.get('mode') === 'staff' ? 'staff' : 'admin';
   const [loginMode, setLoginMode] = useState<'admin' | 'staff'>(initialMode);
-  // --- CHANGE END ---
 
   const [salonId, setSalonId] = useState('');
   const [email, setEmail] = useState('');
@@ -37,7 +49,6 @@ function UnifiedLoginForm() {
     }
     const err = searchParams.get('error');
     if (err) {
-      // More specific error messages can be helpful
       if (err === 'CredentialsSignin') {
         setError('Invalid credentials provided. Please check your details and try again.');
       } else {
@@ -46,20 +57,12 @@ function UnifiedLoginForm() {
     }
   }, [searchParams]);
 
-  // --- CHANGE START ---
-  // Function to handle changing the login mode and updating the URL
   const handleModeChange = (mode: 'admin' | 'staff') => {
     setLoginMode(mode);
-    // Create a new URL object from the current window location
     const currentUrl = new URL(window.location.href);
-    // Set the 'mode' query parameter
     currentUrl.searchParams.set('mode', mode);
-    // Use router.replace to update the URL in the browser without a full page reload
-    // and without adding a new entry to the browser's history.
     router.replace(currentUrl.toString(), { scroll: false });
   };
-  // --- CHANGE END ---
-
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -72,15 +75,12 @@ function UnifiedLoginForm() {
       password,
       email: email,
       staffIdNumber: staffIdNumber,
-      redirect: false, // This is correct, it prevents a full redirect on success
+      redirect: false,
     };
 
     const result = await signIn(provider, credentials);
 
     if (result?.error) {
-      // When signIn fails, next-auth often reloads the page with an error in the URL.
-      // Our new logic will preserve the tab state.
-      // We explicitly set the error state here for immediate feedback in case there's no reload.
       setError(result.error || `Invalid credentials for ${loginMode}.`);
       setIsLoading(false);
     } else if (result?.ok) {
@@ -93,28 +93,63 @@ function UnifiedLoginForm() {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
-        {/* --- CHANGE START --- */}
-        {/* Update buttons to use the new handler function */}
+      {/* --- FINAL FIX START --- */}
+      {/* This is the robust, bug-free implementation of the animated slider. */}
+      <div className="flex w-full items-center justify-center rounded-xl bg-slate-200 p-1">
+        {/* Admin Button */}
         <button
-          type="button"
           onClick={() => handleModeChange('admin')}
-          className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${ loginMode === 'admin' ? 'bg-white shadow text-black' : 'text-gray-600' }`}
+          className={`relative w-full rounded-lg px-4 py-2 text-sm transition-colors ${
+            loginMode === 'admin' ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+          }`}
         >
-          Admin / Manager
+          {loginMode === 'admin' && (
+            <motion.div
+              layoutId="active-pill"
+              className="absolute inset-0 rounded-lg bg-white shadow-md"
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            />
+          )}
+          <span className="relative z-10 font-semibold">Admin / Manager</span>
         </button>
+        
+        {/* The Separator Line */}
+        <div className="h-5 w-px bg-slate-300 mx-1" />
+
+        {/* Staff Button */}
         <button
-          type="button"
           onClick={() => handleModeChange('staff')}
-          className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${ loginMode === 'staff' ? 'bg-white shadow text-black' : 'text-gray-600' }`}
+          className={`relative w-full rounded-lg px-4 py-2 text-sm transition-colors ${
+            loginMode === 'staff' ? 'text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+          }`}
         >
-          Staff
+          {loginMode === 'staff' && (
+            <motion.div
+              layoutId="active-pill"
+              className="absolute inset-0 rounded-lg bg-white shadow-md"
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            />
+          )}
+          <span className="relative z-10 font-semibold">Staff</span>
         </button>
-        {/* --- CHANGE END --- */}
       </div>
+      {/* --- FINAL FIX END --- */}
 
       <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-        {error && (<div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">{error}</div>)}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              variants={errorVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm overflow-hidden"
+            >
+              {error}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
         <div className="space-y-4">
           <div>
             <label htmlFor="salonId" className="block text-sm font-medium text-gray-700">Salon ID</label>
@@ -132,23 +167,25 @@ function UnifiedLoginForm() {
              {isSubdomainDetected && <p className="text-xs text-gray-500 mt-1">Salon ID is detected from the URL.</p>}
           </div>
 
-          {loginMode === 'admin' ? (
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
-              <div className="relative mt-1">
-                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><AtSign className="h-5 w-5 text-gray-400" /></div>
-                 <input id="email" name="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter your email"/>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label htmlFor="staffIdNumber" className="block text-sm font-medium text-gray-700">Staff ID Number</label>
-              <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-gray-400" /></div>
-                <input id="staffIdNumber" name="staffIdNumber" type="text" required value={staffIdNumber} onChange={(e) => setStaffIdNumber(e.target.value)} className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter your Staff ID"/>
-              </div>
-            </div>
-          )}
+          <AnimatePresence mode="wait">
+            {loginMode === 'admin' ? (
+              <motion.div key="admin-email" variants={inputVariants} initial="hidden" animate="visible" exit="exit">
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
+                <div className="relative mt-1">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><AtSign className="h-5 w-5 text-gray-400" /></div>
+                  <input id="email" name="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter your email"/>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="staff-id" variants={inputVariants} initial="hidden" animate="visible" exit="exit">
+                <label htmlFor="staffIdNumber" className="block text-sm font-medium text-gray-700">Staff ID Number</label>
+                <div className="relative mt-1">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><User className="h-5 w-5 text-gray-400" /></div>
+                  <input id="staffIdNumber" name="staffIdNumber" type="text" required value={staffIdNumber} onChange={(e) => setStaffIdNumber(e.target.value)} className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="Enter your Staff ID"/>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
@@ -162,9 +199,15 @@ function UnifiedLoginForm() {
           </div>
         </div>
         <div>
-          <button type="submit" disabled={isLoading} className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed">
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            type="submit" 
+            disabled={isLoading} 
+            className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {isLoading ? 'Signing in...' : 'Sign In'}
-          </button>
+          </motion.button>
         </div>
       </form>
     </>
@@ -173,33 +216,58 @@ function UnifiedLoginForm() {
 
 export default function LoginPage() {
   return (
-    <>
-      <div className="flex justify-center items-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8">
+    <div className="relative min-h-screen w-full flex justify-center items-center bg-gray-100 overflow-hidden p-4">
+      
+      {/* Abstract Background Shapes */}
+      <div className="absolute inset-0 w-full h-full z-0">
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-gradient-to-r from-violet-300 to-indigo-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
+        <div className="absolute -bottom-40 -right-20 w-96 h-96 bg-gradient-to-r from-purple-300 to-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-gradient-to-r from-sky-300 to-cyan-300 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-blob animation-delay-4000"></div>
+      </div>
+
+      {/* The Login Form Content (sits on top of the background) */}
+      <div className="relative z-10 w-full max-w-md">
+        <motion.div
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="space-y-8"
+        >
           <div className="text-center">
-            <div className="mx-auto h-14 w-14 sm:h-16 sm:w-16 bg-black rounded-full flex items-center justify-center">
-              <span className="text-white text-xl sm:text-2xl font-bold">FF</span>
+            <div className="mx-auto flex justify-center">
+              <Image
+                src="/salon-capp-logo.png"
+                alt="Salon Capp Logo"
+                width={150} // You can adjust the size here
+                height={200} // You can adjust the size here
+                priority // Helps load the logo faster
+              />
             </div>
-            <h2 className="mt-6 text-2xl sm:text-3xl font-extrabold text-gray-900">Sign in to Salon Capp</h2>
-            <p className="mt-2 text-sm text-gray-600">Salon Management System</p>
+            <h2 className="mt- text-2xl sm:text-3xl font-extrabold text-gray-900">
+              Sign in to Salon Capp
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Salon Management System
+            </p>
           </div>
 
-          <div className="bg-white p-6 sm:p-8 shadow-xl rounded-lg">
+          {/* Glassmorphism Card */}
+          <div className="bg-white/70 backdrop-blur-xl p-6 sm:p-8 shadow-2xl rounded-2xl border border-white/20">
             <Suspense fallback={<div className="text-center text-gray-500">Loading Form...</div>}>
               <UnifiedLoginForm />
             </Suspense>
           </div>
 
-          <div className="p-4 bg-gray-100 rounded-md text-center sm:text-left">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</h3>
-            <p className="text-xs text-gray-600">
+          <div className="p-4 bg-white/70 backdrop-blur-xl rounded-2xl text-center sm:text-left shadow-lg border border-white/20">
+            <h3 className="text-sm font-medium text-gray-800 mb-2">Demo Credentials:</h3>
+            <p className="text-xs text-gray-700">
               <span className="font-semibold">Email:</span> superadmin@freshface.com
               <br className="sm:hidden"/> 
               <span className="sm:ml-4 font-semibold">Password:</span> SuperAdmin123!
             </p>
           </div>
-        </div>
+        </motion.div>
       </div>
-    </>
+    </div>
   );
 }

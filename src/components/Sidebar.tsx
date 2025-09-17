@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useState, useEffect, useMemo } from 'react';
 import { hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
+import Image from 'next/image';
 
 import {
   HomeIcon, CalendarDaysIcon, UserGroupIcon, UsersIcon, CogIcon, Cog6ToothIcon, PowerIcon,
@@ -218,7 +219,15 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     <div className="w-full h-full bg-white text-black shadow-lg flex flex-col">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">SC</div>
+            <div className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center">
+              <Image
+              src="/salon-capp-logo.png"
+              alt="Salon Capp Logo"
+              width={50}
+              height={50}
+              priority
+            />
+            </div>
             <div><h1 className="text-xl font-semibold text-gray-800">Salon Capp</h1><p className="text-xs text-gray-500">Salon Management</p></div>
           </div>
           {isMobile && (
