@@ -14,12 +14,12 @@ import { Transition } from '@headlessui/react';
 import { hasPermission, PERMISSIONS } from '../../../../lib/permissions';
 
 
-// --- MODIFIED: Type Definition ---
+// --- Type Definitions ---
 interface SaleDetail { name: string; quantity: number; price: number; }
 interface DailyBreakdown { service: SaleDetail[]; product: SaleDetail[]; giftCard: SaleDetail[]; package: SaleDetail[]; membership: SaleDetail[]; }
 export interface StaffSaleRecord {
     staffId: string;
-    staffIdNumber: string; // Employee Code
+    staffIdNumber: string;
     name: string;
     totalSales: number;
     service: number;
@@ -28,7 +28,6 @@ export interface StaffSaleRecord {
     package: number;
     membership: number;
     billCount: number;
-    // --- ADDED: New properties ---
     serviceCount: number;
     productCount: number;
     membershipCount: number;
@@ -36,16 +35,22 @@ export interface StaffSaleRecord {
     dailyBreakdown: Record<string, DailyBreakdown>;
 }
 
-// --- Helper Functions (Unchanged) ---
+interface StaffSalesReportViewProps {
+    initialData: StaffSaleRecord[];
+    initialError?: string;
+}
+
+// --- Helper Functions ---
 const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// --- Staff Detail Drawer Component (Unchanged) ---
+// --- Staff Detail Drawer Component ---
 const StaffDetailDrawer: React.FC<{ staffData: StaffSaleRecord | null; onClose: () => void; }> = ({ staffData, onClose }) => {
-    // ... (This component remains unchanged)
     const sortedDays = useMemo(() => {
         if (!staffData) return [];
         return Object.keys(staffData.dailyBreakdown).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
     }, [staffData]);
+
+    const totalGrossSalesForPeriod = (staffData?.totalSales || 0) + (staffData?.totalDiscount || 0);
 
     return (
         <Transition show={!!staffData} as={Fragment}>
@@ -62,13 +67,22 @@ const StaffDetailDrawer: React.FC<{ staffData: StaffSaleRecord | null; onClose: 
                             </div>
                             <Button variant="ghost" className="rounded-full h-9 w-9 p-0" onClick={onClose}><X /></Button>
                         </header>
-                        <div className="flex-grow p-6 overflow-y-auto space-y-6">
+                        <div className="flex-grow p-6 overflow-y-auto space-y-6 bg-gray-50">
                             {sortedDays.length > 0 ? sortedDays.map(date => {
                                 const dayData = staffData!.dailyBreakdown[date];
                                 const allSales = [...dayData.service, ...dayData.product, ...dayData.giftCard, ...dayData.package, ...dayData.membership];
+                                
+                                const dailyGrossSales = allSales.reduce((sum, item) => sum + item.price, 0);
+                                
+                                const dailyProratedDiscount = totalGrossSalesForPeriod > 0
+                                    ? (staffData!.totalDiscount * dailyGrossSales) / totalGrossSalesForPeriod
+                                    : 0;
+                                
+                                const dailyNetSales = dailyGrossSales - dailyProratedDiscount;
+
                                 return (
-                                    <div key={date} className="border rounded-lg">
-                                        <h3 className="font-semibold p-3 bg-gray-100 text-gray-700">{format(new Date(date), 'EEEE, dd MMM yyyy')}</h3>
+                                    <div key={date} className="border rounded-lg bg-white shadow-sm overflow-hidden">
+                                        <h3 className="font-semibold p-3 bg-gray-100 text-gray-700 border-b">{format(new Date(date), 'EEEE, dd MMM yyyy')}</h3>
                                         <div className="divide-y">
                                             {allSales.map((item, index) => (
                                                 <div key={index} className="p-3 flex justify-between items-center text-sm">
@@ -80,6 +94,21 @@ const StaffDetailDrawer: React.FC<{ staffData: StaffSaleRecord | null; onClose: 
                                                 </div>
                                             ))}
                                         </div>
+                                        <div className="p-3 bg-gray-50 border-t">
+                                            <div className="flex justify-between items-center text-sm mb-1">
+                                                <span className="text-gray-600">Subtotal</span>
+                                                <span className="font-medium text-gray-800">{formatCurrency(dailyGrossSales)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm text-red-600">
+                                                <span className="font-medium">Discount</span>
+                                                <span className="font-medium">{formatCurrency(dailyProratedDiscount)}</span>
+                                            </div>
+                                            <hr className="my-2" />
+                                            <div className="flex justify-between items-center font-bold">
+                                                <span className="text-gray-800">Total</span>
+                                                <span className="text-gray-900">{formatCurrency(dailyNetSales)}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 );
                             }) : <p className="text-center text-gray-500 p-8">No sales recorded for this staff in the selected period.</p>}
@@ -90,12 +119,8 @@ const StaffDetailDrawer: React.FC<{ staffData: StaffSaleRecord | null; onClose: 
         </Transition>
     );
 };
-// --- Main View Component ---
-interface StaffSalesReportViewProps {
-    initialData: StaffSaleRecord[];
-    initialError?: string;
-}
 
+// --- Main View Component ---
 export default function StaffSalesReportView({ initialData, initialError }: StaffSalesReportViewProps) {
     const { data: session, status: sessionStatus } = useSession();
     const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
@@ -147,12 +172,11 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
         }
     }, [initialError]);
 
-    // --- MODIFIED: Export function to include new columns ---
     const handleExport = (type: 'pdf' | 'excel') => {
         const doc = new jsPDF({ orientation: 'landscape' });
         const tableColumn = [
-            "Staff", "Emp. Code", "Bill Count", "Svc. Count", "Prod. Count", "Mem. Count", 
-            "Service Sales", "Product Sales", "Gift Card Sales", "Package Sales", "Membership Sales", 
+            "Staff", "Emp. Code", "Bill Count", "Svc. Count", "Prod. Count", "Mem. Count",
+            "Service Sales", "Product Sales", "Gift Card Sales", "Package Sales", "Membership Sales",
             "Total Discount", "Total Sales"
         ];
         const tableRows = filteredData.map(item => [
@@ -189,7 +213,7 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
             XLSX.writeFile(wb, "staff_sales_report.xlsx");
         }
     };
-    
+
     if (sessionStatus === 'loading') {
         return <div className="p-6 text-center flex items-center justify-center"><Loader2 className="animate-spin mr-2" />Loading session...</div>;
     }
@@ -229,10 +253,9 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
                         </div>
                     )}
                 </div>
-                
+
                 <div className="overflow-x-auto">
                     <table className="min-w-full">
-                        {/* --- MODIFIED: Table Head --- */}
                         <thead className="bg-gray-50"><tr>
                             <th className="p-4 text-left text-xs font-semibold text-gray-500 uppercase">Staff</th>
                             <th className="p-4 text-left text-xs font-semibold text-gray-500 uppercase">Emp. Code</th>
@@ -249,11 +272,11 @@ export default function StaffSalesReportView({ initialData, initialError }: Staf
                             <th className="p-4 text-right text-xs font-semibold text-gray-500 uppercase">Total Sales</th>
                         </tr></thead>
                         <tbody className="divide-y">
-                            {/* --- MODIFIED: Table Body and Colspan --- */}
                             {isLoading ? <tr><td colSpan={13} className="text-center p-10">Loading...</td></tr> :
                              error ? <tr><td colSpan={13} className="text-center p-10 text-red-500">{error}</td></tr> :
                              filteredData.map(staff => (
                                 <tr key={staff.staffId} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedStaff(staff)}>
+                                    {/* --- THIS IS THE FIX --- */}
                                     <td className="p-4 whitespace-nowrap"><div className="font-semibold text-indigo-600">{staff.name}</div></td>
                                     <td className="p-4 whitespace-nowrap text-gray-600">{staff.staffIdNumber}</td>
                                     <td className="p-4 text-center font-medium">{staff.billCount}</td>

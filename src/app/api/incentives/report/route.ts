@@ -5,15 +5,17 @@ import dbConnect from '@/lib/mongodb';
 import DailySale from '@/models/DailySale';
 import Staff, { IStaff } from '@/models/staff';
 import IncentiveRule from '@/models/IncentiveRule';
+import Invoice from '@/models/invoice'; // Import the Invoice model
 import { getTenantIdOrBail } from '@/lib/tenant';
+import mongoose from 'mongoose';
 
-// --- TYPE DEFINITIONS ---
+// --- TYPE DEFINITIONS (Unchanged) ---
 type MultiplierRule = { target: { multiplier: number }, sales: { includeServiceSale: boolean, includeProductSale: boolean, reviewNameValue?: number, reviewPhotoValue?: number }, incentive: { rate: number, doubleRate: number, applyOn: 'totalSaleValue' | 'serviceSaleOnly' } };
 type FixedTargetRule = { target: { targetValue: number }, incentive: { rate: number, doubleRate: number } };
 type MonthlyRule = { target: { multiplier: number }, sales: { includeServiceSale: boolean, includeProductSale: boolean }, incentive: { rate: number, doubleRate: number, applyOn: 'totalSaleValue' | 'serviceSaleOnly' } };
 
 
-// --- HELPER FUNCTIONS ---
+// --- HELPER FUNCTIONS (Unchanged) ---
 function getDaysInMonth(year: number, month: number): number { return new Date(year, month + 1, 0).getDate(); }
 
 function calculateIncentive(achieved: number, target: number, rate: number, doubleRate: number, base: number) {
@@ -30,6 +32,8 @@ function findHistoricalRule<T>(rules: T[], timestamp: Date): T | null {
 
 function calculateTotalCumulativeMonthly(sales: any[], staff: IStaff, rule: MonthlyRule | null) {
     if (!rule) return 0;
+    // Note: This function operates on cumulative sales and doesn't need net sales,
+    // as it's a monthly check. The daily delta handles the net calculation.
     const totalService = sales.reduce((sum, s) => sum + s.serviceSale, 0);
     const totalProduct = sales.reduce((sum, s) => sum + s.productSale, 0);
     const target = (staff.salary || 0) * rule.target.multiplier;
@@ -44,6 +48,7 @@ export async function POST(request: Request) {
     await dbConnect();
     const tenantId = getTenantIdOrBail(request as any);
     if (tenantId instanceof NextResponse) return tenantId;
+    const objectIdTenantId = new mongoose.Types.ObjectId(tenantId);
 
     const body = await request.json();
     const { startDate, endDate } = body;
@@ -51,13 +56,14 @@ export async function POST(request: Request) {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
     const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
 
-    const [allStaff, allSalesInMonth, allRules] = await Promise.all([
-        Staff.find({ tenantId, salary: { $exists: true, $gt: 0 } }).lean(),
-        DailySale.find({ tenantId, date: { $gte: monthStart, $lte: end } }).sort({ date: 'asc' }).lean(),
+    const [allStaff, allSalesInMonth, allRules, staffDiscountsByDay] = await Promise.all([
+        Staff.find({ tenantId: objectIdTenantId, salary: { $exists: true, $gt: 0 } }).lean(),
+        DailySale.find({ tenantId: objectIdTenantId, date: { $gte: monthStart, $lte: end } }).sort({ date: 'asc' }).lean(),
         (async () => {
-            const rules = await IncentiveRule.find({ tenantId }).sort({ createdAt: -1 }).lean();
+            const rules = await IncentiveRule.find({ tenantId: objectIdTenantId }).sort({ createdAt: -1 }).lean();
             return {
               daily: rules.filter(r => r.type === 'daily'),
               monthly: rules.filter(r => r.type === 'monthly'),
@@ -65,20 +71,46 @@ export async function POST(request: Request) {
               giftCard: rules.filter(r => r.type === 'giftCard'),
             };
         })(),
+        // ✅ --- THIS IS THE FIX --- ✅
+        // Aggregate all discounted invoices in the period to calculate each staff's share of discounts per day.
+        Invoice.aggregate([
+          { $match: { createdAt: { $gte: start, $lte: end }, tenantId: objectIdTenantId, paymentStatus: 'Paid', 'manualDiscount.appliedAmount': { $gt: 0 } } },
+          { $addFields: { dateString: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: "UTC" } } } },
+          { $unwind: '$lineItems' },
+          { $group: { _id: { invoiceId: '$_id', date: '$dateString' }, lineItems: { $push: '$lineItems' }, manualDiscountAmount: { $first: '$manualDiscount.appliedAmount' } } },
+          { $addFields: { totalServiceValueOnInvoice: { $reduce: { input: '$lineItems', initialValue: 0, in: { $add: ['$$value', { $cond: [{ $eq: ['$$this.itemType', 'service'] }, '$$this.finalPrice', 0] }] } } } } },
+          { $match: { totalServiceValueOnInvoice: { $gt: 0 } } },
+          { $unwind: '$lineItems' },
+          { $match: { 'lineItems.itemType': 'service', 'lineItems.staffId': { $exists: true, $ne: null } } },
+          { $project: { _id: 0, date: '$_id.date', staffId: '$lineItems.staffId', proratedDiscount: { $multiply: [ '$manualDiscountAmount', { $divide: ['$lineItems.finalPrice', '$totalServiceValueOnInvoice'] } ] } } },
+          { $group: { _id: { date: '$date', staffId: '$staffId' }, totalDiscount: { $sum: '$proratedDiscount' } } }
+        ])
     ]);
+
+    // Create an efficient lookup map for discounts: Map<dateString, Map<staffId, discount>>
+    const discountMap = new Map<string, Map<string, number>>();
+    for (const item of staffDiscountsByDay) {
+        const date = item._id.date;
+        const staffId = item._id.staffId.toString();
+        const discount = item.totalDiscount;
+        if (!discountMap.has(date)) {
+            discountMap.set(date, new Map());
+        }
+        discountMap.get(date)!.set(staffId, discount);
+    }
+    // ✅ --- END OF THE FIX --- ✅
+
 
     const dailyReport: any[] = [];
     const staffSummaryMap = new Map<string, { name: string; totalIncentive: number, daily: number, monthly: number, package: number, giftCard: number }>();
 
     for (const staff of allStaff) {
         const staffIdString = staff._id.toString();
-        // ✅ FIX: Initialize every staff member in the map to guarantee they have a record.
         staffSummaryMap.set(staffIdString, { name: staff.name, totalIncentive: 0, daily: 0, monthly: 0, package: 0, giftCard: 0 });
         
         const staffSalesInMonth = allSalesInMonth.filter(s => s.staff.toString() === staffIdString);
         if (staffSalesInMonth.length === 0) continue;
 
-        // This loop now only calculates for staff who have sales, then we add results to the pre-initialized map
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
             const dateString = d.toISOString().split('T')[0];
             const saleForThisDay = staffSalesInMonth.find(s => new Date(s.date).toISOString().split('T')[0] === dateString);
@@ -94,11 +126,18 @@ export async function POST(request: Request) {
             let dailyRate = 0;
             let dailyTarget = 0;
             if (dailyRule && saleForThisDay) {
+                // ✅ --- APPLY THE FIX --- ✅
+                // Look up the discount and calculate net sales before calculating incentive.
+                const discountForDay = discountMap.get(dateString)?.get(staffIdString) || 0;
+                const netServiceSale = saleForThisDay.serviceSale - discountForDay;
+
                 const daysInMonth = getDaysInMonth(d.getFullYear(), d.getMonth());
                 dailyTarget = ((staff.salary || 0) * dailyRule.target.multiplier) / daysInMonth;
                 const reviewBonus = (saleForThisDay.reviewsWithName * (dailyRule.sales?.reviewNameValue || 0)) + (saleForThisDay.reviewsWithPhoto * (dailyRule.sales?.reviewPhotoValue || 0));
-                const achieved = (dailyRule.sales.includeServiceSale ? saleForThisDay.serviceSale : 0) + (dailyRule.sales.includeProductSale ? saleForThisDay.productSale : 0) + reviewBonus;
-                const base = dailyRule.incentive?.applyOn === 'serviceSaleOnly' ? saleForThisDay.serviceSale : achieved;
+                
+                // Use the new `netServiceSale` in calculations
+                const achieved = (dailyRule.sales.includeServiceSale ? netServiceSale : 0) + (dailyRule.sales.includeProductSale ? saleForThisDay.productSale : 0) + reviewBonus;
+                const base = dailyRule.incentive?.applyOn === 'serviceSaleOnly' ? netServiceSale : achieved;
                 const result = calculateIncentive(achieved, dailyTarget, dailyRule.incentive.rate, dailyRule.incentive.doubleRate, base);
                 dailyIncentive = result.incentive;
                 dailyRate = result.appliedRate;
@@ -156,7 +195,6 @@ export async function POST(request: Request) {
     const dailySummaryReport: any[] = [];
     const monthlyReport: any[] = [], packageReport: any[] = [], giftCardReport: any[] = [];
 
-    // ✅ FIX: This loop now iterates over the map, ensuring all staff are included in the final reports.
     for (const [staffIdString, summary] of staffSummaryMap.entries()) {
         const staff = allStaff.find(s => s._id.toString() === staffIdString)!;
         
