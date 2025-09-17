@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
+// The array of report links, now including the new report
 const reportLinks = [
   { href: '/reports/appointment-report', label: 'Appointment Report' },
-  // ▼▼▼ ADD THIS LINE ▼▼▼
-  { href: '/reports/eb-report', label: 'EB Report' }, 
-  // ▲▲▲ END OF ADDITION ▲▲▲
-  { href: '/reports', label: 'Sales Report' }, 
+  { href: '/reports/eb-report', label: 'EB Report' },
+  { href: '/reports/day-end-closing-report', label: 'Day End Closing Report' },
+  { href: '/reports', label: 'Sales Report' },
   { href: '/reports/gift-card-sold', label: 'Gift Card Sold' },
   { href: '/reports/gift-card-redemption', label: 'Gift Card Redemption' },
   { href: '/reports/package-sales', label: 'Package Sales' },
@@ -40,9 +40,11 @@ export function ReportsNav() {
   return (
     <nav className="flex flex-col space-y-1">
       {reportLinks.map((link) => {
-        const isActive = link.href === '/reports'
-          ? pathname === link.href
-          : pathname.startsWith(link.href);
+        // This logic correctly highlights the active link
+        const isActive =
+          link.href === '/reports'
+            ? pathname === link.href
+            : pathname.startsWith(link.href);
 
         return (
           <Link
@@ -51,8 +53,8 @@ export function ReportsNav() {
             className={cn(
               'rounded-md px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap',
               isActive
-                ? 'bg-gray-900 text-white'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'bg-gray-900 text-white' // Style for the active link
+                : 'text-gray-600 hover:bg-gray-100' // Style for inactive links
             )}
           >
             {link.label}
