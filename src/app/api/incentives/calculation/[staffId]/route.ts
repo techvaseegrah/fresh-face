@@ -81,21 +81,24 @@ export async function GET(request: Request, { params }: { params: { staffId: str
         tenantId 
     }).sort({ date: 'asc' }).lean();
 
+    // ✨ --- THIS IS THE FIX --- ✨
+    // The `as unknown as ...` cast is added to satisfy the strict production TypeScript compiler.
+    // It tells the compiler to trust that the data from the database will match our defined types.
     const allRules = {
-        daily: await IncentiveRule.find({ tenantId, type: 'daily' }).sort({ createdAt: -1 }).lean(),
-        monthly: await IncentiveRule.find({ tenantId, type: 'monthly' }).sort({ createdAt: -1 }).lean(),
-        package: await IncentiveRule.find({ tenantId, type: 'package' }).sort({ createdAt: -1 }).lean(),
-        giftCard: await IncentiveRule.find({ tenantId, type: 'giftCard' }).sort({ createdAt: -1 }).lean(),
+        daily: await IncentiveRule.find({ tenantId, type: 'daily' }).sort({ createdAt: -1 }).lean() as unknown as DailyRule[],
+        monthly: await IncentiveRule.find({ tenantId, type: 'monthly' }).sort({ createdAt: -1 }).lean() as unknown as MonthlyRule[],
+        package: await IncentiveRule.find({ tenantId, type: 'package' }).sort({ createdAt: -1 }).lean() as unknown as FixedTargetRule[],
+        giftCard: await IncentiveRule.find({ tenantId, type: 'giftCard' }).sort({ createdAt: -1 }).lean() as unknown as FixedTargetRule[],
     };
 
     const saleForThisDay = allSalesInMonth.find(s => new Date(s.date).toISOString().split('T')[0] === dateQuery);
     
     const historicalTimestamp = saleForThisDay ? new Date(saleForThisDay.createdAt || saleForThisDay.date) : targetDate;
     
-    const dailyRule = findHistoricalRule(allRules.daily, historicalTimestamp) as DailyRule | null;
-    const monthlyRule = findHistoricalRule(allRules.monthly, historicalTimestamp) as MonthlyRule | null;
-    const packageRule = findHistoricalRule(allRules.package, historicalTimestamp) as FixedTargetRule | null;
-    const giftCardRule = findHistoricalRule(allRules.giftCard, historicalTimestamp) as FixedTargetRule | null;
+    const dailyRule = findHistoricalRule(allRules.daily, historicalTimestamp);
+    const monthlyRule = findHistoricalRule(allRules.monthly, historicalTimestamp);
+    const packageRule = findHistoricalRule(allRules.package, historicalTimestamp);
+    const giftCardRule = findHistoricalRule(allRules.giftCard, historicalTimestamp);
     
     let dailyResult = null, monthlyResult = null, packageResult = null, giftCardResult = null;
     
@@ -109,8 +112,6 @@ export async function GET(request: Request, { params }: { params: { staffId: str
         const dayEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
         const allInvoicesForDay = await Invoice.find({ tenantId: tenantId, createdAt: { $gte: dayStart, $lte: dayEnd } }).lean();
         
-        // ✨ --- THIS IS THE FIX --- ✨
-        // This new logic correctly calculates the discount share based only on service sales.
         for (const invoice of allInvoicesForDay) {
             const manualDiscountAmount = invoice.manualDiscount?.appliedAmount || 0;
             if (manualDiscountAmount <= 0) continue;
@@ -118,8 +119,6 @@ export async function GET(request: Request, { params }: { params: { staffId: str
             let totalServiceValueOnInvoice = 0;
             let staffServiceValueOnInvoice = 0;
 
-            // First, calculate the total value of ALL services on this invoice
-            // and the value of services done by THIS specific staff member.
             for (const item of (invoice.lineItems || [])) {
                 if (item.itemType === 'service') {
                     totalServiceValueOnInvoice += item.finalPrice;
@@ -129,12 +128,8 @@ export async function GET(request: Request, { params }: { params: { staffId: str
                 }
             }
 
-            // Only proceed if there were services on the bill to apply the discount to.
             if (totalServiceValueOnInvoice > 0 && staffServiceValueOnInvoice > 0) {
-                 // Calculate the staff's share of the discount based on their proportion of the SERVICE total.
                  const staffShareOfDiscount = (manualDiscountAmount * staffServiceValueOnInvoice) / totalServiceValueOnInvoice;
-                 
-                 // Subtract this correctly calculated share from their service sale total for the day.
                  netServiceSaleForCalculation -= staffShareOfDiscount;
             }
         }
@@ -178,7 +173,7 @@ export async function GET(request: Request, { params }: { params: { staffId: str
     const salesUpToToday = allSalesInMonth.filter(s => new Date(s.date) <= targetDate);
     const salesUpToYesterday = allSalesInMonth.filter(s => new Date(s.date) <= yesterday);
     const yesterdayTimestamp = salesUpToYesterday.length > 0 ? new Date(salesUpToYesterday[salesUpToYesterday.length - 1].createdAt || yesterday) : yesterday;
-    const monthlyRuleYesterday = findHistoricalRule(allRules.monthly, yesterdayTimestamp) as MonthlyRule | null;
+    const monthlyRuleYesterday = findHistoricalRule(allRules.monthly, yesterdayTimestamp);
     const cumulativeMonthlyToday = calculateTotalCumulativeMonthly(salesUpToToday, staff, monthlyRule);
     const cumulativeMonthlyYesterday = calculateTotalCumulativeMonthly(salesUpToYesterday, staff, monthlyRuleYesterday);
     const monthlyIncentiveDelta = cumulativeMonthlyToday - cumulativeMonthlyYesterday;
