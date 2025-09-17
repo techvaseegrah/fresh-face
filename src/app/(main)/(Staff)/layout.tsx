@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import Image from 'next/image';
 
 const NavLink = ({ href, icon, children, onClick }: { href: string, icon: React.ReactNode, children: React.ReactNode, onClick?: () => void }) => {
     const pathname = usePathname();
@@ -75,8 +76,16 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
       {/* Mobile Header (fixed, only visible when sidebar is closed on mobile) */}
       <div className="md:hidden fixed top-0 left-0 w-full bg-white shadow-md px-4 flex items-center justify-between z-50 h-12"> 
           <div className="flex items-center gap-3">
-              <div className="h-8 w-8 bg-black rounded-full flex items-center justify-center text-white font-bold text-sm">FF</div>
-              <h2 className="text-md font-bold text-black">Fresh Face</h2>
+             <div className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center">
+                           <Image
+                           src="/salon-capp-logo.png"
+                           alt="Salon Capp Logo"
+                           width={50}
+                           height={50}
+                           priority
+                         />
+                         </div>
+              <h2 className="text-md font-bold text-black">Salon Capp</h2>
           </div>
           <button onClick={toggleMobileMenu} className="text-gray-700 p-2"> 
               <Menu size={20} /> 
@@ -107,9 +116,17 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
           {/* Sidebar's Internal Header (Always visible within the sidebar, acts as header for mobile menu) */}
           <div className="p-4 border-b flex items-center justify-between"> 
               <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">FF</div>
+                 <div className="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center">
+                           <Image
+                           src="/salon-capp-logo.png"
+                           alt="Salon Capp Logo"
+                           width={50}
+                           height={50}
+                           priority
+                         />
+                         </div>
                   <div>
-                      <h2 className="text-md font-bold text-black">Fresh Face</h2>
+                      <h2 className="text-md font-bold text-black">Salon Capp</h2>
                       <p className="text-xs text-gray-500">Salon Management</p>
                   </div>
               </div>
