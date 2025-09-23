@@ -16,7 +16,7 @@ import type { TargetSheetData, SummaryMetrics } from '@/models/TargetSheet';
 import { useSession } from 'next-auth/react';
 import { PERMISSIONS, hasPermission } from '@/lib/permissions';
 
-// --- HELPER FUNCTIONS (Unchanged) ---
+// --- HELPER FUNCTIONS (Unchanged section) ---
 const formatCurrency = (value: number | undefined | null) => {
     if (value === undefined || value === null) return '₹0.00';
     return new Intl.NumberFormat('en-IN', {
@@ -40,6 +40,19 @@ const calculatePercentage = (achieved: number = 0, target: number = 0) => {
     if (target === 0) return 0;
     return Math.round((achieved / target) * 100);
 };
+
+// --- NEW HELPER FUNCTION TO FIX DATE ISSUE ---
+/**
+ * Formats a Date object into a 'YYYY-MM-DD' string based on local time,
+ * avoiding timezone shifts from toISOString().
+ */
+const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 
 // --- HELPER COMPONENTS (Unchanged) ---
 interface ProgressBarProps { value: number; }
@@ -95,6 +108,7 @@ export default function TargetView({ initialData }: TargetViewProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
+    // This initialization is correct, the problem was in formatting the output.
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
         end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0),
@@ -115,13 +129,15 @@ export default function TargetView({ initialData }: TargetViewProps) {
 
     const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
+        // new Date() correctly parses 'YYYY-MM-DD' in the local timezone
         setDateRange(prev => ({ ...prev, [name]: new Date(value) }));
     };
 
     const handleFilterData = async () => {
         setIsLoading(true);
-        const startDate = dateRange.start.toISOString().split('T')[0];
-        const endDate = dateRange.end.toISOString().split('T')[0];
+        // --- MODIFIED --- Use the new helper to prevent timezone issues
+        const startDate = formatDateForInput(dateRange.start);
+        const endDate = formatDateForInput(dateRange.end);
 
         try {
             const res = await fetch(`/api/target?startDate=${startDate}&endDate=${endDate}`);
@@ -174,6 +190,8 @@ export default function TargetView({ initialData }: TargetViewProps) {
     }
 
     const { target = {}, achieved = {}, headingTo = {} } = data.summary || {};
+
+    // --- Unchanged JSX from here downwards, except for the date input values ---
 
     const mainMetrics = [
         { title: 'Net Sales', achieved: achieved.netSales, target: target.netSales, isCurrency: true, icon: <TrendingUp className="text-green-500" size={24} /> },
@@ -260,27 +278,26 @@ export default function TargetView({ initialData }: TargetViewProps) {
                 </div>
             )}
             
-            {/* --- REVISED HEADER --- */}
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                 {/* Left Side: Title */}
                  <div>
                     <h1 className="text-3xl font-bold text-gray-800">Shop Targets Dashboard</h1>
                     <p className="text-gray-500 mt-1">{`Showing data for: ${dateRange.start.toLocaleDateString()} - ${dateRange.end.toLocaleDateString()}`}</p>
                  </div>
 
-                 {/* Right Side: Single row of actions */}
                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <input 
                         type="date" 
                         name="start" 
-                        value={dateRange.start.toISOString().split('T')[0]} 
+                        // --- MODIFIED --- Use the helper function to prevent timezone issues
+                        value={formatDateForInput(dateRange.start)} 
                         onChange={handleDateChange} 
                         className="bg-white p-2 border border-gray-300 rounded-lg text-sm h-10"
                     />
                     <input 
                         type="date" 
                         name="end" 
-                        value={dateRange.end.toISOString().split('T')[0]} 
+                        // --- MODIFIED --- Use the helper function to prevent timezone issues
+                        value={formatDateForInput(dateRange.end)} 
                         onChange={handleDateChange} 
                         className="bg-white p-2 border border-gray-300 rounded-lg text-sm h-10"
                     />
@@ -309,7 +326,6 @@ export default function TargetView({ initialData }: TargetViewProps) {
                  </div>
             </header>
             
-            {/* --- REST OF THE PAGE (Unchanged) --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 {mainMetrics.map(metric => (<MetricCard key={metric.title} title={metric.title} achieved={metric.achieved ?? 0} target={metric.target ?? 0} isCurrency={metric.isCurrency} icon={metric.icon} />))}
             </div>
