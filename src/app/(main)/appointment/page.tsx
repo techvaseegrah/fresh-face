@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, FC } from 'react';
-import BookAppointmentForm, { NewBookingData } from './BookAppointmentForm';
+// CORRECTED: Import from the new component's directory
+import BookAppointmentForm from './components/BookAppointmentForm';
+import { NewBookingData } from './components/BookAppointmentForm/types';
+
 import BillingModal from './billingmodal';
 import { FinalizeBillingPayload, FinalizedInvoice, AppointmentForModal } from './components/billing/billing.types';
 import {
@@ -21,7 +24,6 @@ import { formatDuration } from '@/lib/utils';
 import { Tooltip } from 'react-tooltip';
 import 'react-tooltip/dist/react-tooltip.css';
 
-// ... (Interface and component definitions remain the same) ...
 interface AppointmentWithCustomer {
   _id: string;
   id: string;
@@ -33,6 +35,7 @@ interface AppointmentWithCustomer {
   status: 'Appointment' | 'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
   appointmentType: 'Online' | 'Offline';
   serviceIds?: Array<{ _id: string; name: string; price: number; membershipRate?: number; duration: number; }>;
+  productIds?: Array<{ _id: string; name: string; price: number; membershipRate?: number; }>;
   amount?: number;
   estimatedDuration?: number;
   actualDuration?: number;
@@ -66,7 +69,10 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
     const customerName = appointment.customerId?.name || 'N/A';
     const customerPhone = appointment.customerId?.phoneNumber || 'N/A';
     const stylistName = appointment.stylistId?.name || 'N/A';
-    const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map((s) => s.name).join(', ') : 'N/A';
+    const serviceNames = appointment.serviceIds?.map(s => s.name) || [];
+    const productNames = appointment.productIds?.map(p => p.name) || [];
+    const allItems = [...serviceNames, ...productNames];
+    const allItemsDisplay = allItems.length > 0 ? allItems.join(', ') : 'N/A';
     const isActionable = !['Cancelled', 'No-Show'].includes(appointment.status);
     const isPaid = appointment.status === 'Paid';
 
@@ -87,7 +93,12 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
             </div>
 
             <div className="border-t border-b border-gray-200 py-3 space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-500">Services:</span> <span className="font-semibold text-right">{serviceNames}</span></div>
+                <div className="flex justify-between">
+                    {/* Changed "Services:" to "Items:" to be more generic */}
+                    <span className="text-gray-500">Items:</span> 
+                    {/* Use the new combined variable here */}
+                    <span className="font-semibold text-right">{allItemsDisplay}</span>
+                </div>
                 <div className="flex justify-between"><span className="text-gray-500">Stylist:</span> <span className="font-semibold">{stylistName}</span></div>
                 {appointment.finalAmount != null && <div className="flex justify-between"><span className="text-gray-500">Amount:</span> <span className="font-bold text-green-600">₹{appointment.finalAmount.toFixed(2)}</span></div>}
             </div>
@@ -125,7 +136,6 @@ export default function AppointmentPage() {
   const [totalAppointmentsCount, setTotalAppointmentsCount] = useState(0);
   const [isDesktop, setIsDesktop] = useState(true);
 
-  // ... (useEffect hooks and other handlers remain the same) ...
   useEffect(() => {
     const checkScreenSize = () => {
         setIsDesktop(window.innerWidth >= 1024);
@@ -170,7 +180,10 @@ export default function AppointmentPage() {
   }, [fetchAppointments]);
 
   useEffect(() => {
-    if (currentPage !== 1) { setCurrentPage(1); }
+    // Reset to page 1 when filters change, but not on initial load
+    if (currentPage !== 1) { 
+        setCurrentPage(1); 
+    }
   }, [searchTerm, statusFilter, startDate, endDate]);
 
   const handleBookNewAppointment = async (bookingData: NewBookingData) => {
@@ -183,6 +196,7 @@ export default function AppointmentPage() {
         fetchAppointments();
       } catch (err: any) {
         toast.error(err.message);
+        // Re-throw the error so the form's `finally` block can run, keeping the modal open on failure.
         throw err;
       }
   };
@@ -229,18 +243,17 @@ export default function AppointmentPage() {
       const response = await tenantFetch(url, { method, body: JSON.stringify(finalPayload) });
       const result = await response.json();
 
-      // ** THE FIX IS HERE **
-      // We now check for 'result.data' (from the PUT route) OR 'result.invoice' (from the POST route).
+      // **FIX:** Handles responses from both POST (`result.invoice`) and PUT (`result.data`)
       const invoiceData = result.data || result.invoice;
 
       if (!response.ok || !result.success || !invoiceData) {
         throw new Error(result.message || (isUpdating ? 'Failed to update invoice.' : 'Failed to create invoice.'));
       }
       
-      // Return the invoice data, regardless of which key it came from.
       return invoiceData;
 
     } catch (err: any) {
+      // Re-throw to be caught by the billing modal's logic
       throw err;
     }
   };
@@ -251,7 +264,6 @@ export default function AppointmentPage() {
     fetchAppointments();
   };
 
-  // ... (rest of the component remains the same) ...
   const handleFilterChange = (newStatus: string) => { setStatusFilter(newStatus); };
   const canCreateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_CREATE));
   const canUpdateAppointments = session && (hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_MANAGE) || hasPermission(session.user.role.permissions, PERMISSIONS.APPOINTMENTS_UPDATE));
@@ -297,7 +309,13 @@ export default function AppointmentPage() {
                       const customerName = appointment.customerId?.name || 'N/A';
                       const customerPhone = appointment.customerId?.phoneNumber || 'N/A';
                       const stylistName = appointment.stylistId?.name || 'N/A';
-                      const serviceNames = Array.isArray(appointment.serviceIds) && appointment.serviceIds.length > 0 ? appointment.serviceIds.map((s) => s.name).join(', ') : 'N/A';
+                      const serviceNamesList = appointment.serviceIds?.map(s => s.name) || [];
+                      // Get product names, defaulting to an empty array if undefined
+                      const productNamesList = appointment.productIds?.map(p => p.name) || [];
+                      // Combine both lists
+                      const allItemNames = [...serviceNamesList, ...productNamesList];
+                      // Create a display string
+                      const allItemsDisplay = allItemNames.length > 0 ? allItemNames.join(', ') : 'N/A';
                       const billingStaffName = appointment.billingStaffId?.name || 'N/A';
                       const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join('<br />') || 'No payment' : '';
                       const isActionable = !['Cancelled', 'No-Show'].includes(appointment.status);
@@ -315,7 +333,7 @@ export default function AppointmentPage() {
                             {appointment.invoiceId && ( <div className="mt-1 text-xs text-gray-500 font-mono" > Inv: {appointment.invoiceId.invoiceNumber} </div> )}
                             {(appointment.actualDuration || appointment.estimatedDuration) && ( <div className="mt-1 flex items-center gap-1 text-xs text-gray-500"><ClockIcon className="w-3.5 h-3.5" /><span className={appointment.actualDuration ? 'font-semibold text-gray-700' : ''}>{formatDuration(appointment.actualDuration ?? appointment.estimatedDuration)}</span></div> )}
                           </td>
-                          <td className="px-6 py-4">{serviceNames}</td>
+                          <td className="px-6 py-4">{allItemsDisplay}</td>
                           <td className="px-6 py-4 whitespace-nowrap">{stylistName}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div>{formatDateIST(appointment.createdAt)}</div>
@@ -366,9 +384,17 @@ export default function AppointmentPage() {
       )}
       
       <BookAppointmentForm isOpen={isBookAppointmentModalOpen} onClose={() => setIsBookAppointmentModalOpen(false)} onBookAppointment={handleBookNewAppointment} />
-      <EditAppointmentForm isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setSelectedAppointmentForEdit(null); }} appointment={selectedAppointmentForEdit} onUpdateAppointment={handleUpdateAppointment} />
       
-      {selectedAppointmentForBilling && isBillingModalOpen && (
+      {isEditModalOpen && selectedAppointmentForEdit && (
+        <EditAppointmentForm 
+          isOpen={isEditModalOpen} 
+          onClose={() => { setIsEditModalOpen(false); setSelectedAppointmentForEdit(null); }} 
+          appointment={selectedAppointmentForEdit} 
+          onUpdateAppointment={handleUpdateAppointment} 
+        />
+      )}
+      
+      {isBillingModalOpen && selectedAppointmentForBilling && (
         <BillingModal 
             isOpen={isBillingModalOpen} 
             onClose={handleCloseBillingModal} 

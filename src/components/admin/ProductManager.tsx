@@ -101,7 +101,7 @@ export default function ProductManager() {
     try {
       const res = await tenantFetch(`/api/products?subCategoryId=${subCategoryId}`)
       const data = await res.json()
-      setProducts(data.success ? data.data : [])
+     setProducts(data.success ? data.products || [] : []) 
     } catch (error: any) {
       toast.error(error.message || "Failed to load products.")
       setProducts([])

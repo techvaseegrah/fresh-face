@@ -192,7 +192,24 @@ export const useBillingState = ({ isOpen, appointment, customer, stylist, onFina
             }
           }
           const regularServices = appointment.serviceIds?.filter((service) => !finalBillItems.some(redeemed => String(redeemed.itemId) === String(service._id))).map((service, index) => { const finalPrice = (isMember && typeof service.membershipRate === 'number') ? service.membershipRate : service.price; return { id: `${service._id}-${Date.now()}-${index}`, itemType: 'service' as const, itemId: service._id, name: service.name, unitPrice: service.price, membershipRate: service.membershipRate, quantity: 1, finalPrice, staffId: stylist._id, isRemovable: !isCorrectionMode }; }) ?? [];
-          finalBillItems.push(...regularServices);
+          const regularProducts = appointment.productIds?.map((product, index) => {
+              // Note: Products typically don't have membership rates, but we check just in case.
+              const finalPrice = (isMember && typeof product.membershipRate === 'number') ? product.membershipRate : product.price;
+              return {
+                  id: `${product._id}-${Date.now()}-${index}`,
+                  itemType: 'product' as const,
+                  itemId: product._id,
+                  name: product.name,
+                  unitPrice: product.price,
+                  membershipRate: product.membershipRate,
+                  quantity: 1,
+                  finalPrice,
+                  staffId: stylist._id, // Assign default stylist, can be changed later
+                  isRemovable: !isCorrectionMode
+              };
+          }) ?? [];
+
+          finalBillItems.push(...regularServices,...regularProducts);
         }
         setBillItems(finalBillItems);
         if (isCorrectionMode) { setInitialBillItems(JSON.parse(JSON.stringify(finalBillItems))); }

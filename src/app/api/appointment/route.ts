@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
         .populate({ path: 'customerId' })
         .populate({ path: 'stylistId', select: 'name' })
         .populate({ path: 'serviceIds', select: 'name price duration membershipRate' })
+        .populate({ path: 'productIds', select: 'name price' })
         .populate({ path: 'billingStaffId', select: 'name' })
         .populate({  path: 'invoiceId', select: 'invoiceNumber'})
         .sort({ appointmentDateTime: -1 })
@@ -195,7 +196,7 @@ export async function POST(req: NextRequest) {
     const { 
       customerName, phoneNumber, email, dob, survey, // ❌ REMOVED: `gender` is no longer needed here
       date, time, notes, status, 
-      appointmentType = 'Online', serviceAssignments,
+      appointmentType = 'Online', serviceAssignments,productAssignments,
       redeemedItems,
     } = body;
 
@@ -250,6 +251,7 @@ export async function POST(req: NextRequest) {
     }
 
     const allServiceIdsWithDuplicates = serviceAssignments.map((a: any) => a.serviceId);
+     const allProductIds = (productAssignments || []).map((p: any) => p.productId);
     
     const uniqueServiceIds = [...new Set(allServiceIdsWithDuplicates)];
     const primaryStylistId = serviceAssignments[0].stylistId;
@@ -287,6 +289,10 @@ export async function POST(req: NextRequest) {
     const tempAppointmentForCalc = new Appointment({
       customerId: customerDoc!._id,
       serviceIds: allServiceIdsWithDuplicates,
+      // =========================================================================
+      // FIX #2: Pass the productIds here for an accurate total calculation
+      // =========================================================================
+      productIds: allProductIds, 
       tenantId: tenantId,
     });
     const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
@@ -301,6 +307,7 @@ export async function POST(req: NextRequest) {
       customerId: customerDoc!._id,
       stylistId: primaryStylistId,
       serviceIds: allServiceIdsWithDuplicates,
+      productIds: allProductIds,
       notes,
       status,
       appointmentType,

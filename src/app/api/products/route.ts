@@ -5,6 +5,7 @@ import { getTenantIdOrBail } from '@/lib/tenant';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
+import mongoose from 'mongoose'
 
 export async function GET(req: NextRequest) {
   try {
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
 
     const search = searchParams.get('search') || '';
+     const subCategoryId = searchParams.get('subCategoryId');
     
     const query: any = { tenantId };
 
@@ -37,6 +39,10 @@ export async function GET(req: NextRequest) {
         { name: searchRegex },
         { sku: searchRegex },
       ];
+    }
+    if (subCategoryId) {
+      // Convert the string from the URL into a proper ObjectID
+      query.subCategory = new mongoose.Types.ObjectId(subCategoryId);
     }
 
     const [data, totalItems] = await Promise.all([
@@ -53,7 +59,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data,
+     products: data,
       pagination: {
         currentPage: page,
         totalPages,

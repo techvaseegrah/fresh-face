@@ -6,6 +6,7 @@ import './ServiceItem';
 import './customermodel';
 import './user'; // Make sure the User model is imported for the ref
 import './CustomerPackage';
+import './Product'
 
 const RedeemedItemSchema = new Schema({
   customerPackageId: { 
@@ -44,6 +45,10 @@ const appointmentSchema = new Schema({
     required: [true, 'At least one service is required.']
   }],
   
+  productIds: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Product'
+  }],
   stylistId: { 
     type: Schema.Types.ObjectId, 
     ref: 'Staff',
@@ -107,35 +112,59 @@ const appointmentSchema = new Schema({
 }, { timestamps: true });
 
 // Method to calculate appointment total remains the same
-appointmentSchema.methods.calculateTotal = async function(includeAdditionalItems = []) {
-  await this.populate('serviceIds customerId');
+appointmentSchema.methods.calculateTotal = async function() {
+  // FIX #1: Populate services, products, AND the customer in one go.
+  await this.populate(['serviceIds', 'productIds', 'customerId']);
   
   let serviceTotal = 0;
+  let productTotal = 0; // Variable to hold the total for products
   let membershipSavings = 0;
+
+  const isCustomerMember = this.customerId?.isMembership || false;
   
-  for (const service of this.serviceIds) {
-    const isCustomerMember = this.customerId?.isMembership || false;
-    const hasDiscount = isCustomerMember && service.membershipRate;
-    
-    const price = hasDiscount ? service.membershipRate : service.price;
-    serviceTotal += price;
-    
-    if (hasDiscount) {
-      membershipSavings += (service.price - service.membershipRate);
+  // --- Calculate for Services ---
+  if (this.serviceIds && this.serviceIds.length > 0) {
+    for (const service of this.serviceIds) {
+      const hasDiscount = isCustomerMember && service.membershipRate;
+      
+      const price = hasDiscount ? service.membershipRate : service.price;
+      serviceTotal += price;
+      
+      if (hasDiscount) {
+        membershipSavings += (service.price - service.membershipRate);
+      }
+    }
+  }
+
+  // ================================================================
+  // FIX #2: Add this new block to calculate the total for products
+  // ================================================================
+  if (this.productIds && this.productIds.length > 0) {
+    for (const product of this.productIds) {
+      // Assuming products can also have a membershipRate. If not, you can simplify this.
+      const hasDiscount = isCustomerMember && product.membershipRate;
+      
+      const price = hasDiscount ? product.membershipRate : product.price;
+      productTotal += price;
+      
+      if (hasDiscount) {
+        membershipSavings += (product.price - product.membershipRate);
+      }
     }
   }
   
-  const additionalTotal = includeAdditionalItems.reduce((sum, item) => sum + item.finalPrice, 0);
-  const total = serviceTotal + additionalTotal;
+  // FIX #3: The grand total is now the sum of services AND products
+  const grandTotal = serviceTotal + productTotal;
   
   return {
     serviceTotal,
-    additionalTotal,
+    productTotal,
     membershipSavings,
-    grandTotal: total,
-    originalTotal: serviceTotal + membershipSavings + additionalTotal
+    grandTotal,
+    originalTotal: grandTotal + membershipSavings // The total before any discounts
   };
 };
+
 
 // Update indexes to use the new, correct field
 appointmentSchema.index({ stylistId: 1, appointmentDateTime: 1 });

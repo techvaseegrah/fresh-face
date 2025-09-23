@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import Appointment from '@/models/Appointment';
 import ServiceItem from '@/models/ServiceItem';
+import Product from '@/models/Product'; // <-- IMPORT PRODUCT MODEL
 import { getServerSession } from 'next-auth';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { authOptions } from '@/lib/auth';
@@ -30,7 +31,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             .populate([
                 { path: 'customerId' },
                 { path: 'stylistId', select: 'name' },
-                { path: 'serviceIds', select: 'name price duration membershipRate' }
+                { path: 'serviceIds', select: 'name price duration membershipRate' },
+                // ================================================================
+                // CHANGE #1: ADD THIS LINE TO POPULATE PRODUCTS
+                // ================================================================
+                { path: 'productIds', select: 'name price' }
             ])
             .lean();
 
@@ -66,7 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // ===================================================================================
-//  PUT: Handler to update an existing appointment (✅ CORRECTED FOR DUPLICATE SERVICES)
+//  PUT: Handler to update an existing appointment (✅ CORRECTED FOR PRODUCTS)
 // ===================================================================================
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
     const tenantId = getTenantIdOrBail(req);
@@ -91,39 +96,53 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         const oldStatus = currentAppointment.status;
         const newStatus = updateData.status;
 
-        // ✅ START: Corrected Service Validation and Calculation Logic
-        if (updateData.serviceIds && Array.isArray(updateData.serviceIds)) {
-            const allServiceIdsWithDuplicates = updateData.serviceIds;
-            const uniqueServiceIds = [...new Set(allServiceIdsWithDuplicates)];
+        // ================================================================================
+        // CHANGE #2: REWRITTEN LOGIC TO RECALCULATE TOTALS FOR SERVICES AND PRODUCTS
+        // ================================================================================
+        const needsRecalculation = 'serviceIds' in updateData || 'productIds' in updateData;
 
-            const foundServicesFromDB = await ServiceItem.find({
-                _id: { $in: uniqueServiceIds }, 
-                tenantId: tenantId
-            }).lean();
+        if (needsRecalculation) {
+            const serviceIdsToCalc = updateData.serviceIds || currentAppointment.serviceIds;
+            const productIdsToCalc = updateData.productIds || currentAppointment.productIds;
 
-            if (foundServicesFromDB.length !== uniqueServiceIds.length) {
-                return NextResponse.json({ success: false, message: "One or more services are invalid for this salon." }, { status: 400 });
+            // Validate services if they were provided in the update
+            if ('serviceIds' in updateData && Array.isArray(updateData.serviceIds)) {
+                const uniqueServiceIds = [...new Set(serviceIdsToCalc)];
+                if (uniqueServiceIds.length > 0) {
+                    const foundServices = await ServiceItem.countDocuments({ _id: { $in: uniqueServiceIds }, tenantId });
+                    if (foundServices !== uniqueServiceIds.length) {
+                        return NextResponse.json({ success: false, message: "One or more services are invalid." }, { status: 400 });
+                    }
+                }
+                const services = await ServiceItem.find({ _id: { $in: serviceIdsToCalc } }).lean();
+                updateData.estimatedDuration = services.reduce((total, service) => total + service.duration, 0);
             }
 
-            const serviceDetailsMap = new Map(foundServicesFromDB.map(service => [service._id.toString(), service]));
-            const fullServiceDetailsList = allServiceIdsWithDuplicates.map(serviceId => serviceDetailsMap.get(serviceId)!);
+            // Validate products if they were provided in the update
+            if ('productIds' in updateData && Array.isArray(updateData.productIds)) {
+                const uniqueProductIds = [...new Set(productIdsToCalc)];
+                 if (uniqueProductIds.length > 0) {
+                    const foundProducts = await Product.countDocuments({ _id: { $in: uniqueProductIds }, tenantId });
+                    if (foundProducts !== uniqueProductIds.length) {
+                        return NextResponse.json({ success: false, message: "One or more products are invalid." }, { status: 400 });
+                    }
+                }
+            }
 
-            // Now use the full list for calculations
-            updateData.estimatedDuration = fullServiceDetailsList.reduce((total, service) => total + service.duration, 0);
-            
-            const tempAppointment = new Appointment({ 
+            // Create a temporary in-memory instance to use our calculateTotal method
+            const tempAppointmentForCalc = new Appointment({ 
                 ...currentAppointment.toObject(), 
-                serviceIds: allServiceIdsWithDuplicates, 
-                customerId: updateData.customerId || currentAppointment.customerId, 
-                tenantId: tenantId 
+                serviceIds: serviceIdsToCalc, 
+                productIds: productIdsToCalc,
+                customerId: updateData.customerId || currentAppointment.customerId,
             });
 
-            const { grandTotal, membershipSavings } = await tempAppointment.calculateTotal();
+            // This method now handles services, products, and membership discounts correctly
+            const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
             updateData.finalAmount = grandTotal;
-            updateData.amount = grandTotal + membershipSavings; // also update the base amount
+            updateData.amount = grandTotal + membershipSavings;
             updateData.membershipDiscount = membershipSavings;
         }
-        // ✅ END: Corrected Service Validation and Calculation Logic
 
         if (newStatus && newStatus !== oldStatus) {
             const currentTime = new Date();
@@ -143,7 +162,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         ).populate([
             { path: 'customerId' },
             { path: 'stylistId', select: 'name' },
-            { path: 'serviceIds', select: 'name price duration membershipRate' }
+            { path: 'serviceIds', select: 'name price duration membershipRate' },
+            // ================================================================
+            // CHANGE #3: POPULATE PRODUCTS IN THE RESPONSE
+            // ================================================================
+            { path: 'productIds', select: 'name price' }
         ]);
 
         if (!updatedAppointmentDoc) {
@@ -183,7 +206,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 // ===================================================================================
-//  DELETE: Handler to delete an existing appointment
+//  DELETE: Handler to delete an existing appointment (No changes needed)
 // ===================================================================================
 export async function DELETE(req: NextRequest, { params }: { params: { id:string } }) {
     const tenantId = getTenantIdOrBail(req);
