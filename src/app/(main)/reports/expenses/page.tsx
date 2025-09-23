@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useMemo, Fragment, ElementType } from 'react';
 import { useSession } from 'next-auth/react';
-import { format } from 'date-fns';
+// --- MODIFICATION: Added startOfMonth and endOfMonth ---
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { Loader2, FileText, FileSpreadsheet, Eye, Banknote, ClipboardList, ArrowUpCircle, Tag, X } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -19,7 +20,7 @@ interface IExpense {
   paymentMethod: string; billUrl?: string;
 }
 
-// --- Reusable Components ---
+// --- Reusable Components (Unchanged from your original code) ---
 const DashboardCard = ({ title, value, icon: Icon, colorClass, formatAsCurrency = false }: { title: string, value: string | number, icon: ElementType, colorClass: string, formatAsCurrency?: boolean }) => (
     <div className={`relative overflow-hidden rounded-xl p-5 text-white shadow-lg ${colorClass}`}>
         <div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/20"></div>
@@ -75,8 +76,10 @@ export default function ExpensesReportPage() {
     const [filterCategory, setFilterCategory] = useState('all');
     const [filterPaymentMethod, setFilterPaymentMethod] = useState('all');
     const [filterFrequency, setFilterFrequency] = useState<'all' | 'Regular' | 'Once'>('all');
-    const [filterStartDate, setFilterStartDate] = useState('');
-    const [filterEndDate, setFilterEndDate] = useState('');
+    
+    // --- MODIFICATION: Default date filters to the current month ---
+    const [filterStartDate, setFilterStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [filterEndDate, setFilterEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
 
     useEffect(() => {
         const fetchExpenses = async () => {
@@ -103,6 +106,7 @@ export default function ExpensesReportPage() {
         }
     }, [sessionStatus, session]);
 
+    // All memoized calculations are unchanged
     const uniqueCategories = useMemo(() => [...new Set(allExpenses.map(e => e.category))], [allExpenses]);
     const uniquePaymentMethods = useMemo(() => [...new Set(allExpenses.map(e => e.paymentMethod))], [allExpenses]);
 
@@ -138,7 +142,8 @@ export default function ExpensesReportPage() {
     }, [filteredExpenses]);
 
     const reportTotal = useMemo(() => filteredExpenses.reduce((sum, exp) => sum + exp.amount, 0), [filteredExpenses]);
-
+    
+    // All handler functions are unchanged
     const handleViewBill = (billUrl: string) => {
         const isSupported = billUrl.match(/\.(jpeg|jpg|gif|png|webp|pdf)$/i);
         if (isSupported) {
@@ -226,9 +231,22 @@ export default function ExpensesReportPage() {
 
             <div className="bg-white rounded-lg shadow-md border">
                 {hasPermission(userPermissions, PERMISSIONS.REPORT_EXPENSES_MANAGE) && (
-                    <div className="p-4 flex justify-end items-center gap-2 border-b">
-                        <button onClick={handleExportPDF} className="btn-secondary-icon"><FileText size={16} className="text-red-500"/> PDF</button>
-                        <button onClick={handleExportExcel} className="btn-secondary-icon"><FileSpreadsheet size={16} className="text-green-600"/> Excel</button>
+                    <div className="p-4 flex justify-end items-center gap-3 border-b">
+                        {/* --- UI MODIFICATION: More attractive buttons --- */}
+                        <button 
+                            onClick={handleExportPDF} 
+                            className="flex items-center justify-center gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm transition-all hover:bg-red-100 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                        >
+                            <FileText size={16} />
+                            <span>Export PDF</span>
+                        </button>
+                        <button 
+                            onClick={handleExportExcel} 
+                            className="flex items-center justify-center gap-2 rounded-lg bg-green-50 px-4 py-2 text-sm font-semibold text-green-800 shadow-sm transition-all hover:bg-green-100 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2"
+                        >
+                            <FileSpreadsheet size={16} />
+                            <span>Export Excel</span>
+                        </button>
                     </div>
                 )}
 
