@@ -1,10 +1,11 @@
-// components/EditWeekModal.tsx
+// /components/EditWeekModal.tsx
+
 'use client';
 
-import React, { useState, useEffect } from 'react'; // Added useEffect
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import Button from '@/components/ui/Button';
-import { Loader2 } from 'lucide-react'; // Added for loading indicator
+import { Loader2 } from 'lucide-react';
 
 interface EditWeekModalProps {
   staff: { id: string; name: string };
@@ -28,10 +29,8 @@ const toLocalDateString = (date: Date): string => {
 export default function EditWeekModal({ staff, weekDays, onClose, onSave, tenantId }: EditWeekModalProps) {
     const [reviews, setReviews] = useState<ReviewCounts>({});
     const [saving, setSaving] = useState(false);
-    // ✨ --- ADDITION: Add a loading state for fetching data --- ✨
     const [loading, setLoading] = useState(true);
 
-    // ✨ --- ADDITION: This useEffect hook fetches the existing review data when the modal opens --- ✨
     useEffect(() => {
         const fetchExistingReviews = async () => {
             setLoading(true);
@@ -69,41 +68,50 @@ export default function EditWeekModal({ staff, weekDays, onClose, onSave, tenant
 
 
     const handleInputChange = (date: string, field: 'reviewsWithName' | 'reviewsWithPhoto', value: string) => {
-        const numericValue = Math.max(0, Number(value)); // Prevent negative numbers
+        // Allow empty strings, but ensure any entered number is not negative.
+        const cleanValue = value === '' ? '' : String(Math.max(0, Number(value)));
         setReviews(prev => ({
             ...prev,
             [date]: {
-                // Ensure the other value in the pair is preserved correctly
-                reviewsWithName: field === 'reviewsWithName' ? String(numericValue) : (prev[date]?.reviewsWithName || ''),
-                reviewsWithPhoto: field === 'reviewsWithPhoto' ? String(numericValue) : (prev[date]?.reviewsWithPhoto || ''),
+                ...(prev[date] || { reviewsWithName: '', reviewsWithPhoto: '' }), // Ensure the object exists before spreading
+                [field]: cleanValue,
             }
         }));
     };
 
     const handleSaveChanges = async () => {
         setSaving(true);
-        // Your saving logic is already correct
-        const promises = Object.entries(reviews).map(([date, counts]) => {
+        try {
             const headers = new Headers({
                 'Content-Type': 'application/json',
                 'X-Tenant-ID': tenantId
             });
-            return fetch('/api/incentives', {
+
+            const payloadReviews: { [date: string]: { reviewsWithName: number; reviewsWithPhoto: number } } = {};
+            Object.entries(reviews).forEach(([date, counts]) => {
+                payloadReviews[date] = {
+                    reviewsWithName: Number(counts.reviewsWithName) || 0,
+                    reviewsWithPhoto: Number(counts.reviewsWithPhoto) || 0
+                };
+            });
+
+            const res = await fetch('/api/incentives/reviews', {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
                     staffId: staff.id,
-                    date: date,
-                    reviewsWithName: Number(counts.reviewsWithName) || 0,
-                    reviewsWithPhoto: Number(counts.reviewsWithPhoto) || 0,
+                    reviews: payloadReviews
                 })
             });
-        });
-
-        try {
-            await Promise.all(promises);
-            toast.success("Review counts saved successfully!");
-            onSave(); // This correctly refreshes the main page
+            
+            const result = await res.json();
+            if (res.ok) {
+                toast.success("Review counts saved successfully!");
+                onSave();
+                onClose();
+            } else {
+                toast.error(result.message || "An error occurred while saving.");
+            }
         } catch (error) {
             toast.error("An error occurred while saving.");
         } finally {
@@ -117,7 +125,6 @@ export default function EditWeekModal({ staff, weekDays, onClose, onSave, tenant
                 <h2 className="text-2xl font-bold mb-4 text-gray-800">Editing Week for {staff.name}</h2>
                 <p className="text-gray-600 mb-6">Enter the number of reviews collected each day. Sales are synced automatically.</p>
                 
-                {/* ✨ --- ADDITION: Show a loading indicator while fetching data --- ✨ */}
                 {loading ? (
                     <div className="flex justify-center items-center p-16">
                         <Loader2 className="animate-spin text-gray-500" size={32} />
@@ -136,7 +143,6 @@ export default function EditWeekModal({ staff, weekDays, onClose, onSave, tenant
                                         min="0"
                                         placeholder="Name Reviews" 
                                         className="p-2 border rounded text-black w-full"
-                                        // ✨ --- MODIFICATION: Set the value from the state --- ✨
                                         value={reviews[dateString]?.reviewsWithName || ''}
                                         onChange={(e) => handleInputChange(dateString, 'reviewsWithName', e.target.value)}
                                     />
@@ -145,7 +151,6 @@ export default function EditWeekModal({ staff, weekDays, onClose, onSave, tenant
                                         min="0"
                                         placeholder="Photo Reviews" 
                                         className="p-2 border rounded text-black w-full"
-                                        // ✨ --- MODIFICATION: Set the value from the state --- ✨
                                         value={reviews[dateString]?.reviewsWithPhoto || ''}
                                         onChange={(e) => handleInputChange(dateString, 'reviewsWithPhoto', e.target.value)}
                                     />
@@ -157,8 +162,15 @@ export default function EditWeekModal({ staff, weekDays, onClose, onSave, tenant
 
                 <div className="flex justify-end gap-4 mt-8 pt-4 border-t">
                     <Button onClick={onClose} variant="danger">Cancel</Button>
-                    {/* ✨ --- MODIFICATION: Disable button while loading or saving --- ✨ */}
-                    <Button onClick={handleSaveChanges} disabled={saving || loading} variant="black">{saving ? 'Saving...' : 'Save Changes'}</Button>
+                    <Button onClick={handleSaveChanges} disabled={saving || loading} variant="black">
+                        {saving ? (
+                            <>
+                                <Loader2 className="animate-spin mr-2" size={16}/> Saving...
+                            </>
+                        ) : (
+                            'Save Changes'
+                        )}
+                    </Button>
                 </div>
             </div>
         </div>

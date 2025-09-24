@@ -133,32 +133,9 @@ const PaymentDetailSidebar: React.FC<PaymentDetailSidebarProps> = ({ record, all
   );
 };
 
-const calculateMonthlyTargetHours = (year: number, monthIndex: number): { targetHours: number; } => {
-  const totalDays = getDaysInMonth(new Date(year, monthIndex));
-  let numWeekdays = 0;
-  let numWeekends = 0;
-
-  for (let day = 1; day <= totalDays; day++) {
-    const date = new Date(year, monthIndex, day);
-    const dayOfWeek = getDay(date);
-
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      numWeekends++;
-    } else {
-      numWeekdays++;
-    }
-  }
-
-  const workingWeekdays = Math.max(0, numWeekdays - 4);
-  const targetHours = (workingWeekdays * 9) + (numWeekends * 10);
-  
-  return { targetHours };
-};
-
 // --- Main Salary Component ---
 const Salary: React.FC = () => {
     const { data: session } = useSession();
-    // TENANT-AWARE: Extract tenantId from the user's session.
     const tenantId = useMemo(() => session?.user?.tenantId, [session]);
     const userPermissions = useMemo(() => session?.user?.role?.permissions || [], [session]);
     const canManageSalary = useMemo(() => hasPermission(userPermissions, PERMISSIONS.STAFF_SALARY_MANAGE), [userPermissions]);
@@ -180,6 +157,7 @@ const Salary: React.FC = () => {
     const [isModalLoading, setIsModalLoading] = useState(false);
     const [shopSettings, setShopSettings] = useState<ShopSettings | null>(null);
     const [selectedPaymentRecord, setSelectedPaymentRecord] = useState<SalaryRecordType | null>(null);
+    const [positionHoursMap, setPositionHoursMap] = useState<Map<string, number>>(new Map());
   
     const months = useMemo(() => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'], []);
     const years = useMemo(() => {
@@ -187,7 +165,6 @@ const Salary: React.FC = () => {
       return Array.from({ length: 10 }, (_, i) => startYear + i);
     }, []);
 
-    // TENANT-AWARE: Create a fetch wrapper to automatically include the tenant ID in headers.
     const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
       if (!tenantId) {
           const errorMsg = "Your session is missing tenant information. Please log out and log back in.";
@@ -205,10 +182,28 @@ const Salary: React.FC = () => {
     }, [tenantId]);
   
     useEffect(() => {
-      if (fetchSalaryRecords) {
-        fetchSalaryRecords({ populateStaff: 'true' });
-      }
-    }, [fetchSalaryRecords]);
+        const fetchPositionHours = async () => {
+            if (!tenantId) return;
+            try {
+                const res = await tenantAwareFetch('/api/settings/position-hours');
+                const result = await res.json();
+                if (result.success && Array.isArray(result.data)) {
+                    const map = new Map<string, number>();
+                    result.data.forEach((setting: { positionName: string, requiredHours: number }) => {
+                        map.set(setting.positionName, setting.requiredHours);
+                    });
+                    setPositionHoursMap(map);
+                }
+            } catch (error) {
+                console.error("Could not fetch position hours settings.", error);
+            }
+        };
+
+        fetchPositionHours();
+        if (fetchSalaryRecords) {
+            fetchSalaryRecords({ populateStaff: 'true' });
+        }
+    }, [fetchSalaryRecords, tenantId]);
     
     const enrichedSalaryRecords = useMemo(() => {
       if (!salaryRecords.length || !staffMembers.length) {
@@ -263,7 +258,6 @@ const Salary: React.FC = () => {
       setIsModalLoading(true);
   
       try {
-        // TENANT-AWARE: Use the tenant-aware fetch wrapper.
         const settingsRes = await tenantAwareFetch('/api/settings');
         const settingsResult = await settingsRes.json();
         if (!settingsResult.success) throw new Error(settingsResult.error || "Failed to fetch shop settings.");
@@ -277,7 +271,6 @@ const Salary: React.FC = () => {
             recurExpense: recordToEdit.recurExpense.toString(),
           });
         } else {
-          // TENANT-AWARE: Use the tenant-aware fetch wrapper.
           const attendanceRes = await tenantAwareFetch(`/api/attendance?action=getOvertimeTotal&staffId=${staff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
           const attendanceResult = await attendanceRes.json();
           let otHours = '0';
@@ -297,80 +290,118 @@ const Salary: React.FC = () => {
       }
     };
   
+    // ====================================================================================
+    // --- CORRECTED FUNCTION: THIS IS THE ONLY SECTION THAT HAS BEEN CHANGED ---
+    // ====================================================================================
     const handleConfirmProcessOrUpdate = async () => {
-      if (!processingStaff || !shopSettings) {
-          toast.error("Settings data is missing. Cannot process salary.");
-          return;
-      }
-      setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: true } }));
-      setIsModalOpen(false);
-  
-      const fixedSalary = Number(processingStaff.salary) || 0;
-      const { targetHours } = calculateMonthlyTargetHours(currentYear, currentMonthIndex);
-  
-      let actualHoursWorkedFromAPI = 0;
-      try {
-        // TENANT-AWARE: Use the tenant-aware fetch wrapper.
-        const res = await tenantAwareFetch(`/api/attendance?action=getTotalHoursForMonth&staffId=${processingStaff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`);
-        const result = await res.json();
-        if (result.success) {
-          actualHoursWorkedFromAPI = result.data.totalWorkingHours || 0;
-        } else {
-          toast.warn(`Could not fetch work hours for ${processingStaff.name}. Assuming 0. Error: ${result.error}`);
+        if (!processingStaff || !shopSettings) {
+            toast.error("Settings data is missing. Cannot process salary.");
+            return;
         }
-      } catch (e) {
-        toast.error("Error fetching attendance data.");
-        setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } }));
-        return;
-      }
-      
-      const fullHours = Math.floor(actualHoursWorkedFromAPI);
-      const minutes = Math.round((actualHoursWorkedFromAPI - fullHours) * 60);
-      const customDecimalHours = fullHours + (minutes / 10);
-      const hourlyRate = targetHours > 0 ? fixedSalary / targetHours : 0;
-      const calculatedBaseSalary = Math.max(0, hourlyRate * customDecimalHours);
-  
-      const advanceToDeduct = editingRecord ? editingRecord.advanceDeducted : (advancePayments?.filter(adv => { const idToCompare = typeof adv.staffId === 'string' ? adv.staffId : (adv.staffId as any)?.id; if (idToCompare !== processingStaff.id || adv.status !== 'approved' || !adv.approvedDate) return false; const approvedDate = parseISO(adv.approvedDate); return approvedDate.getMonth() === currentMonthIndex && approvedDate.getFullYear() === currentYear; }).reduce((total, adv) => total + (Number(adv.amount) || 0), 0) || 0);
-  
-      const inputs = {
-        otHours: parseFloat(salaryInputs.otHours) || 0,
-        extraDays: parseFloat(salaryInputs.extraDays) || 0,
-        foodDeduction: parseFloat(salaryInputs.foodDeduction) || 0,
-        recurExpense: parseFloat(salaryInputs.recurExpense) || 0,
-      };
-      
-      const positionRate = shopSettings.positionRates?.find((p) => p.positionName === processingStaff.position);
-      const otRate = positionRate?.otRate ?? shopSettings.defaultOtRate; 
-      const extraDayRate = positionRate?.extraDayRate ?? shopSettings.defaultExtraDayRate;
-      const baseSalary = calculatedBaseSalary;
-      const otAmount = inputs.otHours * otRate;
-      const extraDayPay = inputs.extraDays * extraDayRate;
-      const totalEarnings = baseSalary + otAmount + extraDayPay + inputs.foodDeduction;
-      const totalDeductions = inputs.recurExpense + advanceToDeduct;
-      const netSalary = totalEarnings - totalDeductions;
-  
-      const payload = {
-          ...(editingRecord && { id: editingRecord.id }),
-          staffId: processingStaff.id, month: months[currentMonthIndex], year: currentYear,
-          fixedSalary: fixedSalary,
-          baseSalary, otHours: inputs.otHours, otAmount, extraDays: inputs.extraDays, extraDayPay,
-          foodDeduction: inputs.foodDeduction, recurExpense: inputs.recurExpense,
-          totalEarnings, totalDeductions, advanceDeducted: advanceToDeduct, netSalary,
-          isPaid: false, paidDate: null
-      };
-  
-      const isUpdating = !!editingRecord;
-      const processPromise = processSalary(payload as any);
-  
-      toast.promise(processPromise, {
-        pending: isUpdating ? `Updating salary for ${processingStaff.name}...` : `Processing salary for ${processingStaff.name}...`,
-        success: isUpdating ? `Salary updated successfully!` : `Salary processed for ${processingStaff.name}!`,
-        error: { render: ({data}: any) => `Error: ${data.message || (isUpdating ? 'Failed to update salary' : 'Failed to process salary')}` }
-      });
-  
-      try { await processPromise; } catch (error) { console.error("Failed to process/update salary:", error); } 
-      finally { setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } })); setProcessingStaff(null); setEditingRecord(null); }
+        setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: true } }));
+        setIsModalOpen(false);
+    
+        const fixedSalary = Number(processingStaff.salary) || 0;
+        
+        let totalMonthWorkingHours = 0;
+        let totalMonthOvertimeHours = 0;
+
+        // Get the target hours for the staff's position from the map.
+        // This ensures you use the correct monthly target (e.g., 110 hours).
+        const targetHours = positionHoursMap.get(processingStaff.position) || 0;
+
+        if (targetHours === 0) {
+            toast.error(`Monthly Target Hours are not set for position: "${processingStaff.position}". Please set it in the settings.`);
+            setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } }));
+            return;
+        }
+    
+        try {
+            // Fetch all necessary attendance data in parallel
+            const [attendanceDetailsRes, otHoursRes] = await Promise.all([
+                tenantAwareFetch(`/api/attendance?action=getTotalHoursForMonth&staffId=${processingStaff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`),
+                tenantAwareFetch(`/api/attendance?action=getOvertimeTotal&staffId=${processingStaff.id}&year=${currentYear}&month=${months[currentMonthIndex]}`)
+            ]);
+    
+            const attendanceDetailsResult = await attendanceDetailsRes.json();
+            const otHoursResult = await otHoursRes.json();
+    
+            if (attendanceDetailsResult.success) {
+                totalMonthWorkingHours = attendanceDetailsResult.data.totalWorkingHours || 0;
+            } else {
+                toast.warn(`Could not fetch work hours details. Error: ${attendanceDetailsResult.error}`);
+            }
+    
+            if (otHoursResult.success) {
+                totalMonthOvertimeHours = otHoursResult.data.totalOtHours || 0;
+            } else {
+                toast.warn(`Could not fetch overtime hours. Error: ${otHoursResult.error}`);
+            }
+    
+        } catch (e) {
+            toast.error("Network error fetching attendance data.");
+            setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } }));
+            return;
+        }
+    
+        // Step 1: Calculate Regular (Non-OT) Hours
+        const regularHours = Math.max(0, totalMonthWorkingHours - totalMonthOvertimeHours);
+    
+        // Step 2: Calculate the Hourly Rate
+        const hourlyRate = targetHours > 0 ? fixedSalary / targetHours : 0;
+    
+        // Step 3: Calculate the "Calc. Base" Salary using ONLY regular hours
+        const calculatedBaseSalary = hourlyRate * regularHours;
+    
+        const advanceToDeduct = editingRecord ? editingRecord.advanceDeducted : (advancePayments?.filter(adv => { const idToCompare = typeof adv.staffId === 'string' ? adv.staffId : (adv.staffId as any)?.id; if (idToCompare !== processingStaff.id || adv.status !== 'approved' || !adv.approvedDate) return false; const approvedDate = parseISO(adv.approvedDate); return approvedDate.getMonth() === currentMonthIndex && approvedDate.getFullYear() === currentYear; }).reduce((total, adv) => total + (Number(adv.amount) || 0), 0) || 0);
+    
+        const inputs = {
+            otHours: parseFloat(salaryInputs.otHours) || totalMonthOvertimeHours || 0,
+            extraDays: parseFloat(salaryInputs.extraDays) || 0,
+            foodDeduction: parseFloat(salaryInputs.foodDeduction) || 0,
+            recurExpense: parseFloat(salaryInputs.recurExpense) || 0,
+        };
+        
+        const positionRate = shopSettings.positionRates?.find((p) => p.positionName === processingStaff.position);
+        const otRate = positionRate?.otRate ?? shopSettings.defaultOtRate; 
+        const extraDayRate = positionRate?.extraDayRate ?? shopSettings.defaultExtraDayRate;
+    
+        // Step 4: Calculate OT Amount
+        const otAmount = inputs.otHours * otRate;
+        const extraDayPay = inputs.extraDays * extraDayRate;
+        
+        const totalEarnings = calculatedBaseSalary + otAmount + extraDayPay + inputs.foodDeduction;
+        const totalDeductions = inputs.recurExpense + advanceToDeduct;
+        
+        // Step 5: Calculate Final Net Salary
+        const netSalary = totalEarnings - totalDeductions;
+    
+        const payload = {
+            ...(editingRecord && { id: editingRecord.id }),
+            staffId: processingStaff.id, month: months[currentMonthIndex], year: currentYear,
+            fixedSalary: fixedSalary,
+            baseSalary: calculatedBaseSalary, // Use the correctly calculated value here
+            otHours: inputs.otHours, otAmount, extraDays: inputs.extraDays, extraDayPay,
+            foodDeduction: inputs.foodDeduction, recurExpense: inputs.recurExpense,
+            totalEarnings, totalDeductions, advanceDeducted: advanceToDeduct, netSalary,
+            isPaid: false, paidDate: null
+        };
+    
+        const isUpdating = !!editingRecord;
+        const processPromise = processSalary(payload as any);
+    
+        toast.promise(processPromise, {
+            pending: isUpdating ? `Updating salary for ${processingStaff.name}...` : `Processing salary for ${processingStaff.name}...`,
+            success: isUpdating ? `Salary updated successfully!` : `Salary processed for ${processingStaff.name}!`,
+            error: { render: ({data}: any) => `Error: ${data.message || (isUpdating ? 'Failed to update salary' : 'Failed to process salary')}` }
+        });
+    
+        try { await processPromise; } catch (error) { console.error("Failed to process/update salary:", error); } 
+        finally { setButtonLoadingStates(prev => ({ ...prev, [processingStaff.id]: { processing: false } })); setProcessingStaff(null); setEditingRecord(null); }
     };
+    // ====================================================================================
+    // --- END OF CORRECTED FUNCTION ---
+    // ====================================================================================
 
     const handlePayNow = async (record: SalaryRecordType, staff: StaffMember) => {
         if (!record || !staff) return;

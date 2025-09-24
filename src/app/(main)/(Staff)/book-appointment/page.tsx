@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, FormEvent, useCallback, useRef } from 'react';
+import React, { useState, useEffect, FormEvent, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { useSession } from 'next-auth/react';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { useDebounce } from '@/hooks/useDebounce';
 
-// --- INTERFACES & TYPES (No Changes) ---
-interface ServiceFromAPI { _id: string; name: string; price: number; duration: number; }
+// --- INTERFACES & TYPES ---
+// ✅ CORRECTED: Added membershipRate to ServiceFromAPI interface
+interface ServiceFromAPI { _id: string; name: string; price: number; duration: number; membershipRate?: number; }
 interface StylistFromAPI { _id: string; name: string; }
 interface ServiceAssignment {
   _tempId: string;
@@ -55,10 +56,29 @@ export default function StaffBookAppointmentPage() {
 
   const [customerLookupStatus, setCustomerLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
   const [isCustomerSelected, setIsCustomerSelected] = useState(false);
+  // ✅ NEW: State to track if the current customer is a member
+  const [isCustomerMember, setIsCustomerMember] = useState(false);
   
   const { data: session } = useSession();
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // ✅ CORRECTED: Advanced calculation for total amount and savings
+  const { totalAmount, membershipSavings } = useMemo(() => {
+    let total = 0;
+    let savings = 0;
+    serviceAssignments.forEach(assignment => {
+      const service = assignment.serviceDetails;
+      const hasDiscount = isCustomerMember && service.membershipRate && service.membershipRate > 0;
+      const price = hasDiscount ? service.membershipRate! : service.price;
+      total += price;
+      if (hasDiscount) {
+        savings += service.price - service.membershipRate!;
+      }
+    });
+    return { totalAmount: total, membershipSavings: savings };
+  }, [serviceAssignments, isCustomerMember]);
+
 
   const tenantAwareFetch = useCallback(async (url: string, options: RequestInit = {}) => {
     const tenantId = session?.user?.tenantId;
@@ -106,6 +126,7 @@ export default function StaffBookAppointmentPage() {
   const handleClearCustomer = () => {
     setIsCustomerSelected(false);
     setCustomerLookupStatus('idle');
+    setIsCustomerMember(false); // ✅ Reset membership status
     setFormData(prev => ({
         ...prev,
         customerId: '', phoneNumber: '', customerName: '', email: '', gender: '', dob: '',
@@ -116,6 +137,7 @@ export default function StaffBookAppointmentPage() {
   const handleFindCustomer = useCallback(async (phone: string) => {
     if (phone.length !== 10) return;
     setCustomerLookupStatus('searching');
+    setIsCustomerMember(false); // Reset while searching
     try {
       const res = await tenantAwareFetch(`/api/staff/find-customer?phone=${encodeURIComponent(phone.trim())}`);
       const data = await res.json();
@@ -130,11 +152,13 @@ export default function StaffBookAppointmentPage() {
             gender: cust.gender || 'other',
             dob: cust.dob || '',
         }));
+        setIsCustomerMember(cust.isMember); // ✅ Set membership status from API
         setCustomerLookupStatus('found');
         setIsCustomerSelected(true);
       } else {
         setCustomerLookupStatus('not_found');
         setIsCustomerSelected(false);
+        setIsCustomerMember(false); // ✅ Ensure it's false for new customers
         setFormData(prev => ({ ...prev, customerId: '', dob: '' }));
         toast.info('New customer. Please fill in their details.');
         nameInputRef.current?.focus();
@@ -142,6 +166,7 @@ export default function StaffBookAppointmentPage() {
     } catch (err) {
       setCustomerLookupStatus('not_found');
       setIsCustomerSelected(false);
+      setIsCustomerMember(false);
       toast.error('Failed to search for customer.');
     }
   }, [tenantAwareFetch]);
@@ -231,6 +256,7 @@ export default function StaffBookAppointmentPage() {
         setServiceAssignments([]);
         setIsCustomerSelected(false);
         setCustomerLookupStatus('idle');
+        setIsCustomerMember(false); // Reset on successful booking
 
     } catch (error: any) {
         setFormError(error.message || 'An unexpected error occurred.');
@@ -245,16 +271,12 @@ export default function StaffBookAppointmentPage() {
   const legendClasses = 'text-base font-semibold text-gray-800 px-2';
 
   return (
-    // --- THIS IS THE KEY CHANGE ---
-    // The main container is a fragment <> to allow the heading and form to be siblings.
     <>
-      {/* 1. The new, separate heading, just like your "My Attendance" page */}
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Book Appointment</h1>
         <p className="text-gray-500 mt-1">Create a new appointment for a customer.</p>
       </div>
 
-      {/* 2. The entire form is now wrapped in its own white card */}
       <div className="bg-white rounded-xl shadow-sm p-6 md:p-8">
         <form onSubmit={handleSubmit} className="space-y-8">
           {formError && (<div className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{formError}</div>)}
@@ -267,7 +289,7 @@ export default function StaffBookAppointmentPage() {
                       <input ref={phoneInputRef} id="phoneNumber" type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required placeholder="Enter 10-digit phone to find or create customer" className={inputBaseClasses} maxLength={10} />
                        <div className="h-5 mt-1 text-xs">
                           {customerLookupStatus === 'searching' && <span className="text-gray-500">Searching...</span>}
-                          {customerLookupStatus === 'found' && <span className="font-semibold text-green-600">✓ Existing Customer Found.</span>}
+                          {customerLookupStatus === 'found' && <span className="font-semibold text-green-600">✓ Existing Customer Found. {isCustomerMember && '(Member)'}</span>}
                           {customerLookupStatus === 'not_found' && <span className="font-medium text-blue-600">New Customer: Please fill details below.</span>}
                       </div>
                   </div>
@@ -347,6 +369,26 @@ export default function StaffBookAppointmentPage() {
                           </div>
                       ))}
                   </div>
+
+                  {/* ✅ CORRECTED: TOTAL AMOUNT DISPLAY WITH SAVINGS */}
+                  {serviceAssignments.length > 0 && (
+                    <div className="md:col-span-2 mt-4 p-4 bg-gray-100 rounded-lg border border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-gray-800">Total Amount:</span>
+                        <div className="text-right">
+                          <span className="text-xl font-bold text-green-600">
+                            ₹{totalAmount.toFixed(2)}
+                          </span>
+                          {membershipSavings > 0 && (
+                            <div className="text-xs text-green-500 mt-1">
+                              Saved ₹{membershipSavings.toFixed(2)} with membership
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="md:col-span-2">
                       <label htmlFor="notes" className="block text-sm font-medium mb-1.5">Notes</label>
                       <textarea id="notes" name="notes" rows={3} value={formData.notes} onChange={handleChange} className={`${inputBaseClasses} resize-none`} placeholder="Any special requests or notes..."/>

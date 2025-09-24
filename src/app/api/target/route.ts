@@ -1,5 +1,3 @@
-// src/app/api/target/route.ts
-
 import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from '@/lib/auth';
@@ -7,6 +5,7 @@ import dbConnect from '@/lib/dbConnect';
 import TargetSheet from '@/models/TargetSheet';
 import Invoice from '@/models/invoice'; // Assuming this model also has tenantId
 import Appointment from '@/models/Appointment'; // Assuming this model also has tenantId
+import TelecallingLog from '@/models/TelecallingLog';
 import mongoose from 'mongoose';
 
 
@@ -27,7 +26,6 @@ export async function GET(request: Request) {
         }
         const tenantId = new mongoose.Types.ObjectId(session.user.tenantId);
         
-        // --- MODIFIED ---: Read date range from query parameters
         const { searchParams } = new URL(request.url);
         const startDateParam = searchParams.get('startDate');
         const endDateParam = searchParams.get('endDate');
@@ -39,13 +37,12 @@ export async function GET(request: Request) {
         if (startDateParam && endDateParam) {
             startDate = new Date(startDateParam);
             endDate = new Date(endDateParam);
-            endDate.setHours(23, 59, 59, 999); // Set to the end of the day
+            endDate.setHours(23, 59, 59, 999);
         } else {
             startDate = new Date(now.getFullYear(), now.getMonth(), 1);
             endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
         }
 
-        // --- Use current month for fetching targets, as targets are typically monthly ---
         const monthIdentifier = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
         let targetSheet = await TargetSheet.findOne({ month: monthIdentifier, tenantId: tenantId });
@@ -64,40 +61,63 @@ export async function GET(request: Request) {
             netSales: (targetSheet.target?.service || 0) + (targetSheet.target?.retail || 0),
         };
 
+        // --- MODIFICATION START: Updated discount logic ---
         const invoiceAggregation = await Invoice.aggregate([
             { $match: { 
                 tenantId: tenantId, 
-                // --- MODIFIED ---: Use dynamic date range
                 createdAt: { $gte: startDate, $lte: endDate }, 
                 paymentStatus: 'Paid' 
             }},
-            { $project: {
-                grandTotal: { $toDouble: "$grandTotal" },
-                serviceTotal: { $toDouble: "$serviceTotal" },
-                productTotal: { $toDouble: "$productTotal" }
+            // 1. Convert totals to numbers and handle nulls
+            { $addFields: {
+                serviceTotalNum: { $ifNull: [{ $toDouble: "$serviceTotal" }, 0] },
+                productTotalNum: { $ifNull: [{ $toDouble: "$productTotal" }, 0] },
+                grandTotalNum: { $ifNull: [{ $toDouble: "$grandTotal" }, 0] },
             }},
-            { $addFields: { preDiscountTotal: { $add: ["$serviceTotal", "$productTotal"] } }},
-            { $project: {
-                grandTotal: 1,
-                actualServiceRevenue: { $cond: { if: { $gt: ["$preDiscountTotal", 0] }, then: { $multiply: ["$grandTotal", { $divide: ["$serviceTotal", "$preDiscountTotal"] }] }, else: 0 }},
-                actualRetailRevenue: { $cond: { if: { $gt: ["$preDiscountTotal", 0] }, then: { $multiply: ["$grandTotal", { $divide: ["$productTotal", "$preDiscountTotal"] }] }, else: 0 }}
+            // 2. Calculate pre-discount total and the total discount amount
+            { $addFields: {
+                preDiscountTotal: { $add: ["$serviceTotalNum", "$productTotalNum"] }
             }},
+            { $addFields: {
+                totalDiscount: { $max: [0, { $subtract: ["$preDiscountTotal", "$grandTotalNum"] }] }
+            }},
+            // 3. Apply discount to service first
+            { $addFields: {
+                discountAppliedToService: { $min: ["$serviceTotalNum", "$totalDiscount"] }
+            }},
+            // 4. Calculate remaining discount to apply to retail
+            { $addFields: {
+                remainingDiscount: { $subtract: ["$totalDiscount", "$discountAppliedToService"] }
+            }},
+            // 5. Calculate final actual revenue per category
+            { $project: {
+                actualServiceRevenue: { $subtract: ["$serviceTotalNum", "$discountAppliedToService"] },
+                actualRetailRevenue: { $subtract: ["$productTotalNum", "$remainingDiscount"] },
+                grandTotalNum: 1
+            }},
+            // 6. Group all invoices to get the final sum
             { $group: {
                 _id: null,
                 totalService: { $sum: '$actualServiceRevenue' },
                 totalRetail: { $sum: '$actualRetailRevenue' },
                 totalBills: { $sum: 1 },
-                totalGrandAmount: { $sum: '$grandTotal' }
+                totalGrandAmount: { $sum: '$grandTotalNum' }
             }}
         ]);
+        // --- MODIFICATION END ---
 
         const achievedResult = invoiceAggregation[0] || {};
         
         const achievedAppointmentsCount = await Appointment.countDocuments({
             tenantId: tenantId,
-            // --- MODIFIED ---: Use dynamic date range
             appointmentDateTime: { $gte: startDate, $lte: endDate },
             status: { $nin: ['Cancelled', 'No-Show'] }
+        });
+
+        const achievedCallbacksCount = await TelecallingLog.countDocuments({
+            tenantId: tenantId,
+            createdAt: { $gte: startDate, $lte: endDate },
+            outcome: 'Appointment Booked',
         });
 
         const achievedNetSales = (achievedResult.totalService || 0) + (achievedResult.totalRetail || 0);
@@ -108,15 +128,13 @@ export async function GET(request: Request) {
             bills: achievedResult.totalBills || 0,
             netSales: roundToTwo(achievedNetSales),
             abv: (achievedResult.totalBills > 0) ? roundToTwo(achievedResult.totalGrandAmount / achievedResult.totalBills) : 0,
-            callbacks: 0,
+            callbacks: achievedCallbacksCount,
             appointments: achievedAppointmentsCount,
         };
         
-        // --- MODIFIED ---: Updated projection logic for custom date ranges
-        let headingTo = { ...achieved }; // Default to achieved if the range is in the past.
+        let headingTo = { ...achieved };
         const today = new Date();
 
-        // Only calculate projection if the selected range includes today
         if (today >= startDate && today <= endDate) {
             const totalDaysInRange = (endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24) + 1;
             const daysPassedInRange = (today.getTime() - startDate.getTime()) / (1000 * 3600 * 24) + 1;
@@ -127,7 +145,7 @@ export async function GET(request: Request) {
                 retail: roundToTwo(achieved.retail * projectionFactor),
                 bills: Math.round(achieved.bills * projectionFactor),
                 netSales: roundToTwo(achieved.netSales * projectionFactor),
-                abv: achieved.abv, // ABV is an average, so we don't project it.
+                abv: achieved.abv,
                 callbacks: Math.round(achieved.callbacks * projectionFactor),
                 appointments: Math.round(achieved.appointments * projectionFactor),
             };
@@ -146,7 +164,6 @@ export async function GET(request: Request) {
     }
 }
 
-// --- PUT function remains unchanged ---
 export async function PUT(request: Request) {
     await dbConnect();
     try {

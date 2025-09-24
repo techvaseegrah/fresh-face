@@ -233,6 +233,9 @@ const LeaveHistoryList = ({ requests }: { requests: LeaveRequest[]; }) => {
 const NewLeaveRequestForm = ({ onClose, onSubmit, leaveTypes }: { onClose: () => void; onSubmit: (data: any) => void; leaveTypes: LeaveType[] }) => {
     const [formData, setFormData] = useState({ leaveType: '', startDate: '', endDate: '', reason: '' });
 
+    // UPDATE: Get today's date in YYYY-MM-DD format for the 'min' attribute
+    const today = new Date().toISOString().split('T')[0];
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
@@ -266,11 +269,13 @@ const NewLeaveRequestForm = ({ onClose, onSubmit, leaveTypes }: { onClose: () =>
                      <div />
                     <div>
                         <label htmlFor="startDate" className="block text-sm font-medium text-gray-600 mb-1">Start Date*</label>
-                        <input id="startDate" name="startDate" type="date" required value={formData.startDate} onChange={handleChange} className={commonInputClasses}/>
+                        {/* UPDATE: Added the 'min' attribute to prevent past date selection */}
+                        <input id="startDate" name="startDate" type="date" required value={formData.startDate} onChange={handleChange} className={commonInputClasses} min={today}/>
                     </div>
                      <div>
                         <label htmlFor="endDate" className="block text-sm font-medium text-gray-600 mb-1">End Date*</label>
-                        <input id="endDate" name="endDate" type="date" required value={formData.endDate} onChange={handleChange} className={commonInputClasses}/>
+                        {/* UPDATE: Dynamically set the 'min' attribute based on the start date */}
+                        <input id="endDate" name="endDate" type="date" required value={formData.endDate} onChange={handleChange} className={commonInputClasses} min={formData.startDate || today}/>
                     </div>
                     <div className="md:col-span-2">
                          <label htmlFor="reason" className="block text-sm font-medium text-gray-600 mb-1">Reason for Leave*</label>

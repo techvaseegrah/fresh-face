@@ -22,17 +22,14 @@ export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
 
-    // --- THIS IS THE CORRECTED LOGIC ---
-    // The database query now exactly matches the logic of your working admin API
-    // by removing the isDeleted and isEnabled filters.
     const serviceQuery = { tenantId: tenantId };
     const staffQuery = { tenantId: tenantId, status: 'active' };
-
 
     // Fetch both services and assignable staff in parallel for efficiency
     const [services, staff] = await Promise.all([
         ServiceItem.find(serviceQuery)
-            .select('name price duration')
+            // ✅ CORRECTED: Added 'membershipRate' to the selected fields
+            .select('name price duration membershipRate') 
             .sort({ name: 1 })
             .lean(),
         
