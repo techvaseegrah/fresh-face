@@ -1,10 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, FC } from 'react';
-// CORRECTED: Import from the new component's directory
 import BookAppointmentForm from './components/BookAppointmentForm';
 import { NewBookingData } from './components/BookAppointmentForm/types';
-
 import BillingModal from './billingmodal';
 import { FinalizeBillingPayload, FinalizedInvoice, AppointmentForModal } from './components/billing/billing.types';
 import {
@@ -24,6 +22,8 @@ import { formatDuration } from '@/lib/utils';
 import { Tooltip } from 'react-tooltip';
 import 'react-tooltip/dist/react-tooltip.css';
 
+// This interface defines the structure of each appointment object fetched from the API.
+// The 'isLocked' property is crucial for the UI to know when to disable the edit button.
 interface AppointmentWithCustomer {
   _id: string;
   id: string;
@@ -32,7 +32,7 @@ interface AppointmentWithCustomer {
   appointmentDateTime: string;
   createdAt: string;
   notes?: string;
-  status: 'Appointment' | 'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
+  status: 'Appointment' | 'Waiting for Service'|'Checked-In' | 'Checked-Out' | 'Paid' | 'Cancelled' | 'No-Show';
   appointmentType: 'Online' | 'Offline';
   serviceIds?: Array<{ _id: string; name: string; price: number; membershipRate?: number; duration: number; }>;
   productIds?: Array<{ _id: string; name: string; price: number; membershipRate?: number; }>;
@@ -52,11 +52,13 @@ interface AppointmentWithCustomer {
     redeemedItemId: string;
     redeemedItemType: 'service' | 'product';
   }[];
+  isLocked: boolean; // This flag from the API determines if the "Correct Bill" button is disabled.
 }
 
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'Appointment': return 'bg-blue-100 text-blue-800';
+    case 'Waiting for Service': return 'bg-teal-100 text-teal-800';
     case 'Checked-In': return 'bg-yellow-100 text-yellow-800';
     case 'Checked-Out': return 'bg-purple-100 text-purple-800';
     case 'Paid': return 'bg-green-100 text-green-800';
@@ -65,6 +67,7 @@ const getStatusColor = (status: string) => {
   }
 };
 
+// This component renders each appointment card for the mobile view.
 const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt: AppointmentWithCustomer) => void; canUpdate: boolean; }> = ({ appointment, onEdit, canUpdate }) => {
     const customerName = appointment.customerId?.name || 'N/A';
     const customerPhone = appointment.customerId?.phoneNumber || 'N/A';
@@ -93,12 +96,7 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
             </div>
 
             <div className="border-t border-b border-gray-200 py-3 space-y-2 text-sm">
-                <div className="flex justify-between">
-                    {/* Changed "Services:" to "Items:" to be more generic */}
-                    <span className="text-gray-500">Items:</span> 
-                    {/* Use the new combined variable here */}
-                    <span className="font-semibold text-right">{allItemsDisplay}</span>
-                </div>
+                <div className="flex justify-between"><span className="text-gray-500">Items:</span> <span className="font-semibold text-right">{allItemsDisplay}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Stylist:</span> <span className="font-semibold">{stylistName}</span></div>
                 {appointment.finalAmount != null && <div className="flex justify-between"><span className="text-gray-500">Amount:</span> <span className="font-bold text-green-600">₹{appointment.finalAmount.toFixed(2)}</span></div>}
             </div>
@@ -106,7 +104,14 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
             <div className="flex justify-end items-center">
                 {isActionable && canUpdate ? (
                     isPaid ? (
-                        <button onClick={() => onEdit(appointment)} className="px-3 py-1 text-xs font-semibold text-orange-800 bg-orange-100 rounded-full hover:bg-orange-200 flex items-center gap-1.5"><Cog6ToothIcon className="w-4 h-4" /> Correct Bill</button>
+                        <button 
+                          onClick={() => onEdit(appointment)} 
+                          disabled={appointment.isLocked}
+                          className="px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5 text-orange-800 bg-orange-100 hover:bg-orange-200 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                        >
+                          <Cog6ToothIcon className="w-4 h-4" />
+                          <span>Correct Bill</span>
+                        </button>
                     ) : (
                         <button onClick={() => onEdit(appointment)} className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1"><PencilIcon className="w-3 h-3" /> Edit</button>
                     )
@@ -117,6 +122,7 @@ const AppointmentCard: FC<{ appointment: AppointmentWithCustomer; onEdit: (appt:
         </div>
     );
 };
+
 
 export default function AppointmentPage() {
   const { data: session } = useSession();
@@ -137,9 +143,7 @@ export default function AppointmentPage() {
   const [isDesktop, setIsDesktop] = useState(true);
 
   useEffect(() => {
-    const checkScreenSize = () => {
-        setIsDesktop(window.innerWidth >= 1024);
-    };
+    const checkScreenSize = () => { setIsDesktop(window.innerWidth >= 1024); };
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
@@ -179,12 +183,7 @@ export default function AppointmentPage() {
     return () => clearTimeout(handler);
   }, [fetchAppointments]);
 
-  useEffect(() => {
-    // Reset to page 1 when filters change, but not on initial load
-    if (currentPage !== 1) { 
-        setCurrentPage(1); 
-    }
-  }, [searchTerm, statusFilter, startDate, endDate]);
+  useEffect(() => { if (currentPage !== 1) { setCurrentPage(1); } }, [searchTerm, statusFilter, startDate, endDate]);
 
   const handleBookNewAppointment = async (bookingData: NewBookingData) => {
       try {
@@ -194,11 +193,7 @@ export default function AppointmentPage() {
         toast.success('Appointment successfully booked!');
         setIsBookAppointmentModalOpen(false);
         fetchAppointments();
-      } catch (err: any) {
-        toast.error(err.message);
-        // Re-throw the error so the form's `finally` block can run, keeping the modal open on failure.
-        throw err;
-      }
+      } catch (err: any) { toast.error(err.message); throw err; }
   };
   
   const handleEditAppointment = (appointment: AppointmentWithCustomer) => {
@@ -225,37 +220,21 @@ export default function AppointmentPage() {
       } else {
         fetchAppointments();
       }
-    } catch (err: any) {
-      toast.error(err.message);
-      throw err;
-    }
+    } catch (err: any) { toast.error(err.message); throw err; }
   };
 
-  const handleFinalizeBill = async (finalPayload: FinalizeBillingPayload): Promise<FinalizedInvoice> => {
-    if (!selectedAppointmentForBilling) {
-      throw new Error("No appointment selected for billing.");
-    }
+  const handleFinalizeBill = async (finalPayload: FinalizeBillingPayload) => {
+    if (!selectedAppointmentForBilling) { throw new Error("No appointment selected for billing."); }
     const isUpdating = !!selectedAppointmentForBilling.invoiceId;
     const url = isUpdating ? `/api/billing/${selectedAppointmentForBilling.invoiceId?._id}` : '/api/billing';
     const method = isUpdating ? 'PUT' : 'POST';
-
     try {
       const response = await tenantFetch(url, { method, body: JSON.stringify(finalPayload) });
       const result = await response.json();
-
-      // **FIX:** Handles responses from both POST (`result.invoice`) and PUT (`result.data`)
       const invoiceData = result.data || result.invoice;
-
-      if (!response.ok || !result.success || !invoiceData) {
-        throw new Error(result.message || (isUpdating ? 'Failed to update invoice.' : 'Failed to create invoice.'));
-      }
-      
+      if (!response.ok || !result.success || !invoiceData) { throw new Error(result.message || (isUpdating ? 'Failed to update invoice.' : 'Failed to create invoice.')); }
       return invoiceData;
-
-    } catch (err: any) {
-      // Re-throw to be caught by the billing modal's logic
-      throw err;
-    }
+    } catch (err: any) { throw err; }
   };
 
   const handleCloseBillingModal = () => {
@@ -310,11 +289,8 @@ export default function AppointmentPage() {
                       const customerPhone = appointment.customerId?.phoneNumber || 'N/A';
                       const stylistName = appointment.stylistId?.name || 'N/A';
                       const serviceNamesList = appointment.serviceIds?.map(s => s.name) || [];
-                      // Get product names, defaulting to an empty array if undefined
                       const productNamesList = appointment.productIds?.map(p => p.name) || [];
-                      // Combine both lists
                       const allItemNames = [...serviceNamesList, ...productNamesList];
-                      // Create a display string
                       const allItemsDisplay = allItemNames.length > 0 ? allItemNames.join(', ') : 'N/A';
                       const billingStaffName = appointment.billingStaffId?.name || 'N/A';
                       const paymentSummary = appointment.paymentDetails ? Object.entries(appointment.paymentDetails).filter(([_, amount]) => amount > 0).map(([method, amount]) => `${method}: ₹${amount}`).join('<br />') || 'No payment' : '';
@@ -353,9 +329,23 @@ export default function AppointmentPage() {
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end">
                               {isActionable && canUpdateAppointments ? (
-                                isPaid ? ( <button onClick={() => handleEditAppointment(appointment)} className="px-3 py-1 text-xs font-semibold text-orange-800 bg-orange-100 rounded-full hover:bg-orange-200 flex items-center gap-1.5 whitespace-nowrap"><Cog6ToothIcon className="w-4 h-4" /> Correct Bill</button> ) :
-                                ( <button onClick={() => handleEditAppointment(appointment)} className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1 whitespace-nowrap"><PencilIcon className="w-3 h-3" /> Edit</button> )
-                              ) : ( !isActionable && <span className="px-3 py-1 text-xs text-gray-500 whitespace-nowrap">No Actions</span> )}
+                                isPaid ? ( 
+                                  <button 
+                                    onClick={() => handleEditAppointment(appointment)} 
+                                    disabled={appointment.isLocked} 
+                                    className="px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5 whitespace-nowrap text-orange-800 bg-orange-100 hover:bg-orange-200 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+                                    data-tooltip-id="app-tooltip"
+                                    data-tooltip-content={appointment.isLocked ? "Day is closed, bill cannot be corrected." : "Correct this bill"}
+                                  >
+                                    <Cog6ToothIcon className="w-4 h-4" /> 
+                                    <span>Correct Bill</span>
+                                  </button> 
+                                ) : ( 
+                                  <button onClick={() => handleEditAppointment(appointment)} className="px-3 py-1 text-xs font-semibold text-blue-800 bg-blue-100 rounded-full hover:bg-blue-200 flex items-center gap-1 whitespace-nowrap"><PencilIcon className="w-3 h-3" /> Edit</button> 
+                                )
+                              ) : ( 
+                                !isActionable && <span className="px-3 py-1 text-xs text-gray-500 whitespace-nowrap">No Actions</span> 
+                              )}
                             </div>
                           </td>
                         </tr>

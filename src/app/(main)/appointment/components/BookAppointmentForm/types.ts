@@ -48,6 +48,9 @@ export interface ProductAppointmentItem extends BaseAppointmentItem {
 
 export type AppointmentItemState = ServiceAppointmentItem | ProductAppointmentItem;
 
+// ===================================================================================
+//  ✅ CHANGED: This is the data structure sent to the API. It MUST match the backend.
+// ===================================================================================
 export interface NewBookingData {
   customerId?: string;
   phoneNumber: string;
@@ -58,10 +61,15 @@ export interface NewBookingData {
   survey?: string;
   serviceAssignments: { serviceId: string; stylistId: string; guestName?: string }[];
   productAssignments: { productId: string }[];
-  date: string;
-  time: string;
   notes?: string;
-  status: 'Appointment' | 'Checked-In';
+  
+  // CHANGED: Added the new 'Waiting for Service' status.
+  status: 'Appointment' | 'Waiting for Service' | 'Checked-In';
+  
+  // CHANGED: Replaced separate 'date' and 'time' with a single 'appointmentDateTime'.
+  // EXPLANATION: This matches the updated Mongoose model and API endpoint.
+  appointmentDateTime: string; // This will be an ISO 8601 string (e.g., "2023-10-27T10:00:00.000Z")
+
   appointmentType?: 'Online' | 'Offline';
   redeemedItems?: {
     customerPackageId: string;
@@ -70,6 +78,9 @@ export interface NewBookingData {
   }[];
 }
 
+// ===================================================================================
+//  ✅ CHANGED: This represents the form's internal state.
+// ===================================================================================
 export interface AppointmentFormData {
   customerId?: string;
   phoneNumber: string;
@@ -78,11 +89,19 @@ export interface AppointmentFormData {
   gender: string;
   dob: string;
   survey: string;
+
+  // EXPLANATION: We keep separate 'date' and 'time' here because they map directly
+  // to the <input type="date"> and <input type="time"> fields in the UI.
+  // The handleSubmit function will combine these into the 'appointmentDateTime' string.
   date: string;
   time: string;
+  
   notes: string;
-  status: 'Appointment' | 'Checked-In';
+
+  // CHANGED: Added the new status for the dropdown menu.
+  status: 'Appointment' | 'Waiting for Service' | 'Checked-In';
 }
+
 
 export interface ServiceFromAPI { _id: string; name: string; price: number; duration: number; membershipRate?: number; }
 export interface StylistFromAPI { _id: string; name: string; }

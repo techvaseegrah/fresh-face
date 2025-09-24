@@ -8,6 +8,7 @@ import { sendClosingReportEmail } from '@/lib/mail';
 import { getTenantIdOrBail } from '@/lib/tenant'; // 👈 CHANGED: Import the tenant helper
 import Setting from '@/models/Setting';
 import mongoose from 'mongoose'; 
+import { clearDayClosingCache } from '@/lib/dayClosingGuard'; 
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,7 +54,8 @@ export async function POST(request: NextRequest) {
     // This logic was already correct, now it just uses the consistent `tenantId` variable
     const existingReport = await DayEndReport.findOne({ 
       closingDate: new Date(closingDate),
-      tenantId: tenantId 
+      tenantId: tenantId ,
+      isCompleted: true
     });
 
     if (existingReport) {
@@ -81,9 +83,11 @@ export async function POST(request: NextRequest) {
       cashDenominations,
       notes,
       closedBy: session.user.id,
+      isCompleted: true,
     });
 
     await newReport.save();
+     clearDayClosingCache(tenantId);
 
     // STEP 2: Fetch the list of email recipients for this tenant
     const emailSetting = await Setting.findOne({

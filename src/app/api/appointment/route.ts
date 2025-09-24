@@ -20,6 +20,7 @@ import { whatsAppService } from '@/lib/whatsapp';
 import { encrypt, decrypt} from '@/lib/crypto';
 import { createBlindIndex, generateNgrams } from '@/lib/search-indexing';
 import CustomerPackage from '@/models/CustomerPackage';
+import DayEndReport from '@/models/DayEndReport';
 
 // ===================================================================================
 //  GET: Handler (No Changes Needed)
@@ -105,6 +106,11 @@ export async function GET(req: NextRequest) {
             matchStage._id = new mongoose.Types.ObjectId(); 
         }
     }
+    const latestCompletedReport = await DayEndReport.findOne({
+        tenantId: tenantId,
+        isCompleted: true
+    }).sort({ closingDate: -1 }).select('closingDate').lean();
+     const latestClosingDate = latestCompletedReport ? latestCompletedReport.closingDate : null;
     
     const [appointments, totalAppointmentsResult] = await Promise.all([
       Appointment.find(matchStage)
@@ -124,6 +130,20 @@ export async function GET(req: NextRequest) {
     const totalPages = Math.ceil(totalAppointmentsResult / limit);
     
     const formattedAppointments = appointments.map(apt => {
+      let isLocked = false;
+        if (latestClosingDate) {
+            // Normalize dates to the start of the day for an accurate comparison
+            const appointmentDate = new Date(apt.appointmentDateTime || apt.createdAt);
+            appointmentDate.setHours(0, 0, 0, 0);
+
+            const closingDate = new Date(latestClosingDate);
+            closingDate.setHours(0, 0, 0, 0);
+
+            // If the appointment date is on or before the closing date, it's locked.
+            if (appointmentDate <= closingDate) {
+                isLocked = true;
+            }
+        }
         let finalDateTime;
         if (apt.appointmentDateTime && apt.appointmentDateTime instanceof Date) {
             finalDateTime = apt.appointmentDateTime;
@@ -156,6 +176,7 @@ export async function GET(req: NextRequest) {
               id: apt._id.toString(),
               appointmentDateTime: finalDateTime.toISOString(),
               createdAt: (apt.createdAt || finalDateTime).toISOString(),
+              isLocked: isLocked,
               redeemedItems: apt.redeemedItems, 
               customerId: {
                 _id: customerData?._id,
@@ -193,15 +214,23 @@ export async function POST(req: NextRequest) {
     await connectToDatabase();
     const body = await req.json();
 
+    // ✅ STEP 1: Destructure the new payload from the updated frontend.
+    // We now expect 'appointmentDateTime' instead of separate 'date' and 'time'.
     const { 
-      customerName, phoneNumber, email, dob, survey, // ❌ REMOVED: `gender` is no longer needed here
-      date, time, notes, status, 
-      appointmentType = 'Online', serviceAssignments,productAssignments,
+      customerName, phoneNumber, email, dob, survey, gender,
+      notes, 
+      status, // This will be 'Appointment' or 'Waiting for Service'
+      appointmentType,
+      appointmentDateTime, // This is the new, single, required field (as an ISO string)
+      serviceAssignments,
+      productAssignments,
       redeemedItems,
     } = body;
 
-    if (!phoneNumber || !customerName || !date || !time || !serviceAssignments || !Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
-      return NextResponse.json({ success: false, message: "Missing required fields or services." }, { status: 400 });
+    // ✅ STEP 2: Update validation to use the new 'appointmentDateTime' field.
+    if (!phoneNumber || !customerName || !appointmentDateTime || !status || !serviceAssignments || !Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
+      await session.abortTransaction();
+      return NextResponse.json({ success: false, message: "Missing required fields (customer info, datetime, status, or services)." }, { status: 400 });
     }
 
     const normalizedPhone = String(phoneNumber).replace(/\D/g, '');
@@ -214,8 +243,7 @@ export async function POST(req: NextRequest) {
         name: encrypt(customerName.trim()),
         phoneNumber: encrypt(normalizedPhone),
         email: email ? encrypt(email.trim()) : undefined,
-        // You can still save gender, it's just not needed for inventory calculations here
-        gender: body.gender || 'other', 
+        gender: gender || 'other', 
         phoneHash: phoneHashToFind,
         searchableName: customerName.trim().toLowerCase(),
         last4PhoneNumber: normalizedPhone.slice(-4),
@@ -229,78 +257,38 @@ export async function POST(req: NextRequest) {
 
     if (redeemedItems && Array.isArray(redeemedItems) && redeemedItems.length > 0) {
       for (const redemption of redeemedItems) {
-        const { customerPackageId, redeemedItemId, redeemedItemType } = redemption;
-        if (!customerPackageId || !redeemedItemId || !redeemedItemType) {
-          throw new Error('Invalid redemption data provided.');
-        }
-
-        const pkg = await CustomerPackage.findOne({
-          _id: customerPackageId,
-          customerId: customerDoc._id,
-          tenantId
-        }).session(session);
-
-        if (!pkg || pkg.status !== 'active') {
-          throw new Error(`Invalid or inactive package specified for redemption.`);
-        }
+        const { customerPackageId, redeemedItemId } = redemption;
+        const pkg = await CustomerPackage.findOne({ _id: customerPackageId, customerId: customerDoc._id, tenantId }).session(session);
+        if (!pkg || pkg.status !== 'active') throw new Error(`Invalid or inactive package specified for redemption.`);
         const itemInPkg = pkg.remainingItems.find(i => i.itemId.toString() === redeemedItemId);
-        if (!itemInPkg || itemInPkg.remainingQuantity < 1) {
-          throw new Error(`The item ${redeemedItemId} is not available for redemption in the specified package.`);
-        }
+        if (!itemInPkg || itemInPkg.remainingQuantity < 1) throw new Error(`Item ${redeemedItemId} is not available for redemption.`);
       }
     }
 
     const allServiceIdsWithDuplicates = serviceAssignments.map((a: any) => a.serviceId);
-     const allProductIds = (productAssignments || []).map((p: any) => p.productId);
+    const allProductIds = (productAssignments || []).map((p: any) => p.productId);
     
     const uniqueServiceIds = [...new Set(allServiceIdsWithDuplicates)];
     const primaryStylistId = serviceAssignments[0].stylistId;
 
-    const foundServicesFromDB = await ServiceItem.find({ 
-        _id: { $in: uniqueServiceIds },
-        tenantId: tenantId
-    }).lean();
+    const foundServicesFromDB = await ServiceItem.find({ _id: { $in: uniqueServiceIds }, tenantId }).lean();
 
     if (foundServicesFromDB.length !== uniqueServiceIds.length) {
-        const foundIdsSet = new Set(foundServicesFromDB.map(s => s._id.toString()));
-        const missingIds = uniqueServiceIds.filter(id => !foundIdsSet.has(id));
-        console.error("API Error: The following service IDs could not be found:", missingIds);
         throw new Error("One or more selected services could not be found. They may have been recently deleted.");
     }
 
     const serviceDetailsMap = new Map(foundServicesFromDB.map(service => [service._id.toString(), service]));
+    const fullServiceDetailsList = allServiceIdsWithDuplicates.map(id => serviceDetailsMap.get(id)!);
 
-    const fullServiceDetailsList = allServiceIdsWithDuplicates.map(id => {
-        const service = serviceDetailsMap.get(id);
-        if (!service) {
-            throw new Error(`Internal error: Service with ID ${id} was not found after validation.`);
-        }
-        return service;
-    });
-
-
-    // =========================================================================
-    // ✅ BUG FIX: The entire inventory management block has been removed from here.
-    // Inventory will now only be deducted in the `/api/billing` route.
-    // =========================================================================
-
-
-    const totalEstimatedDuration = fullServiceDetailsList.reduce((sum, service) => sum + service.duration, 0);
+    const totalEstimatedDuration = fullServiceDetailsList.reduce((sum, service) => sum + (service.duration || 0), 0);
+    
     const tempAppointmentForCalc = new Appointment({
       customerId: customerDoc!._id,
       serviceIds: allServiceIdsWithDuplicates,
-      // =========================================================================
-      // FIX #2: Pass the productIds here for an accurate total calculation
-      // =========================================================================
       productIds: allProductIds, 
       tenantId: tenantId,
     });
     const { grandTotal, membershipSavings } = await tempAppointmentForCalc.calculateTotal();
-
-    const assumedUtcDate = new Date(`${date}T${time}:00.000Z`);
-    const istOffsetInMinutes = 330;
-    const correctUtcTimestamp = assumedUtcDate.getTime() - (istOffsetInMinutes * 60 * 1000);
-    const appointmentDateUTC = new Date(correctUtcTimestamp);
 
     const newAppointmentData = {
       tenantId: tenantId,
@@ -309,14 +297,15 @@ export async function POST(req: NextRequest) {
       serviceIds: allServiceIdsWithDuplicates,
       productIds: allProductIds,
       notes,
-      status,
-      appointmentType,
+      status, // Correctly saves 'Appointment' or 'Waiting for Service'
+      appointmentType, // Correctly saves 'Online' or 'Offline'
       estimatedDuration: totalEstimatedDuration,
-      appointmentDateTime: appointmentDateUTC,
+      // ✅ STEP 3: Use the 'appointmentDateTime' field directly. Mongoose will convert the ISO string to a Date object.
+      appointmentDateTime: new Date(appointmentDateTime),
       finalAmount: grandTotal,
       amount: grandTotal + membershipSavings,
       membershipDiscount: membershipSavings,
-      checkInTime: status === 'Checked-In' ? new Date() : undefined,
+      checkInTime: status === 'Checked-In' ? new Date() : undefined, // Preserved for any legacy check-ins, but won't trigger for "Waiting for Service"
       redeemedItems: redeemedItems,
     };
 
@@ -334,8 +323,10 @@ export async function POST(req: NextRequest) {
       const stylist = await Staff.findById(primaryStylistId).select('name').lean();
       const servicesText = fullServiceDetailsList.map(s => s.name).join(', ');
       
-      const appointmentDateFormatted = new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
-      const appointmentTimeFormatted = new Date(`${date}T${time}:00`).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      // ✅ STEP 4: Format date and time for notifications from the new single field.
+      const notificationDate = new Date(appointmentDateTime);
+      const appointmentDateFormatted = notificationDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+      const appointmentTimeFormatted = notificationDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
       await whatsAppService.sendAppointmentBooking({
         phoneNumber: normalizedPhone,
@@ -347,6 +338,7 @@ export async function POST(req: NextRequest) {
       });
     } catch (whatsappError: any) {
       console.error('Failed to send WhatsApp appointment notification:', whatsappError);
+      // We don't abort the transaction if only the notification fails.
     }
     
     return NextResponse.json({ 

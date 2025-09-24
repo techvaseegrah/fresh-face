@@ -64,6 +64,11 @@ const DayEndReportSchema = new Schema({
     ref: 'User',
     required: true,
   },
+  isCompleted: {
+    type: Boolean,
+    default: false, // Defaults to a "draft" state
+    required: true,
+  },
 }, { timestamps: true });
 
 
@@ -83,6 +88,8 @@ export interface IDayEndReport extends Document {
   cashDenominations: Map<string, number>;
   notes?: string;
   closedBy: mongoose.Types.ObjectId;
+  isCompleted: boolean
+  
 }
 
 const DayEndReport = models.DayEndReport || model<IDayEndReport>('DayEndReport', DayEndReportSchema);

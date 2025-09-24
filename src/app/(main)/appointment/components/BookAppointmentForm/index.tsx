@@ -17,7 +17,21 @@ import CustomerDetailPanel from './CustomerDetailPanel';
 import CustomerHistoryModal from './CustomerHistoryModal';
 
 export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment }: BookAppointmentFormProps) {
-  const initialFormData: AppointmentFormData = { customerId: undefined, phoneNumber: '', customerName: '', email: '', gender: '', dob: '', survey: '', date: '', time: '', notes: '', status: 'Appointment' as 'Appointment' | 'Checked-In' };
+  // ✅ CHANGED: The type annotation is updated to include the new status.
+  const initialFormData: AppointmentFormData = { 
+    customerId: undefined, 
+    phoneNumber: '', 
+    customerName: '', 
+    email: '', 
+    gender: '', 
+    dob: '', 
+    survey: '', 
+    date: '', 
+    time: '', 
+    notes: '', 
+    status: 'Appointment' as 'Appointment' | 'Waiting for Service' 
+  };
+  
   const [formData, setFormData] = useState<AppointmentFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -159,13 +173,13 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
       setFilteredItems(sorted);
   }, [debouncedItemSearch, allServices, allProducts]);
 
+  // ✅ CHANGED: The condition is updated to trigger for the new walk-in status.
   useEffect(() => {
-    if (formData.status === 'Checked-In') {
+    if (formData.status === 'Waiting for Service') {
       setFormData(prev => ({ ...prev, date: getCurrentDate(), time: getCurrentTime() }));
     }
   }, [formData.status]);
 
-  // FIX: Added explicit type assertion to prevent TS error with discriminated unions.
   const handleUpdateItem = (_tempId: string, updates: Partial<ServiceAppointmentItem>) => {
     setAppointmentItems(prev => prev.map(a => {
         if (a._tempId === _tempId && a.type === 'service') {
@@ -178,7 +192,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
   useEffect(() => {
     if (isOpen && formData.date && formData.time) {
       setIsLoadingStaff(true);
-      // FIX: Used a more explicit map with type assertion to help TypeScript inference.
       setAppointmentItems(prev => prev.map(item => {
         if (item.type === 'service') {
           return { ...item, isLoadingStylists: true, stylistId: '' } as ServiceAppointmentItem;
@@ -193,7 +206,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
           const staffList = data.success ? data.stylists : [];
           if (!data.success) { toast.error("Failed to load staff list."); }
           setAssignableStaff(staffList);
-          // FIX: Used a more explicit map with type assertion.
           setAppointmentItems(prev => prev.map(item => {
             if (item.type === 'service') {
               return { ...item, availableStylists: staffList, isLoadingStylists: false } as ServiceAppointmentItem;
@@ -203,7 +215,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
         } catch (error) {
           toast.error("Error fetching staff list.");
           setAssignableStaff([]);
-           // FIX: Used a more explicit map with type assertion.
           setAppointmentItems(prev => prev.map(item => {
             if (item.type === 'service') {
               return { ...item, availableStylists: [], isLoadingStylists: false } as ServiceAppointmentItem;
@@ -217,7 +228,6 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
       fetchAssignableStaff();
     } else {
       setAssignableStaff([]);
-      // FIX: Used a more explicit map with type assertion.
       setAppointmentItems(prev => prev.map(item => {
         if (item.type === 'service') {
           return { ...item, availableStylists: [], isLoadingStylists: true, stylistId: '' } as ServiceAppointmentItem;
@@ -496,28 +506,33 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
     setAppointmentItems(prev => prev.filter(a => a._tempId !== _tempId));
   };
 
+  // ✅ CHANGED: This function is completely updated to build the correct API payload.
   const handleSubmit = async (e: FormEvent) => {
       e.preventDefault();
       setFormError(null);
       setStockIssues(null);
       const { phoneNumber, customerName, date, time, status, gender } = formData;
-      if (!phoneNumber || !customerName || !date || !time || !status || !gender) { setFormError('Please fill in all customer and schedule details.'); return; }
-      if (appointmentItems.length === 0) { setFormError('Please add at least one service or product.'); return; }
+      if (!phoneNumber || !customerName || !date || !time || !status || !gender) { 
+        setFormError('Please fill in all customer and schedule details.'); 
+        return; 
+      }
+      if (appointmentItems.length === 0) { 
+        setFormError('Please add at least one service or product.'); 
+        return; 
+      }
       
       const serviceItems = appointmentItems.filter(a => a.type === 'service') as ServiceAppointmentItem[];
-      if (serviceItems.some(a => !a.stylistId)) { setFormError('A staff member must be assigned to every service.'); return; }
+      if (serviceItems.some(a => !a.stylistId)) { 
+        setFormError('A staff member must be assigned to every service.'); 
+        return; 
+      }
 
       setIsSubmitting(true);
       try {
+          // Stock checking logic remains the same
           const serviceIds = serviceItems.map(a => a.itemId);
           const productIds = appointmentItems.filter(a => a.type === 'product').map(a => a.itemId);
-
-          const checkPayload = {
-            serviceIds,
-            productIds,
-            customerGender: formData.gender as 'male' | 'female' | 'other'
-          };
-
+          const checkPayload = { serviceIds, productIds, customerGender: formData.gender as 'male' | 'female' | 'other' };
           const checkRes = await tenantAwareFetch('/api/appointment/check-consumables', { method: 'POST', body: JSON.stringify(checkPayload) });
           const checkData = await checkRes.json();
           if (!checkRes.ok || !checkData.success) { throw new Error(checkData.message || "Failed to check stock availability."); }
@@ -531,16 +546,41 @@ export default function BookAppointmentForm({ isOpen, onClose, onBookAppointment
           const finalServiceAssignments = serviceItems.map(a => ({ serviceId: a.serviceId, stylistId: a.stylistId, guestName: a.guestName || undefined }));
           const finalProductAssignments = appointmentItems.filter(item => item.type === 'product').map(p => ({ productId: p.itemId }));
 
+          // --- CRITICAL CHANGE: CONSTRUCT THE PAYLOAD FOR THE NEW API SCHEMA ---
+          
+          // 1. Combine date and time from the form into a single ISO 8601 string.
+          const appointmentDateTimeISO = new Date(`${formData.date}T${formData.time}`).toISOString();
+
+          // 2. Build the appointmentData object field-by-field to match the NewBookingData type.
           const appointmentData: NewBookingData = {
-            ...formData,
+            customerId: formData.customerId,
+            phoneNumber: formData.phoneNumber,
+            customerName: formData.customerName,
+            email: formData.email,
+            gender: formData.gender,
+            dob: formData.dob,
+            survey: formData.survey,
+            notes: formData.notes,
+            status: formData.status,
+            
+            // Use the new combined datetime field
+            appointmentDateTime: appointmentDateTimeISO,
+            
+            // Determine appointmentType based on the new 'Waiting for Service' status
+            appointmentType: formData.status === 'Waiting for Service' ? 'Offline' : 'Online',
+            
             serviceAssignments: finalServiceAssignments,
             productAssignments: finalProductAssignments,
-            appointmentType: formData.status === 'Checked-In' ? 'Offline' : 'Online',
             redeemedItems: redeemedItems,
           };
+          
           await onBookAppointment(appointmentData);
-      } catch (error: any) { setFormError(error.message || 'An unexpected error occurred.'); }
-      finally { setIsSubmitting(false); }
+      } catch (error: any) { 
+        setFormError(error.message || 'An unexpected error occurred.'); 
+      }
+      finally { 
+        setIsSubmitting(false); 
+      }
   };
 
   if (!isOpen) return null;

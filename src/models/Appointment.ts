@@ -71,7 +71,7 @@ const appointmentSchema = new Schema({
   
   status: {
     type: String,
-    enum: ['Appointment', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled', 'No-Show'],
+    enum: ['Appointment','Waiting for Service', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled', 'No-Show'],
     default: 'Appointment'
   },
   

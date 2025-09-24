@@ -37,11 +37,31 @@ const AppointmentDetailsForm: React.FC<AppointmentDetailsFormProps> = ({
   return (
     <fieldset className={fieldsetClasses}>
       <legend className={legendClasses}>Schedule & Items</legend>
-      <div className="mt-3"><label htmlFor="status" className="block text-sm font-medium mb-1.5">Status <span className="text-red-500">*</span></label><select id="status" name="status" value={formData.status} onChange={handleChange} className={inputBaseClasses}><option value="Appointment">Appointment (Online Booking)</option><option value="Checked-In">Checked-In (Walk-in Customer)</option></select>{formData.status === 'Checked-In' && (<p className="text-sm text-gray-500 mt-1">Service starts now.</p>)}</div>
+      {/* =================================================================================== */}
+      {/* ✅ FINAL CHANGE: Updated the status dropdown menu.                              */}
+      {/* =================================================================================== */}
+      <div className="mt-3">
+        <label htmlFor="status" className="block text-sm font-medium mb-1.5">Status <span className="text-red-500">*</span></label>
+        <select 
+          id="status" 
+          name="status" 
+          value={formData.status} 
+          onChange={handleChange} 
+          className={inputBaseClasses}
+        >
+          <option value="Appointment">Book Appointment</option>
+          {/* CHANGED: The value is now 'Waiting for Service' and the text is updated. */}
+          <option value="Waiting for Service">Walk-in (Waiting for Service)</option>
+        </select>
+        {/* The helper text now appears for the new status */}
+        {formData.status === 'Waiting for Service' && (
+          <p className="text-sm text-gray-500 mt-1">Sets appointment to current time.</p>
+        )}
+      </div>
+
       <div className="grid md:grid-cols-2 gap-x-6 gap-y-5 mt-5">
        <div>
             <label htmlFor="date" className="block text-sm font-medium mb-1.5">Date <span className="text-red-500">*</span></label>
-            {/* ✅ FIX #2: Add the min attribute to the input */}
             <input 
               id="date" 
               type="date" 
@@ -49,13 +69,28 @@ const AppointmentDetailsForm: React.FC<AppointmentDetailsFormProps> = ({
               value={formData.date} 
               onChange={handleChange} 
               required 
-              min={today} // <-- THIS IS THE CHANGE
-              className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
-              readOnly={formData.status === 'Checked-In'} 
+              min={today}
+              // The logic to disable the input for walk-ins is now tied to the new status.
+              className={`${inputBaseClasses} ${formData.status === 'Waiting for Service' ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
+              readOnly={formData.status === 'Waiting for Service'} 
             />
         </div>
-        <div><label htmlFor="time" className="block text-sm font-medium mb-1.5">Time <span className="text-red-500">*</span></label><input id="time" type="time" name="time" value={formData.time} onChange={handleChange} required className={`${inputBaseClasses} ${formData.status === 'Checked-In' ? 'bg-gray-100 cursor-not-allowed' : ''}`} readOnly={formData.status === 'Checked-In'} /></div>
+        <div>
+            <label htmlFor="time" className="block text-sm font-medium mb-1.5">Time <span className="text-red-500">*</span></label>
+            <input 
+              id="time" 
+              type="time" 
+              name="time" 
+              value={formData.time} 
+              onChange={handleChange} 
+              required 
+              className={`${inputBaseClasses} ${formData.status === 'Waiting for Service' ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
+              readOnly={formData.status === 'Waiting for Service'} 
+            />
+        </div>
       </div>
+
+      {/* --- (No changes to the rest of the form) --- */}
 
       {selectedCustomerDetails && (customerPackages.length > 0 || isLoadingPackages) && (
         <div className="mt-5">

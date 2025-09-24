@@ -3,38 +3,30 @@
 import React from 'react';
 
 // =================================================================
-// TYPE DEFINITIONS (This is the missing part)
+// TYPE DEFINITIONS (These remain the same)
 // =================================================================
 
-// Defines the structure for a single item in the invoice
 interface LineItem {
   itemId: string;
   name: string;
   quantity: number;
   unitPrice: number;
   finalPrice: number;
-  // Add other properties if needed by your logic
 }
 
-// Defines the main invoice data structure
 interface FinalizedInvoice {
   invoiceNumber: string;
-  createdAt: string; // ISO string format
+  createdAt: string;
   customer: { name: string };
   billingStaff: { name: string };
   lineItems: LineItem[];
   membershipDiscount: number;
   finalManualDiscountApplied?: number;
   grandTotal: number;
-  paymentDetails: {
-    [key: string]: number | string; // Allows for methods like cash, card, etc.
-  };
-  giftCardPayment?: {
-    amount: number;
-  };
+  paymentDetails: { [key: string]: number | string; };
+  giftCardPayment?: { amount: number; };
 }
 
-// Defines the business details
 interface BusinessDetails {
   name: string;
   address: string;
@@ -42,37 +34,38 @@ interface BusinessDetails {
   gstin?: string;
 }
 
-// Defines the props for the Receipt component itself
 interface ReceiptProps {
   invoiceData: FinalizedInvoice | null;
   businessDetails: BusinessDetails | null;
 }
 
 // =================================================================
-// COMPONENT
+// COMPONENT IMPLEMENTATION (This is where the fix is)
 // =================================================================
 
-const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, businessDetails }, ref) => {
+// Step 1: Define the component as a standard function.
+// The key difference is that 'ref' is now the second argument.
+const ReceiptComponent: React.ForwardRefRenderFunction<HTMLDivElement, ReceiptProps> = (
+  { invoiceData, businessDetails }, 
+  ref
+) => {
   if (!invoiceData || !businessDetails) {
     return null;
   }
 
   const formatDateTime = (isoString: string) => {
     return new Date(isoString).toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
     });
   };
 
-  // Calculate subtotal based on original unit price for clear accounting
   const subtotal = invoiceData.lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
   const membershipSavings = invoiceData.membershipDiscount || 0;
   const manualDiscount = invoiceData.finalManualDiscountApplied || 0;
 
+  // Step 2: Attach the passed-in 'ref' directly to the root div.
+  // This is the connection that was previously failing.
   return (
     <div ref={ref} className="bg-white text-black font-mono text-xs p-2" style={{ width: '288px' }}>
       <header className="text-center mb-4">
@@ -100,7 +93,6 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
             <div key={`${item.itemId}-${index}`} className="flex">
               <div className="flex-grow pr-1">{item.name}</div>
               <div className="w-6 text-center">{item.quantity}</div>
-              {/* Display original total price for transparency */}
               <div className="w-16 text-right">₹{(item.unitPrice * item.quantity).toFixed(2)}</div>
             </div>
           ))}
@@ -109,27 +101,20 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
 
       <section className="border-t border-dashed border-black pt-2 space-y-1">
         <div className="flex justify-between"><span>Subtotal:</span><span>₹{subtotal.toFixed(2)}</span></div>
-        {membershipSavings > 0 && (<div className="flex justify-between"><span>Member Savings:</span><span>-₹{membershipSavings.toFixed(2)}</span></div>)}
-        {manualDiscount > 0 && (<div className="flex justify-between"><span>Discount:</span><span>-₹{manualDiscount.toFixed(2)}</span></div>)}
+        {/* FIX: Removed redundant '-' from discount display */}
+        {membershipSavings > 0 && (<div className="flex justify-between"><span>Member Savings:</span><span>₹{membershipSavings.toFixed(2)}</span></div>)}
+        {manualDiscount > 0 && (<div className="flex justify-between"><span>Discount:</span><span>₹{manualDiscount.toFixed(2)}</span></div>)}
         <div className="flex justify-between font-bold text-sm border-t border-black mt-1 pt-1"><span>GRAND TOTAL:</span><span>₹{invoiceData.grandTotal.toFixed(2)}</span></div>
       </section>
 
       <section className="border-t border-dashed border-black mt-2 pt-2 space-y-1">
         <h2 className="font-bold text-center mb-1">Payment Details</h2>
-        
         {invoiceData.giftCardPayment && invoiceData.giftCardPayment.amount > 0 && (
-          <div className="flex justify-between">
-            <span>Gift Card:</span>
-            <span>₹{invoiceData.giftCardPayment.amount.toFixed(2)}</span>
-          </div>
+          <div className="flex justify-between"><span>Gift Card:</span><span>₹{invoiceData.giftCardPayment.amount.toFixed(2)}</span></div>
         )}
-        
         {Object.entries(invoiceData.paymentDetails).map(([method, amount]) =>
           Number(amount) > 0 ? (
-            <div key={method} className="flex justify-between capitalize">
-              <span>{method}:</span>
-              <span>₹{Number(amount).toFixed(2)}</span>
-            </div>
+            <div key={method} className="flex justify-between capitalize"><span>{method}:</span><span>₹{Number(amount).toFixed(2)}</span></div>
           ) : null
         )}
       </section>
@@ -140,7 +125,12 @@ const Receipt = React.forwardRef<HTMLDivElement, ReceiptProps>(({ invoiceData, b
       </footer>
     </div>
   );
-});
+};
 
+// Step 3: Wrap the component function in React.forwardRef to create the final component.
+const Receipt = React.forwardRef(ReceiptComponent);
+
+// It's good practice to set a display name for debugging in React DevTools
 Receipt.displayName = 'Receipt';
+
 export default Receipt;
