@@ -9,7 +9,7 @@ import ResponseActions from './components/ResponseActions';
 import ScheduleCallbackModal from './components/ScheduleCallbackModal';
 import ComplaintModal from './components/ComplaintModal';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import BookAppointmentForm from '@/app/(main)/appointment/BookAppointmentForm';
+import BookAppointmentForm from '@/app/(main)/appointment/components/BookAppointmentForm/index';
 import { Phone, CheckCircle, Percent, Settings } from 'lucide-react'; // 1. IMPORT Settings icon
 import { hasAnyPermission, PERMISSIONS } from '@/lib/permissions';
 import TelecallingSettingsModal from './components/TelecallingSettingsModal'; // 2. IMPORT the new settings modal
