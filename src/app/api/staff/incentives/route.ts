@@ -5,7 +5,7 @@ import dbConnect from '@/lib/mongodb';
 import Staff from '@/models/staff';
 import DailySale from '@/models/DailySale';
 import IncentiveRule from '@/models/IncentiveRule';
-import Invoice from '@/models/invoice'; // Import the Invoice model
+import Invoice from '@/models/invoice';
 import { startOfMonth } from 'date-fns';
 
 // --- TYPE DEFINITIONS (Unchanged) ---
@@ -80,9 +80,8 @@ export async function GET(request: NextRequest) {
 
         const targetDate = new Date(dateQuery);
         const monthStart = startOfMonth(targetDate);
-        targetDate.setHours(23, 59, 59, 999); // Ensure we get the full day
+        targetDate.setHours(23, 59, 59, 999);
 
-        // ✅ FIX: Fetch all necessary data upfront, including invoices
         const [grossSalesInMonth, allRules, allInvoicesInRange] = await Promise.all([
              DailySale.find({ staff: staffId, tenantId: tenantId, date: { $gte: monthStart, $lte: targetDate } }).sort({ date: 'asc' }).lean(),
              (async () => {
@@ -97,7 +96,6 @@ export async function GET(request: NextRequest) {
             Invoice.find({ tenantId: tenantId, createdAt: { $gte: monthStart, $lte: targetDate }, 'manualDiscount.appliedAmount': { $gt: 0 } }).lean()
         ]);
         
-        // ✅ FIX: Create a single source of truth for NET sales data FIRST.
         const netSalesInMonth = grossSalesInMonth.map(sale => {
             let netServiceSale = sale.serviceSale || 0;
             const saleDateString = new Date(sale.date).toISOString().split('T')[0];
@@ -123,7 +121,6 @@ export async function GET(request: NextRequest) {
             return { ...sale, serviceSale: netServiceSale };
         });
 
-        // Use the net sales data for all calculations
         const saleForThisDay = netSalesInMonth.find(s => new Date(s.date).toISOString().split('T')[0] === dateQuery);
         
         const historicalTimestamp = saleForThisDay ? new Date(saleForThisDay.createdAt || saleForThisDay.date) : new Date(dateQuery);
@@ -158,7 +155,11 @@ export async function GET(request: NextRequest) {
             const cumulativeToday = calculateTotalCumulativeMonthly(salesUpToToday, staff, monthlyRule);
             const cumulativeYesterday = calculateTotalCumulativeMonthly(salesUpToYesterday, staff, monthlyRuleYesterday);
             const monthlyIncentiveDelta = cumulativeToday - cumulativeYesterday;
-            const achieved = salesUpToToday.reduce((sum, s) => sum + (s.serviceSale || 0) + (s.productSale || 0), 0);
+
+            const totalServiceForMonth = salesUpToToday.reduce((sum, s) => sum + (s.serviceSale || 0), 0);
+            const totalProductForMonth = salesUpToToday.reduce((sum, s) => sum + (s.productSale || 0), 0);
+            const achieved = (monthlyRule.sales.includeServiceSale ? totalServiceForMonth : 0) + (monthlyRule.sales.includeProductSale ? totalProductForMonth : 0);
+            
             const { appliedRate } = calculateIncentive(achieved, (staff.salary * monthlyRule.target.multiplier), monthlyRule.incentive.rate, monthlyRule.incentive.doubleRate, achieved);
 
             monthlyResult = { target: staff.salary * monthlyRule.target.multiplier, achieved, isTargetMet: cumulativeToday > 0, incentiveAmount: monthlyIncentiveDelta, appliedRate };
@@ -175,6 +176,9 @@ export async function GET(request: NextRequest) {
             const totalGiftCardSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.giftCardSale || 0), 0);
             const { isTargetMet, appliedRate } = calculateIncentive(totalGiftCardSaleMonth, giftCardRule.target.targetValue, giftCardRule.incentive.rate, giftCardRule.incentive.doubleRate, totalGiftCardSaleMonth);
             const giftCardIncentiveToday = isTargetMet ? ((saleForThisDay?.giftCardSale || 0) * appliedRate) : 0;
+            
+            // ✨ --- THIS IS THE FIX for the typo --- ✨
+            // Changed `.value` to `.targetValue` to match the type definition.
             giftCardResult = { target: giftCardRule.target.targetValue, achieved: totalGiftCardSaleMonth, isTargetMet, incentiveAmount: giftCardIncentiveToday, appliedRate, todaySale: saleForThisDay?.giftCardSale || 0 };
         }
 

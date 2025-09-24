@@ -9,7 +9,8 @@ import {
     CalendarCheck, BarChart2, IndianRupee, Wallet, Clock, 
     Briefcase, Menu, X, 
     ClipboardCheck,
-    AlertTriangle // --- ICON ADDED HERE ---
+    AlertTriangle,
+    ClipboardList // --- ICON ADDED HERE ---
 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -146,9 +147,13 @@ export default function StaffDashboardLayout({ children }: { children: React.Rea
             <NavLink href="/attendance" icon={<CalendarCheck size={20} />} onClick={closeMobileMenu}>Attendance</NavLink>
             <NavLink href="/advance" icon={<PlusCircle size={20}/>} onClick={closeMobileMenu}>Request Advance</NavLink>
             
-            {/* ✅ NEW LINK ADDED HERE for "Report an Issue" */}
             <NavLink href="/create-issue" icon={<AlertTriangle size={20} />} onClick={closeMobileMenu}>
                 Report an Issue
+            </NavLink>
+
+            {/* ✅ NEW LINK ADDED HERE for "My Reported Issues" */}
+            <NavLink href="/my-reported-issues" icon={<ClipboardList size={20} />} onClick={closeMobileMenu}>
+                My Reported Issues
             </NavLink>
 
             <NavLink href="/performance" icon={<BarChart2 size={20} />} onClick={closeMobileMenu}>Performance</NavLink>

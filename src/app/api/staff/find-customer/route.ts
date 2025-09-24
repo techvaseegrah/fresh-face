@@ -36,6 +36,8 @@ export async function GET(req: NextRequest) {
             gender: customer.gender,
             // Format DOB for the HTML date input field
             dob: customer.dob ? new Date(customer.dob).toISOString().split('T')[0] : '',
+            // ✅ CORRECTED: Added isMember to the response
+            isMember: customer.isMembership, 
         };
 
         return NextResponse.json({ success: true, customer: decryptedCustomer });

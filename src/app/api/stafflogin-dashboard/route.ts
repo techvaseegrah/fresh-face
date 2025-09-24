@@ -20,6 +20,7 @@ import Appointment from '@/models/Appointment';
 import Customer from '@/models/customermodel';
 import ServiceItem from '@/models/ServiceItem';
 import LeaveRequest from '@/models/LeaveRequest';
+import Invoice from '@/models/invoice'; // ✅ FIX: Imported the Invoice model
 
 
 // --- (Helper functions remain unchanged) ---
@@ -166,6 +167,7 @@ export async function GET(request: NextRequest) {
             todayShiftRecord,
             todaysAppointments,
             recentLeaveRequests,
+            invoicesWithDiscounts, // ✅ FIX: Fetch invoices with discounts
         ] = await Promise.all([
             ShopSetting.findOne({ key: 'defaultSettings', tenantId }).lean(),
             Staff.findById(staffObjectId).select('position').lean(),
@@ -189,6 +191,12 @@ export async function GET(request: NextRequest) {
                 .sort({ createdAt: -1 })
                 .limit(5)
                 .lean(),
+            // ✅ FIX: Added query to fetch relevant invoices for discount calculation
+            Invoice.find({
+                tenantId: tenantId,
+                createdAt: { $gte: monthStart, $lte: monthEnd },
+                'manualDiscount.appliedAmount': { $gt: 0 }
+            }).lean()
         ]);
 
         let requiredMinutes = 0;
@@ -208,8 +216,36 @@ export async function GET(request: NextRequest) {
         const achievedMinutes = attendanceRecords.reduce((sum, record) => sum + (record.totalWorkingMinutes || 0), 0);
         const todayShift = todayShiftRecord ? (todayShiftRecord.isWeekOff ? "Week Off" : todayShiftRecord.shiftTiming) : "Not Assigned";
         
-        // ✅ FIX: This calculation now correctly includes all four sale types.
-        const totalSales = monthlyPerformance.reduce((s, r) => s + (r.serviceSale || 0) + (r.productSale || 0) + (r.packageSale || 0) + (r.giftCardSale || 0), 0);
+        // ✅ FIX: New, accurate sales calculation that accounts for discounts
+        let correctedTotalSales = 0;
+        const staffObjectIdString = staffObjectId.toString();
+
+        for (const daySale of monthlyPerformance) {
+            let netServiceSaleForDay = daySale.serviceSale || 0;
+            const saleDateString = new Date(daySale.date).toISOString().split('T')[0];
+            const invoicesForDay = invoicesWithDiscounts.filter(inv => new Date(inv.createdAt).toISOString().split('T')[0] === saleDateString);
+
+            for (const invoice of invoicesForDay) {
+                const manualDiscountAmount = invoice.manualDiscount?.appliedAmount || 0;
+                let totalServiceValueOnInvoice = 0;
+                let staffServiceValueOnInvoice = 0;
+
+                for (const item of (invoice.lineItems || [])) {
+                    if (item.itemType === 'service') {
+                        totalServiceValueOnInvoice += item.finalPrice;
+                        if (item.staffId?.toString() === staffObjectIdString) {
+                            staffServiceValueOnInvoice += item.finalPrice;
+                        }
+                    }
+                }
+
+                if (totalServiceValueOnInvoice > 0 && staffServiceValueOnInvoice > 0) {
+                     const staffShareOfDiscount = (manualDiscountAmount * staffServiceValueOnInvoice) / totalServiceValueOnInvoice;
+                     netServiceSaleForDay -= staffShareOfDiscount;
+                }
+            }
+            correctedTotalSales += netServiceSaleForDay + (daySale.productSale || 0) + (daySale.packageSale || 0) + (daySale.giftCardSale || 0);
+        }
         
         const customerCount = monthlyPerformance.reduce((s, r) => s + (r.customerCount || 0), 0);
         const totalIncentiveEarned = await calculateMonthlyIncentive(staffObjectId, tenantId, monthStart, monthEnd);
@@ -239,7 +275,8 @@ export async function GET(request: NextRequest) {
             attendance: { achievedMinutes, requiredMinutes, todayShift },
             advances: { history: advanceRecords },
             salaries: salaryRecords,
-            performance: { totalSales, customerCount },
+            // ✅ FIX: Use the new correctedTotalSales value here
+            performance: { totalSales: correctedTotalSales, customerCount },
             incentives: { totalEarned: totalIncentiveEarned },
             payouts: { totalClaimed: totalPayoutClaimed, pendingCount: pendingPayouts },
             todaysAppointments: decryptedAppointments,
