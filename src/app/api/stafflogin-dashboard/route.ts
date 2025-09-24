@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/mongodb';
 import { startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns';
-import { getTenantIdOrBail } from '@/lib/tenant'; 
+import { getTenantIdOrBail } from '@/lib/tenant';
 import { decrypt } from '@/lib/crypto';
 
 // --- Import ALL necessary models ---
@@ -20,13 +20,20 @@ import Appointment from '@/models/Appointment';
 import Customer from '@/models/customermodel';
 import ServiceItem from '@/models/ServiceItem';
 import LeaveRequest from '@/models/LeaveRequest';
-import Invoice from '@/models/invoice'; // ✅ FIX: Imported the Invoice model
+import Invoice from '@/models/invoice'; // Invoice model is crucial
 
 
-// --- (Helper functions remain unchanged) ---
+// --- Helper Types (Unchanged) ---
 type DailyRule = {
   target: { multiplier: number };
-  sales: { includeServiceSale: boolean; includeProductSale: boolean; reviewNameValue: number; reviewPhotoValue: number; };
+  sales: { 
+    includeServiceSale: boolean; 
+    includeProductSale: boolean; 
+    includePackageSale?: boolean;
+    includeGiftCardSale?: boolean;
+    reviewNameValue: number; 
+    reviewPhotoValue: number; 
+  };
   incentive: { rate: number; doubleRate: number; applyOn: 'totalSaleValue' | 'serviceSaleOnly'; };
 };
 type MonthlyRule = {
@@ -39,6 +46,7 @@ type FixedTargetRule = {
     incentive: { rate: number; doubleRate: number };
 }
 
+// --- Helper Functions (Unchanged) ---
 function getDaysInMonth(year: number, month: number): number { return new Date(year, month + 1, 0).getDate(); }
 
 function calculateIncentive(achieved: number, target: number, rate: number, doubleRate: number, base: number) {
@@ -50,7 +58,8 @@ function calculateIncentive(achieved: number, target: number, rate: number, doub
 
 function findHistoricalRule<T>(rules: T[], timestamp: Date): T | null {
     if (!rules || rules.length === 0) return null;
-    return rules.find(rule => new Date((rule as any).createdAt) <= timestamp) || null;
+    const sortedRules = rules.sort((a, b) => new Date((b as any).createdAt).getTime() - new Date((a as any).createdAt).getTime());
+    return sortedRules.find(rule => new Date((rule as any).createdAt) <= timestamp) || null;
 }
 
 function calculateTotalCumulativeMonthly(sales: any[], staff: any, rule: MonthlyRule | null) {
@@ -63,8 +72,9 @@ function calculateTotalCumulativeMonthly(sales: any[], staff: any, rule: Monthly
     return calculateIncentive(achieved, target, rule.incentive.rate, rule.incentive.doubleRate, base).incentive;
 }
 
+// ✅ FIX: This entire function is now updated to correctly calculate incentives based on NET sales.
 async function calculateMonthlyIncentive(staffId: string, tenantId: string, monthStart: Date, monthEnd: Date): Promise<number> {
-    const [staff, allSalesInMonth, allRules] = await Promise.all([
+    const [staff, grossSalesInMonth, allRules, allInvoicesInRange] = await Promise.all([
         Staff.findById(staffId).lean(),
         DailySale.find({ staff: staffId, tenantId, date: { $gte: monthStart, $lte: monthEnd } }).sort({ date: 'asc' }).lean(),
         (async () => {
@@ -76,14 +86,38 @@ async function calculateMonthlyIncentive(staffId: string, tenantId: string, mont
                 giftCard: rules.filter(r => r.type === 'giftCard'),
             };
         })(),
+        Invoice.find({ tenantId: tenantId, createdAt: { $gte: monthStart, $lte: monthEnd }, 'manualDiscount.appliedAmount': { $gt: 0 } }).lean()
     ]);
 
     if (!staff || !staff.salary) return 0;
-    if (allSalesInMonth.length === 0) return 0;
+    if (grossSalesInMonth.length === 0) return 0;
+
+    // First, create a single source of truth for NET sales data
+    const netSalesInMonth = grossSalesInMonth.map(sale => {
+        let netServiceSale = sale.serviceSale || 0;
+        const saleDateString = new Date(sale.date).toISOString().split('T')[0];
+        const invoicesForDay = allInvoicesInRange.filter(inv => new Date(inv.createdAt).toISOString().split('T')[0] === saleDateString);
+        for (const invoice of invoicesForDay) {
+            const manualDiscountAmount = invoice.manualDiscount?.appliedAmount || 0;
+            let totalServiceValueOnInvoice = 0, staffServiceValueOnInvoice = 0;
+            for (const item of (invoice.lineItems || [])) {
+                if (item.itemType === 'service') {
+                    totalServiceValueOnInvoice += item.finalPrice;
+                    if (item.staffId?.toString() === staffId) { staffServiceValueOnInvoice += item.finalPrice; }
+                }
+            }
+            if (totalServiceValueOnInvoice > 0 && staffServiceValueOnInvoice > 0) {
+                const staffShareOfDiscount = (manualDiscountAmount * staffServiceValueOnInvoice) / totalServiceValueOnInvoice;
+                netServiceSale -= staffShareOfDiscount;
+            }
+        }
+        return { ...sale, serviceSale: netServiceSale };
+    });
 
     let totalEarned = 0;
-    for (let i = 0; i < allSalesInMonth.length; i++) {
-        const saleForThisDay = allSalesInMonth[i];
+    // Now, loop through the corrected NET sales data to calculate total incentive
+    for (let i = 0; i < netSalesInMonth.length; i++) {
+        const saleForThisDay = netSalesInMonth[i];
         const d = new Date(saleForThisDay.date);
         const historicalTimestamp = new Date(saleForThisDay.createdAt || saleForThisDay.date);
 
@@ -96,17 +130,20 @@ async function calculateMonthlyIncentive(staffId: string, tenantId: string, mont
         if (dailyRule) {
             const daysInMonth = getDaysInMonth(d.getFullYear(), d.getMonth());
             const target = (staff.salary * dailyRule.target.multiplier) / daysInMonth;
-            const reviewBonus = (saleForThisDay.reviewsWithName * dailyRule.sales.reviewNameValue) + (saleForThisDay.reviewsWithPhoto * dailyRule.sales.reviewPhotoValue);
-            const achieved = (dailyRule.sales.includeServiceSale ? (saleForThisDay.serviceSale || 0) : 0) + (dailyRule.sales.includeProductSale ? (saleForThisDay.productSale || 0) : 0) + reviewBonus;
-            const base = dailyRule.incentive.applyOn === 'serviceSaleOnly' ? (saleForThisDay.serviceSale || 0) : achieved;
+            const reviewBonus = (saleForThisDay.reviewsWithName * (dailyRule.sales.reviewNameValue || 0)) + (saleForThisDay.reviewsWithPhoto * (dailyRule.sales.reviewPhotoValue || 0));
+            const achieved = (dailyRule.sales.includeServiceSale ? saleForThisDay.serviceSale : 0) 
+                           + (dailyRule.sales.includeProductSale ? (saleForThisDay.productSale || 0) : 0)
+                           + (dailyRule.sales.includePackageSale ? (saleForThisDay.packageSale || 0) : 0)
+                           + (dailyRule.sales.includeGiftCardSale ? (saleForThisDay.giftCardSale || 0) : 0)
+                           + reviewBonus;
+            const base = dailyRule.incentive.applyOn === 'serviceSaleOnly' ? saleForThisDay.serviceSale : achieved;
             dailyIncentive = calculateIncentive(achieved, target, dailyRule.incentive.rate, dailyRule.incentive.doubleRate, base).incentive;
         }
 
-        const salesUpToToday = allSalesInMonth.slice(0, i + 1);
-        const salesUpToYesterday = allSalesInMonth.slice(0, i);
-        const yesterdayTimestamp = i > 0 ? new Date(allSalesInMonth[i-1].createdAt || d) : d;
+        const salesUpToToday = netSalesInMonth.slice(0, i + 1);
+        const salesUpToYesterday = netSalesInMonth.slice(0, i);
+        const yesterdayTimestamp = i > 0 ? new Date(salesUpToYesterday[i - 1].createdAt || d) : d;
         const monthlyRuleYesterday = findHistoricalRule(allRules.monthly, yesterdayTimestamp) as MonthlyRule | null;
-
         const cumulativeToday = calculateTotalCumulativeMonthly(salesUpToToday, staff, monthlyRule);
         const cumulativeYesterday = calculateTotalCumulativeMonthly(salesUpToYesterday, staff, monthlyRuleYesterday);
         const monthlyIncentiveDelta = cumulativeToday - cumulativeYesterday;
@@ -115,18 +152,14 @@ async function calculateMonthlyIncentive(staffId: string, tenantId: string, mont
         if (packageRule) {
             const totalPackageSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.packageSale || 0), 0);
             const { isTargetMet, appliedRate } = calculateIncentive(totalPackageSaleMonth, packageRule.target.targetValue, packageRule.incentive.rate, packageRule.incentive.doubleRate, totalPackageSaleMonth);
-            if (isTargetMet) {
-                packageIncentiveToday = (saleForThisDay?.packageSale || 0) * appliedRate;
-            }
+            if (isTargetMet) { packageIncentiveToday = (saleForThisDay.packageSale || 0) * appliedRate; }
         }
 
         let giftCardIncentiveToday = 0;
         if (giftCardRule) {
             const totalGiftCardSaleMonth = salesUpToToday.reduce((sum, sale) => sum + (sale.giftCardSale || 0), 0);
             const { isTargetMet, appliedRate } = calculateIncentive(totalGiftCardSaleMonth, giftCardRule.target.targetValue, giftCardRule.incentive.rate, giftCardRule.incentive.doubleRate, totalGiftCardSaleMonth);
-            if (isTargetMet) {
-                giftCardIncentiveToday = (saleForThisDay?.giftCardSale || 0) * appliedRate;
-            }
+            if (isTargetMet) { giftCardIncentiveToday = (saleForThisDay.giftCardSale || 0) * appliedRate; }
         }
         
         totalEarned += dailyIncentive + monthlyIncentiveDelta + packageIncentiveToday + giftCardIncentiveToday;
@@ -167,7 +200,7 @@ export async function GET(request: NextRequest) {
             todayShiftRecord,
             todaysAppointments,
             recentLeaveRequests,
-            invoicesWithDiscounts, // ✅ FIX: Fetch invoices with discounts
+            invoicesWithDiscounts,
         ] = await Promise.all([
             ShopSetting.findOne({ key: 'defaultSettings', tenantId }).lean(),
             Staff.findById(staffObjectId).select('position').lean(),
@@ -191,7 +224,6 @@ export async function GET(request: NextRequest) {
                 .sort({ createdAt: -1 })
                 .limit(5)
                 .lean(),
-            // ✅ FIX: Added query to fetch relevant invoices for discount calculation
             Invoice.find({
                 tenantId: tenantId,
                 createdAt: { $gte: monthStart, $lte: monthEnd },
@@ -216,7 +248,6 @@ export async function GET(request: NextRequest) {
         const achievedMinutes = attendanceRecords.reduce((sum, record) => sum + (record.totalWorkingMinutes || 0), 0);
         const todayShift = todayShiftRecord ? (todayShiftRecord.isWeekOff ? "Week Off" : todayShiftRecord.shiftTiming) : "Not Assigned";
         
-        // ✅ FIX: New, accurate sales calculation that accounts for discounts
         let correctedTotalSales = 0;
         const staffObjectIdString = staffObjectId.toString();
 
@@ -248,6 +279,7 @@ export async function GET(request: NextRequest) {
         }
         
         const customerCount = monthlyPerformance.reduce((s, r) => s + (r.customerCount || 0), 0);
+        // This function now returns the correct, consistent value
         const totalIncentiveEarned = await calculateMonthlyIncentive(staffObjectId, tenantId, monthStart, monthEnd);
         const totalPayoutClaimed = payoutRecords.filter(p => p.status === 'approved').reduce((s, p) => s + p.amount, 0);
         const pendingPayouts = payoutRecords.filter(p => p.status === 'pending').length;
@@ -275,7 +307,6 @@ export async function GET(request: NextRequest) {
             attendance: { achievedMinutes, requiredMinutes, todayShift },
             advances: { history: advanceRecords },
             salaries: salaryRecords,
-            // ✅ FIX: Use the new correctedTotalSales value here
             performance: { totalSales: correctedTotalSales, customerCount },
             incentives: { totalEarned: totalIncentiveEarned },
             payouts: { totalClaimed: totalPayoutClaimed, pendingCount: pendingPayouts },
