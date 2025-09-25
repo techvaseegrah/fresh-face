@@ -179,8 +179,8 @@ export default function DashboardPage() {
               <SummaryStatCard title="Total Collection" value={<AnimatedNumber value={totalCollection} prefix="₹" decimals={2} />} icon={BuildingLibraryIcon} color="green" />
               <SummaryStatCard title="New Gift Cards Sold" value={<AnimatedNumber value={salesReportData.giftCardRevenue} prefix="₹" decimals={2} />} icon={GiftIcon} color="amber" />
               <SummaryStatCard title="Package Sales" value={<AnimatedNumber value={salesReportData.packageRevenue} prefix="₹" decimals={2} />} icon={ArchiveBoxIcon} color="cyan" />
-              <SummaryStatCard title="Service Net" value={<AnimatedNumber value={salesReportData.serviceNet} prefix="₹" decimals={2} />} icon={ReceiptPercentIcon} color="orange" subtitle="Gross" subValue={<AnimatedNumber value={salesReportData.serviceGross} prefix="₹" decimals={2} />} />
-              <SummaryStatCard title="Product Net" value={<AnimatedNumber value={salesReportData.productNet} prefix="₹" decimals={2} />} icon={BanknotesIcon} color="purple" subtitle="Gross" subValue={<AnimatedNumber value={salesReportData.productGross} prefix="₹" decimals={2} />} />
+              <SummaryStatCard title="Service Net" value={<AnimatedNumber value={salesReportData.serviceNet} prefix="₹" decimals={2} />} icon={ReceiptPercentIcon} color="orange" subtitle="Non-Membership Value" subValue={<AnimatedNumber value={salesReportData.serviceGross} prefix="₹" decimals={2} />} />
+              <SummaryStatCard title="Product Net" value={<AnimatedNumber value={salesReportData.productNet} prefix="₹" decimals={2} />} icon={BanknotesIcon} color="purple" subtitle="Non-Membership Value" subValue={<AnimatedNumber value={salesReportData.productGross} prefix="₹" decimals={2} />} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

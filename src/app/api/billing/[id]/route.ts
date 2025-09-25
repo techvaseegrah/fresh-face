@@ -88,7 +88,18 @@ export async function GET(
     if (!invoice) {
       return NextResponse.json({ success: false, message: 'Invoice not found.' }, { status: 404 });
     }
-    const responseData = { ...invoice, customer: invoice.customerId, billingStaff: invoice.billingStaffId };
+    const decryptedCustomerName = invoice.customerId 
+      ? safeDecrypt(invoice.customerId.name, 'customerName') 
+      : 'N/A';
+
+   const responseData = {
+      ...invoice,
+      customer: { 
+        ...invoice.customerId, 
+        name: decryptedCustomerName // Use the decrypted name here
+      },
+      billingStaff: invoice.billingStaffId
+    };
     delete (responseData as any).customerId;
     delete (responseData as any).billingStaffId;
     return NextResponse.json({ success: true, invoice: responseData }, { status: 200 });
