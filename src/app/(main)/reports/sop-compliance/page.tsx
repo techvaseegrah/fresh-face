@@ -89,7 +89,7 @@ export default function SopComplianceReportPage() {
     const userPermissions = session?.user?.role?.permissions || [];
     
     const [endDate, setEndDate] = useState(new Date());
-    const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; });
+    const [startDate, setStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() -0); return d; });
     const [viewingDetails, setViewingDetails] = useState<ViewingDetailsData | null>(null);
     const [filter, setFilter] = useState<'unreviewed' | 'all'>('unreviewed');
     const [isExporting, setIsExporting] = useState(false);

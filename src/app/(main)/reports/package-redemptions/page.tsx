@@ -36,7 +36,7 @@ export default function PackageRedemptionsReportPage() {
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   
-  const [startDate, setStartDate] = useState<string>(formatDateForInput(subDays(new Date(), 29)));
+  const [startDate, setStartDate] = useState<string>(formatDateForInput(subDays(new Date(),0)));
   const [endDate, setEndDate] = useState<string>(formatDateForInput(new Date()));
 
   const fetchPackageRedemptions = useCallback(async () => {

@@ -104,7 +104,7 @@ export default function IssueComplianceReportPage() {
     const [endDate, setEndDate] = useState(new Date());
     const [startDate, setStartDate] = useState(() => {
         const d = new Date();
-        d.setDate(d.getDate() - 6);
+        d.setDate(d.getDate() - 0);
         return d;
     });
 
