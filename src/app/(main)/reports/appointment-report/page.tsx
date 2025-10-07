@@ -1,5 +1,3 @@
-// src/app/(main)/reports/appointment-report/page.tsx
-
 'use client';
 
 import React, { useState, useCallback } from 'react';
@@ -13,6 +11,51 @@ import * as XLSX from 'xlsx';
 import { formatDateIST, formatTimeIST } from '@/lib/dateFormatter'; // Make sure this path is correct
 
 const statusOptions = ['All', 'Appointment', 'Checked-In', 'Checked-Out', 'Paid', 'Cancelled', 'No-Show'];
+
+// ===================================================================================
+// ✅ NEW: Helper function to calculate and format the duration between
+//         check-in and check-out times.
+// ===================================================================================
+const formatCheckInOutDuration = (checkInTime?: string, checkOutTime?: string): string => {
+  if (!checkInTime || !checkOutTime) {
+    return 'N/A';
+  }
+
+  const start = new Date(checkInTime);
+  const end = new Date(checkOutTime);
+
+  // Check for invalid dates
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return 'N/A';
+  }
+
+  const diffMs = end.getTime() - start.getTime();
+
+  // If checkout is before checkin or difference is negative
+  if (diffMs < 0) {
+    return 'N/A';
+  }
+
+  const totalMinutes = Math.round(diffMs / 60000);
+
+  if (totalMinutes === 0) {
+    return '< 1m';
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  let durationString = '';
+  if (hours > 0) {
+    durationString += `${hours}h`;
+  }
+  if (minutes > 0) {
+    durationString += `${hours > 0 ? ' ' : ''}${minutes}m`;
+  }
+
+  return durationString;
+};
+
 
 export default function AppointmentReportPage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -54,18 +97,23 @@ export default function AppointmentReportPage() {
       setIsExporting(false);
       return;
     }
-    const reportData = appointmentsToExport.map((app: any) => ({
-      'Date': formatDateIST(app.appointmentDateTime),
-      'Time': formatTimeIST(app.appointmentDateTime),
-      'Client Name': app.customerId?.name || 'N/A',
-      'Client Phone': app.customerId?.phoneNumber || 'N/A',
-      'Invoice #': app.invoiceId?.invoiceNumber || '-',
-      'Services': Array.isArray(app.serviceIds) ? app.serviceIds.map((s: any) => s.name).join(', ') : 'N/A',
-      'Stylist': app.stylistId?.name || 'N/A',
-      'Status': app.status,
-      // ▼▼▼ MODIFIED: Header changed to "Amount" and value format updated to "INR" ▼▼▼
-      'Amount': app.finalAmount != null ? `INR${app.finalAmount.toFixed(2)}` : '0.00',
-    }));
+    const reportData = appointmentsToExport.map((app: any) => {
+      return {
+        'Date': formatDateIST(app.appointmentDateTime),
+        'Time': formatTimeIST(app.appointmentDateTime),
+        'Client Name': app.customerId?.name || 'N/A',
+        'Client Phone': app.customerId?.phoneNumber || 'N/A',
+        'Invoice #': app.invoiceId?.invoiceNumber || '-',
+        'Services': Array.isArray(app.serviceIds) ? app.serviceIds.map((s: any) => s.name).join(', ') : 'N/A',
+        // ===================================================================================
+        // ✅ MODIFIED: Using the new helper to calculate check-in/out duration.
+        // ===================================================================================
+        'Duration': formatCheckInOutDuration(app.checkInTime, app.checkOutTime),
+        'Stylist': app.stylistId?.name || 'N/A',
+        'Status': app.status,
+        'Amount': app.finalAmount != null ? `INR${app.finalAmount.toFixed(2)}` : '0.00',
+      };
+    });
     const worksheet = XLSX.utils.json_to_sheet(reportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Appointments");
@@ -82,24 +130,34 @@ export default function AppointmentReportPage() {
       return;
     }
     const doc = new jsPDF();
-    // ▼▼▼ MODIFIED: Header changed to "Amount" ▼▼▼
-    const tableColumns = ["Date & Time", "Client", "Invoice #", "Services", "Stylist", "Status", "Amount"];
-    const tableRows = appointmentsToExport.map((app: any) => [
-      `${formatDateIST(app.appointmentDateTime)} ${formatTimeIST(app.appointmentDateTime)}`,
-      `${app.customerId?.name || 'N/A'} (${app.customerId?.phoneNumber || 'N/A'})`,
-      app.invoiceId?.invoiceNumber || '-',
-      Array.isArray(app.serviceIds) ? app.serviceIds.map((s: any) => s.name).join(', ') : 'N/A',
-      app.stylistId?.name || 'N/A',
-      app.status,
-      // ▼▼▼ MODIFIED: Value format updated to "INR" ▼▼▼
-      app.finalAmount != null ? `INR${app.finalAmount.toFixed(2)}` : '-',
-    ]);
+    // ===================================================================================
+    // ✅ MODIFIED: Column order matches the desired report format.
+    // ===================================================================================
+    const tableColumns = ["Date & Time", "Client", "Services", "Duration", "Stylist", "Status", "Amount"];
+    
+    const tableRows = appointmentsToExport.map((app: any) => (
+      [
+        `${formatDateIST(app.appointmentDateTime)} ${formatTimeIST(app.appointmentDateTime)}`,
+        `${app.customerId?.name || 'N/A'} (${app.customerId?.phoneNumber || 'N/A'})`,
+        Array.isArray(app.serviceIds) ? app.serviceIds.map((s: any) => s.name).join(', ') : 'N/A',
+        // ===================================================================================
+        // ✅ MODIFIED: Using the new helper for the PDF rows as well.
+        // ===================================================================================
+        formatCheckInOutDuration(app.checkInTime, app.checkOutTime),
+        app.stylistId?.name || 'N/A',
+        app.status,
+        app.finalAmount != null ? `INR${app.finalAmount.toFixed(2)}` : '-',
+      ]
+    ));
+
     doc.text("Appointments Report", 14, 15);
     autoTable(doc, {
       head: [tableColumns],
       body: tableRows,
       startY: 20,
       theme: 'grid',
+      styles: { fontSize: 8 }, 
+      headStyles: { fillColor: [0, 114, 121] }, 
     });
     doc.save(`Appointments_Report_${new Date().toISOString().split('T')[0]}.pdf`);
     setIsExporting(false);
